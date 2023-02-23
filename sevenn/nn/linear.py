@@ -29,9 +29,6 @@ class IrrepsLinear(nn.Module):
         else:
             self.KEY_OUTPUT = data_key_out
 
-        #self.irreps_in = {self.KEY_INPUT: irreps_in}
-        #self.irreps_out = {self.KEY_OUTPUT: irreps_out}
-
         self.linear = Linear(irreps_in, irreps_out, **e3nn_linear_params)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:

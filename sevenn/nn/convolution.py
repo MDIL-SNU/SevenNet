@@ -1,5 +1,6 @@
 from typing import List
 
+import torch
 import torch.nn as nn
 from e3nn.o3 import Irreps
 from e3nn.o3 import TensorProduct
@@ -30,6 +31,7 @@ class IrrepsConvolution(nn.Module):
         data_key_filter: str = KEY.EDGE_ATTR,
         data_key_weight_input: str = KEY.EDGE_EMBEDDING,
         data_key_edge_idx: str = KEY.EDGE_IDX,
+        is_parallel: bool = False,
     ):
         super().__init__()
         self.denumerator = denumerator
@@ -37,6 +39,7 @@ class IrrepsConvolution(nn.Module):
         self.KEY_FILTER = data_key_filter
         self.KEY_WEIGHT_INPUT = data_key_weight_input
         self.KEY_EDGE_IDX = data_key_edge_idx
+        self.is_parallel = is_parallel
 
         instructions = []
         irreps_mid = []
@@ -71,6 +74,10 @@ class IrrepsConvolution(nn.Module):
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         weight = self.weight_nn(data[self.KEY_WEIGHT_INPUT])
         x = data[self.KEY_X]
+        if self.is_parallel:
+            x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
+
+        # note that 1 -> src 0 -> dst
         edge_src = data[self.KEY_EDGE_IDX][1]
         edge_dst = data[self.KEY_EDGE_IDX][0]
 
@@ -80,5 +87,8 @@ class IrrepsConvolution(nn.Module):
 
         x = scatter(message, edge_dst, dim=0, dim_size=len(x))
         x.div(self.denumerator)
+        if self.is_parallel:
+            x = torch.tensor_split(x, data[KEY.NUM_ATOMS])[0]
+            # ghost x after convolution is trash
         data[self.KEY_X] = x
         return data

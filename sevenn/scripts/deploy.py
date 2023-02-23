@@ -95,8 +95,14 @@ def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
         model_list = [model_list]
 
     num_species = config[KEY.NUM_SPECIES]
-    model_list[0].prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
+    model_list[0].prepand_module('one_hot', OnehotEmbedding(
+        data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
+    model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
+        data_key_in=KEY.NODE_FEATURE_GHOST,
+        num_classes=num_species,
+        data_key_additional=None))
     # make some config need for md
+    print(model_list)
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
     # in lammps, input is chemical symbols so we need chemical_symbol->one_hot_idx
@@ -134,7 +140,7 @@ def main():
     torch.manual_seed(777)
     config = _const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG
     config[KEY.LMAX] = 2
-    config[KEY.NUM_CONVOLUTION] = 2
+    config[KEY.NUM_CONVOLUTION] = 1
     config[KEY.SHIFT] = 1.0
     config[KEY.SCALE] = 1.0
     type_map = get_type_mapper_from_specie(['Hf', 'O'])

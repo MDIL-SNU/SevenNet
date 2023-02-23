@@ -23,6 +23,7 @@ EDGE_LENGTH: Final[str] = "edge_length"        # (N_edge, 1)
 # some primary data of graph
 EDGE_IDX: Final[str] = "edge_index"            # (2, N_edge) PyG
 NODE_FEATURE: Final[str] = "x"                 # (N, ?) PyG
+NODE_FEATURE_GHOST: Final[str] = "x_ghost"
 NODE_ATTR: Final[str] = "node_attr"            # (N, N_species) from one_hot
 EDGE_ATTR: Final[str] = "edge_attr"            # (from spherical harmonics)
 EDGE_EMBEDDING: Final[str] = "edge_embedding"  # (from edge embedding)
@@ -48,6 +49,7 @@ SCALED_FORCE: Final[str] = "scaled_force"
 
 # very general data property for AtomGraphData
 NUM_ATOMS: Final[str] = "num_atoms"                # int
+NUM_GHOSTS: Final[str] = "num_ghosts"
 NUM_NLOCAL: Final[str] = "nlocal"   # only for lammps parallel
 USER_LABEL: Final[str] = "user_label"
 BATCH: Final[str] = "batch"

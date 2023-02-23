@@ -37,7 +37,8 @@ class OnehotEmbedding(nn.Module):
         inp = data[self.KEY_INPUT]
         embd = torch.nn.functional.one_hot(inp, self.num_classes)
         data[self.KEY_OUTPUT] = embd
-        data[self.KEY_ADDITIONAL] = embd
+        if self.KEY_ADDITIONAL is not None:
+            data[self.KEY_ADDITIONAL] = embd
         return data
 
 

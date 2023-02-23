@@ -8,9 +8,11 @@ from e3nn.o3 import FullTensorProduct
 from torch.nn import Sequential
 
 import sevenn.nn.node_embedding
+from sevenn.nn.ghost_control import GhostControlCat, GhostControlSplit
 from sevenn.nn.edge_embedding import EdgeEmbedding, EdgePreprocess,\
     PolynomialCutoff, BesselBasis, SphericalEncoding
-from sevenn.nn.force_output import ForceOutput, ForceOutputFromEdge
+from sevenn.nn.force_output import ForceOutput, ForceOutputFromEdge, \
+    ForceOutputFromEdgeParallel
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.nn.linear import IrrepsLinear, AtomReduce
 from sevenn.nn.self_connection import SelfConnectionIntro, SelfConnectionOutro
@@ -130,6 +132,17 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             )
         }
     )
+    if parallel:
+        layers.update(
+            {
+                "ghost_onehot_to_feature_x":
+                IrrepsLinear(
+                    irreps_in=one_hot_irreps,
+                    irreps_out=f_in_irreps,
+                    data_key_in=KEY.NODE_FEATURE_GHOST
+                )
+            }
+        )
 
     # ~~ edge feature(convoluiton filter) ~~ #
 
@@ -171,13 +184,22 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
         # note that this layer does not overwrite x, it calculates tp of in & operand
         # and save its results in somewhere to concatenate to new_x at Outro
+
         interaction_block[f"{i} self connection intro"] = \
             SelfConnectionIntro(irreps_x=irreps_x,
                                 irreps_operand=irreps_node_attr,
                                 irreps_out=irreps_for_gate_in)
 
-        interaction_block[f"{i} self interaction 1"] = \
+        interaction_block[f"{i}_self_interaction_1"] = \
             IrrepsLinear(irreps_x, irreps_x, data_key_in=KEY.NODE_FEATURE)
+
+        if parallel and i == 0:
+            interaction_block[f"ghost_{i}_self_interaction_1"] = \
+                IrrepsLinear(irreps_x, irreps_x, data_key_in=KEY.NODE_FEATURE_GHOST)
+        elif parallel and i != 0:
+            layers_idx += 1
+            layers = layers_list[layers_idx]
+            # communication from lammps here, and hidden ghost cat
 
         # convolution part, l>lmax is droped as defined in irreps_out
         interaction_block[f"{i} convolution"] = \
@@ -187,7 +209,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 irreps_out=tp_irreps_out,
                 weight_layer_input_to_hidden=weight_nn_layers,
                 weight_layer_act=act_scalar["e"],
-                denumerator=avg_num_neigh**0.5)
+                denumerator=avg_num_neigh**0.5,
+                is_parallel=parallel)
 
         # irreps of x increase to gate_irreps_in
         interaction_block[f"{i} self interaction 2"] = \
@@ -204,10 +227,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
         layers.update(interaction_block)
         irreps_x = true_irreps_out
-
-        if parallel and i != 0:
-            layers_idx += 1
-            layers = layers_list[layers_idx]
 
         # end of interaction block for-loop
 
@@ -240,6 +259,9 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 #data_key_force=KEY.PRED_FORCE,
                 data_key_energy=KEY.SCALED_ENERGY,
                 data_key_force=KEY.SCALED_FORCE,
+            ) if not parallel else ForceOutputFromEdgeParallel(
+                data_key_energy=KEY.SCALED_ENERGY,
+                data_key_force=KEY.SCALED_FORCE,
             ),
             "rescale": Scale(shift=shift, scale=scale, scale_per_atom=True)
         }
@@ -247,21 +269,30 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
     # output extraction part
     if parallel:
+        #TODO: check redundant
         return [AtomGraphSequential(v) for v in layers_list]
     else:
         return AtomGraphSequential(layers)
 
 
 def build_parallel_model(model_ori: AtomGraphSequential, config):
-
+    GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
     num_conv = config[KEY.NUM_CONVOLUTION]
-    if num_conv < 2:
-        return model_ori
 
     state_dict_ori = model_ori.state_dict()
     model_list = build_E3_equivariant_model(config, parallel=True)
+    dct_temp = {}
+    for ghost_layer_key in GHOST_LAYERS_KEYS:
+        for key, val in state_dict_ori.items():
+            if key.startswith(ghost_layer_key):
+                dct_temp.update({f"ghost_{key}": val})
+            else:
+                continue
+    state_dict_ori.update(dct_temp)
+
     for model_part in model_list:
         model_part.load_state_dict(state_dict_ori, strict=False)
+        stt = model_part.state_dict()
     return model_list
 
     """
