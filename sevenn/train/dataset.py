@@ -84,7 +84,7 @@ class AtomGraphDataset:
             if ratio > 0.5:
                 raise ValueError('Ratio must not exceed 0.5')
             data_len = len(data_list)
-            data_list = random.shuffle(data_list)
+            random.shuffle(data_list)
             n_validation = int(data_len * ratio)
             if n_validation == 0:
                 raise ValueError('ratio is too small')
