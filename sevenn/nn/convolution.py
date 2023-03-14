@@ -18,7 +18,6 @@ class IrrepsConvolution(nn.Module):
     """
     same as nequips convolution part (fig 1.d)
     """
-    # TODO: implement avg_num_neighbor normalization
     def __init__(
         self,
         irreps_x: Irreps,
@@ -88,7 +87,7 @@ class IrrepsConvolution(nn.Module):
         x = scatter(message, edge_dst, dim=0, dim_size=len(x))
         x.div(self.denumerator)
         if self.is_parallel:
-            x = torch.tensor_split(x, data[KEY.NUM_ATOMS])[0]
-            # ghost x after convolution is trash
+            # NLOCAL is # of atoms in system at 'CPU'
+            x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
         data[self.KEY_X] = x
         return data

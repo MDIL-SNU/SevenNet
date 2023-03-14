@@ -50,7 +50,7 @@ SCALED_FORCE: Final[str] = "scaled_force"
 # very general data property for AtomGraphData
 NUM_ATOMS: Final[str] = "num_atoms"                # int
 NUM_GHOSTS: Final[str] = "num_ghosts"
-NUM_NLOCAL: Final[str] = "nlocal"   # only for lammps parallel
+NLOCAL: Final[str] = "nlocal"   # only for lammps parallel, must be on cpu
 USER_LABEL: Final[str] = "user_label"
 BATCH: Final[str] = "batch"
 

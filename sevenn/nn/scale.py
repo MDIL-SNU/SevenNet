@@ -7,7 +7,7 @@ from sevenn._const import AtomGraphDataType
 
 
 #TODO: rename these confuising scale, total, peratom things
-#      SCALED_PER_ATOM_ENERGY is not per atom energy (its total energy, see AtomReduce)
+#      SCALED_PER_ATOM_ENERGY is not per atom energy (its total energy, see
 @compile_mode('script')
 class Scale(nn.Module):
     """
@@ -20,7 +20,7 @@ class Scale(nn.Module):
         scaled_energy_key: str = KEY.SCALED_PER_ATOM_ENERGY,
         scaled_force_key: str = KEY.SCALED_FORCE,
         n_atoms_key: str = KEY.NUM_ATOMS,
-        scale_per_atom: bool = False
+        scale_per_atom: bool = False,
     ):
         super().__init__()
         self.shift = shift
@@ -29,6 +29,7 @@ class Scale(nn.Module):
         self.scaled_force_key = scaled_force_key
         self.n_atoms_key = n_atoms_key
         self.scale_per_atom = scale_per_atom
+        #self.scale_only_energy = scale_only_energy
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self.scale_per_atom:  # 'un'scale atomic energy

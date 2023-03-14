@@ -116,6 +116,8 @@ def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
     md_configs.update({"chemical_symbols_to_index": chem_list})
     md_configs.update({"cutoff": str(config[KEY.CUTOFF])})
     md_configs.update({"num_species": str(config[KEY.NUM_SPECIES])})
+    md_configs.update({"shift": str(config[KEY.SHIFT])})
+    md_configs.update({"scale": str(config[KEY.SCALE])})
     md_configs.update({"model_type": config[KEY.MODEL_TYPE]})
     md_configs.update({"version": _const.SEVENN_VERSION})
     md_configs.update({"dtype": config[KEY.DTYPE]})
@@ -140,7 +142,8 @@ def main():
     torch.manual_seed(777)
     config = _const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG
     config[KEY.LMAX] = 2
-    config[KEY.NUM_CONVOLUTION] = 1
+    config[KEY.NUM_CONVOLUTION] = 2
+    config[KEY.NODE_FEATURE_MULTIPLICITY] = 8
     config[KEY.SHIFT] = 1.0
     config[KEY.SCALE] = 1.0
     type_map = get_type_mapper_from_specie(['Hf', 'O'])

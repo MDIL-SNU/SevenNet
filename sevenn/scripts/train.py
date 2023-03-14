@@ -226,7 +226,6 @@ def train(config: Dict, working_dir: str):
             pass
 
     # copy loss_hist structure
-    user_labels.append('total')
     loss_hist = trainer.loss_hist
     loss_hist_print = copy.deepcopy(loss_hist)
     for epoch in range(1, total_epoch + 1):
@@ -247,7 +246,7 @@ def train(config: Dict, working_dir: str):
                        "v_pred_F": v_pred_F, "v_ref_F": v_ref_F}
         # preprocess loss_hist, (mse -> scaled rmse)
         for data_set_key in [DataSetType.TRAIN, DataSetType.VALID]:
-            for label in user_labels:
+            for label in trainer.user_labels:
                 loss_hist_print[data_set_key][label]['energy'].append(
                     math.sqrt(loss_hist[data_set_key][label]['energy'][-1]) * scale)
                 loss_hist_print[data_set_key][label]['force'].append(

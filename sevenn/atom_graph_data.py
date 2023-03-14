@@ -7,7 +7,8 @@ import torch_geometric
 from torch_geometric.data import Data
 
 from sevenn.train.dataload import ASE_atoms_to_data
-from sevenn.nn.node_embedding import get_type_mapper_from_specie, one_hot_atom_embedding
+from sevenn.nn.node_embedding import get_type_mapper_from_specie, \
+    one_hot_atom_embedding
 import sevenn._keys as KEY
 
 

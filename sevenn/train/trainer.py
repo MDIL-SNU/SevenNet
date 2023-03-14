@@ -38,6 +38,7 @@ class Trainer():
         self.model = model.to(device)
         self.user_labels = user_labels
         self.user_labels.append('total')
+        self.user_labels = list(set(user_labels))  # unique
         self.device = device
         self.force_weight = config[KEY.FORCE_WEIGHT]
 
@@ -160,10 +161,13 @@ class Trainer():
         for key in self.user_labels:
             E_mse = np.mean(epoch_loss[key]['energy'])
             F_mse = np.mean(epoch_loss[key]['force'])
+            if key == 'total':
+                # TODO: check
+                loss_value = E_mse + self.force_weight * F_mse / 3
             self.loss_hist[set_type][key]['energy'].append(E_mse)
             self.loss_hist[set_type][key]['force'].append(F_mse)
 
-        return pred_E_set, ref_E_set, pred_F_set, ref_F_set, label_set, total_loss
+        return pred_E_set, ref_E_set, pred_F_set, ref_F_set, label_set, loss_value
 
     def get_checkpoint_dict(self):
         return {'model_state_dict': self.model.state_dict(),

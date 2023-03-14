@@ -20,6 +20,7 @@ from sevenn.nn.convolution import IrrepsConvolution
 from sevenn.nn.equivariant_gate import EquivariantGate
 from sevenn.nn.activation import ShiftedSoftPlus
 from sevenn.nn.scale import Scale
+from sevenn.nn.grads_calc import GradsCalc
 
 import sevenn._keys as KEY
 import sevenn._const as _const
@@ -198,8 +199,10 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 IrrepsLinear(irreps_x, irreps_x, data_key_in=KEY.NODE_FEATURE_GHOST)
         elif parallel and i != 0:
             layers_idx += 1
+            layers.update(interaction_block)
+            interaction_block = {}
             layers = layers_list[layers_idx]
-            # communication from lammps here, and hidden ghost cat
+            # communication from lammps here
 
         # convolution part, l>lmax is droped as defined in irreps_out
         interaction_block[f"{i} convolution"] = \
@@ -253,23 +256,28 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 data_key_out=KEY.SCALED_ENERGY,
                 #data_key_out=KEY.PRED_TOTAL_ENERGY,
                 constant=1.0,
-            ),
-            "force output": ForceOutputFromEdge(
-                #data_key_energy=KEY.PRED_TOTAL_ENERGY,
-                #data_key_force=KEY.PRED_FORCE,
-                data_key_energy=KEY.SCALED_ENERGY,
-                data_key_force=KEY.SCALED_FORCE,
-            ) if not parallel else ForceOutputFromEdgeParallel(
-                data_key_energy=KEY.SCALED_ENERGY,
-                data_key_force=KEY.SCALED_FORCE,
-            ),
-            "rescale": Scale(shift=shift, scale=scale, scale_per_atom=True)
+            )
         }
     )
+    if not parallel:
+        layers.update(
+            {
+                "force output": ForceOutputFromEdge(
+                    #data_key_energy=KEY.PRED_TOTAL_ENERGY,
+                    #data_key_force=KEY.PRED_FORCE,
+                    data_key_energy=KEY.SCALED_ENERGY,
+                    data_key_force=KEY.SCALED_FORCE,
+                ),
+                "rescale": Scale(
+                    shift=shift,
+                    scale=scale,
+                    scale_per_atom=True,
+                )
+            }
+        )
 
     # output extraction part
     if parallel:
-        #TODO: check redundant
         return [AtomGraphSequential(v) for v in layers_list]
     else:
         return AtomGraphSequential(layers)
@@ -292,25 +300,8 @@ def build_parallel_model(model_ori: AtomGraphSequential, config):
 
     for model_part in model_list:
         model_part.load_state_dict(state_dict_ori, strict=False)
-        stt = model_part.state_dict()
+        #stt = model_part.state_dict()
     return model_list
-
-    """
-    layers_list = [OrderedDict()] * num_conv
-    layers_idx = 0
-
-    for name, module in modules.items():
-        try:
-            layers_list[layers_idx][name] = deepcopy(module)
-        except:
-            print(name)
-            print(module.state_dict())
-        if name.endswith("equivariant gate") and int(name[0]) != 1:
-            # no seperation is necessary for 1st convolution layers
-            layers_idx += 1
-
-    module_list = [AtomGraphSequential(layers) for layers in layers_list]
-    """
 
 
 def main():

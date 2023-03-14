@@ -84,6 +84,7 @@ class AtomGraphDataset:
             if ratio > 0.5:
                 raise ValueError('Ratio must not exceed 0.5')
             data_len = len(data_list)
+            data_list = random.shuffle(data_list)
             n_validation = int(data_len * ratio)
             if n_validation == 0:
                 raise ValueError('ratio is too small')
@@ -106,7 +107,7 @@ class AtomGraphDataset:
                 for store, divided in zip(lists, divide(ratio, data_list)):
                     store.extend(divided)
         else:
-            lists = divide(ratio, random.shuffle(self.to_list()))
+            lists = divide(ratio, self.to_list())
 
         return tuple(AtomGraphDataset(data, metadata=self.meta) for data in lists)
 
@@ -127,7 +128,6 @@ class AtomGraphDataset:
         return self.get_per_atom_mean(KEY.ENERGY)
 
     def get_force_rmse(self, force_key=KEY.FORCE):
-        # TODO: I don't like it. cleaner way?
         force_list = []
         for x in self.to_list():
             force_list.extend(x[force_key].reshape(-1,).tolist())
