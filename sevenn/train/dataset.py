@@ -4,6 +4,7 @@ from collections import Counter
 from typing import List, Dict, Callable, Optional, Union
 
 import torch
+from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
 
@@ -113,6 +114,25 @@ class AtomGraphDataset:
 
     def to_list(self):
         return list(itertools.chain(*self.dataset.values()))
+
+    def get_natoms(self, type_map):
+        """
+        type_map: Z->one_hot_index(node_feature)
+        return Dict{label: {symbol, natom}]}
+        """
+        KEY_TO_LOOK = KEY.NODE_FEATURE
+        natoms = {}
+        species = [chemical_symbols[Z] for Z in type_map.keys()]
+        type_map_rev = {v: k for k, v in type_map.items()}
+        for label in self.user_labels:
+            data = self.dataset[label]
+            natoms[label] = {sym: 0 for sym in species}
+            for datum in data:
+                cnt = Counter(torch.argmax(datum[KEY_TO_LOOK], dim=1))
+                for k, v in cnt.items():
+                    atomic_num = type_map_rev[k.item()]
+                    natoms[label][chemical_symbols[atomic_num]] += v
+        return natoms
 
     def get_per_atom_mean(self, key, key_num_atoms=KEY.NUM_ATOMS):
         """

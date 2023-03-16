@@ -36,9 +36,9 @@ class Trainer():
     def __init__(self, model, user_labels: list, config: dict):
         device = config[KEY.DEVICE]
         self.model = model.to(device)
+        if 'Total' not in user_labels:
+            user_labels.insert(0, 'Total')  # prepand total
         self.user_labels = user_labels
-        self.user_labels.append('total')
-        self.user_labels = list(set(user_labels))  # unique
         self.device = device
         self.force_weight = config[KEY.FORCE_WEIGHT]
 

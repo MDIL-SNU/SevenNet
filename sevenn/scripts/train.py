@@ -54,7 +54,7 @@ def init_dataset_from_structure_list(data_config, working_dir):
             full_dataset.augment(dataset)
         Logger().write(f"loading {structure_list} is done\n")
         # Logger().write(f"current dataset size is :{full_dataset.len()}\n")
-        Logger().format_k_v("current dataset size is",
+        Logger().format_k_v("\ncurrent dataset size is",
                             full_dataset.len(), write=True)
 
     return full_dataset
@@ -91,7 +91,8 @@ def init_dataset(data_config, working_dir):
         if (save_dataset.startswith('.') or save_dataset.startswith('/')) is False:
             save_dataset = prefix + save_dataset  # save_data set is plain file name
         full_dataset.save(save_dataset)  # save_dataset contain user define path
-        Logger().write(f"Loaded full dataset saved to : {save_dataset}\n")
+        Logger().format_k_v("Dataset saved to", save_dataset, write=True)
+        #Logger().write(f"Loaded full dataset saved to : {save_dataset}\n")
 
     return full_dataset
 
@@ -115,6 +116,10 @@ def train(config: Dict, working_dir: str):
     try:
         dataset = init_dataset(config, working_dir)
         Logger().write("Dataset initialization was successful\n")
+        natoms = dataset.get_natoms(config[KEY.TYPE_MAP])
+
+        Logger().write("\nNumber of atoms in total dataset:\n")
+        Logger().natoms_write(natoms)
 
         # calculate shift and scale from dataset
         ignore_test = not config[KEY.USE_TESTSET]
@@ -126,18 +131,18 @@ def train(config: Dict, working_dir: str):
         Logger().write(Logger.format_k_v("test_set size", test_set.len()
                                          if test_set is not None else 0))
 
-        Logger().write("Calculating shift and scale from training set...\n")
+        Logger().write("\nCalculating shift and scale from training set...\n")
         shift, scale = train_set.shift_scale_dataset()
         config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
         valid_set.shift_scale_dataset(shift=shift, scale=scale)
-        Logger().write(f"calculated per_atom_energy mean shift is {shift} eV\n")
-        Logger().write(f"calculated force rms scale is {scale}\n")
+        Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
+        Logger().write(f"calculated force rms scale is {scale:.6f}\n")
 
         avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
         if avg_num_neigh:
             Logger().write("Calculating average number of neighbor...\n")
             avg_num_neigh = train_set.get_avg_num_neigh()
-            Logger().write(f"average number of neighbor is {avg_num_neigh}\n")
+            Logger().write(f"average number of neighbor is {avg_num_neigh:.6f}\n")
             config[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
         else:
             config[KEY.AVG_NUM_NEIGHBOR] = 1

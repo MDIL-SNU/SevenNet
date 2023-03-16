@@ -7,6 +7,9 @@ matplotlib.use('pdf')
 
 
 def draw_learning_curve(loss_hist, fname):
+    # do nothinig untill 10 epoch
+    if len(loss_hist[DataSetType.TRAIN]['total']['energy']) < 10:
+        return
     plt.clf()
 
     # cut unusually large loss at early epoch for visual

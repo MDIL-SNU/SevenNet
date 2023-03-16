@@ -161,7 +161,7 @@ class EdgeEmbedding(nn.Module):
         #r = data[KEY.EDGE_LENGTH]
         rvec = data[KEY.EDGE_VEC]
         r = torch.linalg.norm(data[KEY.EDGE_VEC], dim=-1)
-        data[KEY.EDGE_LENGTH] = r
+        data[KEY.EDGE_LENGTH] = r  # TODO: not used remove later
 
         data[KEY.EDGE_EMBEDDING] = \
             self.basis_function(r) * self.cutoff_function(r).unsqueeze(-1)

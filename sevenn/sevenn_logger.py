@@ -26,7 +26,7 @@ class Logger(metaclass=Singleton):
     """
     logger for simple gnn
     """
-    SCREEN_WIDTH = 104  # from vasp OUTCAR
+    SCREEN_WIDTH = 80  # half size of my screen
 
     def __init__(self, filename: str, screen: bool):
         self.logfile = open(filename, 'w', buffering=1)
@@ -42,14 +42,27 @@ class Logger(metaclass=Singleton):
         if self.screen:
             print(content, end='')
 
+    def natoms_write(self, natoms):
+        content = ""
+        total_natom = {}
+        for label, natom in natoms.items():
+            content += self.format_k_v(label, natom)
+            for specie, num in natom.items():
+                try:
+                    total_natom[specie] += num
+                except KeyError:
+                    total_natom[specie] = num
+        content += self.format_k_v("total", total_natom)
+        self.write(content)
+
     def epoch_write(self, loss_history, idx=-1):
-        lb_pad = 29
-        fs = 9
-        pad = 29 - fs
+        lb_pad = 21
+        fs = 6
+        pad = 21 - fs
         content = \
-            f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'F_RMSE(T)':<{pad}}".\
+            f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}".\
             format(lb_pad=lb_pad, pad=pad)\
-            + f"{'E_RMSE(V)':<{pad}}{'F_RMSE(V)':<{pad}}\n".format(pad=pad)
+            + f"{'F_RMSE(T)':<{pad}}{'F_RMSE(V)':<{pad}}\n".format(pad=pad)
         train_loss = loss_history[DataSetType.TRAIN]
         valid_loss = loss_history[DataSetType.VALID]
         label_keys = train_loss.keys()
@@ -58,27 +71,28 @@ class Logger(metaclass=Singleton):
             t_F = train_loss[label]['force'][idx]
             v_E = valid_loss[label]['energy'][idx]
             v_F = valid_loss[label]['force'][idx]
-            content += "{label:{lb_pad}}{t_E:<{pad}.{fs}f}{t_F:<{pad}.{fs}f}".\
-                format(label=label, t_E=t_E, t_F=t_F, lb_pad=lb_pad, pad=pad, fs=fs)\
-                + "{v_E:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}\n".\
-                format(v_E=v_E, v_F=v_F, pad=pad, fs=fs)
+            content += "{label:{lb_pad}}{t_E:<{pad}.{fs}f}{v_E:<{pad}.{fs}f}".\
+                format(label=label, t_E=t_E, v_E=v_E, lb_pad=lb_pad, pad=pad, fs=fs)\
+                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}\n".\
+                format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
         self.write(content)
 
     @staticmethod
     def format_k_v(key, val, write=False):
-        MAX_KEY_SIZE = 25
+        MAX_KEY_SIZE = 20
         SPERATOR = ', '
         EMPTY_PADDING = ' ' * (MAX_KEY_SIZE + 3)
+        NEW_LINE_LEN = Logger.SCREEN_WIDTH - 5
         val = str(val)
         content = f"{key:<{MAX_KEY_SIZE}}: {val}"
-        if len(content) > Logger.SCREEN_WIDTH:
+        if len(content) > NEW_LINE_LEN:
             content = f"{key:<{MAX_KEY_SIZE}}: "
             # sperate val by sperator
             val_list = val.split(SPERATOR)
             current_len = len(content)
             for val_compo in val_list:
                 current_len += len(val_compo)
-                if current_len > Logger.SCREEN_WIDTH:
+                if current_len > NEW_LINE_LEN:
                     newline_content = f"{EMPTY_PADDING}{val_compo}{SPERATOR}"
                     content += f"\\\n{newline_content}"
                     current_len = len(newline_content)

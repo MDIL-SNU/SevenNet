@@ -144,14 +144,15 @@ def main():
     config[KEY.LMAX] = 2
     config[KEY.NUM_CONVOLUTION] = 2
     config[KEY.NODE_FEATURE_MULTIPLICITY] = 8
-    config[KEY.SHIFT] = 1.0
-    config[KEY.SCALE] = 1.0
+    config[KEY.SHIFT] = -3.0
+    config[KEY.SCALE] = 1.1
     type_map = get_type_mapper_from_specie(['Hf', 'O'])
     config[KEY.TYPE_MAP] = type_map
     config[KEY.CHEMICAL_SPECIES] = ['Hf', 'O']
     config[KEY.NUM_SPECIES] = 2
     config[KEY.MODEL_TYPE] = 'E3_equivariant_model'
     config[KEY.DTYPE] = "single"
+
     model = build_E3_equivariant_model(config)
     deploy_parallel(model, config, "deployed_test")
     deploy(model, config, "deployed_ref.pt")

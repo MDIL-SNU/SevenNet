@@ -6,6 +6,10 @@ from nn.node_embedding import get_type_mapper_from_specie
 import _keys as KEY
 
 
+def test_parallel_model_inference(deployed_files, outcar):
+
+
+
 # for E3
 def test_model_inference(deployed_file, outcar):
     extra = {"chemical_symbols_to_index": "", "cutoff": "", "num_species": "",

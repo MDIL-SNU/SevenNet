@@ -200,7 +200,22 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         elif parallel and i != 0:
             layers_idx += 1
             layers.update(interaction_block)
-            interaction_block = {}
+            interaction_block = {}  # TODO: this is confusing
+            #######################################################
+            radial_basis_module, _ = init_radial_basis(model_config)
+            cutoff_function_module = init_cutoff_function(model_config)
+            interaction_block.update(
+                {
+                    "EdgeEmbedding": EdgeEmbedding(
+                        # operate on ||r||
+                        basis_module=radial_basis_module,
+                        cutoff_module=cutoff_function_module,
+                        # operate on r/||r||
+                        spherical_module=SphericalEncoding(lmax),
+                    )
+                }
+            )
+            #######################################################
             layers = layers_list[layers_idx]
             # communication from lammps here
 
