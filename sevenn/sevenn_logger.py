@@ -109,9 +109,10 @@ class Logger(metaclass=Singleton):
             Logger().write(content)
 
     def greeting(self):
-        content = f"sevenn version {_const.SEVENN_VERSION}\n"
+        content = "SEVENN: Scalable EquVariance-Enabled Neural Network\n"
+        content += f"sevenn version {_const.SEVENN_VERSION}\n"
         content += "reading yaml config..."
-        self.write(f"sevenn version {_const.SEVENN_VERSION}\n")
+        self.write(content)
 
     def bar(self):
         content = "-" * Logger.SCREEN_WIDTH + "\n"

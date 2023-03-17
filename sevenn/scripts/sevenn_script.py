@@ -29,7 +29,7 @@ def main(args=None):
     input_yaml, working_dir, screen = cmd_parse(args)
     if working_dir is None:
         working_dir = os.getcwd()
-    Logger(filename=f"{os.path.abspath(working_dir)}/sevenn.log", screen=screen)
+    Logger(filename=f"{os.path.abspath(working_dir)}/log.sevenn", screen=screen)
     Logger().greeting()
 
     try:
