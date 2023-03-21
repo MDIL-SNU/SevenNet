@@ -239,10 +239,10 @@ def train(config: Dict, working_dir: str):
         Logger().write(f"Epoch {epoch}/{total_epoch}\n")
         Logger().bar()
 
-        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_graph_set, loss = \
+        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_graph_set, _ = \
             trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
 
-        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_graph_set, _ = \
+        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_graph_set, loss = \
             trainer.run_one_epoch(valid_loader, DataSetType.VALID)
 
         info_parity = {"t_pred_E": t_pred_E, "t_ref_E": t_ref_E,
