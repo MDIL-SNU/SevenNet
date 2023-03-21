@@ -105,7 +105,6 @@ def train(config: Dict, working_dir: str):
     """
     prefix = f"{os.path.abspath(working_dir)}/"
     Logger().timer_start("total")
-
     seed = config[KEY.RANDOM_SEED]
     random.seed(seed)
     torch.manual_seed(seed)
@@ -226,23 +225,30 @@ def train(config: Dict, working_dir: str):
         if is_save_data_pickle or is_best:
             torch.save(loss_hist_print, f"{prefix}/loss_hist{suffix}.pth")
             torch.save(info_parity, f"{prefix}/parity_at{suffix}.pth")
+            torch.save(t_graph_set, f"{prefix}/train_user_label{suffix}.pth")
+            torch.save(v_graph_set, f"{prefix}/valid_user_label{suffix}.pth")
+            torch.save(t_atom_type, f"{prefix}/train_atom_type{suffix}.pth")
+            torch.save(v_atom_type, f"{prefix}/valid_atom_type{suffix}.pth")
         if draw_parity or is_best:
             #TODO: implement
             pass
 
     # copy loss_hist structure
     loss_hist = trainer.loss_hist
+    force_loss_hist_by_atom_type = trainer.force_loss_hist_by_atom_type
     loss_hist_print = copy.deepcopy(loss_hist)
+    force_loss_hist_by_atom_type_print = copy.deepcopy(force_loss_hist_by_atom_type)
+
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
         Logger().bar()
         Logger().write(f"Epoch {epoch}/{total_epoch}\n")
         Logger().bar()
 
-        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_graph_set, _ = \
+        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_graph_set, t_atom_type, _ = \
             trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
 
-        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_graph_set, loss = \
+        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_graph_set, v_atom_type, loss = \
             trainer.run_one_epoch(valid_loader, DataSetType.VALID)
 
         info_parity = {"t_pred_E": t_pred_E, "t_ref_E": t_ref_E,
@@ -256,8 +262,12 @@ def train(config: Dict, working_dir: str):
                     math.sqrt(loss_hist[data_set_key][label]['energy'][-1]) * scale)
                 loss_hist_print[data_set_key][label]['force'].append(
                     math.sqrt(loss_hist[data_set_key][label]['force'][-1]) * scale)
+            
+            for atom_type in trainer.total_atom_type:
+                force_loss_hist_by_atom_type_print[data_set_key][atom_type].append(
+                    math.sqrt(force_loss_hist_by_atom_type[data_set_key][atom_type][-1]) * scale)
 
-        Logger().epoch_write(loss_hist_print)
+        Logger().epoch_write(loss_hist_print, force_loss_hist_by_atom_type_print)
         Logger().timer_end("epoch", message=f"Epoch {epoch} elapsed")
 
         if epoch < skip_output_until:

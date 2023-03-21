@@ -23,6 +23,7 @@ def ASE_atoms_to_data(atoms, cutoff: float):
         edge_dst : index of atoms for edge dst (N(edge))
         edge_vec : vector representing edge (N(edge), 3)
         atomic_numbers : list of atomic number by index (n)
+        chemical_symbol: list of chemical symbol by index (n)
 
         * this is full neighborlist
     """
@@ -55,9 +56,10 @@ def ASE_atoms_to_data(atoms, cutoff: float):
     edge_vec = edge_vec[non_trivials]
     shift = shifts[non_trivials]
     atomic_numbers = atoms.get_atomic_numbers()
+    chemical_symbol = atoms.get_chemical_symbols()
     edge_idx = np.array([edge_src, edge_dst])
 
-    return atomic_numbers, edge_idx, edge_vec, shift, pos, cell, E, F
+    return atomic_numbers, chemical_symbol, edge_idx, edge_vec, shift, pos, cell, E, F
 
 
 def parse_structure_list(filename: str, format_outputs='vasp-out'):

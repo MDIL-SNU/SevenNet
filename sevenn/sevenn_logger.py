@@ -55,7 +55,7 @@ class Logger(metaclass=Singleton):
         content += self.format_k_v("total", total_natom)
         self.write(content)
 
-    def epoch_write(self, loss_history, idx=-1):
+    def epoch_write(self, loss_history, force_loss_hist_by_atom_type, idx=-1):
         lb_pad = 21
         fs = 6
         pad = 21 - fs
@@ -73,6 +73,18 @@ class Logger(metaclass=Singleton):
             v_F = valid_loss[label]['force'][idx]
             content += "{label:{lb_pad}}{t_E:<{pad}.{fs}f}{v_E:<{pad}.{fs}f}".\
                 format(label=label, t_E=t_E, v_E=v_E, lb_pad=lb_pad, pad=pad, fs=fs)\
+                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}\n".\
+                format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
+        
+        train_loss = force_loss_hist_by_atom_type[DataSetType.TRAIN]
+        valid_loss = force_loss_hist_by_atom_type[DataSetType.VALID]
+
+        total_atom_type = train_loss.keys()
+        for atom_type in total_atom_type:
+            t_F = train_loss[atom_type][idx]
+            v_F = valid_loss[atom_type][idx]
+            content += "{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}".\
+                format(label=atom_type, t_E='------', v_E='------', lb_pad=lb_pad, pad=pad, fs=fs)\
                 + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}\n".\
                 format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
         self.write(content)

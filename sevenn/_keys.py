@@ -12,6 +12,7 @@ from typing import Final
 #==================================================#
 # some raw properties of graph
 ATOMIC_NUMBERS: Final[str] = "atomic_numbers"  # (N)
+CHEMICAL_SYMBOL: Final[str] = "chemical_symbol" # (N)
 POS: Final[str] = "pos"                        # (N, 3) PyG
 CELL: Final[str] = "cell_lattice_vectors"      # (3, 3)
 CELL_SHIFT: Final[str] = "pbc_shift"           # (N, 3)

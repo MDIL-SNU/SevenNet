@@ -62,7 +62,7 @@ class AtomGraphData(torch_geometric.data.Data):
         Returns:
             AtomGraphData for E3_equivariant_model
         """
-        atomic_numbers, edge_idx, edge_vec, \
+        atomic_numbers, chemical_symbol, edge_idx, edge_vec, \
             shift, pos, cell, E, F = ASE_atoms_to_data(atoms, cutoff)
         edge_vec = torch.Tensor(edge_vec)
         edge_vec.requires_grad_(True)
@@ -80,6 +80,7 @@ class AtomGraphData(torch_geometric.data.Data):
 
         avg_num_neigh = np.average(np.unique(edge_idx[0], return_counts=True)[1])
         data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
+        data[KEY.CHEMICAL_SYMBOL] = chemical_symbol
         return data
 
     def to_dict(self):
