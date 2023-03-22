@@ -16,6 +16,7 @@ CHEMICAL_SYMBOL: Final[str] = "chemical_symbol" # (N)
 POS: Final[str] = "pos"                        # (N, 3) PyG
 CELL: Final[str] = "cell_lattice_vectors"      # (3, 3)
 CELL_SHIFT: Final[str] = "pbc_shift"           # (N, 3)
+CELL_VOLUME: Final[str] = "cell_volume"
 AVG_NUM_NEIGHBOR: Final[str] = "avg_num_neighbor"  # float
 
 EDGE_VEC: Final[str] = "edge_vec"              # (N_edge, 3)
@@ -32,9 +33,11 @@ EDGE_EMBEDDING: Final[str] = "edge_embedding"  # (from edge embedding)
 # inputs of loss fuction
 ENERGY: Final[str] = "total_energy"            # (1)
 FORCE: Final[str] = "force_of_atoms"           # (N, 3)
+STRESS: Final[str] = "stress"                  # (6)
 # exist for training
 REF_SCALED_PER_ATOM_ENERGY: Final[str] = "reference_scaled_per_atom_energy"
 REF_SCALED_FORCE: Final[str] = "reference_scaled_force"
+REF_SCALED_STRESS: Final[str] = "reference_scaled_stress"
 
 # general outputs of models
 ATOMIC_ENERGY: Final[str] = "inferred_atomic_energy"
@@ -47,6 +50,8 @@ SCALED_PER_ATOM_ENERGY: Final[str] = "scaled_per_atom_energy"
 
 PRED_FORCE: Final[str] = "inferred_force"
 SCALED_FORCE: Final[str] = "scaled_force"
+
+SCALED_STRESS: Final[str] = "scaled_stress"
 
 # very general data property for AtomGraphData
 NUM_ATOMS: Final[str] = "num_atoms"                # int
@@ -76,8 +81,12 @@ OPTIM_PARAM: Final[str] = 'optim_param'
 SCHEDULER: Final[str] = "scheduler"
 SCHEDULER_PARAM: Final[str] = 'scheduler_param'
 FORCE_WEIGHT: Final[str] = 'force_loss_weight'
+STRESS_WEIGHT: Final[str] = 'stress_loss_weight'
 DEVICE: Final[str] = "device"
 DTYPE: Final[str] = "dtype"
+
+IS_TRACE_STRESS: Final[str] = "is_trace_stress"
+IS_TRAIN_STRESS: Final[str] = "is_train_stress"
 
 CONTINUE: Final[str] = "continue"
 

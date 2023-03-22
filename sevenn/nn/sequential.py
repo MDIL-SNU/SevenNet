@@ -33,6 +33,13 @@ class AtomGraphSequential(nn.Sequential):
     def prepand_module(self, key: str, module: nn.Module):
         self._modules.update({key: module})
         self._modules.move_to_end(key, last=False)
+    
+    def replace_module(self, key: str, module: nn.Module):
+        self._modules.update({key: module})
+    
+    def delete_module_by_key(self, key: str):
+        if key in self._modules.keys():
+            del self._modules[key]
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         for module in self:

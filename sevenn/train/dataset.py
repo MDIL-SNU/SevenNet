@@ -170,7 +170,8 @@ class AtomGraphDataset:
                             shift: Optional[float] = None,
                             scale: Optional[float] = None,
                             per_atom_energy_store_key=KEY.REF_SCALED_PER_ATOM_ENERGY,
-                            force_store_key=KEY.REF_SCALED_FORCE):
+                            force_store_key=KEY.REF_SCALED_FORCE,
+                            stress_store_key=KEY.REF_SCALED_STRESS):
         """
         shift and scale 'per atom energy' by (E - shift) / scale
         scale force by F / scale
@@ -188,6 +189,7 @@ class AtomGraphDataset:
                 per_atom_energy = data[KEY.ENERGY] / data[KEY.NUM_ATOMS]
                 data[per_atom_energy_store_key] = (per_atom_energy - shift) / scale
                 data[force_store_key] = data[KEY.FORCE] / scale
+                data[stress_store_key] = data[KEY.STRESS] / scale
         return shift, scale
 
     def augment(self, dataset, validator: Optional[Callable] = None):

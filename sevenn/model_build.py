@@ -12,7 +12,7 @@ from sevenn.nn.ghost_control import GhostControlCat, GhostControlSplit
 from sevenn.nn.edge_embedding import EdgeEmbedding, EdgePreprocess,\
     PolynomialCutoff, BesselBasis, SphericalEncoding
 from sevenn.nn.force_output import ForceOutput, ForceOutputFromEdge, \
-    ForceOutputFromEdgeParallel
+    ForceOutputFromEdgeParallel, ForceStressOutput
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.nn.linear import IrrepsLinear, AtomReduce
 from sevenn.nn.self_connection import SelfConnectionIntro, SelfConnectionOutro
@@ -75,6 +75,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     lmax = model_config[KEY.LMAX]
     num_convolution_layer = model_config[KEY.NUM_CONVOLUTION]
     is_parity = model_config[KEY.IS_PARITY]  # boolean
+    is_stress = (model_config[KEY.IS_TRACE_STRESS] or model_config[KEY.IS_TRAIN_STRESS])
     num_species = model_config[KEY.NUM_SPECIES]
     irreps_spherical_harm = Irreps.spherical_harmonics(lmax, -1 if is_parity else 1)
     if parallel:
@@ -109,10 +110,16 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         # operate on r/||r||
         spherical_module=SphericalEncoding(lmax),
     )
+    if is_stress:
+        layers.update(
+            {
+                # simple edge preprocessor module with no param
+                "EdgePreprocess": EdgePreprocess(is_stress),
+            }
+        )
+
     layers.update(
         {
-            # simple edge preprocessor module with no param
-            #"EdgePreprocess": EdgePreprocess(),
             # 'Not' simple edge embedding module
             "EdgeEbmedding": edge_embedding,
         }
@@ -275,14 +282,10 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         }
     )
     if not parallel:
+        gradient_module = ForceStressOutput() if is_stress else ForceOutputFromEdge()
         layers.update(
             {
-                "force output": ForceOutputFromEdge(
-                    #data_key_energy=KEY.PRED_TOTAL_ENERGY,
-                    #data_key_force=KEY.PRED_FORCE,
-                    data_key_energy=KEY.SCALED_ENERGY,
-                    data_key_force=KEY.SCALED_FORCE,
-                ),
+                "force output": gradient_module,
                 "rescale": Scale(
                     shift=shift,
                     scale=scale,

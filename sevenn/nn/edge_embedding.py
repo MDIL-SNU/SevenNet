@@ -21,23 +21,41 @@ class EdgePreprocess(nn.Module):
 
     initialize edge_vec and edge_length
     from pos & edge_index & cell & cell_shift
+
+    Only used for stress training and deleted in deploy.
     """
-    def __init__(self):
+    def __init__(self, is_stress):
         super().__init__()
         # controlled by the upper most wrapper 'AtomGraphSequential'
+        self.is_stress = is_stress
         self._is_batch_data = True
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         cell = data[KEY.CELL].view(-1, 3, 3)
         cell_shift = data[KEY.CELL_SHIFT]
+        batch = data[KEY.BATCH]
         pos = data[KEY.POS]
+
+        num_batch = int(batch.max().cpu().item()) + 1
+
+        if self._is_batch_data:  # Only for training mode
+            if self.is_stress:
+                strain = torch.zeros((num_batch, 3, 3), dtype=pos.dtype, device=pos.device,)
+                strain.requires_grad_(True)
+                data["_strain"] = strain
+
+                sym_strain = 0.5 * (strain + strain.transpose(-1, -2))
+
+                pos = pos + torch.bmm(pos.unsqueeze(-2), sym_strain[batch]).squeeze(-2)
+
+                cell = cell + torch.bmm(cell, sym_strain)
+
         idx_src = data[KEY.EDGE_IDX][0]
         idx_dst = data[KEY.EDGE_IDX][1]
 
         edge_vec = pos[idx_dst] - pos[idx_src]
 
         if self._is_batch_data:
-            batch = data[KEY.BATCH]
             edge_vec = edge_vec + torch.einsum(
                 "ni,nij->nj", cell_shift, cell[batch[idx_src]]
             )

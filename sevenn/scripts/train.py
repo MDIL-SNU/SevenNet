@@ -218,6 +218,7 @@ def train(config: Dict, working_dir: str):
             # deploy_from_compiled(trainer.model,
             #                      config, f"{prefix}/deployed_model{suffix}.pt")
             deploy(trainer.model, config, f"{prefix}/deployed_model{suffix}.pt")
+            torch.save(trainer.model.state_dict(), f"{prefix}/stress_debug_model{suffix}.pt")  # Remove after debugging
         if is_model_check_point or is_best:
             checkpoint = trainer.get_checkpoint_dict()
             checkpoint.update({'config': config, 'epoch': epoch})
@@ -239,22 +240,27 @@ def train(config: Dict, working_dir: str):
     loss_hist_print = copy.deepcopy(loss_hist)
     force_loss_hist_by_atom_type_print = copy.deepcopy(force_loss_hist_by_atom_type)
 
+    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
+
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
         Logger().bar()
         Logger().write(f"Epoch {epoch}/{total_epoch}\n")
         Logger().bar()
 
-        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_graph_set, t_atom_type, _ = \
+        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_pred_S, t_ref_S, t_graph_set, t_atom_type, _ = \
             trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
 
-        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_graph_set, v_atom_type, loss = \
+        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_pred_S, v_ref_S, v_graph_set, v_atom_type, loss = \
             trainer.run_one_epoch(valid_loader, DataSetType.VALID)
 
         info_parity = {"t_pred_E": t_pred_E, "t_ref_E": t_ref_E,
                        "t_pred_F": t_pred_F, "t_ref_F": t_ref_F,
                        "v_pred_E": v_pred_E, "v_ref_E": v_ref_E,
                        "v_pred_F": v_pred_F, "v_ref_F": v_ref_F}
+        if is_stress:
+            info_parity.update({"t_pred_S": t_pred_S, "t_ref_S": t_ref_S,
+                                "v_pred_S": v_pred_S, "v_ref_S": v_ref_S,})
         # preprocess loss_hist, (mse -> scaled rmse)
         for data_set_key in [DataSetType.TRAIN, DataSetType.VALID]:
             for label in trainer.user_labels:
@@ -262,12 +268,16 @@ def train(config: Dict, working_dir: str):
                     math.sqrt(loss_hist[data_set_key][label]['energy'][-1]) * scale)
                 loss_hist_print[data_set_key][label]['force'].append(
                     math.sqrt(loss_hist[data_set_key][label]['force'][-1]) * scale)
+                
+                if is_stress:
+                    loss_hist_print[data_set_key][label]['stress'].append(
+                        math.sqrt(loss_hist[data_set_key][label]['stress'][-1]) * scale)
             
             for atom_type in trainer.total_atom_type:
                 force_loss_hist_by_atom_type_print[data_set_key][atom_type].append(
                     math.sqrt(force_loss_hist_by_atom_type[data_set_key][atom_type][-1]) * scale)
 
-        Logger().epoch_write(loss_hist_print, force_loss_hist_by_atom_type_print)
+        Logger().epoch_write(loss_hist_print, force_loss_hist_by_atom_type_print, is_stress)
         Logger().timer_end("epoch", message=f"Epoch {epoch} elapsed")
 
         if epoch < skip_output_until:

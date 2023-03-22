@@ -35,6 +35,7 @@ class AtomGraphData(torch_geometric.data.Data):
         edge_attr=None,
         y_energy=None,
         y_force=None,
+        y_stress=None,
         edge_vec=None,
         init_node_attr=True,
     ):
@@ -46,6 +47,7 @@ class AtomGraphData(torch_geometric.data.Data):
         )
         self[KEY.ENERGY] = y_energy
         self[KEY.FORCE] = y_force
+        self[KEY.STRESS] = y_stress
         self[KEY.EDGE_VEC] = edge_vec
         if init_node_attr:
             self[KEY.NODE_ATTR] = x
@@ -63,17 +65,31 @@ class AtomGraphData(torch_geometric.data.Data):
             AtomGraphData for E3_equivariant_model
         """
         atomic_numbers, chemical_symbol, edge_idx, edge_vec, \
-            shift, pos, cell, E, F = ASE_atoms_to_data(atoms, cutoff)
+            shift, pos, cell, E, F, S = ASE_atoms_to_data(atoms, cutoff)
         edge_vec = torch.Tensor(edge_vec)
-        edge_vec.requires_grad_(True)
+        #edge_vec.requires_grad_(True)
         edge_idx = torch.LongTensor(edge_idx)
         pos = torch.Tensor(pos)
+        pos.requires_grad_(True)
         F = torch.Tensor(F)
+        S = torch.Tensor(np.array(S))
+
+        cell = torch.Tensor(np.array(cell))
+        shift = torch.Tensor(np.array(shift))
 
         embd = one_hot_atom_embedding(atomic_numbers, type_map)
         data = AtomGraphData(embd, edge_idx, pos,
-                             y_energy=E, y_force=F,
+                             y_energy=E, y_force=F, y_stress=S,
                              edge_vec=edge_vec, init_node_attr=True)
+
+        data[KEY.CELL] = cell
+        data[KEY.CELL_SHIFT] = shift
+        volume = torch.einsum(
+                    "i,i",
+                    cell[0, :],
+                    torch.cross(cell[1, :], cell[2, :])
+                )
+        data[KEY.CELL_VOLUME] = volume
 
         data[KEY.NUM_ATOMS] = len(pos)
         data.num_nodes = data[KEY.NUM_ATOMS]  # for general perpose

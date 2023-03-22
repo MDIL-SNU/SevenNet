@@ -26,7 +26,7 @@ class Logger(metaclass=Singleton):
     """
     logger for simple gnn
     """
-    SCREEN_WIDTH = 80  # half size of my screen
+    SCREEN_WIDTH = 120  # half size of my screen
 
     def __init__(self, filename: str, screen: bool):
         self.logfile = open(filename, 'w', buffering=1)
@@ -55,14 +55,18 @@ class Logger(metaclass=Singleton):
         content += self.format_k_v("total", total_natom)
         self.write(content)
 
-    def epoch_write(self, loss_history, force_loss_hist_by_atom_type, idx=-1):
+    def epoch_write(self, loss_history, force_loss_hist_by_atom_type, is_stress, idx=-1):
         lb_pad = 21
         fs = 6
         pad = 21 - fs
         content = \
             f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}".\
             format(lb_pad=lb_pad, pad=pad)\
-            + f"{'F_RMSE(T)':<{pad}}{'F_RMSE(V)':<{pad}}\n".format(pad=pad)
+            + f"{'F_RMSE(T)':<{pad}}{'F_RMSE(V)':<{pad}}".format(pad=pad)
+        if is_stress:
+            content += f"{'S_RMSE(T)':<{pad}}{'S_RMSE(V)':<{pad}}".format(pad=pad)
+
+        content += "\n"
         train_loss = loss_history[DataSetType.TRAIN]
         valid_loss = loss_history[DataSetType.VALID]
         label_keys = train_loss.keys()
@@ -73,8 +77,15 @@ class Logger(metaclass=Singleton):
             v_F = valid_loss[label]['force'][idx]
             content += "{label:{lb_pad}}{t_E:<{pad}.{fs}f}{v_E:<{pad}.{fs}f}".\
                 format(label=label, t_E=t_E, v_E=v_E, lb_pad=lb_pad, pad=pad, fs=fs)\
-                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}\n".\
+                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}".\
                 format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
+            if is_stress:
+                t_S = train_loss[label]['stress'][idx]
+                v_S = valid_loss[label]['stress'][idx]
+                content += "{t_S:<{pad}.{fs}f}{v_S:<{pad}.{fs}f}".\
+                    format(t_S=t_S, v_S=v_S, pad=pad, fs=fs)
+
+            content += "\n"
         
         train_loss = force_loss_hist_by_atom_type[DataSetType.TRAIN]
         valid_loss = force_loss_hist_by_atom_type[DataSetType.VALID]
@@ -85,8 +96,12 @@ class Logger(metaclass=Singleton):
             v_F = valid_loss[atom_type][idx]
             content += "{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}".\
                 format(label=atom_type, t_E='------', v_E='------', lb_pad=lb_pad, pad=pad, fs=fs)\
-                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}\n".\
+                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}".\
                 format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
+            if is_stress:
+                content += "{t_S:<{pad}.{fs}s}{v_S:<{pad}.{fs}s}".\
+                    format(t_S='------', v_S='------', pad=pad, fs=fs)
+            content += "\n"
         self.write(content)
 
     @staticmethod
