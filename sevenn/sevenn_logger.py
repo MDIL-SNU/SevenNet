@@ -26,7 +26,7 @@ class Logger(metaclass=Singleton):
     """
     logger for simple gnn
     """
-    SCREEN_WIDTH = 120  # half size of my screen
+    SCREEN_WIDTH = 120  # half size of my screen / changed due to stress output
 
     def __init__(self, filename: str, screen: bool):
         self.logfile = open(filename, 'w', buffering=1)

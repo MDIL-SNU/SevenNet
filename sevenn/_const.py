@@ -122,7 +122,7 @@ MODEL_CONFIG_CONDITION = {
 
 DATA_CONFIG_CONDITION = {
     KEY.DTYPE: lambda x: x.lower() in ["single", "double"],
-    KEY.FORMAT_OUTPUTS: lambda x: x in ["vasp-out"],
+    KEY.FORMAT_OUTPUTS: lambda x: x in ["vasp-out", "vasp", "vasp-xdatcar"],
     KEY.SAVE_DATASET: None,
     KEY.RATIO: lambda x: type(x) is float and x > 0.0 and x < 0.5,
     KEY.BATCH_SIZE: is_positive,

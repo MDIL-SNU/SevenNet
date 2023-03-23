@@ -23,7 +23,7 @@ from sevenn.sevenn_logger import Logger
 import sevenn._keys as KEY
 
 
-def init_dataset_from_structure_list(data_config, working_dir):
+def init_dataset_from_structure_list(data_config, is_stress, inference=False):
     cutoff = data_config[KEY.CUTOFF]
     # chemical_species = data_config[KEY.CHEMICAL_SPECIES]
     format_outputs = data_config[KEY.FORMAT_OUTPUTS]
@@ -34,7 +34,10 @@ def init_dataset_from_structure_list(data_config, working_dir):
 
     if model_type == 'E3_equivariant_model':
         def preprocessor(x):
-            return AtomGraphData.data_for_E3_equivariant_model(x, cutoff, type_map)
+            if inference:  # This is only for debugging
+                return AtomGraphData.poscar_for_E3_equivariant_model(x, cutoff, type_map, is_stress)
+            else:
+                return AtomGraphData.data_for_E3_equivariant_model(x, cutoff, type_map, is_stress)
     elif model_type == 'new awesome model':
         pass
     else:
@@ -60,12 +63,12 @@ def init_dataset_from_structure_list(data_config, working_dir):
     return full_dataset
 
 
-def init_dataset(data_config, working_dir):
+def init_dataset(data_config, working_dir, is_stress, inference=False):
     full_dataset = None
 
     if data_config[KEY.STRUCTURE_LIST] is not False:
         Logger().write("Loading dataset from structure lists\n")
-        full_dataset = init_dataset_from_structure_list(data_config, working_dir)
+        full_dataset = init_dataset_from_structure_list(data_config, is_stress, inference)
 
     if data_config[KEY.LOAD_DATASET] is not False:
         load_dataset = data_config[KEY.LOAD_DATASET]
@@ -109,11 +112,12 @@ def train(config: Dict, working_dir: str):
     random.seed(seed)
     torch.manual_seed(seed)
     device = config[KEY.DEVICE]
+    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
 
     # load data set
     Logger().write("\nInitializing dataset...\n")
     try:
-        dataset = init_dataset(config, working_dir)
+        dataset = init_dataset(config, working_dir, is_stress)
         Logger().write("Dataset initialization was successful\n")
         natoms = dataset.get_natoms(config[KEY.TYPE_MAP])
 
@@ -218,7 +222,6 @@ def train(config: Dict, working_dir: str):
             # deploy_from_compiled(trainer.model,
             #                      config, f"{prefix}/deployed_model{suffix}.pt")
             deploy(trainer.model, config, f"{prefix}/deployed_model{suffix}.pt")
-            torch.save(trainer.model.state_dict(), f"{prefix}/stress_debug_model{suffix}.pt")  # Remove after debugging
         if is_model_check_point or is_best:
             checkpoint = trainer.get_checkpoint_dict()
             checkpoint.update({'config': config, 'epoch': epoch})
@@ -239,8 +242,6 @@ def train(config: Dict, working_dir: str):
     force_loss_hist_by_atom_type = trainer.force_loss_hist_by_atom_type
     loss_hist_print = copy.deepcopy(loss_hist)
     force_loss_hist_by_atom_type_print = copy.deepcopy(force_loss_hist_by_atom_type)
-
-    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
 
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
@@ -292,3 +293,39 @@ def train(config: Dict, working_dir: str):
             Logger().write(f"output written at epoch: {epoch}\n")
     # deploy(best_model, config, f'{prefix}/deployed_model.pt')
     Logger().timer_end("total", message="Total wall time")
+
+
+def inference_poscar(config: Dict, working_dir: str):  # This is only for debugging
+    prefix = f"{os.path.abspath(working_dir)}/"
+    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
+    device = config[KEY.DEVICE]
+
+    dataset = init_dataset(config, working_dir, is_stress, True)
+
+    loader = DataLoader(dataset.to_list(), 1, shuffle=False)
+
+    checkpoint = torch.load('checkpoint_20.pth')
+    old_config = checkpoint['config']
+
+    config.update({KEY.SHIFT: old_config[KEY.SHIFT], KEY.SCALE: old_config[KEY.SCALE], KEY.AVG_NUM_NEIGHBOR: old_config[KEY.AVG_NUM_NEIGHBOR]})
+
+    for key, value in old_config.items():
+        if key not in config.keys():
+            print(f'{key} does not exist')
+        elif config[key] != value:
+            print(f'{key} is updated')
+    
+    model = build_E3_equivariant_model(config)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.to(device)
+
+    for idx, data in enumerate(loader):
+        data.to(device)
+
+        result = model(data)
+
+        if idx == 0:
+            print(result[KEY.PRED_TOTAL_ENERGY])
+            print(result[KEY.PRED_FORCE])
+            print(result[KEY.SCALED_STRESS])
+            break
