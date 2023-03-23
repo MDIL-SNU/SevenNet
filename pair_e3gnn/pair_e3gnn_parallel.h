@@ -34,8 +34,8 @@ namespace LAMMPS_NS{
       float scale;
       std::vector<torch::jit::Module> model_list;
       torch::Device device = torch::kCPU;
-      int nelements;
 
+      int x_dim;
       torch::Tensor x_local; // transient x before comm, in backprop stage, it becomes dE_dx(grads_output)
       torch::Tensor x_ghost; // transient x after comm, in backprop stage, it becomes dE_dx_ghost
 
@@ -43,10 +43,6 @@ namespace LAMMPS_NS{
       int nmax;
       double* buf_hold;
 
-      /*
-      int nmax;
-      double* x_hold;
-      */
       int* tag_to_graph_idx_ptr=nullptr;
 
     public:
