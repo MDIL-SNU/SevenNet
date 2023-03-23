@@ -23,7 +23,7 @@ from sevenn.sevenn_logger import Logger
 import sevenn._keys as KEY
 
 
-def init_dataset_from_structure_list(data_config, working_dir):
+def init_dataset_from_structure_list(data_config, is_stress, inference=False):
     cutoff = data_config[KEY.CUTOFF]
     # chemical_species = data_config[KEY.CHEMICAL_SPECIES]
     format_outputs = data_config[KEY.FORMAT_OUTPUTS]
@@ -34,7 +34,10 @@ def init_dataset_from_structure_list(data_config, working_dir):
 
     if model_type == 'E3_equivariant_model':
         def preprocessor(x):
-            return AtomGraphData.data_for_E3_equivariant_model(x, cutoff, type_map)
+            if inference:  # This is only for debugging
+                return AtomGraphData.poscar_for_E3_equivariant_model(x, cutoff, type_map, is_stress)
+            else:
+                return AtomGraphData.data_for_E3_equivariant_model(x, cutoff, type_map, is_stress)
     elif model_type == 'new awesome model':
         pass
     else:
@@ -60,12 +63,12 @@ def init_dataset_from_structure_list(data_config, working_dir):
     return full_dataset
 
 
-def init_dataset(data_config, working_dir):
+def init_dataset(data_config, working_dir, is_stress, inference=False):
     full_dataset = None
 
     if data_config[KEY.STRUCTURE_LIST] is not False:
         Logger().write("Loading dataset from structure lists\n")
-        full_dataset = init_dataset_from_structure_list(data_config, working_dir)
+        full_dataset = init_dataset_from_structure_list(data_config, is_stress, inference)
 
     if data_config[KEY.LOAD_DATASET] is not False:
         load_dataset = data_config[KEY.LOAD_DATASET]
@@ -109,11 +112,12 @@ def train(config: Dict, working_dir: str):
     random.seed(seed)
     torch.manual_seed(seed)
     device = config[KEY.DEVICE]
+    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
 
     # load data set
     Logger().write("\nInitializing dataset...\n")
     try:
-        dataset = init_dataset(config, working_dir)
+        dataset = init_dataset(config, working_dir, is_stress)
         Logger().write("Dataset initialization was successful\n")
         natoms = dataset.get_natoms(config[KEY.TYPE_MAP])
 
@@ -245,16 +249,19 @@ def train(config: Dict, working_dir: str):
         Logger().write(f"Epoch {epoch}/{total_epoch}\n")
         Logger().bar()
 
-        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_graph_set, t_atom_type, _ = \
+        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_pred_S, t_ref_S, t_graph_set, t_atom_type, _ = \
             trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
 
-        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_graph_set, v_atom_type, loss = \
+        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_pred_S, v_ref_S, v_graph_set, v_atom_type, loss = \
             trainer.run_one_epoch(valid_loader, DataSetType.VALID)
 
         info_parity = {"t_pred_E": t_pred_E, "t_ref_E": t_ref_E,
                        "t_pred_F": t_pred_F, "t_ref_F": t_ref_F,
                        "v_pred_E": v_pred_E, "v_ref_E": v_ref_E,
                        "v_pred_F": v_pred_F, "v_ref_F": v_ref_F}
+        if is_stress:
+            info_parity.update({"t_pred_S": t_pred_S, "t_ref_S": t_ref_S,
+                                "v_pred_S": v_pred_S, "v_ref_S": v_ref_S,})
         # preprocess loss_hist, (mse -> scaled rmse)
         for data_set_key in [DataSetType.TRAIN, DataSetType.VALID]:
             for label in trainer.user_labels:
@@ -262,12 +269,16 @@ def train(config: Dict, working_dir: str):
                     math.sqrt(loss_hist[data_set_key][label]['energy'][-1]) * scale)
                 loss_hist_print[data_set_key][label]['force'].append(
                     math.sqrt(loss_hist[data_set_key][label]['force'][-1]) * scale)
+                
+                if is_stress:
+                    loss_hist_print[data_set_key][label]['stress'].append(
+                        math.sqrt(loss_hist[data_set_key][label]['stress'][-1]) * scale)
             
             for atom_type in trainer.total_atom_type:
                 force_loss_hist_by_atom_type_print[data_set_key][atom_type].append(
                     math.sqrt(force_loss_hist_by_atom_type[data_set_key][atom_type][-1]) * scale)
 
-        Logger().epoch_write(loss_hist_print, force_loss_hist_by_atom_type_print)
+        Logger().epoch_write(loss_hist_print, force_loss_hist_by_atom_type_print, is_stress)
         Logger().timer_end("epoch", message=f"Epoch {epoch} elapsed")
 
         if epoch < skip_output_until:
@@ -282,3 +293,39 @@ def train(config: Dict, working_dir: str):
             Logger().write(f"output written at epoch: {epoch}\n")
     # deploy(best_model, config, f'{prefix}/deployed_model.pt')
     Logger().timer_end("total", message="Total wall time")
+
+
+def inference_poscar(config: Dict, working_dir: str):  # This is only for debugging
+    prefix = f"{os.path.abspath(working_dir)}/"
+    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
+    device = config[KEY.DEVICE]
+
+    dataset = init_dataset(config, working_dir, is_stress, True)
+
+    loader = DataLoader(dataset.to_list(), 1, shuffle=False)
+
+    checkpoint = torch.load('checkpoint_20.pth')
+    old_config = checkpoint['config']
+
+    config.update({KEY.SHIFT: old_config[KEY.SHIFT], KEY.SCALE: old_config[KEY.SCALE], KEY.AVG_NUM_NEIGHBOR: old_config[KEY.AVG_NUM_NEIGHBOR]})
+
+    for key, value in old_config.items():
+        if key not in config.keys():
+            print(f'{key} does not exist')
+        elif config[key] != value:
+            print(f'{key} is updated')
+    
+    model = build_E3_equivariant_model(config)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    model.to(device)
+
+    for idx, data in enumerate(loader):
+        data.to(device)
+
+        result = model(data)
+
+        if idx == 0:
+            print(result[KEY.PRED_TOTAL_ENERGY])
+            print(result[KEY.PRED_FORCE])
+            print(result[KEY.SCALED_STRESS])
+            break

@@ -32,8 +32,8 @@ def ASE_atoms_to_data(atoms, cutoff: float):
     E = atoms.get_potential_energy(force_consistent=True)
     F = atoms.get_forces()
     # xx yy zz xy yz zx order
-    S = -1 * atoms.get_stress() / units.GPa * 10
-    S = S[[0, 1, 2, 5, 3, 4]]
+    S = -1 * atoms.get_stress()  # units of eV/$\AA^{3}$
+    S = [S[[0, 1, 2, 5, 3, 4]]]
 
     cutoffs = np.full(len(atoms), cutoff)
     pos = atoms.get_positions()
@@ -59,7 +59,36 @@ def ASE_atoms_to_data(atoms, cutoff: float):
     chemical_symbol = atoms.get_chemical_symbols()
     edge_idx = np.array([edge_src, edge_dst])
 
-    return atomic_numbers, chemical_symbol, edge_idx, edge_vec, shift, pos, cell, E, F
+    return atomic_numbers, chemical_symbol, edge_idx, edge_vec, shift, pos, cell, E, F, S
+
+
+def poscar_ASE_atoms_to_data(atoms, cutoff: float):  # This is only for debugging
+
+    cutoffs = np.full(len(atoms), cutoff)
+    pos = atoms.get_positions()
+    cell = atoms.get_cell()
+    edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
+        "ijDS", atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
+    )
+
+    # trivial : src == dst and not crossing pbc
+    # nontirivial_self_interatction : src == dst but cross pbc
+    # below is for eliminate trivial ones
+
+    is_zero_idx = np.all(edge_vec == 0, axis=1)
+    is_self_idx = edge_src == edge_dst
+    non_trivials = ~(is_zero_idx & is_self_idx)
+
+    # 'x' of data
+    edge_src = edge_src[non_trivials]
+    edge_dst = edge_dst[non_trivials]
+    edge_vec = edge_vec[non_trivials]
+    shift = shifts[non_trivials]
+    atomic_numbers = atoms.get_atomic_numbers()
+    chemical_symbol = atoms.get_chemical_symbols()
+    edge_idx = np.array([edge_src, edge_dst])
+
+    return atomic_numbers, chemical_symbol, edge_idx, edge_vec, shift, pos, cell
 
 
 def parse_structure_list(filename: str, format_outputs='vasp-out'):

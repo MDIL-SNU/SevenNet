@@ -97,8 +97,8 @@ class ForceOutput(nn.Module):
     def __init__(
         self,
         data_key_pos: str = KEY.POS,
-        data_key_energy: str = KEY.PRED_TOTAL_ENERGY,
-        data_key_force: str = KEY.PRED_FORCE,
+        data_key_energy: str = KEY.SCALED_ENERGY,
+        data_key_force: str = KEY.SCALED_FORCE,
     ):
         super().__init__()
         self.KEY_POS = data_key_pos
@@ -117,3 +117,41 @@ class ForceOutput(nn.Module):
             data[self.KEY_FORCE] = torch.neg(grad)
         return data
 
+
+@compile_mode('script')
+class ForceStressOutput(nn.Module):
+
+    def __init__(
+        self,
+        data_key_pos: str = KEY.POS,
+        data_key_energy: str = KEY.SCALED_ENERGY,
+        data_key_force: str = KEY.SCALED_FORCE,
+        data_key_stress: str = KEY.SCALED_STRESS
+    ):
+
+        super().__init__()
+        self.KEY_POS = data_key_pos
+        self.KEY_ENERGY = data_key_energy
+        self.KEY_FORCE = data_key_force
+        self.KEY_STRESS = data_key_stress
+    
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        pos_tensor = data[self.KEY_POS]
+        energy = [(data[self.KEY_ENERGY]).sum()]
+
+        grad = torch.autograd.grad(energy, [pos_tensor, data["_strain"]],
+                            create_graph=self.training)
+
+        force = torch.neg(grad[0])
+
+        data[self.KEY_FORCE] = force
+
+        volume = data[KEY.CELL_VOLUME]
+
+        stress = grad[1] / volume.view(-1, 1, 1)
+        stress = torch.neg(stress)
+
+        voigt_stress = torch.vstack((stress[:,0,0], stress[:,1,1], stress[:,2,2], stress[:,0,1], stress[:,1,2], stress[:,0,2]))
+        data[self.KEY_STRESS] = voigt_stress.transpose(0, 1)
+        
+        return data

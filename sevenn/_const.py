@@ -78,6 +78,7 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.OPTIMIZER: 'adam',
     KEY.SCHEDULER: 'exponentiallr',
     KEY.FORCE_WEIGHT: 0.1,
+    KEY.STRESS_WEIGHT: 1e-6,  # for kbar unit
     KEY.SKIP_OUTPUT_UNTIL: 20,
     KEY.OUTPUT_PER_EPOCH: 10,  # False or positive integer
     KEY.DRAW_LC: True,
@@ -85,6 +86,8 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.USE_TESTSET: False,
     KEY.CONTINUE: None,
     KEY.NUM_WORKERS: 0,
+    KEY.IS_TRACE_STRESS: False,
+    KEY.IS_TRAIN_STRESS: False,
 
     KEY.OUTPUT_PER_EPOCH: {
         KEY.PER_EPOCH: 30,
@@ -119,7 +122,7 @@ MODEL_CONFIG_CONDITION = {
 
 DATA_CONFIG_CONDITION = {
     KEY.DTYPE: lambda x: x.lower() in ["single", "double"],
-    KEY.FORMAT_OUTPUTS: lambda x: x in ["vasp-out"],
+    KEY.FORMAT_OUTPUTS: lambda x: x in ["vasp-out", "vasp", "vasp-xdatcar"],
     KEY.SAVE_DATASET: None,
     KEY.RATIO: lambda x: type(x) is float and x > 0.0 and x < 0.5,
     KEY.BATCH_SIZE: is_positive,
@@ -129,6 +132,7 @@ TRAINING_CONFIG_CONDITION = {
     KEY.RANDOM_SEED: is_positive,
     KEY.EPOCH: is_positive,
     KEY.FORCE_WEIGHT: is_positive,
+    KEY.STRESS_WEIGHT: lambda x: x is None or is_positive(x),
     KEY.SKIP_OUTPUT_UNTIL: is_positive,
     KEY.DRAW_LC: None,
     KEY.DRAW_PARITY: None,
@@ -142,4 +146,6 @@ TRAINING_CONFIG_CONDITION = {
         KEY.SAVE_DATA_PICKLE: None,
     },
     KEY.CONTINUE: None,
+    KEY.IS_TRACE_STRESS: None,
+    KEY.IS_TRAIN_STRESS: None
 }

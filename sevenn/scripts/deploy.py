@@ -10,6 +10,7 @@ from sevenn.atom_graph_data import AtomGraphData
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.sequential import AtomGraphSequential
+from sevenn.nn.force_output import ForceOutputFromEdge
 import sevenn._keys as KEY
 import sevenn._const as _const
 
@@ -52,6 +53,9 @@ def deploy(model_ori: AtomGraphSequential, config, fname):
 
     num_species = config[KEY.NUM_SPECIES]
     model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
+    model.replace_module("force output", ForceOutputFromEdge(data_key_energy=KEY.SCALED_ENERGY,
+                    data_key_force=KEY.SCALED_FORCE))
+    model.delete_module_by_key("EdgePreprocess")
     model.set_is_batch_data(False)
     model.eval()
 
