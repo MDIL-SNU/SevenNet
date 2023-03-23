@@ -7,7 +7,7 @@ import e3nn.util.jit
 from ase.data import chemical_symbols
 
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.model_build import build_E3_equivariant_model, build_parallel_model
+from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.sequential import AtomGraphSequential
 import sevenn._keys as KEY
@@ -29,10 +29,6 @@ def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
     # make some config need for md
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
-    # in lammps, input is chemical symbols so we need chemical_symbol->one_hot_idx
-    # type_map = {76: 0, 16: 1}, chem_list = 'Hf O'
-    # later in lammps do something like chem_list.split(' ')
-    # then its index is one_hot_idx. note that type_map preserve order
     chem_list = ""
     for Z in type_map.keys():
         chem_list += chemical_symbols[Z] + " "
@@ -65,10 +61,6 @@ def deploy(model_ori: AtomGraphSequential, config, fname):
     # make some config need for md
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
-    # in lammps, input is chemical symbols so we need chemical_symbol->one_hot_idx
-    # type_map = {76: 0, 16: 1}, chem_list = 'Hf O'
-    # later in lammps do something like chem_list.split(' ')
-    # then its index is one_hot_idx. note that type_map preserve order
     chem_list = ""
     for Z in type_map.keys():
         chem_list += chemical_symbols[Z] + " "
@@ -83,17 +75,29 @@ def deploy(model_ori: AtomGraphSequential, config, fname):
 
     torch.jit.save(model, fname, _extra_files=md_configs)
 
-    # validation
-    # print(model)
-
 
 #TODO: this is E3_equivariant specific
 def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
-    # some postprocess for md mode of model
-    model_list = build_parallel_model(model_ori, config)
-    if type(model_list) is not list:
-        model_list = [model_list]
 
+    # Additional layer for ghost atom (and copy parameters from original)
+    GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
+    num_conv = config[KEY.NUM_CONVOLUTION]
+
+    state_dict_ori = model_ori.state_dict()
+    model_list = build_E3_equivariant_model(config, parallel=True)
+    dct_temp = {}
+    for ghost_layer_key in GHOST_LAYERS_KEYS:
+        for key, val in state_dict_ori.items():
+            if key.startswith(ghost_layer_key):
+                dct_temp.update({f"ghost_{key}": val})
+            else:
+                continue
+    state_dict_ori.update(dct_temp)
+
+    for model_part in model_list:
+        model_part.load_state_dict(state_dict_ori, strict=False)
+
+    # one_hot prepand & one_hot ghost prepand
     num_species = config[KEY.NUM_SPECIES]
     model_list[0].prepand_module('one_hot', OnehotEmbedding(
         data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
@@ -101,23 +105,27 @@ def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
         data_key_in=KEY.NODE_FEATURE_GHOST,
         num_classes=num_species,
         data_key_additional=None))
-    # make some config need for md
+
     print(model_list)
+    # prepare some extra information for MD
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
-    # in lammps, input is chemical symbols so we need chemical_symbol->one_hot_idx
-    # type_map = {76: 0, 16: 1}, chem_list = 'Hf O'
-    # later in lammps do something like chem_list.split(' ')
-    # then its index is one_hot_idx. note that type_map preserve order
+
     chem_list = ""
     for Z in type_map.keys():
         chem_list += chemical_symbols[Z] + " "
     chem_list.strip()
+
+    # dim of irreps_in of last model convolution is comm_size
+    # except first one, first of every model is embedding followed by convolution
+    comm_size = model_list[-1][1].convolution.irreps_in1.dim
+
     md_configs.update({"chemical_symbols_to_index": chem_list})
     md_configs.update({"cutoff": str(config[KEY.CUTOFF])})
     md_configs.update({"num_species": str(config[KEY.NUM_SPECIES])})
     md_configs.update({"shift": str(config[KEY.SHIFT])})
     md_configs.update({"scale": str(config[KEY.SCALE])})
+    md_configs.update({"comm_size": str(comm_size)})
     md_configs.update({"model_type": config[KEY.MODEL_TYPE]})
     md_configs.update({"version": _const.SEVENN_VERSION})
     md_configs.update({"dtype": config[KEY.DTYPE]})
@@ -133,16 +141,13 @@ def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
 
         torch.jit.save(model, fname_full, _extra_files=md_configs)
 
-    # validation
-    # print(model)
-
 
 def main():
     from sevenn.nn.node_embedding import get_type_mapper_from_specie
     torch.manual_seed(777)
     config = _const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG
-    config[KEY.LMAX] = 2
-    config[KEY.NUM_CONVOLUTION] = 2
+    config[KEY.LMAX] = 3
+    config[KEY.NUM_CONVOLUTION] = 3
     config[KEY.NODE_FEATURE_MULTIPLICITY] = 8
     config[KEY.SHIFT] = -3.0
     config[KEY.SCALE] = 1.1

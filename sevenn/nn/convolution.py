@@ -73,7 +73,7 @@ class IrrepsConvolution(nn.Module):
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         weight = self.weight_nn(data[self.KEY_WEIGHT_INPUT])
         x = data[self.KEY_X]
-        if self.is_parallel:
+        i2f self.is_parallel:
             x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
 
         # note that 1 -> src 0 -> dst

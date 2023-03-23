@@ -70,6 +70,11 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     identical to nequip model
     atom embedding is not part of model (its input preprocessing)
     No ResNet style update (but self connection yes)
+
+    parallel here is bad considering code readability & maintanence
+    appropriate place for logic for parallel is deploy_parallel()
+    but inserting extra layers & splitting model is hard after the
+    model buliding. So code remains here.
     """
     feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]
     lmax = model_config[KEY.LMAX]
@@ -298,6 +303,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         return AtomGraphSequential(layers)
 
 
+#TODO: move to deploy_parallel
+"""
 def build_parallel_model(model_ori: AtomGraphSequential, config):
     GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
     num_conv = config[KEY.NUM_CONVOLUTION]
@@ -317,6 +324,7 @@ def build_parallel_model(model_ori: AtomGraphSequential, config):
         model_part.load_state_dict(state_dict_ori, strict=False)
         #stt = model_part.state_dict()
     return model_list
+"""
 
 
 def main():
