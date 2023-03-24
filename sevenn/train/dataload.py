@@ -59,7 +59,8 @@ def ASE_atoms_to_data(atoms, cutoff: float):
     chemical_symbol = atoms.get_chemical_symbols()
     edge_idx = np.array([edge_src, edge_dst])
 
-    return atomic_numbers, chemical_symbol, edge_idx, edge_vec, shift, pos, cell, E, F, S
+    return atomic_numbers, chemical_symbol, edge_idx, edge_vec, \
+        shift, pos, cell, E, F, S
 
 
 def poscar_ASE_atoms_to_data(atoms, cutoff: float):  # This is only for debugging
@@ -113,8 +114,10 @@ def parse_structure_list(filename: str, format_outputs='vasp-out'):
 
     def parse_fileline(line):
         line = line.strip().split()
-        if len(line) != 2:
-            raise ValueError('wrong structure_list fileline format')
+        if len(line) == 1:
+            line.append(':')
+        elif len(line) != 2:
+            raise ValueError('wrong structure_list format')
         return line[0], line[1]
 
     structure_list_file = open(filename, 'r')

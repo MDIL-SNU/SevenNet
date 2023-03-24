@@ -13,21 +13,16 @@ def draw_learning_curve(loss_hist, fname):
     plt.clf()
 
     # cut unusually large loss at early epoch for visual
+
     # TODO: refactor
-    for i in range(5):
-        t_E = loss_hist[DataSetType.TRAIN]['total']['energy'][i]
-        t_F = loss_hist[DataSetType.TRAIN]['total']['force'][i]
-        v_E = loss_hist[DataSetType.VALID]['total']['energy'][i]
-        v_F = loss_hist[DataSetType.VALID]['total']['force'][i]
-        if t_E > 1.0 or t_F > 1.0 or v_E > 1.0 or v_F > 1.0:
-            loss_hist[DataSetType.TRAIN]['total']['energy'] = \
-                loss_hist[DataSetType.TRAIN]['total']['energy'][i:]
-            loss_hist[DataSetType.TRAIN]['total']['force'] = \
-                loss_hist[DataSetType.TRAIN]['total']['force'][i:]
-            loss_hist[DataSetType.VALID]['total']['energy'] = \
-                loss_hist[DataSetType.VALID]['total']['energy'][i:]
-            loss_hist[DataSetType.VALID]['total']['force'] = \
-                loss_hist[DataSetType.VALID]['total']['force'][i:]
+    loss_hist[DataSetType.TRAIN]['total']['energy'] = \
+        loss_hist[DataSetType.TRAIN]['total']['energy'][5:]
+    loss_hist[DataSetType.TRAIN]['total']['force'] = \
+        loss_hist[DataSetType.TRAIN]['total']['force'][5:]
+    loss_hist[DataSetType.VALID]['total']['energy'] = \
+        loss_hist[DataSetType.VALID]['total']['energy'][5:]
+    loss_hist[DataSetType.VALID]['total']['force'] = \
+        loss_hist[DataSetType.VALID]['total']['force'][5:]
 
     fig, axs = plt.subplots(2, 1, figsize=(9, 6), dpi=300, constrained_layout=True)
 

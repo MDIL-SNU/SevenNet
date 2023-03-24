@@ -40,7 +40,9 @@ class EdgePreprocess(nn.Module):
 
         if self._is_batch_data:  # Only for training mode
             if self.is_stress:
-                strain = torch.zeros((num_batch, 3, 3), dtype=pos.dtype, device=pos.device,)
+                strain = torch.zeros((num_batch, 3, 3),
+                                     dtype=pos.dtype,
+                                     device=pos.device,)
                 strain.requires_grad_(True)
                 data["_strain"] = strain
 
@@ -176,10 +178,12 @@ class EdgeEmbedding(nn.Module):
         self.spherical = spherical_module
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        #r = data[KEY.EDGE_LENGTH]
+        #r = data[KEY.EDGE_LENGTH
+        # TODO: consider compatibility with edge preprocess for stress
+        # TODO: how about removing force from edge_vec?
         rvec = data[KEY.EDGE_VEC]
         r = torch.linalg.norm(data[KEY.EDGE_VEC], dim=-1)
-        data[KEY.EDGE_LENGTH] = r  # TODO: not used remove later
+        data[KEY.EDGE_LENGTH] = r
 
         data[KEY.EDGE_EMBEDDING] = \
             self.basis_function(r) * self.cutoff_function(r).unsqueeze(-1)

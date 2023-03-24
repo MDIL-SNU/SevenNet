@@ -5,3 +5,4 @@ script_model.py
 deployed_ref.pt
 deployed_test_0.pt
 deployed_test_1.pt
+deployed_test_2.pt
