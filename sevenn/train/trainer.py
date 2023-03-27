@@ -234,7 +234,7 @@ class Trainer():
             if key == 'total':
                 # TODO: check
                 loss_value = E_mse + self.force_weight * F_mse / 3
-                if self.is_stress:
+                if self.is_train_stress:
                     loss_value += self.stress_weight * S_mse / 6
 
         for key in self.total_atom_type:
