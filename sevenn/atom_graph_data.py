@@ -104,12 +104,12 @@ class AtomGraphData(torch_geometric.data.Data):
         data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
         data[KEY.CHEMICAL_SYMBOL] = chemical_symbol
         return data
-    
+
     @staticmethod
     def poscar_for_E3_equivariant_model(atoms,
-                                      cutoff: float,
-                                      type_map: Dict[int, int],
-                                      is_stress: bool):
+                                        cutoff: float,
+                                        type_map: Dict[int, int],
+                                        is_stress: bool):
         """
         This is only for debugging
         """
@@ -119,7 +119,7 @@ class AtomGraphData(torch_geometric.data.Data):
 
         edge_idx = torch.LongTensor(edge_idx)
         pos = torch.Tensor(pos)
-        
+
         if is_stress:
             pos.requires_grad_(True)
         else:

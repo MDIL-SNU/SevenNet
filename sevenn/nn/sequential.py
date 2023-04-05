@@ -22,7 +22,7 @@ class AtomGraphSequential(nn.Sequential):
 
     def set_is_batch_data(self, flag: bool):
         # whether given data is batched or not some module have to change
-        # is behavior. checking whether data is batched or not inside
+        # its behavior. checking whether data is batched or not inside
         # forward function make problem harder when make it into torchscript
         for module in self:
             try:  # Easier to ask for forgiveness than permission.
@@ -33,10 +33,10 @@ class AtomGraphSequential(nn.Sequential):
     def prepand_module(self, key: str, module: nn.Module):
         self._modules.update({key: module})
         self._modules.move_to_end(key, last=False)
-    
+
     def replace_module(self, key: str, module: nn.Module):
         self._modules.update({key: module})
-    
+
     def delete_module_by_key(self, key: str):
         if key in self._modules.keys():
             del self._modules[key]

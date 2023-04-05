@@ -18,7 +18,7 @@ train:
         gamma: 0.99
 
     skip_output_until: 3
-    draw_learning_curve: True
+    draw_learning_curve: False
 
     output_per_epoch: 
         per_epoch: 10

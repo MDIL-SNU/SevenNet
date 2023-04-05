@@ -15,6 +15,23 @@ import sevenn._keys as KEY
 import sevenn._const as _const
 
 
+def print_tensor_info(tensor):
+    print("Tensor Value: \n", tensor)
+    print("Shape: ", tensor.shape)
+    print("Size: ", tensor.size())
+    print("Number of Dimensions: ", tensor.dim())
+    print("Data Type: ", tensor.dtype)
+    print("Device: ", tensor.device)
+    print("Layout: ", tensor.layout)
+    print("Is it a CUDA tensor?: ", tensor.is_cuda)
+    print("Is it a sparse tensor?: ", tensor.is_sparse)
+    print("Is it a quantized tensor?: ", tensor.is_quantized)
+    print("Number of Elements: ", tensor.numel())
+    print("Requires Gradient: ", tensor.requires_grad)
+    print("Grad Function: ", tensor.grad_fn)
+    print("Gradient: ", tensor.grad)
+
+
 def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
     model_new = build_E3_equivariant_model(config)
 
@@ -46,18 +63,23 @@ def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
 
 
 #TODO: this is E3_equivariant specific
-def deploy(model_ori: AtomGraphSequential, config, fname):
+def deploy(model_state_dct, config, fname):
     # some postprocess for md mode of model
     model = build_E3_equivariant_model(config)
-    model.load_state_dict(model_ori.state_dict())  # copy model
+    #TODO: remove strict later
+    model.load_state_dict(model_state_dct, strict=False)  # copy model
 
     num_species = config[KEY.NUM_SPECIES]
     model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
-    model.replace_module("force output", ForceOutputFromEdge(data_key_energy=KEY.SCALED_ENERGY,
-                    data_key_force=KEY.SCALED_FORCE))
+    model.replace_module("force output",
+                         ForceOutputFromEdge(
+                             data_key_energy=KEY.SCALED_ENERGY,
+                             data_key_force=KEY.SCALED_FORCE)
+                         )
     model.delete_module_by_key("EdgePreprocess")
     model.set_is_batch_data(False)
     model.eval()
+    #print(config)
 
     model = e3nn.util.jit.script(model)
     model = torch.jit.freeze(model)
@@ -81,25 +103,22 @@ def deploy(model_ori: AtomGraphSequential, config, fname):
 
 
 #TODO: this is E3_equivariant specific
-def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
-
+def deploy_parallel(model_state_dct, config, fname):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
-    num_conv = config[KEY.NUM_CONVOLUTION]
 
-    state_dict_ori = model_ori.state_dict()
     model_list = build_E3_equivariant_model(config, parallel=True)
     dct_temp = {}
     for ghost_layer_key in GHOST_LAYERS_KEYS:
-        for key, val in state_dict_ori.items():
+        for key, val in model_state_dct.items():
             if key.startswith(ghost_layer_key):
                 dct_temp.update({f"ghost_{key}": val})
             else:
                 continue
-    state_dict_ori.update(dct_temp)
+    model_state_dct.update(dct_temp)
 
     for model_part in model_list:
-        model_part.load_state_dict(state_dict_ori, strict=False)
+        model_part.load_state_dict(model_state_dct, strict=False)
 
     # one_hot prepand & one_hot ghost prepand
     num_species = config[KEY.NUM_SPECIES]
@@ -110,7 +129,7 @@ def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
         num_classes=num_species,
         data_key_additional=None))
 
-    print(model_list)
+    #print(config)
     # prepare some extra information for MD
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
@@ -120,7 +139,7 @@ def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
         chem_list += chemical_symbols[Z] + " "
     chem_list.strip()
 
-    # dim of irreps_in of last model convolution is comm_size
+    # dim of irreps_in of last model convolution is (max)comm_size
     # except first one, first of every model is embedding followed by convolution
     comm_size = model_list[-1][1].convolution.irreps_in1.dim
 
@@ -146,27 +165,59 @@ def deploy_parallel(model_ori: AtomGraphSequential, config, fname):
         torch.jit.save(model, fname_full, _extra_files=md_configs)
 
 
+def get_parallel_from_checkpoint(fname):
+    checkpoint = torch.load(fname, map_location=torch.device('cpu'))
+    config = checkpoint['config']
+    stct_dct = checkpoint['model_state_dict']
+    # TODO: remove this xxxxxxxxxxxxx
+    for k, v in stct_dct.items():
+        if 'coeffs' in k:
+            stct_dct.update({'EdgeEmbedding.basis_function.coeffs': v})
+            break
+    stct_cp = copy.deepcopy(stct_dct)
+
+    deploy_parallel(stct_dct, config, "deployed_parallel")
+    deploy(stct_cp, config, "deployed_serial.pt")
+
+
 def main():
+    get_parallel_from_checkpoint('./checkpoint_260.pth')
+    """
     from sevenn.nn.node_embedding import get_type_mapper_from_specie
     torch.manual_seed(777)
     config = _const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG
+    config[KEY.CUTOFF] = 4.0
     config[KEY.LMAX] = 3
     config[KEY.NUM_CONVOLUTION] = 3
-    config[KEY.NODE_FEATURE_MULTIPLICITY] = 8
-    config[KEY.SHIFT] = -3.0
-    config[KEY.SCALE] = 1.1
-    type_map = get_type_mapper_from_specie(['Hf', 'O'])
+    config[KEY.NODE_FEATURE_MULTIPLICITY] = 32
+    config[KEY.SHIFT] = -6.89
+    config[KEY.SCALE] = 1.4791
+    type_map = get_type_mapper_from_specie(['Cl', 'H', 'N', 'Ti'])
+    #type_map = get_type_mapper_from_specie(['Hf', 'O'])
     config[KEY.TYPE_MAP] = type_map
-    config[KEY.CHEMICAL_SPECIES] = ['Hf', 'O']
-    config[KEY.NUM_SPECIES] = 2
+    config[KEY.CHEMICAL_SPECIES] = ['Cl', 'H', 'N', 'Ti']
+    #config[KEY.CHEMICAL_SPECIES] = ['Hf', 'O']
+    config[KEY.NUM_SPECIES] = 4
     config[KEY.MODEL_TYPE] = 'E3_equivariant_model'
     config[KEY.DTYPE] = "single"
+    config[KEY.AVG_NUM_NEIGHBOR] = 16.475
 
     model = build_E3_equivariant_model(config)
-    deploy_parallel(model, config, "deployed_test")
-    deploy(model, config, "deployed_ref.pt")
+    stct_dct_raw = model.state_dict()
+    stct_dct_raw_cp = copy.deepcopy(stct_dct_raw)
+    #print(stct_dct.keys())
+    #deploy_parallel(stct_dct, config, "deployed_parallel")
+    #deploy(stct_cp, config, "deployed_serial.pt")
+    #deploy_parallel(model, config, "deployed_test")
+    #deploy(model, config, "deployed_ref.pt")
+    #get_parallel_from_checkpoint('./checkpoint_260.pth')
+
+    config = checkpoint['config']
+    stct_dct = checkpoint['model_state_dict']
+    stct_cp = copy.deepcopy(stct_dct)
+
+    """
 
 
 if __name__ == "__main__":
     main()
-

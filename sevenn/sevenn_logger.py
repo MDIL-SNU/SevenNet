@@ -8,7 +8,7 @@ If you're interested see best answer of
 https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
 """
 
-from sevenn.train.trainer import DataSetType
+from sevenn.train.trainer import DataSetType, LossType
 import sevenn._const as _const
 import sevenn._keys as KEY
 
@@ -55,10 +55,40 @@ class Logger(metaclass=Singleton):
         content += self.format_k_v("total", total_natom)
         self.write(content)
 
-    def epoch_write(self, loss_history, force_loss_hist_by_atom_type, is_stress, idx=-1):
+    # TODO : refactoring!!!
+    def epoch_write_specie_wise_loss(self, train_loss, valid_loss):
         lb_pad = 21
         fs = 6
         pad = 21 - fs
+        ln = '-' * fs
+        total_atom_type = train_loss.keys()
+        content = ""
+        """
+        content = \
+            f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}".\
+            format(lb_pad=lb_pad, pad=pad)\
+            + f"{'F_RMSE(T)':<{pad}}{'F_RMSE(V)':<{pad}}".format(pad=pad)
+        content += f"{'S_RMSE(T)':<{pad}}{'S_RMSE(V)':<{pad}}".format(pad=pad)
+        """
+
+        for at in total_atom_type:
+            t_F = train_loss[at]
+            v_F = valid_loss[at]
+            content += "{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}".\
+                format(label=at, t_E=ln, v_E=ln, lb_pad=lb_pad, pad=pad, fs=fs)\
+                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}".\
+                format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
+            content += "{t_S:<{pad}.{fs}s}{v_S:<{pad}.{fs}s}".\
+                format(t_S=ln, v_S=ln, pad=pad, fs=fs)
+            content += "\n"
+        self.write(content)
+
+    # TODO : refactoring!!!
+    def epoch_write_loss(self, train_loss, valid_loss):
+        lb_pad = 21
+        fs = 6
+        pad = 21 - fs
+        is_stress = LossType.STRESS in train_loss['total']
         content = \
             f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}".\
             format(lb_pad=lb_pad, pad=pad)\
@@ -67,40 +97,22 @@ class Logger(metaclass=Singleton):
             content += f"{'S_RMSE(T)':<{pad}}{'S_RMSE(V)':<{pad}}".format(pad=pad)
 
         content += "\n"
-        train_loss = loss_history[DataSetType.TRAIN]
-        valid_loss = loss_history[DataSetType.VALID]
         label_keys = train_loss.keys()
         for label in label_keys:
-            t_E = train_loss[label]['energy'][idx]
-            t_F = train_loss[label]['force'][idx]
-            v_E = valid_loss[label]['energy'][idx]
-            v_F = valid_loss[label]['force'][idx]
+            t_E = train_loss[label][LossType.ENERGY]
+            v_E = valid_loss[label][LossType.ENERGY]
+            t_F = train_loss[label][LossType.FORCE]
+            v_F = valid_loss[label][LossType.FORCE]
             content += "{label:{lb_pad}}{t_E:<{pad}.{fs}f}{v_E:<{pad}.{fs}f}".\
                 format(label=label, t_E=t_E, v_E=v_E, lb_pad=lb_pad, pad=pad, fs=fs)\
                 + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}".\
                 format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
             if is_stress:
-                t_S = train_loss[label]['stress'][idx]
-                v_S = valid_loss[label]['stress'][idx]
+                t_S = train_loss[label][LossType.STRESS]
+                v_S = valid_loss[label][LossType.STRESS]
                 content += "{t_S:<{pad}.{fs}f}{v_S:<{pad}.{fs}f}".\
                     format(t_S=t_S, v_S=v_S, pad=pad, fs=fs)
 
-            content += "\n"
-        
-        train_loss = force_loss_hist_by_atom_type[DataSetType.TRAIN]
-        valid_loss = force_loss_hist_by_atom_type[DataSetType.VALID]
-
-        total_atom_type = train_loss.keys()
-        for atom_type in total_atom_type:
-            t_F = train_loss[atom_type][idx]
-            v_F = valid_loss[atom_type][idx]
-            content += "{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}".\
-                format(label=atom_type, t_E='------', v_E='------', lb_pad=lb_pad, pad=pad, fs=fs)\
-                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}".\
-                format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
-            if is_stress:
-                content += "{t_S:<{pad}.{fs}s}{v_S:<{pad}.{fs}s}".\
-                    format(t_S='------', v_S='------', pad=pad, fs=fs)
             content += "\n"
         self.write(content)
 

@@ -5,6 +5,7 @@ import os
 import random
 import copy
 
+import numpy as np
 import torch
 import torch.autograd
 from torch_geometric.loader import DataLoader
@@ -12,92 +13,13 @@ import e3nn.util.jit
 
 import sevenn
 import sevenn.train
-from sevenn.train.dataload import parse_structure_list
-from sevenn.train.dataset import AtomGraphDataset
-from sevenn.train.trainer import Trainer, DataSetType
-from sevenn.atom_graph_data import AtomGraphData
+from sevenn.train.trainer import Trainer, DataSetType, LossType
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.scripts.deploy import deploy, deploy_from_compiled
+from sevenn.scripts.deploy import deploy
 from sevenn.scripts.plot import draw_learning_curve
 from sevenn.sevenn_logger import Logger
+from sevenn.scripts.init_dataset import init_dataset
 import sevenn._keys as KEY
-
-
-def init_dataset_from_structure_list(data_config, is_stress, inference=False):
-    cutoff = data_config[KEY.CUTOFF]
-    # chemical_species = data_config[KEY.CHEMICAL_SPECIES]
-    format_outputs = data_config[KEY.FORMAT_OUTPUTS]
-    structure_list_files = data_config[KEY.STRUCTURE_LIST]
-    model_type = data_config[KEY.MODEL_TYPE]
-
-    type_map = data_config[KEY.TYPE_MAP]
-
-    if model_type == 'E3_equivariant_model':
-        def preprocessor(x):
-            if inference:  # This is only for debugging
-                return AtomGraphData.poscar_for_E3_equivariant_model(x, cutoff, type_map, is_stress)
-            else:
-                return AtomGraphData.data_for_E3_equivariant_model(x, cutoff, type_map, is_stress)
-    elif model_type == 'new awesome model':
-        pass
-    else:
-        raise ValueError('unknown model type')
-
-    if type(structure_list_files) is str:
-        structure_list_files = [structure_list_files]
-
-    full_dataset = None
-    for structure_list in structure_list_files:
-        Logger().write(f"loading {structure_list} (it takes several minitues..)\n")
-        raw_dct = parse_structure_list(structure_list, format_outputs)
-        dataset = AtomGraphDataset(raw_dct, preprocessor, metadata=data_config)
-        if full_dataset is None:
-            full_dataset = dataset
-        else:
-            full_dataset.augment(dataset)
-        Logger().write(f"loading {structure_list} is done\n")
-        # Logger().write(f"current dataset size is :{full_dataset.len()}\n")
-        Logger().format_k_v("\ncurrent dataset size is",
-                            full_dataset.len(), write=True)
-
-    return full_dataset
-
-
-def init_dataset(data_config, working_dir, is_stress, inference=False):
-    full_dataset = None
-
-    if data_config[KEY.STRUCTURE_LIST] is not False:
-        Logger().write("Loading dataset from structure lists\n")
-        full_dataset = init_dataset_from_structure_list(data_config, is_stress, inference)
-
-    if data_config[KEY.LOAD_DATASET] is not False:
-        load_dataset = data_config[KEY.LOAD_DATASET]
-        Logger().write("Loading dataset from load_dataset\n")
-        if type(load_dataset) is str:
-            load_dataset = [load_dataset]
-        for dataset_path in load_dataset:
-            Logger().write(f"loading {dataset_path}\n")
-            if full_dataset is None:
-                full_dataset = torch.load(dataset_path)
-            else:
-                full_dataset.augment(torch.load(dataset_path))
-            Logger().write(f"loading {dataset_path} is done\n")
-            Logger().format_k_v("current dataset size is",
-                                full_dataset.len(), write=True)
-            #Logger().write(f"current dataset size is :{full_dataset.len()}\n")
-
-    prefix = f"{os.path.abspath(working_dir)}/"
-    save_dataset = data_config[KEY.SAVE_DATASET]
-    if save_dataset is not False:
-        if save_dataset.endswith('.pt') is False:
-            save_dataset += '.pt'
-        if (save_dataset.startswith('.') or save_dataset.startswith('/')) is False:
-            save_dataset = prefix + save_dataset  # save_data set is plain file name
-        full_dataset.save(save_dataset)  # save_dataset contain user define path
-        Logger().format_k_v("Dataset saved to", save_dataset, write=True)
-        #Logger().write(f"Loaded full dataset saved to : {save_dataset}\n")
-
-    return full_dataset
 
 
 # TODO: E3_equivariant model assumed
@@ -169,17 +91,25 @@ def train(config: Dict, working_dir: str):
         # initialize model
         try:
             model = build_E3_equivariant_model(config)
-            # model.set_is_batch_data(True)
-            # compile mode
-            # model = e3nn.util.jit.script(model)  # compile model for speed up
         except Exception as e:
             Logger().error(e)
             sys.exit(1)
         Logger().write("Model building was successful\n")
         user_labels = dataset.user_labels
-        trainer = Trainer(model, user_labels, config)
+
+        # scaled for energy, force but not stress
+        trainer = Trainer(
+            model, user_labels, config,
+            energy_key=KEY.SCALED_PER_ATOM_ENERGY,
+            ref_energy_key=KEY.REF_SCALED_PER_ATOM_ENERGY,
+            force_key=KEY.SCALED_FORCE,
+            ref_force_key=KEY.REF_SCALED_FORCE,
+            stress_key=KEY.SCALED_STRESS,
+            ref_stress_key=KEY.REF_SCALED_STRESS
+        )
     else:
         # TODO: checkpoint validation? compatiblity with current config? shift scale?
+        # NOT IMPLEMENTED YET
         Logger().write("\nContinue found, loading checkpoint\n")
         checkpoint = torch.load(config[KEY.CONTINUE])
         user_labels = dataset.user_labels
@@ -206,7 +136,6 @@ def train(config: Dict, working_dir: str):
     is_save_data_pickle = output_per_epoch[KEY.SAVE_DATA_PICKLE]
     is_model_check_point = output_per_epoch[KEY.MODEL_CHECK_POINT]
     is_deploy_model = output_per_epoch[KEY.DEPLOY_MODEL]
-
     draw_lc = config[KEY.DRAW_LC]
 
     def output(is_best):
@@ -216,32 +145,27 @@ def train(config: Dict, working_dir: str):
         suffix = "_best" if is_best else f"_{epoch}"
 
         if draw_lc:
+            #TODO: now loss_hist_print is empty.
             draw_learning_curve(loss_hist_print, f"{prefix}/learning_curve.png")
         if is_deploy_model or is_best:
-            # compile mode
-            # deploy_from_compiled(trainer.model,
-            #                      config, f"{prefix}/deployed_model{suffix}.pt")
-            deploy(trainer.model, config, f"{prefix}/deployed_model{suffix}.pt")
+            deploy(trainer.model.state_dict(),
+                   config,
+                   f"{prefix}/deployed_model{suffix}.pt")
         if is_model_check_point or is_best:
             checkpoint = trainer.get_checkpoint_dict()
             checkpoint.update({'config': config, 'epoch': epoch})
             torch.save(checkpoint, f"{prefix}/checkpoint{suffix}.pth")
         if is_save_data_pickle or is_best:
-            torch.save(loss_hist_print, f"{prefix}/loss_hist{suffix}.pth")
+            info_parity = {"train": train_parity_set, "valid": valid_parity_set}
+            #torch.save(loss_hist_print, f"{prefix}/loss_hist{suffix}.pth")
             torch.save(info_parity, f"{prefix}/parity_at{suffix}.pth")
-            torch.save(t_graph_set, f"{prefix}/train_user_label{suffix}.pth")
-            torch.save(v_graph_set, f"{prefix}/valid_user_label{suffix}.pth")
-            torch.save(t_atom_type, f"{prefix}/train_atom_type{suffix}.pth")
-            torch.save(v_atom_type, f"{prefix}/valid_atom_type{suffix}.pth")
         if draw_parity or is_best:
             #TODO: implement
             pass
 
-    # copy loss_hist structure
+    # remove later
     loss_hist = trainer.loss_hist
-    force_loss_hist_by_atom_type = trainer.force_loss_hist_by_atom_type
     loss_hist_print = copy.deepcopy(loss_hist)
-    force_loss_hist_by_atom_type_print = copy.deepcopy(force_loss_hist_by_atom_type)
 
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
@@ -249,42 +173,28 @@ def train(config: Dict, working_dir: str):
         Logger().write(f"Epoch {epoch}/{total_epoch}\n")
         Logger().bar()
 
-        t_pred_E, t_ref_E, t_pred_F, t_ref_F, t_pred_S, t_ref_S, t_graph_set, t_atom_type, _ = \
+        train_parity_set, train_loss, train_specie_loss =\
             trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
-
-        v_pred_E, v_ref_E, v_pred_F, v_ref_F, v_pred_S, v_ref_S, v_graph_set, v_atom_type, loss = \
+        valid_parity_set, valid_loss, valid_specie_loss =\
             trainer.run_one_epoch(valid_loader, DataSetType.VALID)
 
-        info_parity = {"t_pred_E": t_pred_E, "t_ref_E": t_ref_E,
-                       "t_pred_F": t_pred_F, "t_ref_F": t_ref_F,
-                       "v_pred_E": v_pred_E, "v_ref_E": v_ref_E,
-                       "v_pred_F": v_pred_F, "v_ref_F": v_ref_F}
-        if is_stress:
-            info_parity.update({"t_pred_S": t_pred_S, "t_ref_S": t_ref_S,
-                                "v_pred_S": v_pred_S, "v_ref_S": v_ref_S,})
-        # preprocess loss_hist, (mse -> scaled rmse)
-        for data_set_key in [DataSetType.TRAIN, DataSetType.VALID]:
-            for label in trainer.user_labels:
-                loss_hist_print[data_set_key][label]['energy'].append(
-                    math.sqrt(loss_hist[data_set_key][label]['energy'][-1]) * scale)
-                loss_hist_print[data_set_key][label]['force'].append(
-                    math.sqrt(loss_hist[data_set_key][label]['force'][-1]) * scale)
-                
-                if is_stress:
-                    loss_hist_print[data_set_key][label]['stress'].append(
-                        math.sqrt(loss_hist[data_set_key][label]['stress'][-1]) * scale)
-            
-            for atom_type in trainer.total_atom_type:
-                force_loss_hist_by_atom_type_print[data_set_key][atom_type].append(
-                    math.sqrt(force_loss_hist_by_atom_type[data_set_key][atom_type][-1]) * scale)
+        loss_dct = {k: np.mean(v) for k, v in valid_loss['total'].items()}
+        valid_total_loss = trainer.loss_function(loss_dct)
 
-        Logger().epoch_write(loss_hist_print, force_loss_hist_by_atom_type_print, is_stress)
+        # preprocess loss_hist, (scaled mse -> unscaled rmse)
+        rescale_loss(train_loss, scale)
+        rescale_loss(valid_loss, scale)
+        rescale_specie_wise_floss(train_specie_loss, scale)
+        rescale_specie_wise_floss(valid_specie_loss, scale)
+
+        Logger().epoch_write_loss(train_loss, valid_loss)
+        Logger().epoch_write_specie_wise_loss(train_specie_loss, valid_specie_loss)
         Logger().timer_end("epoch", message=f"Epoch {epoch} elapsed")
 
         if epoch < skip_output_until:
             continue
-        if loss < min_loss:
-            min_loss = loss
+        if valid_total_loss < min_loss:
+            min_loss = valid_total_loss
             output(is_best=True)
             Logger().write(f"output written at epoch(best): {epoch}\n")
             # continue  # skip per epoch output if best is written
@@ -293,6 +203,18 @@ def train(config: Dict, working_dir: str):
             Logger().write(f"output written at epoch: {epoch}\n")
     # deploy(best_model, config, f'{prefix}/deployed_model.pt')
     Logger().timer_end("total", message="Total wall time")
+
+
+def rescale_loss(loss_record: Dict[str, Dict[LossType, float]], scale: float):
+    for label in loss_record.keys():
+        loss_labeld = loss_record[label]
+        for loss_type in loss_labeld.keys():
+            loss_labeld[loss_type] = math.sqrt(loss_labeld[loss_type]) * scale
+
+
+def rescale_specie_wise_floss(f_loss_record: Dict[str, float], scale: float):
+    for specie in f_loss_record.keys():
+        f_loss_record[specie] = math.sqrt(f_loss_record[specie]) * scale
 
 
 def inference_poscar(config: Dict, working_dir: str):  # This is only for debugging
@@ -307,14 +229,16 @@ def inference_poscar(config: Dict, working_dir: str):  # This is only for debugg
     checkpoint = torch.load('checkpoint_20.pth')
     old_config = checkpoint['config']
 
-    config.update({KEY.SHIFT: old_config[KEY.SHIFT], KEY.SCALE: old_config[KEY.SCALE], KEY.AVG_NUM_NEIGHBOR: old_config[KEY.AVG_NUM_NEIGHBOR]})
+    config.update({KEY.SHIFT: old_config[KEY.SHIFT],
+                   KEY.SCALE: old_config[KEY.SCALE],
+                   KEY.AVG_NUM_NEIGHBOR: old_config[KEY.AVG_NUM_NEIGHBOR]})
 
     for key, value in old_config.items():
         if key not in config.keys():
             print(f'{key} does not exist')
         elif config[key] != value:
             print(f'{key} is updated')
-    
+
     model = build_E3_equivariant_model(config)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)

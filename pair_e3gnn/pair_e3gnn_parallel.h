@@ -36,14 +36,23 @@ namespace LAMMPS_NS{
       torch::Device device = torch::kCPU;
 
       int x_dim;
-      torch::Tensor x_local; // transient x before comm, in backprop stage, it becomes dE_dx(grads_output)
-      torch::Tensor x_ghost; // transient x after comm, in backprop stage, it becomes dE_dx_ghost
 
-      double** x_comm_hold; // saved values for ghost atom which is out of cutoff or even not in neghborlist
+      // transient x before comm, in backprop stage, it becomes dE_dx(grads_output)
+      torch::Tensor x_local; 
+      // transient x after comm, in backprop stage, it becomes dE_dx_ghost
+      torch::Tensor x_ghost; 
+      // saved values for ghost atom which is out of cutoff or even not exist in neghborlist
+      double** x_comm_hold;
+
+      // size of x_comm_hold;
       int nmax;
+      // pointer to buf for comm. used for check self communication
       double* buf_hold;
 
+      // to use tag_to_graph_idx inside comm methods
       int* tag_to_graph_idx_ptr=nullptr;
+
+      torch::Device get_cuda_device();
 
     public:
       PairE3GNNParallel(class LAMMPS *);

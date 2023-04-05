@@ -35,6 +35,7 @@
 #include "neigh_list.h"
 #include "neigh_request.h"
 #include "comm.h"
+#include "error.h"
 
 #include "pair_e3gnn_parallel.h"
 
@@ -47,7 +48,7 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   // constructor
   std::string device_name;
   if(torch::cuda::is_available()){
-    device = torch::kCUDA;
+    device = get_cuda_device();
     device_name = "CUDA";
   } else {
     device = torch::kCPU;
@@ -62,6 +63,29 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   if (lmp->logfile) {
     fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n", device_name.c_str());
   }
+}
+
+torch::Device PairE3GNNParallel::get_cuda_device() {
+  char* cuda_visible = std::getenv("CUDA_VISIBLE_DEVICES");
+  int num_gpus;
+  int idx;
+  int rank = comm->me;
+  if(cuda_visible == nullptr){
+    // assume every gpu in node is avail
+    num_gpus = torch::cuda::device_count();
+    //believe user did right thing...
+    idx = rank % num_gpus;
+  } else {
+    auto delim = ",";
+    char *tok = std::strtok(cuda_visible, delim);
+    std::vector<std::string> device_ids;
+    while(tok != nullptr) {
+      device_ids.push_back(std::string(tok));
+      tok = std::strtok(nullptr, delim);
+    }
+    idx = std::stoi(device_ids[rank % device_ids.size()]);
+  }
+  return torch::Device(torch::kCUDA, idx);
 }
 
 PairE3GNNParallel::~PairE3GNNParallel() {
@@ -97,6 +121,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   int* ilist = list->ilist;
   int inum = list->inum;
 
+  //nice approach from pair_eam
   if (atom->nmax > nmax) {
     memory->destroy(x_comm_hold);
     nmax = atom->nmax;
@@ -206,10 +231,10 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     if(it == model_list.begin()) continue;
     model_part = *it;
 
-    x_local = output.at("x").toTensor();
+    x_local = output.at("x").toTensor().to(torch::kCPU);
 
     x_dim = x_local.size(1); // size of comm for each atom
-    x_ghost = torch::zeros({ghost_node_num, x_dim});
+    x_ghost = torch::zeros({ghost_node_num, x_dim}); //by default, in CPU
 
     comm->forward_comm(this); //populate x_ghost by communication
 
@@ -235,11 +260,11 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
       x_comm_hold[l][m] = 0;
     }
   }
-  //
 
   x_local = torch::ones({1}); // first grad_output (dE_dE = 1)
   torch::Tensor self_conn_grads;
   torch::Tensor dE_dr = torch::zeros({nedges, 3}, FLOAT_TYPE);
+  torch::Tensor x_local_save; //holds grad info of x_local (it loses its grad when sends to CPU)
   std::vector<torch::Tensor> grads;
   std::vector<torch::Tensor> of_tensor;
 
@@ -248,20 +273,22 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     // edge_vec, x, x_ghost order
     auto wrt_tensor = *rit;
     if(rit == wrt_tensors.rbegin()) {
-      grads = torch::autograd::grad({scaled_energy_tensor}, wrt_tensor, {x_local});
+      grads = torch::autograd::grad({scaled_energy_tensor}, wrt_tensor);
     } else {
-      grads = torch::autograd::grad({of_tensor}, wrt_tensor, {x_local, self_conn_grads});
+      x_local_save.copy_(x_local);
+      grads = torch::autograd::grad(of_tensor, wrt_tensor, {x_local_save, self_conn_grads});
     }
-    dE_dr = dE_dr + grads.at(0); //accumulate force
+    dE_dr = dE_dr + grads.at(0).to(torch::kCPU); //accumulate force
     if(std::distance(rit, wrt_tensors.rend()) == 1) continue;  // if last iteration
 
     of_tensor.clear();
     of_tensor.push_back(wrt_tensor[1]);
     of_tensor.push_back(wrt_tensor[2]);
 
-    x_local = grads.at(1);  // grad_outputs (dE_dx)
+    x_local_save = grads.at(1);  // device location
+    x_local = grads.at(1).to(torch::kCPU);  // grad_outputs (dE_dx)
     self_conn_grads = grads.at(2);
-    x_ghost = grads.at(3);  // store dE_dx_ghost
+    x_ghost = grads.at(3).to(torch::kCPU);  // store dE_dx_ghost
 
     x_dim = x_local.size(1);
     comm->reverse_comm(this);  // comm dE_dx_ghost to other proc to complete dE_dx
@@ -504,14 +531,13 @@ int PairE3GNNParallel::pack_reverse_comm(int n, int first, double *buf) {
         m += x_dim;
     }
   }
-  //std::cout << m << std::endl;
   return m;
 }
 
 void PairE3GNNParallel::unpack_reverse_comm(int n, int *list_rev, double *buf) {
   /*
      basically, unpack reverse is "accumulation"
-     but in gnn, because it using tag and so duplicated atom exist in input(even ghost)
+     but in gnn, because it use tag and so duplicated atom exist in input(even ghost)
      In lammps index, there is duplicated atoms and for normal potential these duplicated
      atoms have different forces. but not in GNN, each unique atom has its own unique force
      so using std::set, avoid adding same value twice. this could be accomplished when
