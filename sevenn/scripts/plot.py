@@ -6,16 +6,31 @@ from sevenn.train.trainer import DataSetType, LossType
 matplotlib.use('pdf')
 
 
-def draw_learning_curve(train_loss, valid_loss, fname):
+def draw_learning_curve(loss_history, fname):
+    """
     try:
-        draw_learning_curve.history[DataSetType.TRAIN].append(train_loss)
-        draw_learning_curve.history[DataSetType.VALID].append(valid_loss)
+        draw_learning_curve.history[DataSetType.TRAIN][LossType.ENERGY].append(
+            train_loss['total'][LossType.ENERGY])
+        draw_learning_curve.history[DataSetType.TRAIN][LossType.FORCE].append(
+            train_loss['total'][LossType.FORCE])
+        draw_learning_curve.history[DataSetType.VALID][LossType.ENERGY].append(
+            valid_loss['total'][LossType.ENERGY])
+        draw_learning_curve.history[DataSetType.VALID][LossType.FORCE].append(
+            valid_loss['total'][LossType.FORCE])
     except AttributeError:
-        draw_learning_curve.history = {'train': [], 'valid': []}
+        draw_learning_curve.history = {
+            DataSetType.TRAIN: {LossType.ENERGY: [], LossType.FORCE: []},
+            DataSetType.VALID: {LossType.ENERGY: [], LossType.FORCE: []}
+        }
+    """
 
-    loss_hist = draw_learning_curve.history[5:]  # skip early loss(for visual)
+    # alias
+    train_hist = loss_history[DataSetType.TRAIN]
+    valid_hist = loss_history[DataSetType.VALID]
+    epoch_num = len(train_hist[LossType.ENERGY])
+
     # do nothinig untill 10 epoch
-    if len(loss_hist) < 10:
+    if epoch_num < 10:
         return
     plt.clf()
 
@@ -23,15 +38,17 @@ def draw_learning_curve(train_loss, valid_loss, fname):
 
     energy_ax = axs[0]
     force_ax = axs[1]
-    energy_ax.plot(loss_hist['train']['total']['energy'], label='train')
-    energy_ax.plot(loss_hist['valid']['total']['energy'], label='valid')
+    energy_ax.plot(train_hist[LossType.ENERGY], label='train')
+    energy_ax.plot(valid_hist[LossType.ENERGY], label='valid')
+    energy_ax.set_xlim(3, epoch_num - 1)
     energy_ax.set_xlabel('Epoch')
     energy_ax.set_ylabel('RMSE(eV/atom)')
     energy_ax.set_title('Energy')
     energy_ax.legend()
 
-    force_ax.plot(loss_hist['train']['total']['force'], label='train')
-    force_ax.plot(loss_hist['valid']['total']['force'], label='valid')
+    force_ax.plot(train_hist[LossType.FORCE], label='train')
+    force_ax.plot(valid_hist[LossType.FORCE], label='valid')
+    force_ax.set_xlim(3, epoch_num - 1)
     force_ax.set_xlabel('Epoch')
     force_ax.set_ylabel(r'RMSE(eV/${\rm \AA}$)')
     force_ax.set_title('Force')

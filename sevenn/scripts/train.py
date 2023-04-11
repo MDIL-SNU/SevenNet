@@ -145,11 +145,9 @@ def train(config: Dict, working_dir: str):
         suffix = "_best" if is_best else f"_{epoch}"
 
         if draw_lc:
-            #TODO: now loss_hist_print is empty.
-            draw_learning_curve(loss_hist_print, f"{prefix}/learning_curve.png")
+            draw_learning_curve(loss_history, f"{prefix}/learning_curve.png")
         if is_deploy_model or is_best:
-            deploy(trainer.model.state_dict(),
-                   config,
+            deploy(trainer.model.state_dict(), config,
                    f"{prefix}/deployed_model{suffix}.pt")
         if is_model_check_point or is_best:
             checkpoint = trainer.get_checkpoint_dict()
@@ -164,8 +162,12 @@ def train(config: Dict, working_dir: str):
             pass
 
     # remove later
-    loss_hist = trainer.loss_hist
-    loss_hist_print = copy.deepcopy(loss_hist)
+    #loss_hist = trainer.loss_hist
+    #loss_hist_print = copy.deepcopy(loss_hist)
+    loss_history = {
+        DataSetType.TRAIN: {LossType.ENERGY: [], LossType.FORCE: []},
+        DataSetType.VALID: {LossType.ENERGY: [], LossType.FORCE: []}
+    }
 
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
@@ -181,11 +183,10 @@ def train(config: Dict, working_dir: str):
         loss_dct = {k: np.mean(v) for k, v in valid_loss['total'].items()}
         valid_total_loss = trainer.loss_function(loss_dct)
 
-        # preprocess loss_hist, (scaled mse -> unscaled rmse)
-        rescale_loss(train_loss, scale)
-        rescale_loss(valid_loss, scale)
-        rescale_specie_wise_floss(train_specie_loss, scale)
-        rescale_specie_wise_floss(valid_specie_loss, scale)
+        # subroutine for loss (rescale, record loss, ..)
+        postprocess_loss(train_loss, valid_loss,
+                         train_specie_loss, valid_specie_loss,
+                         scale, loss_history)
 
         Logger().epoch_write_loss(train_loss, valid_loss)
         Logger().epoch_write_specie_wise_loss(train_specie_loss, valid_specie_loss)
@@ -203,6 +204,24 @@ def train(config: Dict, working_dir: str):
             Logger().write(f"output written at epoch: {epoch}\n")
     # deploy(best_model, config, f'{prefix}/deployed_model.pt')
     Logger().timer_end("total", message="Total wall time")
+
+
+# subroutine for loss (rescale, record loss, ..)
+def postprocess_loss(train_loss, valid_loss,
+                     train_specie_loss, valid_specie_loss,
+                     scale, loss_history):
+    rescale_loss(train_loss, scale)
+    rescale_loss(valid_loss, scale)
+
+    rescale_specie_wise_floss(valid_specie_loss, scale)
+    loss_history[DataSetType.TRAIN][LossType.ENERGY].append(
+        train_loss['total'][LossType.ENERGY])
+    loss_history[DataSetType.TRAIN][LossType.FORCE].append(
+        train_loss['total'][LossType.FORCE])
+    loss_history[DataSetType.VALID][LossType.ENERGY].append(
+        valid_loss['total'][LossType.ENERGY])
+    loss_history[DataSetType.VALID][LossType.FORCE].append(
+        valid_loss['total'][LossType.FORCE])
 
 
 def rescale_loss(loss_record: Dict[str, Dict[LossType, float]], scale: float):
