@@ -20,6 +20,7 @@
 #include <ATen/ops/from_blob.h>
 #include <c10/core/Scalar.h>
 #include <c10/core/TensorOptions.h>
+#include <limits>
 #include <numeric>
 #include <string>
 
@@ -43,6 +44,8 @@ using namespace LAMMPS_NS;
 
 #define INTEGER_TYPE torch::TensorOptions().dtype(torch::kInt64)
 #define FLOAT_TYPE torch::TensorOptions().dtype(torch::kFloat)
+const int COMM_SELF_TAG = std::numeric_limits<int>::min();
+
 
 PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   // constructor
@@ -57,8 +60,6 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
 
   comm_forward = 0;
   comm_reverse = 0;
-  x_comm_hold = nullptr;
-  nmax = 0;
 
   if (lmp->logfile) {
     fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n", device_name.c_str());
@@ -93,7 +94,7 @@ PairE3GNNParallel::~PairE3GNNParallel() {
     memory->destroy(setflag);
     memory->destroy(cutsq);
     memory->destroy(map);
-    memory->destroy(x_comm_hold);
+    //memory->destroy(x_comm_hold);
   }
 }
 
@@ -120,13 +121,6 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   int ntotal = nlocal + nghost;
   int* ilist = list->ilist;
   int inum = list->inum;
-
-  //nice approach from pair_eam
-  if (atom->nmax > nmax) {
-    memory->destroy(x_comm_hold);
-    nmax = atom->nmax;
-    memory->create(x_comm_hold, nmax, comm_forward, "PairE3GNNParallel:x_comm_hold");
-  }
 
   bigint natoms = atom->natoms;
   tagint *tag = atom->tag;
@@ -194,7 +188,9 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
       }
     } // j loop end
   } // i loop end
-  const int ghost_node_num = graph_indexer - nlocal;
+
+  graph_size = graph_indexer;
+  const int ghost_node_num = graph_size - nlocal;
 
   // convert primitive data to torch Tensor
   auto inp_node_type = torch::from_blob(node_type.data(), nlocal, INTEGER_TYPE);
@@ -225,19 +221,27 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   wrt_tensors.push_back({input_dict.at("edge_vec")});
 
   auto model_part = model_list.front();
+
   auto output = model_part.forward({input_dict}).toGenericDict();
+  comm_preprocess();
+  const int extra_size = ghost_node_num + static_cast<int>(extra_graph_idx_map.size());
+  torch::Tensor x_local;
+  torch::Tensor x_ghost;
 
   for(auto it = model_list.begin(); it != model_list.end(); ++it) {
     if(it == model_list.begin()) continue;
     model_part = *it;
 
     x_local = output.at("x").toTensor().to(torch::kCPU);
-
     x_dim = x_local.size(1); // size of comm for each atom
-    x_ghost = torch::zeros({ghost_node_num, x_dim}); //by default, in CPU
+
+    //this makes sense because of comm_preprocess and graph_indexer
+    auto extra_x = torch::zeros({extra_size, x_dim});
+    x_comm = torch::cat({x_local, extra_x}, 0);
 
     comm->forward_comm(this); //populate x_ghost by communication
 
+    x_ghost = torch::split_with_sizes(x_comm, {nlocal, ghost_node_num, extra_size-ghost_node_num}, 0)[1];
     x_ghost.set_requires_grad(true);
     output.insert_or_assign("x_ghost", x_ghost.to(device));
 
@@ -252,23 +256,15 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   }
   // {1, 1} to {1}
   torch::Tensor scaled_energy_tensor = output.at("scaled_total_energy").toTensor().squeeze();
-  eng_vdwl += scaled_energy_tensor.item<float>()*scale + shift*nlocal; // accumulate energy, fix later
 
-  // zero out x_comm_hold
-  for(int l=0; l<nmax; l++) {
-    for(int m=0; m<x_dim; m++) {
-      x_comm_hold[l][m] = 0;
-    }
-  }
-
-  x_local = torch::ones({1}); // first grad_output (dE_dE = 1)
+  //x_local = torch::ones({1}); // first grad_output (dE_dE = 1)
   torch::Tensor self_conn_grads;
-  torch::Tensor dE_dr = torch::zeros({nedges, 3}, FLOAT_TYPE);
+  torch::Tensor dE_dr = torch::zeros({nedges, 3}, torch::TensorOptions().dtype(torch::kFloat).device(device));
   torch::Tensor x_local_save; //holds grad info of x_local (it loses its grad when sends to CPU)
   std::vector<torch::Tensor> grads;
   std::vector<torch::Tensor> of_tensor;
 
-  // most values of self_conn_grads are zero becuase we use only scalars for energy
+  //TODO: most values of self_conn_grads are zero becuase we use only scalars for energy
   for(auto rit = wrt_tensors.rbegin(); rit != wrt_tensors.rend(); ++rit) {
     // edge_vec, x, x_ghost order
     auto wrt_tensor = *rit;
@@ -278,7 +274,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
       x_local_save.copy_(x_local);
       grads = torch::autograd::grad(of_tensor, wrt_tensor, {x_local_save, self_conn_grads});
     }
-    dE_dr = dE_dr + grads.at(0).to(torch::kCPU); //accumulate force
+    dE_dr = dE_dr + grads.at(0); //accumulate force
     if(std::distance(rit, wrt_tensors.rend()) == 1) continue;  // if last iteration
 
     of_tensor.clear();
@@ -286,23 +282,27 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     of_tensor.push_back(wrt_tensor[2]);
 
     x_local_save = grads.at(1);  // device location
-    x_local = grads.at(1).to(torch::kCPU);  // grad_outputs (dE_dx)
-    self_conn_grads = grads.at(2);
-    x_ghost = grads.at(3).to(torch::kCPU);  // store dE_dx_ghost
-
+    x_local = x_local_save.detach().to(torch::kCPU);  // grad_outputs (dE_dx), only values
     x_dim = x_local.size(1);
+
+    self_conn_grads = grads.at(2);
+    x_ghost = grads.at(3).detach().to(torch::kCPU);  // store dE_dx_ghost, only values
+
+    auto extra_x = torch::zeros({extra_size-ghost_node_num, x_dim});
+    x_comm = torch::cat({x_local, x_ghost, extra_x}, 0);
+
     comm->reverse_comm(this);  // comm dE_dx_ghost to other proc to complete dE_dx
+
+    //updated x_local is what we interest (became next grads_output with sefl_conn_grads)
+    x_local = torch::split_with_sizes(x_comm, {nlocal, ghost_node_num, extra_size-ghost_node_num}, 0)[0];
     // now x_local is complete (dE_dx)
 
-    // zero out x_comm_hold
-    for(int l=0; l<nmax; l++) {
-      for(int m=0; m<x_dim; m++) {
-        x_comm_hold[l][m] = 0;
-      }
-    }
   }
 
   // atomic energy things?
+  eng_vdwl += scaled_energy_tensor.item<float>()*scale + shift*nlocal; // accumulate energy, fix later
+
+  dE_dr = dE_dr.to(torch::kCPU);
   torch::Tensor force_tensor = torch::zeros({graph_indexer, 3});
 
   // TODO:where I can find torch_scatter cpp version? I heard this version(using built) is slower.
@@ -318,6 +318,14 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     f[i][1] = forces[graph_idx][1];
     f[i][2] = forces[graph_idx][2];
   }
+
+  // clean up comm preprocess variables
+  comm_preprocess_done = false;
+  for(int i=0; i<6; i++) {
+    comm_index_pack_forward[i].clear();
+    comm_index_unpack_forward[i].clear();
+  }
+  extra_graph_idx_map.clear();
 }
 
 // allocate arrays (called from coeff)
@@ -376,6 +384,7 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   shift = std::stod(meta_dict["shift"]);
   scale = std::stod(meta_dict["scale"]);
 
+  // maximum possible size of per atom x before last convolution
   int comm_size = std::stod(meta_dict["comm_size"]);
   // to initialize buffer size for communication
   comm_forward = comm_size;  //variable of parent class
@@ -438,153 +447,175 @@ double PairE3GNNParallel::init_one(int i, int j) {
   return cutoff;
 }
 
-// TODO: refactor for speed
-int PairE3GNNParallel::pack_forward_comm(int n, int *list_send, double *buf, int pbc_flag, int* pbc) {
-  int i,j,m;
+// call only once!!
+void PairE3GNNParallel::comm_preprocess() {
+  // assert(comm_preprocess_done == false);
+  comm->forward_comm(this);
+  for(int i=0; i<6; i++) {
+    //do nothing if self comm
+    if(comm_index_unpack_forward[i].at(0) == COMM_SELF_TAG) {
+      comm_index_pack_forward[i].clear();
+      comm_index_pack_forward[i].push_back(COMM_SELF_TAG);
+    }
+  }
+  comm_preprocess_done = true;
+}
+
+void PairE3GNNParallel::pack_forward_init(int comm_phase, int n, int *list_send) {
+  std::vector<int>& idx_map = comm_index_pack_forward[comm_phase];
+  idx_map.reserve(n);
+
+  int i,j;
   int nlocal = list->inum;
   tagint *tag = atom->tag;
-  auto x_local_accessor = x_local.accessor<float, 2>();
-
-  m = 0;
   for (i = 0; i < n; i++) {
     int list_i = list_send[i];
     int graph_idx = tag_to_graph_idx_ptr[tag[list_i]];
-    if(graph_idx < nlocal && graph_idx != -1) {
-      for (j = 0; j < x_dim; j++) {
-        buf[m++] = static_cast<double>(x_local_accessor[graph_idx][j]);
-      }
+    if(graph_idx != -1) {
+      //known atom
+      idx_map.push_back(graph_idx);
     } else {
-      std::memcpy(&buf[m], &x_comm_hold[list_i][0], sizeof(double)*x_dim);
-      m += x_dim;
+      //unknown atom
+      if(extra_graph_idx_map.find(list_i) != extra_graph_idx_map.end()){
+        idx_map.push_back(extra_graph_idx_map[list_i]);
+      } else {
+        // unknown atom at pack forward ghost atom outside cutoff?
+        extra_graph_idx_map[i] = graph_size + extra_graph_idx_map.size();
+        idx_map.push_back(extra_graph_idx_map[i]); //same as list_i in pack
+      }
+    }
+  }
+}
+
+void PairE3GNNParallel::unpack_forward_init(int comm_phase, int n, int first, double* buf_check) {
+  std::vector<int>& idx_map = comm_index_unpack_forward[comm_phase];
+  if(buf_check == buf_hold) {
+    idx_map.push_back(COMM_SELF_TAG);
+    return;
+  }
+  idx_map.reserve(n);
+
+  int i,j,last;
+  last = first + n;
+  int nlocal = list->inum;
+  tagint *tag = atom->tag;
+
+  for (i = first; i < last; i++) {
+    int graph_idx = tag_to_graph_idx_ptr[tag[i]];
+    if(graph_idx != -1) {
+      idx_map.push_back(graph_idx);
+    } else {
+      //idx_map.push_back(-i); //same as list_i in pack
+
+      //key(i) would be unique, and initialized at 'unpack' first not pack
+      //requiring non local atom in pack means the atom is from other process
+      //and current process is used for tmporary place to hold info
+      //so insert happens only in unpack
+      if(extra_graph_idx_map.find(i) != extra_graph_idx_map.end()){
+        std::cout << "UNREACHABLE line 573" << std::endl;
+        idx_map.push_back(extra_graph_idx_map[i]); //same as list_i in pack
+      } else {
+        extra_graph_idx_map[i] = graph_size + extra_graph_idx_map.size();
+        idx_map.push_back(extra_graph_idx_map[i]); //same as list_i in pack
+      }
+    }
+  }
+}
+
+int PairE3GNNParallel::pack_forward_comm(int n, int *list_send, double *buf, int pbc_flag, int* pbc) {
+  //TODO: reset comm_count to zero
+  static int comm_count = 0;
+  const int comm_phase = comm_count % 6;
+  comm_count++;
+  if(comm_preprocess_done == false) {
+    buf_hold = buf;
+    pack_forward_init(comm_phase, n, list_send);
+    return 0;
+  }
+
+  std::vector<int>& idx_map = comm_index_pack_forward[comm_phase];
+  if(idx_map[0] == COMM_SELF_TAG) return 0;
+
+  int i,j,m;
+  int nlocal = list->inum;
+
+  m = 0;
+  for (i = 0; i < n; i++) {
+    const int idx = idx_map.at(i);
+    float* from = x_comm[idx].data_ptr<float>();
+    for (j = 0; j < x_dim; j++) {
+      buf[m++] = static_cast<double>(from[j]);
     }
   }
 
   return m;
 }
 
-// TODO: refactor for speed
+// first is always bigger than nlocal (check when possible))
 void PairE3GNNParallel::unpack_forward_comm(int n, int first, double *buf) {
-  int i,list_i,j,m,last;
-  int nlocal = list->inum;
-  tagint *tag = atom->tag;
-  auto x_ghost_accessor = x_ghost.accessor<float, 2>();
+  static int comm_count = 0;
+  const int comm_phase = comm_count % 6;
+  comm_count++;
+  if(comm_preprocess_done == false) {
+    unpack_forward_init(comm_phase, n, first, buf);
+    return;
+  }
+  std::vector<int>& idx_map = comm_index_unpack_forward[comm_phase];
+  if(idx_map[0] == COMM_SELF_TAG) {
+    return;
+  }
 
+  int i,j,m;
   m = 0;
-  last = first + n;
-  for (i = first; i < last; i++) {
-    /*
-       case 1: over pbc, local atom to local atom(same proc) -> just increase 'm'
-       case 2: atom received from another process
-          case2-1: received atom is known (inside cutoff) -> store to ghost x tensor
-          case2-2: received atom in unknown -> store to x_comm_hold and deliver later
-       */
-    int graph_idx = tag_to_graph_idx_ptr[tag[i]];
-    if(graph_idx < nlocal && graph_idx != -1) {
-      //case 1, do nothing(local atom x is already complete)
-      m += x_dim;
-    } else {
-      // save to x_comm_hold anyway
-      std::memcpy(&x_comm_hold[i][0], &buf[m], sizeof(double)*x_dim);
-      m += x_dim;
 
-      if(graph_idx != -1) {
-        //case 2-1, given ghost atom is what we wanted
-        //save it to x_ghost
-        for (j = 0; j < x_dim; j++) {
-          x_ghost_accessor[graph_idx-nlocal][j] = static_cast<float>(x_comm_hold[i][j]);
-        }
-      }
+  for (i = 0; i < n; i++) {
+    const int idx = idx_map.at(i);
+    float* to = x_comm[idx].data_ptr<float>();
+    for (j = 0; j < x_dim; j++) {
+      to[j] = static_cast<float>(buf[m++]);
     }
   }
 }
 
 int PairE3GNNParallel::pack_reverse_comm(int n, int first, double *buf) {
-  buf_hold = buf;
+  static int comm_count = 0;
+  const int comm_phase = 6 - (comm_count % 6) - 1;
+  comm_count++;
 
-  int i,list_i,j,m,last;
-  int nlocal = list->inum;
-  tagint *tag = atom->tag;
-  auto x_ghost_accessor = x_ghost.accessor<float, 2>();
+  std::vector<int>& idx_map = comm_index_unpack_forward[comm_phase];
+  if(idx_map[0] == COMM_SELF_TAG) return 0;
+
+  int i,j,m;
   m = 0;
-  last = first + n;
-  for (i = first; i < last; i++) {
-    /*
-       case 1: comm to self, do nothing. (see unpack reverse)
-       case 2-1: comm to other from self (is it really exist?) buf[m] = 0
-       case 2-2: comm to other from known ghost atom populate from my ghost atom
-       case 2-3: comm to other unknown ghost atom populate from x_comm_hold
-       */
-    int graph_idx = tag_to_graph_idx_ptr[tag[i]];
 
-    if(graph_idx < nlocal && graph_idx != -1) {
-      for (j = 0; j < x_dim; j++) {
-        buf[m++] = 0;
-      }
-    } else if(graph_idx != -1) {
-        //case 2-1
-        for (j = 0; j < x_dim; j++) {
-          buf[m++] = static_cast<double>(x_ghost_accessor[graph_idx-nlocal][j]);
-        }
-    } else {
-        //case 2-2
-        std::memcpy(&buf[m], &x_comm_hold[i][0], sizeof(double)*x_dim);
-        m += x_dim;
+  for (i = 0; i < n; i++) {
+    const int idx = idx_map.at(i);
+    float* from = x_comm[idx].data_ptr<float>();
+    for (j = 0; j < x_dim; j++) {
+      buf[m++] = static_cast<double>(from[j]);
     }
   }
   return m;
 }
 
-void PairE3GNNParallel::unpack_reverse_comm(int n, int *list_rev, double *buf) {
-  /*
-     basically, unpack reverse is "accumulation"
-     but in gnn, because it use tag and so duplicated atom exist in input(even ghost)
-     In lammps index, there is duplicated atoms and for normal potential these duplicated
-     atoms have different forces. but not in GNN, each unique atom has its own unique force
-     so using std::set, avoid adding same value twice. this could be accomplished when
-     pack_forward_comm by store 0 to buffer or here
 
-     case 1: comm to self. do nothing
-     case 2-1: unpack to local atom -> accumulate value
-     case 2-2: unpack to known ghost atom -> accumulate value
-     case 2-3: unpack to unknown ghost atom -> store to x_comm_hold(should I accumulated?)
-     */
-  if(buf_hold == buf) {
-    // if self comm, do nothing
-    return;
-  }
+// why it works without already_met set??
+void PairE3GNNParallel::unpack_reverse_comm(int n, int *list_rev, double *buf) {
+  static int comm_count = 0;
+  const int comm_phase = 6 - (comm_count % 6) - 1;
+  comm_count++;
+  
+  std::vector<int>& idx_map = comm_index_pack_forward[comm_phase];
+  if(idx_map[0] == COMM_SELF_TAG) return;
 
   int i,j,m;
-  int nlocal = list->inum;
-  tagint *tag = atom->tag;
-  auto x_local_accessor = x_local.accessor<float, 2>();
-  auto x_ghost_accessor = x_ghost.accessor<float, 2>();
-  std::set<int> already_met;
-
   m = 0;
+
   for (i = 0; i < n; i++) {
-    int list_i = list_rev[i];
-    int graph_idx = tag_to_graph_idx_ptr[tag[list_i]];
-
-    if(already_met.count(graph_idx) == 1) {
-      m += x_dim;
-      continue;
-    }
-    already_met.insert(graph_idx);
-
-    if(graph_idx < nlocal && graph_idx != -1) {
-      // if given index is local (case 1) accumulate values to x_local(dE_dx)
-      for (j = 0; j < x_dim; j++) {
-        x_local_accessor[graph_idx][j] += static_cast<float>(buf[m++]);
-      }
-    } else if(graph_idx != -1) {
-      // to known ghost
-      for (j = 0; j < x_dim; j++) {
-        x_ghost_accessor[graph_idx-nlocal][j] += static_cast<float>(buf[m++]);
-      }
-    } else {
-      std::memcpy(&x_comm_hold[list_i][0], &buf[m], sizeof(double)*x_dim);
-      m += x_dim;
+    const int idx = idx_map.at(i);
+    float* to = x_comm[idx].data_ptr<float>();
+    for(j = 0; j < x_dim; j++) {
+      to[j] += static_cast<float>(buf[m++]);
     }
   }
 }
-

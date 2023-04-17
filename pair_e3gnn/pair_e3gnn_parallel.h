@@ -34,25 +34,27 @@ namespace LAMMPS_NS{
       float scale;
       std::vector<torch::jit::Module> model_list;
       torch::Device device = torch::kCPU;
+      torch::Device get_cuda_device();
 
-      int x_dim;
+      // for communication
+      int graph_size;
+      int x_dim; //to determine per atom data size
+      torch::Tensor x_comm; // x_local + x_ghost + x_comm_extra
 
-      // transient x before comm, in backprop stage, it becomes dE_dx(grads_output)
-      torch::Tensor x_local; 
-      // transient x after comm, in backprop stage, it becomes dE_dx_ghost
-      torch::Tensor x_ghost; 
-      // saved values for ghost atom which is out of cutoff or even not exist in neghborlist
-      double** x_comm_hold;
+      bool comm_preprocess_done = false;
+      void comm_preprocess();
+      void pack_forward_init(int comm_phase, int n, int *list);
+      void unpack_forward_init(int comm_phase, int n, int first, double* buf_check);
 
-      // size of x_comm_hold;
-      int nmax;
+      // temporary variable holds for each compute step
+      std::unordered_map<int, int> extra_graph_idx_map;
+      std::vector<int> comm_index_pack_forward[6];
+      std::vector<int> comm_index_unpack_forward[6];
+
       // pointer to buf for comm. used for check self communication
       double* buf_hold;
-
       // to use tag_to_graph_idx inside comm methods
       int* tag_to_graph_idx_ptr=nullptr;
-
-      torch::Device get_cuda_device();
 
     public:
       PairE3GNNParallel(class LAMMPS *);
