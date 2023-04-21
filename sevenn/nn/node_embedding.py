@@ -67,6 +67,7 @@ def one_hot_atom_embedding(atomic_numbers: List[int], type_map: Dict[int, int]):
     num_classes = len(type_map)
     type_numbers = torch.LongTensor([type_map[num] for num in atomic_numbers])
     embd = torch.nn.functional.one_hot(type_numbers, num_classes)
+    embd = embd.type(torch.FloatTensor)
 
     return embd
 
