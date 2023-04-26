@@ -213,6 +213,7 @@ def postprocess_loss(train_loss, valid_loss,
     rescale_loss(train_loss, scale)
     rescale_loss(valid_loss, scale)
 
+    rescale_specie_wise_floss(train_specie_loss, scale)
     rescale_specie_wise_floss(valid_specie_loss, scale)
     loss_history[DataSetType.TRAIN][LossType.ENERGY].append(
         train_loss['total'][LossType.ENERGY])
