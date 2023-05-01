@@ -333,6 +333,11 @@ def check_config_compatible(cf1, cf2):
         raise ValueError(f"Value of {sbs} should be same. \
                 {cf1[sbs]} != {cf2[sbs]}")
 
+    #TODO: for old checkpoint files, remove later
+    if KEY.TRAIN_AVG_NUM_NEIGH not in cf2.keys() or KEY.TRAIN_SHIFT_SCALE not in cf2.keys():
+        cf2[KEY.TRAIN_AVG_NUM_NEIGH] = False
+        cf2[KEY.TRAIN_SHIFT_SCALE] = False
+
     try:
         cntdct = cf1[KEY.CONTINUE]
     except KeyError:
