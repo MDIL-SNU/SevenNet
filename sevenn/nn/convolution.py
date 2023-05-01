@@ -26,6 +26,7 @@ class IrrepsConvolution(nn.Module):
         weight_layer_input_to_hidden: List[int],
         weight_layer_act=ShiftedSoftPlus,
         denumerator: float = 1.0,
+        train_denumerator: bool = False,
         data_key_x: str = KEY.NODE_FEATURE,
         data_key_filter: str = KEY.EDGE_ATTR,
         data_key_weight_input: str = KEY.EDGE_EMBEDDING,
@@ -33,7 +34,9 @@ class IrrepsConvolution(nn.Module):
         is_parallel: bool = False,
     ):
         super().__init__()
-        self.denumerator = denumerator
+        self.denumerator = torch.FloatTensor([denumerator])
+        if train_denumerator:
+            self.denumerator = nn.Parameter(self.denumerator)
         self.KEY_X = data_key_x
         self.KEY_FILTER = data_key_filter
         self.KEY_WEIGHT_INPUT = data_key_weight_input

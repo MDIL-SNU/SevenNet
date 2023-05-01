@@ -23,10 +23,9 @@ import sevenn._keys as KEY
 
 
 # TODO: E3_equivariant model assumed
-# TODO: implement continue
 def train(config: Dict, working_dir: str):
     """
-    main program flow
+    main flow
     """
     prefix = f"{os.path.abspath(working_dir)}/"
     Logger().timer_start("total")
@@ -57,9 +56,12 @@ def train(config: Dict, working_dir: str):
                                          if test_set is not None else 0))
 
         Logger().write("\nCalculating shift and scale from training set...\n")
-        shift, scale = train_set.shift_scale_dataset()
+        #shift, scale = train_set.shift_scale_dataset()
+        #TODO TODO TODO
+        shift = train_set.get_per_atom_energy_mean()
+        scale = train_set.get_force_rmse()
         config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
-        valid_set.shift_scale_dataset(shift=shift, scale=scale)
+        #valid_set.shift_scale_dataset(shift=shift, scale=scale)
         Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
         Logger().write(f"calculated force rms scale is {scale:.6f}\n")
 
@@ -86,37 +88,70 @@ def train(config: Dict, working_dir: str):
         Logger().error(e)
         sys.exit(1)
 
-    if config[KEY.CONTINUE] is None:
-        Logger().write("\nModel building...\n")
-        # initialize model
-        try:
-            model = build_E3_equivariant_model(config)
-        except Exception as e:
-            Logger().error(e)
-            sys.exit(1)
-        Logger().write("Model building was successful\n")
-        user_labels = dataset.user_labels
+    Logger().write("\nModel building...\n")
+    # initialize model
+    try:
+        model = build_E3_equivariant_model(config)
+    except Exception as e:
+        Logger().error(e)
+        sys.exit(1)
+    Logger().write("Model building was successful\n")
+    user_labels = dataset.user_labels
 
-        # scaled for energy, force but not stress
-        trainer = Trainer(
-            model, user_labels, config,
-            energy_key=KEY.SCALED_PER_ATOM_ENERGY,
-            ref_energy_key=KEY.REF_SCALED_PER_ATOM_ENERGY,
-            force_key=KEY.SCALED_FORCE,
-            ref_force_key=KEY.REF_SCALED_FORCE,
-            stress_key=KEY.SCALED_STRESS,
-            ref_stress_key=KEY.REF_SCALED_STRESS
-        )
-    else:
-        # TODO: checkpoint validation? compatiblity with current config? shift scale?
-        # NOT IMPLEMENTED YET
+    optimizer_state_dict, scheduler_state_dict = None, None
+    if config[KEY.CONTINUE] is not False:
+        continue_dct = config[KEY.CONTINUE]
         Logger().write("\nContinue found, loading checkpoint\n")
-        checkpoint = torch.load(config[KEY.CONTINUE])
-        user_labels = dataset.user_labels
-        trainer = Trainer.from_checkpoint_dict(checkpoint, user_labels)
-        model = trainer.model
-        Logger().write("\ncheckpoint previous epoch: {checkpoint['epoch']}\n")
-        Logger().write("\ncheckpoint loading was successful\n")
+
+        checkpoint = torch.load(continue_dct[KEY.CHECKPOINT])
+        reset_optimizer = continue_dct[KEY.RESET_OPTIMIZER]
+        reset_scheduler = continue_dct[KEY.RESET_SCHEDULER]
+
+        from_epoch = checkpoint['epoch']
+        model_state_dict_cp = checkpoint['model_state_dict']
+        optimizer_state_dict = \
+            None if reset_optimizer else checkpoint['optimizer_state_dict']
+        scheduler_state_dict = \
+            None if reset_scheduler else checkpoint['scheduler_state_dict']
+        loss_cp = checkpoint['loss']
+        config_cp = checkpoint['config']
+
+        if(avg_num_neigh != config_cp[KEY.AVG_NUM_NEIGHBOR]
+                or shift != config_cp[KEY.SHIFT]
+                or scale != config_cp[KEY.SCALE]):
+            Logger().write("\nWARNING: dataset is updated\n")
+            Logger().write(f"avg_num_neigh: {config_cp[KEY.AVG_NUM_NEIGHBOR]:.4f}"
+                           + f"-> {avg_num_neigh:.4f}\n")
+            Logger().write(f"shift: {config_cp[KEY.SHIFT]:.4f} -> {shift:.4f}\n")
+            Logger().write(f"scale: {config_cp[KEY.SCALE]:.4f} -> {scale:.4f}\n")
+            Logger().write("The model(trained on previous dataset) "
+                           + "gonna use updated shift, scale and avg_num_neigh\n")
+
+        #TODO: hard coded
+        IGNORE_WIEHGT_KEYS = ["rescale.shift", "rescale.scale"]
+        for i in range(0, config[KEY.NUM_CONVOLUTION]):
+            IGNORE_WIEHGT_KEYS.append(f"{i}_convolution.denumerator")
+        model_state_dict_cp = {k: v for k, v in model_state_dict_cp.items()
+                               if k not in IGNORE_WIEHGT_KEYS}
+
+        # it will raise error if not compatible
+        check_config_compatible(config, config_cp)
+        model.load_state_dict(model_state_dict_cp, strict=False)
+
+        Logger().write(f"checkpoint previous epoch was: {from_epoch}\n")
+        Logger().write("checkpoint loading was successful\n")
+
+    trainer = Trainer(
+        model, user_labels, config,
+        energy_key=KEY.PRED_PER_ATOM_ENERGY,
+        ref_energy_key=KEY.PER_ATOM_ENERGY,
+        force_key=KEY.PRED_FORCE,
+        ref_force_key=KEY.FORCE,
+        stress_key=KEY.PRED_STRESS,
+        ref_stress_key=KEY.STRESS,
+        optimizer_state_dict=optimizer_state_dict,
+        scheduler_state_dict=scheduler_state_dict
+    )
 
     num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
     Logger().write(f"Total number of weight in model is {num_weights}\n")
@@ -161,9 +196,6 @@ def train(config: Dict, working_dir: str):
             #TODO: implement
             pass
 
-    # remove later
-    #loss_hist = trainer.loss_hist
-    #loss_hist_print = copy.deepcopy(loss_hist)
     loss_history = {
         DataSetType.TRAIN: {LossType.ENERGY: [], LossType.FORCE: []},
         DataSetType.VALID: {LossType.ENERGY: [], LossType.FORCE: []}
@@ -186,7 +218,7 @@ def train(config: Dict, working_dir: str):
         # subroutine for loss (rescale, record loss, ..)
         postprocess_loss(train_loss, valid_loss,
                          train_specie_loss, valid_specie_loss,
-                         scale, loss_history)
+                         1, loss_history)
 
         Logger().epoch_write_loss(train_loss, valid_loss)
         Logger().epoch_write_specie_wise_loss(train_specie_loss, valid_specie_loss)
@@ -273,3 +305,42 @@ def inference_poscar(config: Dict, working_dir: str):  # This is only for debugg
             print(result[KEY.PRED_FORCE])
             print(result[KEY.SCALED_STRESS])
             break
+
+
+def check_config_compatible(cf1, cf2):
+    SHOULD_BE_SAME = [
+        KEY.TYPE_MAP,
+        KEY.NODE_FEATURE_MULTIPLICITY,
+        KEY.LMAX,
+        KEY.IS_PARITY,
+        KEY.RADIAL_BASIS,
+        KEY.CUTOFF_FUNCTION,
+        KEY.CUTOFF,
+        KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS,
+        KEY.NUM_CONVOLUTION,
+        KEY.ACTIVATION_GATE,
+        KEY.ACTIVATION_SCARLAR,
+        KEY.DTYPE,
+        KEY.OPTIMIZER,
+        KEY.OPTIM_PARAM,
+        KEY.SCHEDULER,
+        KEY.SCHEDULER_PARAM,
+    ]
+
+    for sbs in SHOULD_BE_SAME:
+        if cf1[sbs] == cf2[sbs]:
+            continue
+        raise ValueError(f"Value of {sbs} should be same. \
+                {cf1[sbs]} != {cf2[sbs]}")
+
+    try:
+        cntdct = cf1[KEY.CONTINUE]
+    except KeyError:
+        return
+
+    TRAINABLE_CONFIGS = [KEY.TRAIN_AVG_NUM_NEIGH, KEY.TRAIN_SHIFT_SCALE]
+    if any((not cntdct[KEY.RESET_SCHEDULER], not cntdct[KEY.RESET_OPTIMIZER])) \
+       and all(cf1[k] == cf2[k] for k in TRAINABLE_CONFIGS) is False:
+        raise ValueError("trainable shift_scale or avg_num_neigh should match"
+                         + " if one of reset optimizer or scheduler is false")
+

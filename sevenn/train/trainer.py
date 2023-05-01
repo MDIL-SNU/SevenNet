@@ -35,7 +35,8 @@ class Trainer():
         self, model, user_labels: list, config: dict,
         energy_key: str, ref_energy_key: str,
         force_key: str, ref_force_key: str,
-        stress_key: str, ref_stress_key: str
+        stress_key: str, ref_stress_key: str,
+        optimizer_state_dict=None, scheduler_state_dict=None
     ):
         """
         note that energy key is 'per-atom'
@@ -74,12 +75,17 @@ class Trainer():
         self.param = [p for p in model.parameters() if p.requires_grad]
         optimizer = optim_dict[config[KEY.OPTIMIZER].lower()]
         optim_param = config[KEY.OPTIM_PARAM]
-
         self.optimizer = optimizer(self.param, **optim_param)
+
+        if optimizer_state_dict is not None:
+            self.optimizer.load_state_dict(optimizer_state_dict)
 
         scheduler = scheduler_dict[config[KEY.SCHEDULER].lower()]
         scheduler_param = config[KEY.SCHEDULER_PARAM]
         self.scheduler = scheduler(self.optimizer, **scheduler_param)
+
+        if scheduler_state_dict is not None:
+            self.scheduler.load_state_dict(scheduler_state_dict)
 
         self.criterion = torch.nn.MSELoss(reduction='none')
 
@@ -257,11 +263,13 @@ class Trainer():
                 'scheduler_state_dict': self.scheduler.state_dict(),
                 'loss': self.loss_hist}
 
+        """
     @staticmethod
-    def from_checkpoint_dict(checkpoint):
+    def from_checkpoint_dict():
         # TODO: implement this
         config = checkpoint['config']
         pass
+        """
 
     def _update_epoch_loss(self, epoch_loss, user_label: list,
                            batch, loss_dct) -> dict:
@@ -274,7 +282,6 @@ class Trainer():
                 if key == 'total':
                     loss_labeld[loss_type].extend(loss.tolist())
                     continue
-
                 if loss_type is LossType.FORCE:
                     indicies = [i for i, v in enumerate(f_user_label) if v == key]
                 else:  # energy or stress

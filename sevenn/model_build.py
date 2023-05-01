@@ -19,8 +19,7 @@ from sevenn.nn.self_connection import SelfConnectionIntro, SelfConnectionOutro
 from sevenn.nn.convolution import IrrepsConvolution
 from sevenn.nn.equivariant_gate import EquivariantGate
 from sevenn.nn.activation import ShiftedSoftPlus
-from sevenn.nn.scale import Scale
-from sevenn.nn.grads_calc import GradsCalc
+from sevenn.nn.scale import Rescale
 
 import sevenn._keys as KEY
 import sevenn._const as _const
@@ -68,13 +67,7 @@ def init_cutoff_function(config):
 def build_E3_equivariant_model(model_config: dict, parallel=False):
     """
     identical to nequip model
-    atom embedding is not part of model (its input preprocessing)
-    No ResNet style update (but self connection yes)
-
-    parallel here is bad considering code readability & maintanence
-    appropriate place for logic for parallel is deploy_parallel()
-    but inserting extra layers & splitting model is hard after the
-    model buliding. So code remains here.
+    atom embedding is not part of model
     """
     feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]
     lmax = model_config[KEY.LMAX]
@@ -96,6 +89,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
     shift = model_config[KEY.SHIFT]
     scale = model_config[KEY.SCALE]
+    train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
 
     act_gate = {}
     act_scalar = {}
@@ -111,6 +105,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     cutoff_function_module = init_cutoff_function(model_config)
 
     avg_num_neigh = model_config[KEY.AVG_NUM_NEIGHBOR]
+    train_avg_num_neigh = model_config[KEY.TRAIN_AVG_NUM_NEIGH]
 
     edge_embedding = EdgeEmbedding(
         # operate on ||r||
@@ -244,6 +239,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 weight_layer_input_to_hidden=weight_nn_layers,
                 weight_layer_act=act_scalar["e"],
                 denumerator=avg_num_neigh**0.5,
+                train_denumerator=train_avg_num_neigh,
                 is_parallel=parallel)
 
         # irreps of x increase to gate_irreps_in
@@ -295,10 +291,13 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         layers.update(
             {
                 "force output": gradient_module,
-                "rescale": Scale(
+                # rescale scaled value to real physical values
+                "rescale": Rescale(
                     shift=shift,
                     scale=scale,
                     scale_per_atom=True,
+                    train_shift_scale=train_shift_scale,
+                    is_stress=is_stress
                 )
             }
         )
@@ -308,30 +307,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         return [AtomGraphSequential(v) for v in layers_list]
     else:
         return AtomGraphSequential(layers)
-
-
-#TODO: move to deploy_parallel
-"""
-def build_parallel_model(model_ori: AtomGraphSequential, config):
-    GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
-    num_conv = config[KEY.NUM_CONVOLUTION]
-
-    state_dict_ori = model_ori.state_dict()
-    model_list = build_E3_equivariant_model(config, parallel=True)
-    dct_temp = {}
-    for ghost_layer_key in GHOST_LAYERS_KEYS:
-        for key, val in state_dict_ori.items():
-            if key.startswith(ghost_layer_key):
-                dct_temp.update({f"ghost_{key}": val})
-            else:
-                continue
-    state_dict_ori.update(dct_temp)
-
-    for model_part in model_list:
-        model_part.load_state_dict(state_dict_ori, strict=False)
-        #stt = model_part.state_dict()
-    return model_list
-"""
 
 
 def main():

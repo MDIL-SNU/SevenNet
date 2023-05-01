@@ -65,7 +65,10 @@ def one_hot_atom_embedding(atomic_numbers: List[int], type_map: Dict[int, int]):
     type_map from get_type_mapper_from_specie()
     """
     num_classes = len(type_map)
-    type_numbers = torch.LongTensor([type_map[num] for num in atomic_numbers])
+    try:
+        type_numbers = torch.LongTensor([type_map[num] for num in atomic_numbers])
+    except KeyError as e:
+        raise ValueError(f"Atomic number {e.args[0]} is not expected")
     embd = torch.nn.functional.one_hot(type_numbers, num_classes)
     embd = embd.type(torch.FloatTensor)
 

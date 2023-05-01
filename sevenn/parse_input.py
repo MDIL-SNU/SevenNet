@@ -17,12 +17,16 @@ import sevenn._const as _const
 def config_initialize(key: str, config: dict, default_dct: dict,
                       condition: Callable = None):
     """
+    check require type by checking type of defaults
+    cast user input to required type(type of default value)
+    if casting was successful, check condition(user_input)
+    if true, return processed input
+
     condition is callable of one input and boolean return
-    if return is False, raise error
+    if return of condition is False, raise error
     at condition stage, user input type is valid
 
     do dirty jobs for trivial configs for int, float, boolean
-    do not use sophiscated configs which require dict or list
     """
 
     # no default value exist -> you should not use this function
@@ -198,7 +202,8 @@ def init_train_config(config: dict):
                         ava_key_to_str += f'{k}'
                     else:
                         ava_key_to_str += f', {k}'
-                raise ValueError(f'{param_key}: {key} should be one of {ava_key_to_str}')
+                raise ValueError(
+                    f'{param_key}: {key} should be one of {available_keys}')
             if key in universal_keys:
                 type_ = default_optim_schedule_param_dict[idx]['universial'][key]
             else:
@@ -207,6 +212,20 @@ def init_train_config(config: dict):
             if type(value) is not type_:
                 raise ValueError(f'{param_key}: {key} should be type: {type_}')
         train_meta[param_key] = user_input
+
+    if KEY.CONTINUE in config.keys():
+        cnt_dct = config[KEY.CONTINUE]
+        if KEY.CHECKPOINT not in cnt_dct.keys():
+            raise ValueError("no checkpoint is given in continue")
+
+        checkpoint = cnt_dct[KEY.CHECKPOINT]
+        if type(checkpoint) != str or os.path.isfile(checkpoint) is False:
+            raise ValueError(f"Checkpoint file:{checkpoint} is not found")
+        train_meta[KEY.CONTINUE] = {}
+        train_meta[KEY.CONTINUE][KEY.CHECKPOINT] = checkpoint
+    else:
+        train_meta[KEY.CONTINUE] = False  # default
+
     # init simpler ones
     for key, cond in _const.TRAINING_CONFIG_CONDITION.items():
         train_meta[key] = config_initialize(key, config, defaults, cond)

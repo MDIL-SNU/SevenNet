@@ -99,6 +99,7 @@ class AtomGraphData(torch_geometric.data.Data):
 
         data[KEY.NUM_ATOMS] = len(pos)
         data.num_nodes = data[KEY.NUM_ATOMS]  # for general perpose
+        data[KEY.PER_ATOM_ENERGY] = E/len(pos)
 
         avg_num_neigh = np.average(np.unique(edge_idx[0], return_counts=True)[1])
         data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh

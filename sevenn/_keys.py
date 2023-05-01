@@ -32,25 +32,28 @@ EDGE_EMBEDDING: Final[str] = "edge_embedding"  # (from edge embedding)
 
 # inputs of loss fuction
 ENERGY: Final[str] = "total_energy"            # (1)
+PER_ATOM_ENERGY: Final[str] = "per_atom_energy"
 FORCE: Final[str] = "force_of_atoms"           # (N, 3)
 STRESS: Final[str] = "stress"                  # (6)
-# exist for training
+# TODO: remove scaled
 REF_SCALED_PER_ATOM_ENERGY: Final[str] = "reference_scaled_per_atom_energy"
 REF_SCALED_FORCE: Final[str] = "reference_scaled_force"
 REF_SCALED_STRESS: Final[str] = "reference_scaled_stress"
-
-# general outputs of models
-ATOMIC_ENERGY: Final[str] = "inferred_atomic_energy"
-PRED_TOTAL_ENERGY: Final[str] = "inferred_total_energy"
 # This is for training, per atom scale.
 ###################fix later####################
 SCALED_ENERGY: Final[str] = "scaled_total_energy"
 SCALED_PER_ATOM_ENERGY: Final[str] = "scaled_per_atom_energy"
 ###################fix later####################
 
+# general outputs of models
+ATOMIC_ENERGY: Final[str] = "inferred_atomic_energy"
+PRED_TOTAL_ENERGY: Final[str] = "inferred_total_energy"
+PRED_PER_ATOM_ENERGY: Final[str] = "inferred_per_atom_energy"
+
 PRED_FORCE: Final[str] = "inferred_force"
 SCALED_FORCE: Final[str] = "scaled_force"
 
+PRED_STRESS: Final[str] = "inferred_stress"
 SCALED_STRESS: Final[str] = "scaled_stress"
 
 # very general data property for AtomGraphData
@@ -89,6 +92,9 @@ IS_TRACE_STRESS: Final[str] = "is_trace_stress"
 IS_TRAIN_STRESS: Final[str] = "is_train_stress"
 
 CONTINUE: Final[str] = "continue"
+CHECKPOINT: Final[str] = "checkpoint"
+RESET_OPTIMIZER: Final[str] = "reset_optimizer"
+RESET_SCHEDULER: Final[str] = "reset_scheduler"
 
 NUM_WORKERS: Final[str] = "num_workers"  # not work
 
@@ -138,3 +144,5 @@ CUTOFF_FUNCTION_NAME = "cutoff_function_name"
 AVG_NUM_NEIGHBOR: Final[str] = "avg_num_neigh"
 SHIFT: Final[str] = "shift"
 SCALE: Final[str] = "scale"
+TRAIN_SHIFT_SCALE = "train_shift_scale"
+TRAIN_AVG_NUM_NEIGH = "train_avg_num_neigh"

@@ -58,6 +58,8 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.ACTIVATION_SCARLAR: {"e": "silu", "o": "tanh"},
     KEY.ACTIVATION_GATE: {"e": "silu", "o": "tanh"},
     KEY.AVG_NUM_NEIGHBOR: True,
+    KEY.TRAIN_AVG_NUM_NEIGH: False,
+    KEY.TRAIN_SHIFT_SCALE: False,
 }
 
 
@@ -84,7 +86,11 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.DRAW_LC: True,
     KEY.DRAW_PARITY: True,
     KEY.USE_TESTSET: False,
-    KEY.CONTINUE: None,
+    KEY.CONTINUE: {
+        # KEY.CHECKPOINT: False, > handled manually in parse_input
+        KEY.RESET_OPTIMIZER: False,
+        KEY.RESET_SCHEDULER: False,
+    },
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRACE_STRESS: False,
     KEY.IS_TRAIN_STRESS: False,
@@ -117,6 +123,8 @@ MODEL_CONFIG_CONDITION = {
     KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS:
         lambda x: all(val > 0 and isinstance(val, int) for val in x),
     KEY.AVG_NUM_NEIGHBOR: None,
+    KEY.TRAIN_SHIFT_SCALE: None,
+    KEY.TRAIN_AVG_NUM_NEIGH: None,
 }
 
 
@@ -145,7 +153,10 @@ TRAINING_CONFIG_CONDITION = {
         KEY.DEPLOY_MODEL: None,
         KEY.SAVE_DATA_PICKLE: None,
     },
-    KEY.CONTINUE: None,
+    KEY.CONTINUE: {
+        KEY.RESET_OPTIMIZER: None,
+        KEY.RESET_SCHEDULER: None,
+    },
     KEY.IS_TRACE_STRESS: None,
     KEY.IS_TRAIN_STRESS: None
 }

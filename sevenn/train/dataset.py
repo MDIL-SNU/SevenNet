@@ -88,7 +88,7 @@ class AtomGraphDataset:
             random.shuffle(data_list)
             n_validation = int(data_len * ratio)
             if n_validation == 0:
-                raise ValueError('ratio is too small')
+                raise ValueError('# of validation set is 0, increase your dataset')
 
             if ignore_test:
                 test_list = []
@@ -176,7 +176,7 @@ class AtomGraphDataset:
         shift and scale 'per atom energy' by (E - shift) / scale
         scale force by F / scale
         by default, shift is per_atom_energy_mean
-        scale is force rmse
+        scale is force rms
         return shift & scale
         """
         if shift is None:

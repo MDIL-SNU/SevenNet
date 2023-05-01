@@ -39,13 +39,15 @@ def main(args=None):
         sys.exit(1)
 
     Logger().print_config(model_config, data_config, train_config)
-    # we don't have to distinguish configs inside program
+    # don't have to distinguish configs inside program
     global_config.update(model_config)
     global_config.update(train_config)
     global_config.update(data_config)
 
+    # Not implemented
     if global_config[KEY.DTYPE] == "double":
-        torch.set_default_dtype(torch.double)
+        raise Exception("double precision is not implemented")
+        #torch.set_default_dtype(torch.double)
 
     # run train
     train(global_config, working_dir)
