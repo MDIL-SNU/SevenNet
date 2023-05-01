@@ -67,6 +67,8 @@ def config_initialize(key: str, config: dict, default_dct: dict,
         if type(user_input) != dict:
             raise ValueError(f"{key} should be dictionary")
         for inside_key, val in default_val.items():
+            if val is None:
+                continue  # ignore None default value of dict
             inside_condition = None
             if type(condition) == dict and inside_key in condition.keys():
                 inside_condition = condition[inside_key]
@@ -217,18 +219,18 @@ def init_train_config(config: dict):
         cnt_dct = config[KEY.CONTINUE]
         if KEY.CHECKPOINT not in cnt_dct.keys():
             raise ValueError("no checkpoint is given in continue")
-
         checkpoint = cnt_dct[KEY.CHECKPOINT]
         if type(checkpoint) != str or os.path.isfile(checkpoint) is False:
             raise ValueError(f"Checkpoint file:{checkpoint} is not found")
         train_meta[KEY.CONTINUE] = {}
         train_meta[KEY.CONTINUE][KEY.CHECKPOINT] = checkpoint
-    else:
-        train_meta[KEY.CONTINUE] = False  # default
 
     # init simpler ones
     for key, cond in _const.TRAINING_CONFIG_CONDITION.items():
         train_meta[key] = config_initialize(key, config, defaults, cond)
+
+    if KEY.CHECKPOINT not in train_meta[KEY.CONTINUE].keys():
+        train_meta[KEY.CONTINUE][KEY.CHECKPOINT] = False
 
     unknown_keys = [key for key in config.keys() if key not in train_meta.keys()]
     if len(unknown_keys) != 0:

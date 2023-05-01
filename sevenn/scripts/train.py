@@ -99,7 +99,7 @@ def train(config: Dict, working_dir: str):
     user_labels = dataset.user_labels
 
     optimizer_state_dict, scheduler_state_dict = None, None
-    if config[KEY.CONTINUE] is not False:
+    if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
         continue_dct = config[KEY.CONTINUE]
         Logger().write("\nContinue found, loading checkpoint\n")
 
