@@ -53,10 +53,7 @@ class AtomGraphData(torch_geometric.data.Data):
             self[KEY.NODE_ATTR] = x
 
     @staticmethod
-    def data_for_E3_equivariant_model(atoms,
-                                      cutoff: float,
-                                      type_map: Dict[int, int],
-                                      is_stress: bool):
+    def data_for_E3_equivariant_model(atoms, cutoff, type_map: Dict[int, int]):
         """
         Args:
             atoms : 'atoms' object from ASE
@@ -72,10 +69,12 @@ class AtomGraphData(torch_geometric.data.Data):
         edge_idx = torch.LongTensor(edge_idx)
         pos = torch.Tensor(pos)
 
+        """
         if is_stress:
             pos.requires_grad_(True)
         else:
             edge_vec.requires_grad_(True)
+        """
 
         F = torch.Tensor(F)
         S = torch.Tensor(np.array(S))
@@ -91,15 +90,15 @@ class AtomGraphData(torch_geometric.data.Data):
         data[KEY.CELL] = cell
         data[KEY.CELL_SHIFT] = shift
         volume = torch.einsum(
-                    "i,i",
-                    cell[0, :],
-                    torch.cross(cell[1, :], cell[2, :])
-                )
+            "i,i",
+            cell[0, :],
+            torch.cross(cell[1, :], cell[2, :])
+        )
         data[KEY.CELL_VOLUME] = volume
 
         data[KEY.NUM_ATOMS] = len(pos)
         data.num_nodes = data[KEY.NUM_ATOMS]  # for general perpose
-        data[KEY.PER_ATOM_ENERGY] = E/len(pos)
+        data[KEY.PER_ATOM_ENERGY] = E / len(pos)
 
         avg_num_neigh = np.average(np.unique(edge_idx[0], return_counts=True)[1])
         data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
@@ -107,8 +106,7 @@ class AtomGraphData(torch_geometric.data.Data):
         return data
 
     @staticmethod
-    def poscar_for_E3_equivariant_model(atoms,
-                                        cutoff: float,
+    def poscar_for_E3_equivariant_model(atoms, cutoff: float,
                                         type_map: Dict[int, int],
                                         is_stress: bool):
         """
@@ -137,10 +135,10 @@ class AtomGraphData(torch_geometric.data.Data):
         data[KEY.CELL] = cell
         data[KEY.CELL_SHIFT] = shift
         volume = torch.einsum(
-                    "i,i",
-                    cell[0, :],
-                    torch.cross(cell[1, :], cell[2, :])
-                )
+            "i,i",
+            cell[0, :],
+            torch.cross(cell[1, :], cell[2, :])
+        )
         data[KEY.CELL_VOLUME] = volume
 
         data[KEY.NUM_ATOMS] = len(pos)

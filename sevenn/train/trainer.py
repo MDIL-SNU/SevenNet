@@ -33,9 +33,12 @@ class Trainer():
 
     def __init__(
         self, model, user_labels: list, config: dict,
-        energy_key: str, ref_energy_key: str,
-        force_key: str, ref_force_key: str,
-        stress_key: str, ref_stress_key: str,
+        energy_key: str = KEY.PRED_PER_ATOM_ENERGY,
+        ref_energy_key: str = KEY.PER_ATOM_ENERGY,
+        force_key: str = KEY.PRED_FORCE,
+        ref_force_key: str = KEY.FORCE,
+        stress_key: str = KEY.PRED_STRESS,
+        ref_stress_key: str = KEY.STRESS,
         optimizer_state_dict=None, scheduler_state_dict=None
     ):
         """

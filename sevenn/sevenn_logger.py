@@ -1,3 +1,4 @@
+import os
 import sys
 import traceback
 from datetime import datetime
@@ -148,10 +149,14 @@ class Logger(metaclass=Singleton):
             Logger().write(content)
 
     def greeting(self):
+        LOGO_ASCII_FILE = f"{os.path.dirname(__file__)}/logo_ascii"
+        with open(LOGO_ASCII_FILE, 'r') as logo_f:
+            logo_ascii = logo_f.read()
         content = "SEVENN: Scalable EquVariance-Enabled Neural Network\n"
         content += f"sevenn version {_const.SEVENN_VERSION}\n"
         content += "reading yaml config..."
         self.write(content)
+        self.write(logo_ascii)
 
     def bar(self):
         content = "-" * Logger.SCREEN_WIDTH + "\n"

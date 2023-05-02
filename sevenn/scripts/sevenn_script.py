@@ -46,7 +46,7 @@ def main(args=None):
 
     # Not implemented
     if global_config[KEY.DTYPE] == "double":
-        raise Exception("double precision is not implemented")
+        raise Exception("double precision is not implemented yet")
         #torch.set_default_dtype(torch.double)
 
     # run train

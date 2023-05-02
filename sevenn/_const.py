@@ -154,6 +154,7 @@ TRAINING_CONFIG_CONDITION = {
         KEY.SAVE_DATA_PICKLE: None,
     },
     KEY.CONTINUE: {
+        KEY.CHECKPOINT: None,
         KEY.RESET_OPTIMIZER: None,
         KEY.RESET_SCHEDULER: None,
     },

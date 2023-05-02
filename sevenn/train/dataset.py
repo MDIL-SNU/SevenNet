@@ -72,6 +72,14 @@ class AtomGraphDataset:
         self.dataset = dct_dataset
         return self
 
+    def toggle_requires_grad_of_data(self, key: str, requires_grad_value: bool):
+        """
+        set requires_grad of specific key of data(pos, edge_vec, ...)
+        """
+        for data_list in self.dataset.values():
+            for datum in data_list:
+                datum[key].requires_grad_(requires_grad_value)
+
     def divide_dataset(self, ratio: float, constant_ratio_btw_labels=True,
                        ignore_test=True):
         """
