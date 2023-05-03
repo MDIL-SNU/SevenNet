@@ -178,7 +178,7 @@ void PairE3GNN::compute(int eflag, int vflag) {
     f[i][2] = forces[itag][2];
   }
 
-  if (vflag_fdotr) virial_fdotr_compute(); // is it safe to use? pressure calc
+  //if (vflag_fdotr) virial_fdotr_compute(); // is it safe to use? pressure calc
 }
 
 // allocate arrays (called from coeff)
