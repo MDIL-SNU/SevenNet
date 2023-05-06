@@ -104,6 +104,17 @@ def deploy(model_state_dct, config, fname):
 
 #TODO: this is E3_equivariant specific
 def deploy_parallel(model_state_dct, config, fname):
+    # for backward compatibility
+    defaults = {}
+    defaults.update(_const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG)
+    defaults.update(_const.DEFAULT_DATA_CONFIG)
+    defaults.update(_const.DEFAULT_TRAINING_CONFIG)
+    for k_d, v_d in defaults.items():
+        if k_d not in config.keys():
+            print(f"{k_d} was not found in givne config")
+            print(f"{v_d} inserted as defaults")
+            config[k_d] = v_d
+
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
 
@@ -141,6 +152,7 @@ def deploy_parallel(model_state_dct, config, fname):
 
     # dim of irreps_in of last model convolution is (max)comm_size
     # except first one, first of every model is embedding followed by convolution
+    # TODO: this code is error prone
     comm_size = model_list[-1][1].convolution.irreps_in1.dim
 
     md_configs.update({"chemical_symbols_to_index": chem_list})
@@ -169,7 +181,7 @@ def get_parallel_from_checkpoint(fname):
     checkpoint = torch.load(fname, map_location=torch.device('cpu'))
     config = checkpoint['config']
     stct_dct = checkpoint['model_state_dict']
-    # TODO: remove this xxxxxxxxxxxxx
+    # TODO: remove this later....
     for k, v in stct_dct.items():
         if 'coeffs' in k:
             stct_dct.update({'EdgeEmbedding.basis_function.coeffs': v})

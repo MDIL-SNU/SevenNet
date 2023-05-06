@@ -2,12 +2,6 @@ import os
 import sys
 import traceback
 from datetime import datetime
-"""
-You don't have to understand what metaclass is.
-Understanding what singletone is enough
-If you're interested see best answer of
-https://stackoverflow.com/questions/6760685/creating-a-singleton-in-python
-"""
 
 from sevenn.train.trainer import DataSetType, LossType
 import sevenn._const as _const

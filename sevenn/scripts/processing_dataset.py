@@ -137,7 +137,7 @@ def processing_dataset(config, working_dir):
     valid_loader = DataLoader(valid_set.to_list(), batch_size,
                               num_workers=num_workers,)
     if test_set is not None:
-        test_set.shift_scale_dataset(shift=shift, scale=scale)
+        #test_set.shift_scale_dataset(shift=shift, scale=scale)
         test_loader = DataLoader(test_set.to_list(), batch_size)
 
     statistic_values = (avg_num_neigh, shift, scale)

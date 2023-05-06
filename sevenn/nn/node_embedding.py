@@ -22,7 +22,7 @@ class OnehotEmbedding(nn.Module):
         num_classes: int,
         data_key_in: str = KEY.NODE_FEATURE,
         data_key_out: str = None,
-        data_key_additional: str = KEY.NODE_ATTR,
+        data_key_additional: str = KEY.NODE_ATTR,  # additional output
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -77,17 +77,6 @@ def one_hot_atom_embedding(atomic_numbers: List[int], type_map: Dict[int, int]):
 
 def main():
     _ = 1
-    """
-    with open('raw_data_from_parse_structure_list_tmp.pickle', 'rb') as f:
-        res = pickle.load(f)
-    tmp = res["96atom"][3]
-
-    atomic_numbers, edge_src, edge_dst, \
-        edge_vec, shift, pos, cell, E, F = ASE_atoms_to_data(tmp, 4.0)
-
-    type_map = get_type_mapper_from_specie(['Hf', 'O'])
-    embd = one_hot_atom_embedding(atomic_numbers, type_map)
-    """
 
 
 if __name__ == "__main__":

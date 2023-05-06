@@ -32,23 +32,19 @@ EDGE_EMBEDDING: Final[str] = "edge_embedding"  # (from edge embedding)
 
 # inputs of loss fuction
 ENERGY: Final[str] = "total_energy"            # (1)
-PER_ATOM_ENERGY: Final[str] = "per_atom_energy"
 FORCE: Final[str] = "force_of_atoms"           # (N, 3)
 STRESS: Final[str] = "stress"                  # (6)
-# TODO: remove scaled
-REF_SCALED_PER_ATOM_ENERGY: Final[str] = "reference_scaled_per_atom_energy"
-REF_SCALED_FORCE: Final[str] = "reference_scaled_force"
-REF_SCALED_STRESS: Final[str] = "reference_scaled_stress"
+
 # This is for training, per atom scale.
-###################fix later####################
 SCALED_ENERGY: Final[str] = "scaled_total_energy"
-SCALED_PER_ATOM_ENERGY: Final[str] = "scaled_per_atom_energy"
-###################fix later####################
 
 # general outputs of models
-ATOMIC_ENERGY: Final[str] = "inferred_atomic_energy"
+SCALED_ATOMIC_ENERGY: Final[str] = "scaled_atomic_energy"
 PRED_TOTAL_ENERGY: Final[str] = "inferred_total_energy"
+
+#TODO: remove later (after doing moving nn.Rescale TODO)
 PRED_PER_ATOM_ENERGY: Final[str] = "inferred_per_atom_energy"
+PER_ATOM_ENERGY: Final[str] = "per_atom_energy"
 
 PRED_FORCE: Final[str] = "inferred_force"
 SCALED_FORCE: Final[str] = "scaled_force"

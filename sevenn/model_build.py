@@ -36,7 +36,7 @@ def infer_irreps_out(irreps_x: Irreps,
         elem = (mul, (l, p))
         if drop_l is not False and l > drop_l:
             continue
-        if fix_multiplicity is not False:
+        if fix_multiplicity:
             elem = (fix_multiplicity, (l, p))
         new_irreps_elem.append(elem)
     return Irreps(new_irreps_elem)
@@ -275,13 +275,12 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 hidden_irreps,
                 Irreps([(1, (0, 1))]),
                 data_key_in=KEY.NODE_FEATURE,
-                data_key_out=KEY.ATOMIC_ENERGY,
+                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
             ),
             "reduce to total enegy":
             AtomReduce(
-                data_key_in=KEY.ATOMIC_ENERGY,
+                data_key_in=KEY.SCALED_ATOMIC_ENERGY,
                 data_key_out=KEY.SCALED_ENERGY,
-                #data_key_out=KEY.PRED_TOTAL_ENERGY,
                 constant=1.0,
             )
         }
@@ -295,7 +294,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 "rescale": Rescale(
                     shift=shift,
                     scale=scale,
-                    scale_per_atom=True,
                     train_shift_scale=train_shift_scale,
                     is_stress=is_stress
                 )
@@ -304,6 +302,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
     # output extraction part
     if parallel:
+        print(layers_list)
         return [AtomGraphSequential(v) for v in layers_list]
     else:
         return AtomGraphSequential(layers)
