@@ -73,11 +73,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     lmax = model_config[KEY.LMAX]
     num_convolution_layer = model_config[KEY.NUM_CONVOLUTION]
     is_parity = model_config[KEY.IS_PARITY]  # boolean
-    try:  # TODO remove try excpet later
-        is_stress = \
-            model_config[KEY.IS_TRACE_STRESS] or model_config[KEY.IS_TRAIN_STRESS]
-    except KeyError:
-        is_stress = False
+    is_stress = \
+        model_config[KEY.IS_TRACE_STRESS] or model_config[KEY.IS_TRAIN_STRESS]
     num_species = model_config[KEY.NUM_SPECIES]
     irreps_spherical_harm = Irreps.spherical_harmonics(lmax, -1 if is_parity else 1)
     if parallel:
@@ -302,7 +299,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
     # output extraction part
     if parallel:
-        print(layers_list)
         return [AtomGraphSequential(v) for v in layers_list]
     else:
         return AtomGraphSequential(layers)

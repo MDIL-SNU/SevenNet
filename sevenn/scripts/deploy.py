@@ -64,6 +64,8 @@ def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
 
 #TODO: this is E3_equivariant specific
 def deploy(model_state_dct, config, fname):
+    config[KEY.IS_TRACE_STRESS] = False
+    config[KEY.IS_TRAIN_STRESS] = False
     # some postprocess for md mode of model
     model = build_E3_equivariant_model(config)
     #TODO: remove strict later

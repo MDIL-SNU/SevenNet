@@ -19,12 +19,13 @@ class Rescale(nn.Module):
         is_stress: bool = False,
     ):
         super().__init__()
-        self.shift = torch.FloatTensor([shift])
-        self.scale = torch.FloatTensor([scale])
+        self.shift = \
+            nn.Parameter(torch.FloatTensor([shift]),
+                         requires_grad=train_shift_scale)
+        self.scale = \
+            nn.Parameter(torch.FloatTensor([scale]),
+                         requires_grad=train_shift_scale)
         self.is_stress = is_stress
-        if train_shift_scale:
-            self.shift = nn.Parameter(self.shift)
-            self.scale = nn.Parameter(self.scale)
         #self.scale_only_energy = scale_only_energy
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:

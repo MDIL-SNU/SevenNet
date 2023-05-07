@@ -34,9 +34,9 @@ class IrrepsConvolution(nn.Module):
         is_parallel: bool = False,
     ):
         super().__init__()
-        self.denumerator = torch.FloatTensor([denumerator])
-        if train_denumerator:
-            self.denumerator = nn.Parameter(self.denumerator)
+        self.denumerator = \
+            nn.Parameter(torch.FloatTensor([denumerator]),
+                         requires_grad=train_denumerator)
         self.KEY_X = data_key_x
         self.KEY_FILTER = data_key_filter
         self.KEY_WEIGHT_INPUT = data_key_weight_input

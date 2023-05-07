@@ -36,6 +36,7 @@ class OnehotEmbedding(nn.Module):
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         inp = data[self.KEY_INPUT]
         embd = torch.nn.functional.one_hot(inp, self.num_classes)
+        embd = embd.float()
         data[self.KEY_OUTPUT] = embd
         if self.KEY_ADDITIONAL is not None:
             data[self.KEY_ADDITIONAL] = embd
@@ -70,7 +71,7 @@ def one_hot_atom_embedding(atomic_numbers: List[int], type_map: Dict[int, int]):
     except KeyError as e:
         raise ValueError(f"Atomic number {e.args[0]} is not expected")
     embd = torch.nn.functional.one_hot(type_numbers, num_classes)
-    embd = embd.type(torch.FloatTensor)
+    embd = embd.to(torch.get_default_dtype())
 
     return embd
 
