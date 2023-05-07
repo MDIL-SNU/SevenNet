@@ -64,8 +64,6 @@ def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
 
 #TODO: this is E3_equivariant specific
 def deploy(model_state_dct, config, fname):
-    config[KEY.IS_TRACE_STRESS] = False
-    config[KEY.IS_TRAIN_STRESS] = False
     # some postprocess for md mode of model
     model = build_E3_equivariant_model(config)
     #TODO: remove strict later
@@ -106,20 +104,11 @@ def deploy(model_state_dct, config, fname):
 
 #TODO: this is E3_equivariant specific
 def deploy_parallel(model_state_dct, config, fname):
-    # for backward compatibility
-    defaults = {}
-    defaults.update(_const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG)
-    defaults.update(_const.DEFAULT_DATA_CONFIG)
-    defaults.update(_const.DEFAULT_TRAINING_CONFIG)
-    for k_d, v_d in defaults.items():
-        if k_d not in config.keys():
-            print(f"{k_d} was not found in givne config")
-            print(f"{v_d} inserted as defaults")
-            config[k_d] = v_d
-
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
 
+    config[KEY.IS_TRACE_STRESS] = False
+    config[KEY.IS_TRAIN_STRESS] = False
     model_list = build_E3_equivariant_model(config, parallel=True)
     dct_temp = {}
     for ghost_layer_key in GHOST_LAYERS_KEYS:
