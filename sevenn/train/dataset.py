@@ -5,6 +5,7 @@ from typing import List, Dict, Callable, Optional, Union
 
 import torch
 from ase.data import chemical_symbols
+import numpy as np
 
 import sevenn._keys as KEY
 
@@ -163,7 +164,6 @@ class AtomGraphDataset:
         return float(torch.sqrt(torch.mean(torch.pow(force_list, 2))))
 
     def get_avg_num_neigh(self):
-        import numpy as np
         n_neigh = []
         for _, data_list in self.dataset.items():
             for data in data_list:
@@ -173,32 +173,6 @@ class AtomGraphDataset:
 
         avg_num_neigh = np.average(n_neigh)
         return avg_num_neigh
-
-    def shift_scale_dataset(self,
-                            shift: Optional[float] = None,
-                            scale: Optional[float] = None,
-                            per_atom_energy_store_key=KEY.REF_SCALED_PER_ATOM_ENERGY,
-                            force_store_key=KEY.REF_SCALED_FORCE,
-                            stress_store_key=KEY.REF_SCALED_STRESS):
-        """
-        shift and scale 'per atom energy' by (E - shift) / scale
-        scale force by F / scale
-        by default, shift is per_atom_energy_mean
-        scale is force rms
-        return shift & scale
-        """
-        if shift is None:
-            shift = self.get_per_atom_energy_mean()
-        if scale is None:
-            scale = self.get_force_rmse()
-
-        for key, data_list in self.dataset.items():
-            for data in data_list:
-                per_atom_energy = data[KEY.ENERGY] / data[KEY.NUM_ATOMS]
-                data[per_atom_energy_store_key] = (per_atom_energy - shift) / scale
-                data[force_store_key] = data[KEY.FORCE] / scale
-                data[stress_store_key] = data[KEY.STRESS] / scale
-        return shift, scale
 
     def augment(self, dataset, validator: Optional[Callable] = None):
         """check meta compatiblity here
@@ -219,6 +193,7 @@ class AtomGraphDataset:
             chem_1 = Counter(meta1[KEY.CHEMICAL_SPECIES])
             chem_2 = Counter(meta2[KEY.CHEMICAL_SPECIES])
 
+            # info for print error
             info = f"cutoff1: {cutoff1}, cutoff2: {cutoff2},\n"\
                 + f"chem_1: {chem_1}, chem_2: {chem_2}"
             return (cutoff1 == cutoff2 and chem_1 == chem_2, info)

@@ -9,6 +9,7 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 
+#TODO: put this to model_build and do not preprocess data by onehot
 @compile_mode('script')
 class OnehotEmbedding(nn.Module):
     """
@@ -22,7 +23,7 @@ class OnehotEmbedding(nn.Module):
         num_classes: int,
         data_key_in: str = KEY.NODE_FEATURE,
         data_key_out: str = None,
-        data_key_additional: str = KEY.NODE_ATTR,
+        data_key_additional: str = KEY.NODE_ATTR,  # additional output
     ):
         super().__init__()
         self.num_classes = num_classes
@@ -36,6 +37,7 @@ class OnehotEmbedding(nn.Module):
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         inp = data[self.KEY_INPUT]
         embd = torch.nn.functional.one_hot(inp, self.num_classes)
+        embd = embd.float()
         data[self.KEY_OUTPUT] = embd
         if self.KEY_ADDITIONAL is not None:
             data[self.KEY_ADDITIONAL] = embd
@@ -70,24 +72,13 @@ def one_hot_atom_embedding(atomic_numbers: List[int], type_map: Dict[int, int]):
     except KeyError as e:
         raise ValueError(f"Atomic number {e.args[0]} is not expected")
     embd = torch.nn.functional.one_hot(type_numbers, num_classes)
-    embd = embd.type(torch.FloatTensor)
+    embd = embd.to(torch.get_default_dtype())
 
     return embd
 
 
 def main():
     _ = 1
-    """
-    with open('raw_data_from_parse_structure_list_tmp.pickle', 'rb') as f:
-        res = pickle.load(f)
-    tmp = res["96atom"][3]
-
-    atomic_numbers, edge_src, edge_dst, \
-        edge_vec, shift, pos, cell, E, F = ASE_atoms_to_data(tmp, 4.0)
-
-    type_map = get_type_mapper_from_specie(['Hf', 'O'])
-    embd = one_hot_atom_embedding(atomic_numbers, type_map)
-    """
 
 
 if __name__ == "__main__":

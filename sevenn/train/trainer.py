@@ -33,6 +33,8 @@ class Trainer():
 
     def __init__(
         self, model, user_labels: list, config: dict,
+        # TODO: replace per atom energy to total energy (divide here)
+        #       remove from _keys.py
         energy_key: str = KEY.PRED_PER_ATOM_ENERGY,
         ref_energy_key: str = KEY.PER_ATOM_ENERGY,
         force_key: str = KEY.PRED_FORCE,
@@ -105,22 +107,6 @@ class Trainer():
             for label in self.user_labels:
                 self.loss_hist[data_set_key][label] = \
                     {lt: [] for lt in self.loss_types}
-
-    """
-    def get_norm_and_loss_force(self, scaled_pred_F: torch.Tensor,
-                                scaled_ref_F: torch.Tensor):
-        scaled_pred_F_norm = LA.norm(scaled_pred_F, dim=1).tolist()
-        scaled_ref_F_norm = LA.norm(scaled_ref_F, dim=1).tolist()
-
-        pred_temp = torch.reshape(scaled_pred_F, (-1,))
-        ref_temp = torch.reshape(scaled_ref_F, (-1,))
-
-        loss = self.criterion(pred_temp, ref_temp)
-        loss = torch.reshape(loss, (-1, 3))
-        loss = loss.sum(dim=1)
-
-        return scaled_pred_F_norm, scaled_ref_F_norm, loss
-    """
 
     def loss_function(self, loss_dct: Dict[LossType, Union[float, torch.Tensor]]):
         """
@@ -243,15 +229,6 @@ class Trainer():
                 loss_record[label][loss_type] = mse
                 self.loss_hist[set_type][label][loss_type].append(mse)
 
-        """
-        loss_recorded = self.loss_hist[set_type]['total']
-        loss_value = self.loss_function(
-            loss_recorded[LossType.ENERGY],
-            loss_recorded[LossType.FORCE],
-            loss_recorded[LossType.STRESS]
-        )
-        """
-
         specie_wise_loss_record = {}
         for atom_type in self.total_atom_type:
             F_mse = np.mean(force_loss_by_atom_type[atom_type])
@@ -265,14 +242,6 @@ class Trainer():
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
                 'loss': self.loss_hist}
-
-        """
-    @staticmethod
-    def from_checkpoint_dict():
-        # TODO: implement this
-        config = checkpoint['config']
-        pass
-        """
 
     def _update_epoch_loss(self, epoch_loss, user_label: list,
                            batch, loss_dct) -> dict:
@@ -299,12 +268,3 @@ class Trainer():
             indices = [i for i, v in enumerate(chemical_symbol) if v == key]
             F_loss_list = F_loss[indices]
             force_loss_by_atom_type[key].extend(F_loss_list.tolist())
-
-    """
-    def _update_loss_hist(self, target_set: str):
-        for key in self.loss_hist[target_set].keys():
-            E_mse = np.mean(epoch_loss[key]['energy'])
-            F_mse = np.mean(epoch_loss[key]['force'])
-            self.loss_hist[target_set][key]['energy'].append(E_mse)
-            self.loss_hist[target_set][key]['force'].append(F_mse)
-    """

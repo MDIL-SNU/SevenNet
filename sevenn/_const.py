@@ -6,7 +6,7 @@ from sevenn.nn.activation import ShiftedSoftPlus
 import sevenn._keys as KEY
 from typing import Dict, Any
 
-SEVENN_VERSION = "0.90"
+SEVENN_VERSION = "1.00"
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut']
 
@@ -93,7 +93,7 @@ DEFAULT_TRAINING_CONFIG = {
     },
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRACE_STRESS: False,
-    KEY.IS_TRAIN_STRESS: False,
+    KEY.IS_TRAIN_STRESS: True,
 
     KEY.OUTPUT_PER_EPOCH: {
         KEY.PER_EPOCH: 30,

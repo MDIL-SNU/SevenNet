@@ -65,6 +65,10 @@ def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
 #TODO: this is E3_equivariant specific
 def deploy(model_state_dct, config, fname):
     # some postprocess for md mode of model
+
+    # TODO: stress inference
+    config[KEY.IS_TRACE_STRESS] = False
+    config[KEY.IS_TRAIN_STRESS] = False
     model = build_E3_equivariant_model(config)
     #TODO: remove strict later
     model.load_state_dict(model_state_dct, strict=False)  # copy model
@@ -99,7 +103,7 @@ def deploy(model_state_dct, config, fname):
     md_configs.update({"dtype": config[KEY.DTYPE]})
     md_configs.update({"time": datetime.now().strftime('%Y-%m-%d')})
 
-    torch.jit.save(model, fname, _extra_files=md_configs)
+    torch.jit.save(model, f"{fname}.pt", _extra_files=md_configs)
 
 
 #TODO: this is E3_equivariant specific
@@ -107,6 +111,9 @@ def deploy_parallel(model_state_dct, config, fname):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
 
+    # TODO: stress inference
+    config[KEY.IS_TRACE_STRESS] = False
+    config[KEY.IS_TRAIN_STRESS] = False
     model_list = build_E3_equivariant_model(config, parallel=True)
     dct_temp = {}
     for ghost_layer_key in GHOST_LAYERS_KEYS:
@@ -141,6 +148,7 @@ def deploy_parallel(model_state_dct, config, fname):
 
     # dim of irreps_in of last model convolution is (max)comm_size
     # except first one, first of every model is embedding followed by convolution
+    # TODO: this code is error prone
     comm_size = model_list[-1][1].convolution.irreps_in1.dim
 
     md_configs.update({"chemical_symbols_to_index": chem_list})
@@ -169,7 +177,7 @@ def get_parallel_from_checkpoint(fname):
     checkpoint = torch.load(fname, map_location=torch.device('cpu'))
     config = checkpoint['config']
     stct_dct = checkpoint['model_state_dict']
-    # TODO: remove this xxxxxxxxxxxxx
+    # TODO: remove this later....
     for k, v in stct_dct.items():
         if 'coeffs' in k:
             stct_dct.update({'EdgeEmbedding.basis_function.coeffs': v})

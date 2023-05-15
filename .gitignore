@@ -1,0 +1,5 @@
+build/
+dist
+sevenn.egg-info
+test_installation/
+test_installation/*

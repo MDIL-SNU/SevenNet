@@ -38,6 +38,7 @@ namespace LAMMPS_NS{
       bool use_cuda_mpi;
 
       // for communication
+      // Most of these varaibles for communication is temporary and valid for only one MD step.
       int x_dim; //to determine per atom data size
       int graph_size;
       torch::Tensor x_comm; // x_local + x_ghost + x_comm_extra
@@ -48,12 +49,15 @@ namespace LAMMPS_NS{
       // temporary variables holds for each compute step
       std::unordered_map<int, long> extra_graph_idx_map;
       // To use scatter, store long instead of int
+      // array of vector
       std::vector<long> comm_index_pack_forward[6];
       std::vector<long> comm_index_unpack_forward[6];
+      std::vector<long> comm_index_unpack_reverse[6];
 
       //its size is 6 and initialized at comm_preprocess()
       torch::Tensor comm_index_pack_forward_tensor[6];
       torch::Tensor comm_index_unpack_forward_tensor[6];
+      torch::Tensor comm_index_unpack_reverse_tensor[6];
 
       // to use tag_to_graph_idx inside comm methods
       int* tag_to_graph_idx_ptr=nullptr;
