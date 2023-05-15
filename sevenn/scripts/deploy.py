@@ -65,6 +65,10 @@ def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
 #TODO: this is E3_equivariant specific
 def deploy(model_state_dct, config, fname):
     # some postprocess for md mode of model
+
+    # TODO: stress inference
+    config[KEY.IS_TRACE_STRESS] = False
+    config[KEY.IS_TRAIN_STRESS] = False
     model = build_E3_equivariant_model(config)
     #TODO: remove strict later
     model.load_state_dict(model_state_dct, strict=False)  # copy model
@@ -99,7 +103,7 @@ def deploy(model_state_dct, config, fname):
     md_configs.update({"dtype": config[KEY.DTYPE]})
     md_configs.update({"time": datetime.now().strftime('%Y-%m-%d')})
 
-    torch.jit.save(model, fname, _extra_files=md_configs)
+    torch.jit.save(model, f"{fname}.pt", _extra_files=md_configs)
 
 
 #TODO: this is E3_equivariant specific
@@ -107,6 +111,7 @@ def deploy_parallel(model_state_dct, config, fname):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
 
+    # TODO: stress inference
     config[KEY.IS_TRACE_STRESS] = False
     config[KEY.IS_TRAIN_STRESS] = False
     model_list = build_E3_equivariant_model(config, parallel=True)

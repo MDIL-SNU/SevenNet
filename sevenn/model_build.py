@@ -66,7 +66,7 @@ def init_cutoff_function(config):
 
 def build_E3_equivariant_model(model_config: dict, parallel=False):
     """
-    identical to nequip model
+    IDENTICAL to nequip model
     atom embedding is not part of model
     """
     feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]

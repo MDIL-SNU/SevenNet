@@ -44,7 +44,10 @@
 
 #include <cassert>
 #include "pair_e3gnn_parallel.h"
-//#include "mpi-ext.h" //This should be included after mpi.h which is included in pair.h
+
+#ifdef OMPI_MPI_H
+  #include "mpi-ext.h" //This should be included after mpi.h which is included in pair.h
+#endif
 
 using namespace LAMMPS_NS;
 
@@ -79,7 +82,27 @@ DeviceBuffManager::~DeviceBuffManager() {
 PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   // constructor
   std::string device_name;
-  if(torch::cuda::is_available()){
+  const bool use_gpu = torch::cuda::is_available();
+
+  comm_forward = 0;
+  comm_reverse = 0;
+
+  // OpenMPI detection
+#ifdef OMPI_MPI_H
+  #if defined(MPIX_CUDA_AWARE_SUPPORT)
+    if (1 == MPIX_Query_cuda_support()) {
+      use_cuda_mpi=true;
+    } else {
+      use_cuda_mpi=false;
+    }
+  #else 
+    use_cuda_mpi=false;
+  #endif
+#else
+  use_cuda_mpi = false;
+#endif
+  use_cuda_mpi = use_gpu && use_cuda_mpi;
+  if(use_cuda_mpi){
     device = get_cuda_device();
     device_name = "CUDA";
   } else {
@@ -87,25 +110,15 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
     device_name = "CPU";
   }
 
-  comm_forward = 0;
-  comm_reverse = 0;
-
-#if defined(MPIX_CUDA_AWARE_SUPPORT)
-    if (1 == MPIX_Query_cuda_support()) {
-      use_cuda_mpi=true;
-    } else {
-      use_cuda_mpi=false;
-    }
-#else 
-    use_cuda_mpi=false;
-#endif
-  //TODO: GPU aware MPI detection (for now, only OpenMPI works)
-
   if (lmp->logfile) {
-    fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n", device_name.c_str());
-    fprintf(lmp->logfile, "PairE3GNNParallel cuda-award mpi: %s\n", use_cuda_mpi? "True" : "False");
+    if(use_gpu && !use_cuda_mpi) {
+      //GPU device + cuda-'NOT'aware mpi combination. is not supported yet
+      fprintf(lmp->logfile, "GPU device is found but not activated since cuda_mpi(openMPI) is not found\n");
+    } else {
+      fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n", device_name.c_str());
+      fprintf(lmp->logfile, "PairE3GNNParallel cuda-award mpi: %s\n", use_cuda_mpi? "True" : "False");
+    }
   }
-  //I will not support GPU device + cuda-'NOT'aware mpi combination.
 }
 
 torch::Device PairE3GNNParallel::get_cuda_device() {
@@ -159,7 +172,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   /*
      Graph build on cpu
   */
-  //nvtxRangePushA("compute");
+//nvtxRangePushA("compute");
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
   if(vflag_atom) {
@@ -181,9 +194,15 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   }
 
   bigint natoms = atom->natoms;
+
+  // tag ignore PBC
   tagint *tag = atom->tag;
+
+  // store graph_idx from local to known ghost atoms(ghost atoms inside cutoff)
   int tag_to_graph_idx[natoms+1];  // tag starts from 1 not 0
   std::fill_n(tag_to_graph_idx, natoms+1, -1);
+
+  // to access tag_to_graph_idx from comm
   tag_to_graph_idx_ptr = tag_to_graph_idx;
 
   int graph_indexer = nlocal;
@@ -229,7 +248,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
       int j_graph_idx;
       if(Rij < cutoff_square) {
-        // if given j is not local atom
+        // if given j is not local atom and inside cutoff
         if(tag_to_graph_idx[jtag] == -1) {
           tag_to_graph_idx[jtag] = graph_indexer;
           graph_index_to_i[graph_indexer] = j;
@@ -280,24 +299,25 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   wrt_tensors.push_back({input_dict.at("edge_vec")});
 
   auto model_part = model_list.front();
-  //nvtxRangePushA("forward_whole");
+//nvtxRangePushA("forward_whole");
 
-  //nvtxRangePushA("forward_0");
+//nvtxRangePushA("forward_0");
   auto output = model_part.forward({input_dict}).toGenericDict();
-  //nvtxRangePop();
+//nvtxRangePop();
 
-  //nvtxRangePushA("comm_preprocess_forward");
+//nvtxRangePushA("comm_preprocess_forward");
   comm_preprocess();
-  //nvtxRangePop();
+//nvtxRangePop();
 
   // extra_graph_idx_map is set from comm_preprocess();
-  const int extra_size = ghost_node_num + static_cast<int>(extra_graph_idx_map.size());
+  // last one is for trash values. See pack_forward_init
+  const int extra_size = ghost_node_num + static_cast<int>(extra_graph_idx_map.size()) + 1;
   torch::Tensor x_local;
   torch::Tensor x_ghost;
 
   for(auto it = model_list.begin(); it != model_list.end(); ++it) {
     if(it == model_list.begin()) continue;
-    //nvtxRangePushA("comm_forward_x_&_process");
+//nvtxRangePushA("comm_forward_x_&_process");
     model_part = *it;
 
     x_local = output.at("x").toTensor().detach().to(device);
@@ -306,11 +326,11 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     auto ghost_and_extra_x = torch::zeros({ghost_node_num + extra_size, x_dim}, FLOAT_TYPE.device(device));
     x_comm = torch::cat({x_local, ghost_and_extra_x}, 0).to(device);
 
-    //nvtxRangePushA("comm_forward");
+//nvtxRangePushA("comm_forward");
     comm_brick->forward_comm(this); //populate x_ghost by communication
-    //nvtxRangePop();
+//nvtxRangePop();
 
-    //What we got from forward_comm
+    //What we got from forward_comm (node feature of ghosts)
     x_ghost = torch::split_with_sizes(x_comm, {nlocal, ghost_node_num, extra_size}, 0)[1];
     x_ghost.set_requires_grad(true);
 
@@ -324,16 +344,16 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
                            output.at("x").toTensor(), \
                            output.at("self_cont_tmp").toTensor(), \
                            output.at("x_ghost").toTensor()});
-    //nvtxRangePop();
+//nvtxRangePop();
 
-    //nvtxRangePushA("forward_x");
+//nvtxRangePushA("forward_x");
     output = model_part.forward({output}).toGenericDict();
-    //nvtxRangePop();
+//nvtxRangePop();
   }
   torch::Tensor scaled_energy_tensor = output.at("scaled_total_energy").toTensor().squeeze();
-  //nvtxRangePop();
+//nvtxRangePop();
 
-  //nvtxRangePushA("backprop_whole");
+//nvtxRangePushA("backprop_whole");
   torch::Tensor dE_dr = torch::zeros({nedges, 3}, FLOAT_TYPE.device(device)); //create on device
   torch::Tensor x_local_save; //holds grad info of x_local (it loses its grad when sends to CPU)
   torch::Tensor self_conn_grads;
@@ -345,20 +365,20 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     // edge_vec, x, x_ghost order
     auto wrt_tensor = *rit;
     if(rit == wrt_tensors.rbegin()) {
-      //nvtxRangePushA("backprop_first");
+//nvtxRangePushA("backprop_first");
       grads = torch::autograd::grad({scaled_energy_tensor}, wrt_tensor);
-      //nvtxRangePop();
+//nvtxRangePop();
     } else {
-      //nvtxRangePushA("backprop_mid");
+//nvtxRangePushA("backprop_mid");
       x_local_save.copy_(x_local);
       //                            of         wrt         grads_output
       grads = torch::autograd::grad(of_tensor, wrt_tensor, {x_local_save, self_conn_grads});
-      //nvtxRangePop();
+//nvtxRangePop();
     }
 
     dE_dr = dE_dr + grads.at(0); //accumulate force
     if(std::distance(rit, wrt_tensors.rend()) == 1) continue;  // if last iteration
-    //nvtxRangePushA("reverse_comm_&_process");
+//nvtxRangePushA("reverse_comm_&_process");
 
     of_tensor.clear();
     of_tensor.push_back(wrt_tensor[1]); // x
@@ -375,16 +395,16 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     auto extra_x = torch::zeros({extra_size, x_dim}, FLOAT_TYPE.device(device));
     x_comm = torch::cat({x_local, x_ghost, extra_x}, 0).to(device);
 
-    //nvtxRangePushA("reverse_comm");
+//nvtxRangePushA("reverse_comm");
     comm_brick->reverse_comm(this);  // completes x_local
-    //nvtxRangePop();
+//nvtxRangePop();
 
-    x_local = torch::split_with_sizes(x_comm, {nlocal, ghost_node_num, extra_size}, 0)[0];
     // now x_local is complete (dE_dx), become next grads_output(with self_conn_grads)
+    x_local = torch::split_with_sizes(x_comm, {nlocal, ghost_node_num, extra_size}, 0)[0];
 
-    //nvtxRangePop();
+//nvtxRangePop();
   }
-  //nvtxRangePop();
+//nvtxRangePop();
 
   //postprocessing
 
@@ -414,16 +434,18 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     //array of vector<long>
     comm_index_pack_forward[i].clear();
     comm_index_unpack_forward[i].clear();
+    comm_index_unpack_reverse[i].clear();
+    /*
+    if(use_cuda_mpi) {
+      comm_index_pack_forward_tensor[i].clear();
+      comm_index_unpack_forward_tensor[i].clear();
+      comm_index_unpack_reverse_tensor[i].clear();
+    }
+    */
   }
-  /*
-  if(use_cuda_mpi) {
-    //vector of tensor
-    comm_index_pack_forward_tensor.clear();
-    comm_index_unpack_forward_tensor.clear();
-  }
-  */
+  
   extra_graph_idx_map.clear();
-  //nvtxRangePop();
+//nvtxRangePop();
 }
 
 // allocate arrays (called from coeff)
@@ -484,8 +506,8 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
 
   // maximum possible size of per atom x before last convolution
   int comm_size = std::stod(meta_dict["comm_size"]);
-  // to initialize buffer size for communication
 
+  // to initialize buffer size for communication
   comm_forward = comm_size;
   comm_reverse = comm_size;
 
@@ -546,38 +568,72 @@ double PairE3GNNParallel::init_one(int i, int j) {
 void PairE3GNNParallel::comm_preprocess() {
   assert(!comm_preprocess_done);
   CommBrick* comm_brick = dynamic_cast<CommBrick*>(comm);
+
+  // false communication to preprocess index
+  // result in completed comm_index_pack/unpack_forward & extra_graph_idx_map
   comm_brick->forward_comm(this);
-  for(int i=0; i<6; i++) {
-    if(comm_index_pack_forward[i].size() == 0) {
+
+  for(int comm_phase=0; comm_phase<6; comm_phase++) {
+    const int n = comm_index_pack_forward[comm_phase].size();
+    if(n == 0) {
+      // do nothing if self comm
       continue;
     }
+
+    // for unpack_reverse, Ignore duplicated index by 'already_met'
+    std::vector<long>& idx_map_forward = comm_index_pack_forward[comm_phase];
+    std::vector<long>& idx_map_reverse = comm_index_unpack_reverse[comm_phase];
+    std::set<int> already_met;
+    // the last index of x_comm is used to trash unnecessary values
+    const int trash_index = graph_size + static_cast<int>(extra_graph_idx_map.size()); //+ 1;
+    for (int i = 0; i < n; i++) {
+      const int idx = idx_map_forward[i];
+      if(idx < graph_size) {
+        if(already_met.count(idx) == 1) {
+          idx_map_reverse.push_back(trash_index);
+        } else {
+          idx_map_reverse.push_back(idx);
+          already_met.insert(idx);
+        }
+      } else {
+        idx_map_reverse.push_back(idx);
+      }
+    }
+
     if(use_cuda_mpi){
-      auto pmap = comm_index_pack_forward[i];
-      auto upmap = comm_index_unpack_forward[i];
-      comm_index_pack_forward_tensor[i] = torch::from_blob(pmap.data(), pmap.size(), INTEGER_TYPE).to(device);
-      comm_index_unpack_forward_tensor[i] = torch::from_blob(upmap.data(), upmap.size(), INTEGER_TYPE).to(device);
+      comm_index_pack_forward_tensor[comm_phase] = torch::from_blob(idx_map_forward.data(), idx_map_forward.size(), INTEGER_TYPE).to(device);
+
+      auto upmap = comm_index_unpack_forward[comm_phase];
+      comm_index_unpack_forward_tensor[comm_phase] = torch::from_blob(upmap.data(), upmap.size(), INTEGER_TYPE).to(device);
+
+      comm_index_unpack_reverse_tensor[comm_phase] = torch::from_blob(idx_map_reverse.data(), idx_map_reverse.size(), INTEGER_TYPE).to(device);
     }
   }
   comm_preprocess_done = true;
 }
 
+// called from comm_brick if comm_preprocess_done is false
 void PairE3GNNParallel::pack_forward_init(int n, int *list_send, int comm_phase) {
   std::vector<long>& idx_map = comm_index_pack_forward[comm_phase];
 
-  //nvtxRangePush("pack_forward_init");
+//nvtxRangePush("pack_forward_init");
   idx_map.reserve(n);
 
   int i,j;
   int nlocal = list->inum;
   tagint *tag = atom->tag;
+
   for (i = 0; i < n; i++) {
     int list_i = list_send[i];
     int graph_idx = tag_to_graph_idx_ptr[tag[list_i]];
+
     if(graph_idx != -1) {
-      //known atom
+      //known atom (local atom + ghost atom inside cutoff)
       idx_map.push_back(graph_idx);
     } else {
-      //unknown atom
+      //unknown atom, these are not used in computation in this process
+      //instead, this process is used to hand over these atoms to other proecss
+      //hold them in continuous manner for flexible tensor operations later
       if(extra_graph_idx_map.find(list_i) != extra_graph_idx_map.end()){
         idx_map.push_back(extra_graph_idx_map[list_i]);
       } else {
@@ -587,13 +643,15 @@ void PairE3GNNParallel::pack_forward_init(int n, int *list_send, int comm_phase)
       }
     }
   }
-  //nvtxRangePop();
+  
+//nvtxRangePop();
 }
 
+// called from comm_brick if comm_preprocess_done is false
 void PairE3GNNParallel::unpack_forward_init(int n, int first, int comm_phase) {
   std::vector<long>& idx_map = comm_index_unpack_forward[comm_phase];
 
-  //nvtxRangePush("unpack_forward_init");
+//nvtxRangePush("unpack_forward_init");
   idx_map.reserve(n);
 
   int i,j,last;
@@ -610,14 +668,14 @@ void PairE3GNNParallel::unpack_forward_init(int n, int first, int comm_phase) {
       idx_map.push_back(extra_graph_idx_map[i]); //same as list_i in pack
     }
   }
-  //nvtxRangePop();
+//nvtxRangePop();
 }
 
 int PairE3GNNParallel::pack_forward_comm_gnn(float* buf, int comm_phase) {
   std::vector<long>& idx_map = comm_index_pack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-  //nvtxRangePush("pack_forward");
+//nvtxRangePush("pack_forward");
   if(use_cuda_mpi) {
     torch::Tensor& idx_map_tensor = comm_index_pack_forward_tensor[comm_phase];
     auto selected = x_comm.index_select(0, idx_map_tensor); //its size is x_dim * n
@@ -625,8 +683,9 @@ int PairE3GNNParallel::pack_forward_comm_gnn(float* buf, int comm_phase) {
 
     // TODO: I want to remove temporary selected tensor for speed.
     // Code below produce wrong results. But if I change {n, x_dim} to {x_dim, n}, get correct result. 
-    // Instead it produce warnings that the dimension is not correct so implicitly changed resulting tensor
-    // to fit out_tensor(buf_tensor)'s dimension. How can I sovle this?
+    // Instead, it raises a warning that the dimension is not correct so they implicitly changed resulting tensor shape
+    // to fit out_tensor(buf_tensor)'s dimension. 
+    // How can I sovle this?
 
     //auto buf_tensor = torch::from_blob(buf, {n, x_dim}, FLOAT_TYPE.device(device)); // tensor wrapping of buf
     //at::index_select_out(buf_tensor, x_comm, 0, idx_map_tensor);
@@ -641,6 +700,7 @@ int PairE3GNNParallel::pack_forward_comm_gnn(float* buf, int comm_phase) {
       }
     }
   }
+//nvtxRangePop();
   return x_dim*n;
 }
 
@@ -648,7 +708,7 @@ void PairE3GNNParallel::unpack_forward_comm_gnn(float* buf, int comm_phase) {
   std::vector<long>& idx_map = comm_index_unpack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-  //nvtxRangePush("unpack_forward");
+//nvtxRangePush("unpack_forward");
   if(use_cuda_mpi) {
     torch::Tensor& idx_map_tensor = comm_index_unpack_forward_tensor[comm_phase];
     // share same memory space with exisitng device buffer just wrapping to troch::Tensor
@@ -665,14 +725,14 @@ void PairE3GNNParallel::unpack_forward_comm_gnn(float* buf, int comm_phase) {
       }
     }
   }
-  //nvtxRangePop();
+//nvtxRangePop();
 }
 
 int PairE3GNNParallel::pack_reverse_comm_gnn(float* buf, int comm_phase) {
   std::vector<long>& idx_map = comm_index_unpack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-  //nvtxRangePush("pack_reverse");
+//nvtxRangePush("pack_reverse");
   if(use_cuda_mpi) {
     torch::Tensor& idx_map_tensor = comm_index_unpack_forward_tensor[comm_phase];
     auto selected = x_comm.index_select(0, idx_map_tensor);
@@ -688,17 +748,17 @@ int PairE3GNNParallel::pack_reverse_comm_gnn(float* buf, int comm_phase) {
       }
     }
   }
-  //nvtxRangePop();
+//nvtxRangePop();
   return x_dim*n;
 }
 
 void PairE3GNNParallel::unpack_reverse_comm_gnn(float *buf, int comm_phase) {
-  std::vector<long>& idx_map = comm_index_pack_forward[comm_phase];
+  std::vector<long>& idx_map = comm_index_unpack_reverse[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-  //nvtxRangePush("unpack_reverse");
+//nvtxRangePush("unpack_reverse");
   if(use_cuda_mpi) {
-    torch::Tensor& idx_map_tensor = comm_index_pack_forward_tensor[comm_phase];
+    torch::Tensor& idx_map_tensor = comm_index_unpack_reverse_tensor[comm_phase];
     auto buf_tensor = torch::from_blob(buf, {n, x_dim}, FLOAT_TYPE.device(device));
     x_comm.scatter_(0, idx_map_tensor.repeat_interleave(x_dim).view({n, x_dim}), buf_tensor, "add");
   } else {
@@ -706,11 +766,15 @@ void PairE3GNNParallel::unpack_reverse_comm_gnn(float *buf, int comm_phase) {
     m = 0;
     for (i = 0; i < n; i++) {
       const int idx = static_cast<int>(idx_map.at(i));
+      if(idx == -1) {
+        m+=x_dim;
+        continue;
+      }
       float* to = x_comm[idx].data_ptr<float>();
       for (j = 0; j < x_dim; j++) {
         to[j] += buf[m++];
       }
     }
   }
-  //nvtxRangePop();
+//nvtxRangePop();
 }
