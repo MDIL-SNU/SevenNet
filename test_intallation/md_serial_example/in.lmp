@@ -1,0 +1,53 @@
+#
+#--------------------------- Simulation variables -----------------------------#
+  # Initalizes the random number generator.
+#  variable         rnd equal 7777 # round(random(0,999,${RANDOM}))
+  
+  # Simulation control parameters.
+  variable          T equal 500
+
+  # Simulation steps (t_eq)
+  variable          t_eq equal 100
+  variable          output equal 1 #freq to print output
+  variable          dumpstep equal 1
+
+#------------------------------------------------------------------------------#
+
+
+#---------------------------- Atomic setup ------------------------------------#
+  units            metal
+  #boundary         f f f
+  boundary         p p p
+  # Create atoms.
+  box tilt large
+  read_data        ./res.dat
+  replicate 2 2 2
+
+  # Define interatomic potential.
+  pair_style       e3gnn
+  pair_coeff       * * ./deployed_serial.pt Hf O
+
+  timestep         0.002
+
+#----------------------------- Run simulation ---------------------------------#
+
+    # Setup output
+    thermo          ${output} 			#because it is realaxation
+    compute         atompe all pe/atom					#compute atomic energy which is correspond to NNP atomic energy
+    thermo_style    custom step tpcpu pe ke vol press temp #recod these value (custom setting)
+    dump            mydump all custom 1 dump.traj id type x y z fx fy fz
+
+    fix f1 all nph tri 0.0 0.0 1.0
+    fix               comfix all momentum 1 linear 1 1 1
+    velocity        all create ${T} 1 dist gaussian mom yes
+
+    #fix f1 all nph aniso 0.0 0.0 1.0 
+    #dump            newd all custom 1 ff.traj id type x y z f_f3[*]
+
+    fix f2 all langevin ${T} ${T} 0.1 999
+
+    run 3
+    run 10
+
+  write_data after.dat
+#------------------------------------------------------------------------------#
