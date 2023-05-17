@@ -32,6 +32,7 @@ namespace LAMMPS_NS{
       torch::jit::Module model;
       torch::Device device = torch::kCPU;
       int nelements;
+      bool print_info = false;
     public:
       PairE3GNN(class LAMMPS *);
       ~PairE3GNN();

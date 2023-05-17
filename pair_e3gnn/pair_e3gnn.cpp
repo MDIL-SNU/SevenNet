@@ -31,12 +31,16 @@
 #include "neigh_list.h"
 #include "neigh_request.h"
 
+#include <cuda_runtime.h>
 #include "pair_e3gnn.h"
 
 using namespace LAMMPS_NS;
 
 PairE3GNN::PairE3GNN(LAMMPS *lmp) : Pair(lmp) {
   // constructor
+  const char* print_flag = std::getenv("SEVENN_PRINT_INFO");
+  if(print_flag) print_info = true;
+
   std::string device_name;
   if(torch::cuda::is_available()){
     device = torch::kCUDA;
@@ -145,7 +149,11 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   //auto edge_len = inp_edge_len.accessor<float, 1>();
 
-  // should be part of model?
+  if(print_info) {
+    std::cout << "Nlocal: " << nlocal << std::endl;
+    std::cout << "Nedges: " << nedges << "\n" << std::endl;
+  }
+
   inp_edge_vec.set_requires_grad(true);
 
   c10::Dict<std::string, torch::Tensor> input_dict;
@@ -162,6 +170,20 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   std::vector<torch::IValue> input(1, input_dict);
   auto output = model.forward(input).toGenericDict();
+
+  if(print_info) {
+    size_t free, tot;
+    cudaMemGetInfo(&free, &tot);
+    std::cout << "MEM use after model(MB)" << std::endl;
+    double Mfree = static_cast<double>(free) / (1024*1024);
+    double Mtot = static_cast<double>(tot) / (1024*1024);
+    std::cout << "Total: " << Mtot << std::endl;
+    std::cout << "Free: " << Mfree << std::endl;
+    std::cout << "Used: " << Mtot - Mfree << std::endl;
+    double Mused = Mtot - Mfree;
+    std::cout << "Used/Nedges: " << Mused/nedges << std::endl;
+    std::cout << "Used/Nlocal: " << Mused/nlocal << std::endl;
+  }
 
   // atomic energy things?
   torch::Tensor total_energy_tensor = output.at("inferred_total_energy").toTensor().cpu();
