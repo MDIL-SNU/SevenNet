@@ -20,6 +20,7 @@
 #include <ATen/ops/from_blob.h>
 #include <c10/core/Scalar.h>
 #include <c10/core/TensorOptions.h>
+#include <cstdlib>
 #include <limits>
 #include <numeric>
 #include <string>
@@ -81,6 +82,15 @@ DeviceBuffManager::~DeviceBuffManager() {
 
 PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   // constructor
+
+  const char* print_flag = std::getenv("SEVENN_PRINT_INFO");
+  const char* print_both_flag = std::getenv("SEVENN_PRINT_BOTH_INFO");
+  if(print_flag) {
+    world_rank = comm->me;
+    std::cout << "process rank: " << world_rank << " initialized" << std::endl;
+    print_info = (world_rank == 0) || print_both_flag;
+  }
+
   std::string device_name;
   const bool use_gpu = torch::cuda::is_available();
 
@@ -126,11 +136,14 @@ torch::Device PairE3GNNParallel::get_cuda_device() {
   int num_gpus;
   int idx;
   int rank = comm->me;
+  num_gpus = torch::cuda::device_count();
+  if(print_info)
+    std::cout << world_rank << " Available # of GPUs found: " << num_gpus << std::endl;
   if(cuda_visible == nullptr){
     // assume every gpu in node is avail
-    num_gpus = torch::cuda::device_count();
     //believe user did right thing...
     idx = rank % num_gpus;
+    std::cout << world_rank << " use GPU index(No CUDA_VISIBLE_DEVICES set): " << idx << std::endl;
   } else {
     auto delim = ",";
     char *tok = std::strtok(cuda_visible, delim);
@@ -140,11 +153,12 @@ torch::Device PairE3GNNParallel::get_cuda_device() {
       tok = std::strtok(nullptr, delim);
     }
     idx = std::stoi(device_ids[rank % device_ids.size()]);
+    std::cout << world_rank << " use GPU index(from CUDA_VISIBLE_DEVICES): " << idx << std::endl;
   }
   cudaError_t cuda_err = cudaSetDevice(idx);
-  /*if (cuda_err != cudaSuccess) {
-    std::cerr << "Failed to set CUDA device: " << cudaGetErrorString(cuda_err) << std::endl;
-  }*/
+  if (cuda_err != cudaSuccess) {
+    std::cerr << "E3GNN: Failed to set CUDA device: " << cudaGetErrorString(cuda_err) << std::endl;
+  }
   return torch::Device(torch::kCUDA, idx);
 }
 
@@ -283,6 +297,12 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   auto inp_edge_index = torch::stack({edge_idx_src_tensor, edge_idx_dst_tensor});
 
   auto inp_edge_vec = torch::from_blob(edge_vec, {nedges, 3}, FLOAT_TYPE);
+  if(print_info) {
+    std::cout << world_rank << " Nlocal: " << nlocal << std::endl;
+    std::cout << world_rank << " Graph_size: " << graph_size << std::endl;
+    std::cout << world_rank << " Ghost_node_num: " << ghost_node_num << std::endl;
+    std::cout << world_rank << " Nedges: " << nedges << "\n" << std::endl;
+  }
 
   // r_original requires grad True
   inp_edge_vec.set_requires_grad(true);
@@ -359,7 +379,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   torch::Tensor self_conn_grads;
   std::vector<torch::Tensor> grads;
   std::vector<torch::Tensor> of_tensor;
-
+  
   //TODO: most values of self_conn_grads were zero becuase we use only scalars for energy
   for(auto rit = wrt_tensors.rbegin(); rit != wrt_tensors.rend(); ++rit) {
     // edge_vec, x, x_ghost order
@@ -407,7 +427,20 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 //nvtxRangePop();
 
   //postprocessing
-
+  if(print_info) {
+    size_t free, tot;
+    cudaMemGetInfo(&free, &tot);
+    std::cout << world_rank << " MEM use after backward(MB)" << std::endl;
+    double Mfree = static_cast<double>(free) / (1024*1024);
+    double Mtot = static_cast<double>(tot) / (1024*1024);
+    std::cout << world_rank << " Total: " << Mtot << std::endl;
+    std::cout << world_rank << " Free: " << Mfree << std::endl;
+    std::cout << world_rank << " Used: " << Mtot - Mfree << std::endl;
+    double Mused = Mtot - Mfree;
+    std::cout << world_rank << " Used/Nedges: " << Mused/nedges << std::endl;
+    std::cout << world_rank << " Used/Nlocal: " << Mused/nlocal << std::endl;
+    std::cout << world_rank << " Used/GraphSize: " << Mused/graph_size << "\n" << std::endl;
+  }
   // TODO: atomic energy things?
   eng_vdwl += scaled_energy_tensor.item<float>()*scale + shift*nlocal; // accumulate energy
 
@@ -701,6 +734,14 @@ int PairE3GNNParallel::pack_forward_comm_gnn(float* buf, int comm_phase) {
     }
   }
 //nvtxRangePop();
+  if(print_info) {
+    std::cout << world_rank << " comm_phase: " << comm_phase << std::endl;
+    std::cout << world_rank << " pack_forward x_dim: " << x_dim << std::endl;
+    std::cout << world_rank << " pack_forward n: " << n << std::endl;
+    std::cout << world_rank << " pack_forward x_dim*n: " << x_dim*n << std::endl;
+    double Msend = static_cast<double>(x_dim*n*4) / (1024*1024);
+    std::cout << world_rank << " send size(MB): " << Msend << "\n" << std::endl;
+  }
   return x_dim*n;
 }
 
@@ -749,6 +790,14 @@ int PairE3GNNParallel::pack_reverse_comm_gnn(float* buf, int comm_phase) {
     }
   }
 //nvtxRangePop();
+  if(print_info) {
+    std::cout << world_rank << " comm_phase: " << comm_phase << std::endl;
+    std::cout << world_rank << " pack_reverse x_dim: " << x_dim << std::endl;
+    std::cout << world_rank << " pack_reverse n: " << n << std::endl;
+    std::cout << world_rank << " pack_reverse x_dim*n: " << x_dim*n << std::endl;
+    double Msend = static_cast<double>(x_dim*n*4) / (1024*1024);
+    std::cout << world_rank << " send size(MB): " << Msend << "\n" << std::endl;
+  }
   return x_dim*n;
 }
 

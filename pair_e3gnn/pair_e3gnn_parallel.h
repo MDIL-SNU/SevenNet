@@ -87,6 +87,9 @@ namespace LAMMPS_NS{
       int get_x_dim();
       bool use_cuda_mpi_();
       bool is_comm_preprocess_done();
+
+      bool print_info = false;
+      int world_rank;
   };
 
   class DeviceBuffManager{
