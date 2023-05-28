@@ -68,6 +68,7 @@ BATCH_SIZE: Final[str] = "batch_size"
 #==================================================#
 STRUCTURE_LIST: Final[str] = "structure_list"
 SAVE_DATASET: Final[str] = "save_dataset_path"
+SAVE_BY_LABEL: Final[str] = "save_by_label"
 LOAD_DATASET: Final[str] = "load_dataset_path"
 FORMAT_OUTPUTS: Final[str] = "format_outputs_for_ase"
 

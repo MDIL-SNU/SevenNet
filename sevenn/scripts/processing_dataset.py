@@ -72,14 +72,18 @@ def init_dataset(data_config, working_dir):
 
     prefix = f"{os.path.abspath(working_dir)}/"
     save_dataset = data_config[KEY.SAVE_DATASET]
-    if save_dataset is not False:
-        if save_dataset.endswith('.pt') is False:
-            save_dataset += '.pt'
+    save_by_label = data_config[KEY.SAVE_BY_LABEL]
+    if save_dataset:
+        if save_dataset.endswith('.sevenn_data') is False:
+            save_dataset += '.sevenn_data'
         if (save_dataset.startswith('.') or save_dataset.startswith('/')) is False:
             save_dataset = prefix + save_dataset  # save_data set is plain file name
-        full_dataset.save(save_dataset)  # save_dataset contain user define path
+        full_dataset.save(save_dataset)
         Logger().format_k_v("Dataset saved to", save_dataset, write=True)
         #Logger().write(f"Loaded full dataset saved to : {save_dataset}\n")
+    if save_by_label:
+        full_dataset.save(prefix, True)
+        Logger().format_k_v("Dataset saved by label", prefix, write=True)
 
     return full_dataset
 

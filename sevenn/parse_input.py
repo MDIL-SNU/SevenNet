@@ -274,6 +274,14 @@ def init_data_config(config: dict):
     else:
         data_meta[KEY.LOAD_DATASET] = False
 
+    if KEY.SAVE_DATASET in config.keys():
+        inp = config[KEY.SAVE_DATASET]
+        if type(inp) is not str:
+            raise ValueError("save_dataset_path is given but it is not pathlike")
+        data_meta[KEY.SAVE_DATASET] = inp
+    else:
+        data_meta[KEY.SAVE_DATASET] = False
+
     for key, cond in _const.DATA_CONFIG_CONDITION.items():
         data_meta[key] = config_initialize(key, config, defaults, cond)
 

@@ -210,12 +210,14 @@ class AtomGraphDataset:
             raise ValueError(f'given datasets are not compatible {info}')
         self.user_labels = list(self.dataset.keys())
 
-    def save(self, path):
+    def save(self, path, by_label=False):
         """
         with open(path, 'wb') as f:
             pickle.dump(self, f)
         """
-        torch.save(self, path)
-
-
-
+        if by_label:
+            for label, data in self.dataset.items():
+                to = f"{path}/{label}.sevenn_data"
+                torch.save(AtomGraphDataset({label: data}, metadata=self.meta), to)
+        else:
+            torch.save(self, path)
