@@ -103,7 +103,9 @@ def deploy(model_state_dct, config, fname):
     md_configs.update({"dtype": config[KEY.DTYPE]})
     md_configs.update({"time": datetime.now().strftime('%Y-%m-%d')})
 
-    torch.jit.save(model, f"{fname}.pt", _extra_files=md_configs)
+    if fname.endswith(".pt") is False:
+        fname += ".pt"
+    torch.jit.save(model, fname, _extra_files=md_configs)
 
 
 #TODO: this is E3_equivariant specific
