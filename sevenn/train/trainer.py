@@ -174,6 +174,7 @@ class Trainer():
 
         parity_set = {"labels": [], "species": []}
         # save raw string instead of LossType for user
+        # this is really strange... better way? see plot.py parity plot
         for y_value in ("energy", "force", "stress"):
             parity_set.update({y_value: {"pred": [], "ref": []}})
 

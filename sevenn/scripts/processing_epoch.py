@@ -7,9 +7,11 @@ import numpy as np
 
 from sevenn.sevenn_logger import Logger
 from sevenn.scripts.deploy import deploy
-from sevenn.scripts.plot import draw_learning_curve
+from sevenn.scripts.plot import draw_learning_curve, draw_every_parity
 from sevenn.train.trainer import Trainer, DataSetType, LossType
 import sevenn._keys as KEY
+
+import multiprocessing
 
 
 def processing_epoch(trainer, config, loaders, working_dir):
@@ -56,6 +58,7 @@ def processing_epoch(trainer, config, loaders, working_dir):
         for specie in f_loss_record.keys():
             f_loss_record[specie] = math.sqrt(f_loss_record[specie]) * scale
 
+    # TODO: implement multiprocessing. Drawing graph is too expansive
     def output(is_best):
         """
         by default, make all outputs if best (it will overwrite previous one)
@@ -76,8 +79,9 @@ def processing_epoch(trainer, config, loaders, working_dir):
             #torch.save(loss_hist_print, f"{prefix}/loss_hist{suffix}.pth")
             torch.save(info_parity, f"{prefix}/parity_at{suffix}.pth")
         if draw_parity or is_best:
-            #TODO: implement
-            pass
+            #dirty things inside plot.py
+            draw_every_parity(train_parity_set, valid_parity_set,
+                              train_loss, valid_loss, f"{prefix}/parity_at{suffix}")
 
     loss_history = {
         DataSetType.TRAIN: {LossType.ENERGY: [], LossType.FORCE: []},
