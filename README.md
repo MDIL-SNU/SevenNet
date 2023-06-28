@@ -1,17 +1,19 @@
 # SEVENNet
 
-SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph nueral network interatomic potential pacakage that supports parallel moleculary dyanmics simulation on LAMMPS. The underlying GNN model is same as [`nequip`](https://github.com/mir-group/nequip).
+SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph nueral network interatomic potential pacakage that supports parallel moleculary dyanmics simulation on [`LAMMPS`](https://github.com/lammps/lammps). The underlying GNN model is same as [`nequip`](https://github.com/mir-group/nequip).
+
+Installation & Usage of SEVENNet is consisted with two parts: training by PyTorch and inference (molecular dynamics) by [`LAMMPS`](https://github.com/lammps/lammps). The model trained with PyTorch is deployed leveraging TorchScript and later it is used to run molecular dynamics by LAMMPS. Using consistent CUDA and PyTorch version is enough to use both training and inference.
 
 Note that SEVENNet is under active development and not stable.
 
-## REQUIREMENTS - training
+## Requirements - training
 
 * Python >= 3.8
 * Pytorch >= 1.11
 * TorchGeometric 
 * [`e3nn`](https://github.com/e3nn/e3nn)
 
-## INTSTALLATION - training
+## Installation - training
 
 ```
 git clone https://github.com/MDIL-SNU/SEVENN.git
@@ -19,7 +21,7 @@ cd SEVENN
 pip install . 
 ```
 
-## USAGE - training
+## Usage - training
 
 ### start training:
 ```
@@ -28,7 +30,6 @@ sevenn input.yaml
 
 You can find example of `input.yaml` from `SEVENN/example_inputs`
 structure_list file is to select VASP OUTCARs for training.
-
 
 ### Get parallel models
 After the training, you can find `deployed_model_best.pt` as serial model for MD simulation.
@@ -54,7 +55,7 @@ ompi_info --all | grep btl_openib_have_cuda_gdr
 
 ## INSTALLATION - MD
 
-Note that following command will overwrite `comm_brickc.cpp` and `comm_brick.h` in original `LAMMPS`. It does not affects the original capability of `LAMMPS`, but if you're not sure, backup the two files from source.
+Note that following command will overwrite `comm_brickc.cpp` and `comm_brick.h` in original `LAMMPS`. It does not affects the original capability of `LAMMPS`, but if you're not sure, backup the files from original source.
 
 ```
 cp SEVENN/pair_e3gnn/* path_to_lammps/src/
@@ -65,6 +66,7 @@ If you correctly installed CUDA-aware OpenMPI, the remaining process is exactly 
 Following modifications to lammps/cmake/CMakeLists.txt:
 
 Change set(CMAKE_CXX_STANDARD 11) to set(CMAKE_CXX_STANDARD 14)
+
 Append the following lines:
 
 ```
@@ -104,5 +106,12 @@ pair_coeff * * {number of segemented parallel models} {space seperated paths of 
 mpirun -np {# of GPUs want to use} {path to lammps binary} -in {lammps input scripts}
 ```
 
-If `CUDA-aware OpenMPI` is not found (it detacts automatically in code), `e3gnn/parallel` will not utilize GPUs even if they are found. You can check whether the `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Basically, the one gpu per one mpi process is expected. If the accessible GPUs are less than MPI process, a simulation runs inefficiently or fail. You can select sepcific GPUs by setting `CUDA_VISIBLE_DEVIECES` environment variable.
+If `CUDA-aware OpenMPI` is not found (it detacts automatically in code), `e3gnn/parallel` will not utilize GPUs even if they are found. You can check whether the `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Basically, the one gpu per one mpi process is expected. If the accessible GPUs are less than MPI processes, a simulation runs inefficiently or fail. You can select sepcific GPUs by setting `CUDA_VISIBLE_DEVIECES` environment variable.
+
+## Known Bugs
+
+* When parsing VASP `OUTCARs` with `structure_list`, if the folder contains `POSCAR` with selective dynamics, it does not read the `OUTCAR` correctly
+* When parsing VASP `OUTCARs` with `structure_list`, spin polarized calculations are not supported yet.
+* Models with many number of parameters (>=5 messge passing layers, >= 64 channels), initial RMSEs of energy and force are very large than origianl `nequip`. Since the difference should be marginal, we are working on the problem.
+* Calcualted stress on `LAMMPS` is not correct.
 
