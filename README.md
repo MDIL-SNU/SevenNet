@@ -1,19 +1,19 @@
 # SEVENNet
 
-SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph nueral network interatomic potential pacakage that supports parallel moleculary dyanmics simulation on [`LAMMPS`](https://github.com/lammps/lammps). The underlying GNN model is same as [`nequip`](https://github.com/mir-group/nequip).
+SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulation on [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is the same as [`nequip`](https://github.com/mir-group/nequip).
 
-Installation & Usage of SEVENNet is consisted with two parts: training by PyTorch and inference (molecular dynamics) by [`LAMMPS`](https://github.com/lammps/lammps). The model trained with PyTorch is deployed leveraging TorchScript and later it is used to run molecular dynamics by LAMMPS. Using consistent CUDA and PyTorch version is enough to use both training and inference.
+The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and inference (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript. It is later utilized to run molecular dynamics simulations via LAMMPS. To ensure smooth operation between training and inference, it is important to use consistent versions of CUDA and PyTorch.
 
-Note that SEVENNet is under active development and not stable.
+Please note that SEVENNet is currently under active development and may not be stable.
 
-## Requirements - training
+## Requirements for Training
 
 * Python >= 3.8
-* Pytorch >= 1.11
+* PyTorch >= 1.11
 * TorchGeometric 
 * [`e3nn`](https://github.com/e3nn/e3nn)
 
-## Installation - training
+## Installation for Training
 
 ```
 git clone https://github.com/MDIL-SNU/SEVENN.git
@@ -21,53 +21,53 @@ cd SEVENN
 pip install . 
 ```
 
-## Usage - training
+## Usage for Training
 
-### start training:
+### To start training:
+
 ```
 sevenn input.yaml
 ```
 
-You can find example of `input.yaml` from `SEVENN/example_inputs`
-structure_list file is to select VASP OUTCARs for training.
+Examples of `input.yaml` can be found under `SEVENN/example_inputs`. Use the `structure_list` file to select VASP OUTCARs for training.
 
-### Get parallel models
-After the training, you can find `deployed_model_best.pt` as serial model for MD simulation.
-or, you can have parallel model from checkpoint.
+### To generate parallel models:
+
+After the training, you will find `deployed_model_best.pt`, a serial model for MD simulation. Alternatively, you can generate a parallel model from the checkpoint using the following command:
 
 ```
 sevenn_get_parallel checkpoint_best.pt
 ```
 
-It will generate segemented parallel models with same number of message passing layers in model. You need all of them to run parallel MD.
+This will generate segmented parallel models with the same number of message passing layers as the model. You need all of these to run parallel MD.
 
-## REQUIREMENTS - MD
+## Requirements for Molecular Dynamics (MD)
 
-Latest stable version of [`LAMMPS`](https://github.com/lammps/lammps)
-CUDA-aware OpenMPI for parallel MD
+* Latest stable version of [`LAMMPS`](https://github.com/lammps/lammps)
+* CUDA-aware OpenMPI for parallel MD
 
-You can check whether your OpenMPI awrae of CUDA or not by ompi_info.
+You can check whether your OpenMPI is CUDA-aware or not by using `ompi_info`:
 
 ```
 ompi_info --all | grep btl_openib_have_cuda_gdr
   > MCA btl openib: informational "btl_openib_have_cuda_gdr" (current value: "true", data source: default, level: 5 tuner/detail, type: bool)
 ```
 
-## INSTALLATION - MD
+## Installation for MD
 
-Note that following command will overwrite `comm_brickc.cpp` and `comm_brick.h` in original `LAMMPS`. It does not affects the original capability of `LAMMPS`, but if you're not sure, backup the files from original source.
+Please note that the following command will overwrite `comm_brickc.cpp` and `comm_brick.h` in the original `LAMMPS`. While it does not affect the original functionality of `LAMMPS`, you may want to backup these files from the original source if you're unsure.
 
 ```
 cp SEVENN/pair_e3gnn/* path_to_lammps/src/
 ```
 
-If you correctly installed CUDA-aware OpenMPI, the remaining process is exactly same as [`pair-nequip`](https://github.com/mir-group/pair_nequip).
+If you have correctly installed CUDA-aware OpenMPI, the remaining process is identical to [`pair-nequip`](https://github.com/mir-group/pair_nequip).
 
-Following modifications to lammps/cmake/CMakeLists.txt:
+Please make the following modifications to lammps/cmake/CMakeLists.txt:
 
-Change set(CMAKE_CXX_STANDARD 11) to set(CMAKE_CXX_STANDARD 14)
+Change `set(CMAKE_CXX_STANDARD 11)` to `set(CMAKE_CXX_STANDARD 14)`.
 
-Append the following lines:
+Then append the following lines:
 
 ```
 find_package(Torch REQUIRED)
@@ -75,43 +75,49 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
 ```
 
-cmake & build lammps
+To build lammps with cmake:
+
 ```
 cd lammps
 mkdir build
 cd build
-cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
+cmake ../cmake -DCMAKE
+
+_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
 ```
 
-## USAGE - MD
+## Usage for MD
 
-You can find example MD input scripts for `LAMMPS` from `SEVENN/example_inputs`. If you correctly installed the `LAMMPS`, there are two additional pair style avaialble, `e3gnn` and `e3gnn/parallel`
+Example MD input scripts for `LAMMPS` can be found under `SEVENN/example_inputs`. If you've correctly installed `LAMMPS`, there are two additional pair styles available: `e3gnn` and `e3gnn/parallel`.
 
-In `pair_coeff` of lammps script, you need path of serial or parallel deployed models from training. And for parallel model, you should specify how many segemented models will be given.
+In the `pair_coeff` of the lammps script, you need to provide the path of the trained models (either serial or parallel). For parallel models, you should specify how many segmented models will be used.
 
-### serial model:
+### For serial model:
+
 ```
 pair_style e3gnn
 pair_coeff * * {path to serial model} {chemical species}
 ```
 
-### parallel model:
+### For parallel model:
+
 ```
 pair_style e3gnn/parallel
-pair_coeff * * {number of segemented parallel models} {space seperated paths of segemented parallel models} {chemical species}
+pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {chemical species}
 ```
 
-### Execute LAMMPS with MPI
+### To execute LAMMPS with MPI:
+
 ```
-mpirun -np {# of GPUs want to use} {path to lammps binary} -in {lammps input scripts}
+mpirun -np {# of GPUs you want to use} {path to lammps binary} -in {lammps input scripts}
 ```
 
-If `CUDA-aware OpenMPI` is not found (it detacts automatically in code), `e3gnn/parallel` will not utilize GPUs even if they are found. You can check whether the `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Basically, the one gpu per one mpi process is expected. If the accessible GPUs are less than MPI processes, a simulation runs inefficiently or fail. You can select sepcific GPUs by setting `CUDA_VISIBLE_DEVIECES` environment variable.
+If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
 
 ## Known Bugs
 
-* When parsing VASP `OUTCARs` with `structure_list`, if the folder contains `POSCAR` with selective dynamics, it does not read the `OUTCAR` correctly
-* When parsing VASP `OUTCARs` with `structure_list`, spin polarized calculations are not supported yet.
-* Models with many number of parameters (>=5 messge passing layers, >= 64 channels), initial RMSEs of energy and force are very large than origianl `nequip`. Since the difference should be marginal, we are working on the problem.
-* Calcualted stress on `LAMMPS` is not correct.
+* When parsing VASP `OUTCARs` with `structure_list`, if the folder contains a `POSCAR` with selective dynamics, it does not read the `OUTCAR` correctly.
+* When parsing VASP `OUTCARs` with `structure_list`, spin polarized calculations are not yet supported.
+* Models with a large number of parameters (>=5 message passing layers, >= 64 channels) show initial RMSEs of energy and force significantly larger than the original `nequip`. Since the difference should be marginal, we are actively investigating this issue.
+* The calculated stress on `LAMMPS` is incorrect.
 
