@@ -30,6 +30,7 @@ sevenn input.yaml
 ```
 
 Examples of `input.yaml` can be found under `SEVENN/example_inputs`. Use the `structure_list` file to select VASP OUTCARs for training.
+Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`, or it will use default values if none are specified. You can refer to this log to understand the default inputs when they're not specified, allowing you to modify them in your next usage for improved results. Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), as our dedicated documentation is still under preparation.
 
 ### To generate parallel models:
 
