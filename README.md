@@ -48,7 +48,9 @@ This will generate segmented parallel models with the same number of message pas
 ## Requirements for Molecular Dynamics (MD)
 
 * Latest stable version of [`LAMMPS`](https://github.com/lammps/lammps)
-* CUDA-aware OpenMPI for parallel MD
+* [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD 
+
+**PLEASE NOTE:** CUDA-aware OpenMPI may not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, it would be advisable to consult with your server administrator rather than attempting to compile it yourself. This approach can save you time.
 
 You can check whether your OpenMPI is CUDA-aware or not by using `ompi_info`:
 
