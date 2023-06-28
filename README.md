@@ -87,9 +87,7 @@ To build lammps with cmake:
 cd lammps
 mkdir build
 cd build
-cmake ../cmake -DCMAKE
-
-_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
+cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
 ```
 
 ## Usage for MD
