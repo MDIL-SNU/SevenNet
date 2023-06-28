@@ -1,10 +1,13 @@
 # SEVENNet
 
-SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulation on [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is the same as [`nequip`](https://github.com/mir-group/nequip).
+SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations on [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is the same as that found in [`nequip`](https://github.com/mir-group/nequip). 
 
-The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and inference (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript. It is later utilized to run molecular dynamics simulations via LAMMPS. To ensure smooth operation between training and inference, it is important to use consistent versions of CUDA and PyTorch.
+The project is inspired by `nequip` and provides a solution for enabling parallel molecular dynamics simulations using graph neural network interatomic potentials, which was not possible despite their superior accuracy.
 
-Please note that SEVENNet is currently under active development and may not be stable.
+**PLEASE NOTE:** We are currently preparing a paper that provides a detailed description of the algorithms implemented in this project. In addition, SEVENNet is currently under active development and may not be fully stable.
+
+The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and inference (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later utilized to run molecular dynamics simulations via LAMMPS. To ensure smooth operation between training and inference, it is important to use consistent versions of CUDA and PyTorch.
+
 
 ## Requirements for Training
 
