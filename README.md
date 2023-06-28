@@ -13,7 +13,7 @@ The installation and usage of SEVENNet are split into two parts: training (handl
 
 * Python >= 3.8
 * PyTorch >= 1.11
-* TorchGeometric 
+* [`TorchGeometric`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
 * [`e3nn`](https://github.com/e3nn/e3nn)
 
 ## Installation for Training
