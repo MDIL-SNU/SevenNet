@@ -37,7 +37,7 @@ sevenn input.yaml
 
 Examples of `input.yaml` can be found under `SEVENN/example_inputs`. Use the `structure_list` file to select VASP OUTCARs for training. To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` as the `load_dataset_path:` int the `input.yaml`. Both `structure_list` and `load_dataset_path` can be specified as lists, allowing you to easily augment training sets.
 
-Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`, or it will use default values if none are specified. You can refer to this log to understand the default inputs when they're not specified, allowing you to modify them in your next usage for improved results.
+Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned their default values. You can refer to this log to understand the default inputs, allowing you to modify them in your next usage for improved results.
 Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), as our dedicated documentation is still under preparation.
 
 ### To generate parallel models:
@@ -48,7 +48,7 @@ After the training, you will find `deployed_model_best.pt`, a serial model for M
 sevenn_get_parallel checkpoint_best.pt
 ```
 
-This will generate segmented parallel models with the same number of message passing layers as the model. You need all of these to run parallel MD.
+This will generate the segmented parallel models which will give the same result as the serial one. You need all of them to run a parallel MD.
 
 ## Requirements for Molecular Dynamics (MD)
 
@@ -56,9 +56,9 @@ This will generate segmented parallel models with the same number of message pas
 * Latest stable version of [`LAMMPS`](https://github.com/lammps/lammps)
 * [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD 
 
-**PLEASE NOTE:** CUDA-aware OpenMPI may not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, it would be advisable to consult with your server administrator rather than attempting to compile it yourself. This approach can save you time.
+**PLEASE NOTE:** CUDA-aware OpenMPI may not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, it would be advisable to consult with your server administrator rather than attempting to compile it yourself. This approach can save your time.
 
-You can check whether your OpenMPI is CUDA-aware or not by using `ompi_info`:
+You can check whether your OpenMPI is CUDA-aware by using `ompi_info` command:
 
 ```
 $ ompi_info --parsable --all | grep mpi_built_with_cuda_support:value
@@ -117,7 +117,7 @@ $ cd ../md_parallel_example
 $ mpirun -np {# of GPUs you want to use} {lammps_binary} -in in.lmp
 
 ###lammps outputs for 5 MD steps###
-
+If you want to check the MD is parallelized,
 $ grep PairE3GNN log.lammps
 PairE3GNNParallel using device : CUDA
 PairE3GNNParallel cuda-aware mpi : True
