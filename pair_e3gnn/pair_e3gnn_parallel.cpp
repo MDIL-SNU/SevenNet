@@ -126,7 +126,7 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
       fprintf(lmp->logfile, "GPU device is found but not activated since cuda_mpi(openMPI) is not found\n");
     } else {
       fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n", device_name.c_str());
-      fprintf(lmp->logfile, "PairE3GNNParallel cuda-award mpi: %s\n", use_cuda_mpi? "True" : "False");
+      fprintf(lmp->logfile, "PairE3GNNParallel cuda-aware mpi: %s\n", use_cuda_mpi? "True" : "False");
     }
   }
 }
@@ -137,14 +137,16 @@ torch::Device PairE3GNNParallel::get_cuda_device() {
   int idx;
   int rank = comm->me;
   num_gpus = torch::cuda::device_count();
+  idx = rank % num_gpus;
   if(print_info)
     std::cout << world_rank << " Available # of GPUs found: " << num_gpus << std::endl;
   if(cuda_visible == nullptr){
     // assume every gpu in node is avail
     //believe user did right thing...
-    idx = rank % num_gpus;
-    std::cout << world_rank << " use GPU index(No CUDA_VISIBLE_DEVICES set): " << idx << std::endl;
+    //idx = rank % num_gpus;
+    //std::cout << world_rank << " use GPU index(No CUDA_VISIBLE_DEVICES set): " << idx << std::endl;
   } else {
+    /*
     auto delim = ",";
     char *tok = std::strtok(cuda_visible, delim);
     std::vector<std::string> device_ids;
@@ -154,6 +156,7 @@ torch::Device PairE3GNNParallel::get_cuda_device() {
     }
     idx = std::stoi(device_ids[rank % device_ids.size()]);
     std::cout << world_rank << " use GPU index(from CUDA_VISIBLE_DEVICES): " << idx << std::endl;
+    */
   }
   cudaError_t cuda_err = cudaSetDevice(idx);
   if (cuda_err != cudaSuccess) {
@@ -528,9 +531,10 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
     model_list.push_back(torch::jit::load(std::string(arg[i]), device, meta_dict));
   }
 
+  torch::jit::setGraphExecutorOptimize(false);
   torch::jit::FusionStrategy strategy;
-  // TODO: why first pew iteration is slower than nequip?
-  strategy = {{torch::jit::FusionBehavior::DYNAMIC, 3}}; 
+  //strategy = {{torch::jit::FusionBehavior::DYNAMIC, 3}}; 
+  strategy = {{torch::jit::FusionBehavior::STATIC, 0}}; 
   torch::jit::setFusionStrategy(strategy);
 
   cutoff = std::stod(meta_dict["cutoff"]);

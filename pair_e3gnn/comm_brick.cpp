@@ -1057,7 +1057,6 @@ void CommBrick::reverse_comm(Pair *pair)
   }
 }
 
-///////////////////////////TODO///////////////////////////
 void CommBrick::forward_comm(PairE3GNNParallel *pair)
 {
   int iswap,n;

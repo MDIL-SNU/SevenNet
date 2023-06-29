@@ -258,9 +258,11 @@ void PairE3GNN::coeff(int narg, char **arg) {
   model = torch::jit::load(std::string(arg[2]), device, meta_dict);
   //model = torch::jit::freeze(model); model is already freezed
 
+  torch::jit::setGraphExecutorOptimize(false);
   torch::jit::FusionStrategy strategy;
   // thing about dynamic recompile as tensor shape varies, this is default
-  strategy = {{torch::jit::FusionBehavior::DYNAMIC, 3}}; 
+  //strategy = {{torch::jit::FusionBehavior::DYNAMIC, 3}}; 
+  strategy = {{torch::jit::FusionBehavior::STATIC, 0}}; 
   torch::jit::setFusionStrategy(strategy);
 
   cutoff = std::stod(meta_dict["cutoff"]);
