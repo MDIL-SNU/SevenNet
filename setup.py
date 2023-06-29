@@ -3,8 +3,8 @@ from setuptools import find_packages, setup
 
 setup(
     name="sevenn",
-    version=0.90,
-    description="SEVENN proto",
+    version=1.00,
+    description="SEVENNet",
     author="Yutack Park, Jaesun Kim",
     python_requires=">=3.8",
     packages=find_packages(include=["sevenn", "sevenn*"]),
@@ -14,6 +14,8 @@ setup(
         "ase",
         #"torch-geometric",
         "braceexpand",
+        "pyyaml",
+        "e3nn",
     ],
     entry_points={
         "console_scripts": [
