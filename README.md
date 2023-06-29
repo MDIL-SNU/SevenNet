@@ -14,26 +14,33 @@ The installation and usage of SEVENNet are split into two parts: training (handl
 * Python >= 3.8
 * PyTorch >= 1.11
 * [`TorchGeometric`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
-* [`e3nn`](https://github.com/e3nn/e3nn)
+* [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter)
+
+You can find their installation guide from [`PyTorch official`](https://pytorch.org/get-started/locally/), [`TorchGeometric docs`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html`) and [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter). Remember that these pacakages has dependency on your CUDA version.
 
 ## Installation for Training
 
 ```
-git clone https://github.com/MDIL-SNU/SEVENN.git
-cd SEVENN
+git clone https://github.com/MDIL-SNU/SEVENNet.git
+cd SEVENNet
 pip install . 
 ```
+
+It will automatically install additional python packages (that is not dependent on your CUDA) such as e3nn or ase.
 
 ## Usage for Training
 
 ### To start training:
 
 ```
+cd example_inputs/training
 sevenn input.yaml
 ```
 
-Examples of `input.yaml` can be found under `SEVENN/example_inputs`. Use the `structure_list` file to select VASP OUTCARs for training.
-Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`, or it will use default values if none are specified. You can refer to this log to understand the default inputs when they're not specified, allowing you to modify them in your next usage for improved results. Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), as our dedicated documentation is still under preparation.
+Examples of `input.yaml` can be found under `SEVENN/example_inputs`. Use the `structure_list` file to select VASP OUTCARs for training. You can reuse preprocessed training set by specifying `${dataset_name}.sevenn_data` to `load_dataset_path:` of input.yaml. Both `structure_list` and `load_dataset_path` can be a list to help you easily augment training sets.
+
+Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`, or it will use default values if none are specified. You can refer to this log to understand the default inputs when they're not specified, allowing you to modify them in your next usage for improved results.
+Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), as our dedicated documentation is still under preparation.
 
 ### To generate parallel models:
 
@@ -47,6 +54,7 @@ This will generate segmented parallel models with the same number of message pas
 
 ## Requirements for Molecular Dynamics (MD)
 
+* Same version of PyTorch used to training
 * Latest stable version of [`LAMMPS`](https://github.com/lammps/lammps)
 * [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD 
 
@@ -91,6 +99,31 @@ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cm
 ```
 
 ## Usage for MD
+
+### To check installation:
+
+For serial MD,
+```
+$ cd ${path_to_SEVENNet}/example_inputs/md_serial_example
+$ {lammps_binary} -in in.lmp
+
+###lammps outputs for 5 MD steps###
+
+$ grep PairE3GNN log.lammps
+PairE3GNN using device : CUDA
+```
+
+For parallel MD
+```
+$ cd ../md_parallel_example 
+$ mpirun -np {# of GPUs you want to use} {lammps_binary} -in in.lmp
+
+###lammps outputs for 5 MD steps###
+
+$ grep PairE3GNN log.lammps
+PairE3GNNParallel using device : CUDA
+PairE3GNNParallel cuda-aware mpi : True
+```
 
 Example MD input scripts for `LAMMPS` can be found under `SEVENN/example_inputs`. If you've correctly installed `LAMMPS`, there are two additional pair styles available: `e3gnn` and `e3gnn/parallel`.
 
