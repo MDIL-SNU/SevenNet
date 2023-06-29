@@ -33,4 +33,4 @@ data:
     save_dataset_path: 'total' #path or filename to save total dataset
     #save_by_label: True
     structure_list: './structure_list'
-    #load_dataset_path: './saved_dataset.pt'
+    #load_dataset_path: './total.sevenn_data'
