@@ -79,9 +79,10 @@ def processing_epoch(trainer, config, loaders, working_dir):
             #torch.save(loss_hist_print, f"{prefix}/loss_hist{suffix}.pth")
             torch.save(info_parity, f"{prefix}/parity_at{suffix}.pth")
         if draw_parity or is_best:
+            pass
             #dirty things inside plot.py
-            draw_every_parity(train_parity_set, valid_parity_set,
-                              train_loss, valid_loss, f"{prefix}/parity_at{suffix}")
+            #draw_every_parity(train_parity_set, valid_parity_set,
+            #                  train_loss, valid_loss, f"{prefix}/parity_at{suffix}")
 
     loss_history = {
         DataSetType.TRAIN: {LossType.ENERGY: [], LossType.FORCE: []},
