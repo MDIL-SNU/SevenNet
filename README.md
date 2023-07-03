@@ -122,7 +122,7 @@ $ cd ../md_parallel_example
 $ mpirun -np {# of GPUs you want to use} {lammps_binary} -in in.lmp
 
 ###lammps outputs for 5 MD steps###
-If you want to check the MD is parallelized,
+
 $ grep PairE3GNN log.lammps
 PairE3GNNParallel using device : CUDA
 PairE3GNNParallel cuda-aware mpi : True
