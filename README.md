@@ -1,3 +1,7 @@
+
+![SEVENNet_logo_wh](https://github.com/MDIL-SNU/SEVENN/assets/111348843/500fa363-565a-43f5-ba0a-80c0041fa32f)
+
+
 # SEVENNet
 
 SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations on [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is the same as that found in [`nequip`](https://github.com/mir-group/nequip). 
