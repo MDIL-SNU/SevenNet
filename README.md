@@ -1,5 +1,6 @@
 
-![SEVENNet_logo_wh](https://github.com/MDIL-SNU/SEVENN/assets/111348843/500fa363-565a-43f5-ba0a-80c0041fa32f)
+
+<img src="SEVENNet_logo_wh.png" alt="Alt text" height="180">
 
 
 # SEVENNet
