@@ -2,11 +2,11 @@
 
 SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations on [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is the same as that found in [`nequip`](https://github.com/mir-group/nequip). 
 
-The project is inspired by [`nequip`](https://github.com/mir-group/nequip) and provides a solution for enabling parallel molecular dynamics simulations using graph neural network interatomic potentials, which was not possible despite their superior performance.
+The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which was not possible despite their superior performance.
 
 **PLEASE NOTE:** We are currently preparing a paper that provides a detailed description of the algorithms implemented in this project. In addition, SEVENNet is currently under active development and may not be fully stable.
 
-The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and inference (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later utilized to run molecular dynamics simulations via LAMMPS. To ensure smooth operation between training and inference, it is important to use consistent versions of CUDA and PyTorch.
+The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later used to run molecular dynamics simulations via LAMMPS.
 
 
 ## Requirements for Training
@@ -28,27 +28,27 @@ pip install .
 
 ## Usage for Training
 
-### To start training:
+### To start training
 
 ```
 cd example_inputs/training
 sevenn input.yaml
 ```
 
-Examples of `input.yaml` can be found under `SEVENN/example_inputs`. Use the `structure_list` file to select VASP OUTCARs for training. To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` as the `load_dataset_path:` int the `input.yaml`. Both `structure_list` and `load_dataset_path` can be specified as lists, allowing you to easily augment training sets.
+Example of `input.yaml` can be found under `SEVENN/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training. To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` as the `load_dataset_path:` int the `input.yaml`. Both `structure_list` and `load_dataset_path` can be specified as lists, allowing easy augmentation of training sets.
 
-Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned their default values. You can refer to this log to understand the default inputs, allowing you to modify them in your next usage for improved results.
+Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned as their default values. You can refer to the log to check the default inputs.
 Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), as our dedicated documentation is still under preparation.
 
-### To generate parallel models:
+### To generate parallel models
 
-After the training, you will find `deployed_model_best.pt`, a serial model for MD simulation. Alternatively, you can generate a parallel model from the checkpoint using the following command:
+After the training, you will find `deployed_model_best.pt`, a serial model for MD simulation. Furthermore, you can generate a parallel model from the checkpoint using the following command:
 
 ```
 sevenn_get_parallel checkpoint_best.pt
 ```
 
-This will generate the segmented parallel models which will give the same result as the serial one. You need all of them to run a parallel MD.
+This will generate the segmented parallel models, `deployed_parallel_#.pt`, which will give the same result as the serial one. You need all of them to run a parallel MD.
 
 ## Requirements for Molecular Dynamics (MD)
 
@@ -98,7 +98,7 @@ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cm
 
 ## Usage for MD
 
-### To check installation:
+### To check installation
 
 For serial MD,
 ```
@@ -127,21 +127,21 @@ Example MD input scripts for `LAMMPS` can be found under `SEVENN/example_inputs`
 
 In the `pair_coeff` of the lammps script, you need to provide the path of the trained models (either serial or parallel). For parallel models, you should specify how many segmented models will be used.
 
-### For serial model:
+### For serial model
 
 ```
 pair_style e3gnn
 pair_coeff * * {path to serial model} {chemical species}
 ```
 
-### For parallel model:
+### For parallel model
 
 ```
 pair_style e3gnn/parallel
 pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {chemical species}
 ```
 
-### To execute LAMMPS with MPI:
+### To execute LAMMPS with MPI
 
 ```
 mpirun -np {# of GPUs you want to use} {path to lammps binary} -in {lammps input scripts}
