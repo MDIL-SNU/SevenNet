@@ -1,6 +1,6 @@
 
 
-<img src="SEVENNet_logo_wh.png" alt="Alt text" height="180">
+<img src="SEVENNet_logo.png" alt="Alt text" height="180">
 
 
 # SEVENNet
