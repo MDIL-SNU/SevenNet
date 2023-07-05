@@ -1,78 +1,82 @@
-
-# example input.yaml for training SEVENNet.
-# The underlying model is identical to nequip (https://github.com/mir-group/nequip) but name of hyper parameters might be different.
+# Example input.yaml for training SEVENNet.
+# The underlying model is identical to nequip (https://github.com/mir-group/nequip), but the names of hyperparameters might differ.3
+# Except channel, lmax and num_convolution_layer, which has minimal values to quickly check the installation, they normally works well with values written here.
+# Defaults that works well of channel, lmax and num_convolution_layer are 32, 3, 3 respectively.
 
 model:
-    chemical_species: 'Hf, O'                     # chemical symbols that present in dataset
-    cutoff: 4.0                                   # cutoff radius in Angstrom unit, if two atoms are within the cutoff, it is connected
-    channel: 4                                    # same as num_features of nequip. The multiplicity of the node features
-    lmax: 2                                       # the maximum irreps order (rotation order)
-    num_convolution_layer: 1                      # same as 'num_layers' in nequip. number of message passing layers in model
+    chemical_species: 'Hf, O'                     # Chemical symbols present in the dataset
+    cutoff: 4.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
+    channel: 4                                    # Equivalent to 'num_features' in nequip. Represents the multiplicity of node features. 32 is recomanded as default.
+    lmax: 2                                       # Maximum order of irreps (rotation order). 3 is recomanded as default
+    num_convolution_layer: 1                      # Equivalent to 'num_layers' in nequip. Represents the number of message passing layers in the model. 3 is recomanded as default
 
-    weight_nn_hidden_neurons: [64, 64]            # invariant_layers and neurons of nequip, neural network for raidal basis.
-    radial_basis:                                 # function and its parameter to encode radial distance
-        radial_basis_name: 'bessel'               # only 'bessel' is supported for now
-        bessel_basis_num: 8                       # same as 'num_basis' in nequip, number of bessel functions as radial basis
-    cutoff_function:                              # differentiable, decaying function to encode radial distance
-        cutoff_function_name: 'poly_cut'          # only 'poly_cut' is supported for now
-        poly_cut_p_value: 6                       # same as 'PolynomialCutoff_p' in nequip, smaller p corresponds to stronger decay with distance 
+    weight_nn_hidden_neurons: [64, 64]            # Equivalent to 'invariant_layers' and 'neurons' in nequip. Represents the neural network for the radial basis
+    radial_basis:                                 # Function and its parameters to encode radial distance
+        radial_basis_name: 'bessel'               # Only 'bessel' is currently supported
+        bessel_basis_num: 8                       # Equivalent to 'num_basis' in nequip. Represents the number of Bessel functions as the radial basis
+    cutoff_function:                              # Differentiable, decaying function to encode radial distance
+        cutoff_function_name: 'poly_cut'          # Only 'poly_cut' is currently supported
+        poly_cut_p_value: 6                       # Equivalent to 'PolynomialCutoff_p' in nequip. Smaller p values correspond to a stronger decay with distance 
 
-    # For even nonlinearities, 'silu', 'abs' (absolute) , 'ssp' (shifted softmax) is supported. Defaults works well
-    act_gate: {'e': 'silu', 'o': 'tanh'}          # same as 'nonlinearity_gates' in nequip.
-    act_scalar: {'e': 'silu', 'o': 'tanh'}        # same as 'nonlinearity_scalars' in nequip.
+    # For even nonlinearities, 'silu', 'abs' (absolute), and 'ssp' (shifted softmax) are supported. Defaults generally work well
+    act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
+    act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip.
 
-    avg_num_neigh       : True                    # Normalize aggregation of messages by averge number of neighbors calculated from training set.
-    train_shift_scale   : False                   # Trainable shift & scale. It is useful if dataset is augmented.
-    train_avg_num_neigh : False                   # Trainable avg_num_neight. It is useful if dataset is augmented.
+    avg_num_neigh       : True                    # Normalize the aggregation of messages by the average number of neighbors calculated from the training set
+    train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
+    train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
                                                                   
 train:
     random_seed: 1
-    is_train_stress     : False                   # Includes stress in loss function
-    epoch: 10                                     # Ends training after this epoch
+    is_train_stress     : False                   # Includes stress in the loss function
+    epoch: 10                                     # Ends training after this number of epochs
 
-    # Each optimizer and scheduler has different available param. 
-    # Since the document is under preparation, you can refer to sevenn/train/optim.py if needed.
-    optimizer: 'adam'                             # 'sgd', 'adagrad', 'adam', 'adamw', 'radam' are available
+    # Each optimizer and scheduler have different available parameters. 
+    # As the documentation is still under preparation, you can refer to sevenn/train/optim.py if needed
+    optimizer: 'adam'                             # Options available are 'sgd', 'adagrad', 'adam', 'adamw', 'radam'
     optim_param:                                  
         lr: 0.005
-    scheduler: 'exponentiallr'                    # 'steplr', 'multisteplr', 'exponentiallr', 'cosineannealinglr' are available
+    scheduler: 'exponentiallr'                    # Options available are 'steplr', 'multisteplr', 'exponentiallr', 'cosineannealinglr'
     scheduler_param:
         gamma: 0.99
 
-    force_loss_weight   : 0.1                     # coeff for force loss
-    stress_loss_weight  : 1e-06                   # coeff for stress loss
+    force_loss_weight   : 0.1                     # Coefficient for force loss
+    stress_loss_weight  : 1e-06                   # Coefficient for stress loss
 
-    # By defaults, SEVENNet prints batch rmse of validation and training every epoch.
-    # Outputs includes learning_curve, serial model, parity low data, checkpoint. These output are generated every 'best' epoch or 'per_epoch'
-    # I recommand you to not use per_epoch too dense since it is just optional and best results are available by default.
+    # By default, SEVENNet prints the batch RMSE of validation and training every epoch.
+    # Outputs include learning_curve, serialized model, parity low data, and checkpoint. These outputs are generated every 'best' epoch or 'per_epoch'
+    # It is recommended not to use per_epoch too frequently as it is optional, and the best results are available by default
 
-    skip_output_until: 3                          # Do not create output files (learning curve, deployed models, etc) unitl this epoch
+    skip_output_until: 3                          # Do not create output files (learning curve, serialized models, etc) until this epoch
     draw_learning_curve: True
 
-    # Note that outputs for best loss is written by defaults. Thses options are for if you want to track detailed information during learning.
+    # Note that outputs for the best loss are written by default. These options are for tracking detailed information during learning
     output_per_epoch: 
-        per_epoch: 5                              # Generate epoch every this time
-        save_data_pickle: False                   # Raw data includes every RMSE for each structures
-        # draw_parity: True  # unstable           # Under develop
-        deploy_model: True                        # Deploy serial model every per_epoch
+        per_epoch: 5                              # Generate epoch every this number of times
+        save_data_pickle: False                   # Raw data includes every RMSE for each structure
+        # draw_parity: True  # unstable           # Under development
+        deploy_model: True                        # Deploy serialized model every per_epoch
         model_check_point: False                  # Generate checkpoint every per_epoch
 
-    # Continue training from checkpoint. If you augment the dataset, recalculated shift, scale, avg_num_neigh will be used.
-    # Also, you can turn train_shift_scale or train_avg_num_neigh on.
-    # input.yaml for original and continue should have same model hyper parameters except avg_num_neigh and shift scale.
+    # Continue training from a checkpoint. If you augment the dataset, recalculated shift, scale, avg_num_neigh will be used
+    # Also, you can enable train_shift_scale or train_avg_num_neigh
+    # input.yaml for original and continued training should have the same model hyperparameters except for avg_num_neigh and shift scale
     # continue: 
     #    reset_optimizer: False 
     #    reset_scheduler: False 
     #    checkpoint: False
 
 data:
-    batch_size: 2                                 # Batch size. If the training fails because of memory shortage, lower this value.
-    data_divide_ratio: 0.1                        # Divide whole dataset into training and validation by this ratio
+    batch_size: 2                                 # Batch size. If training fails due to memory shortage, lower this value
+    data_divide_ratio: 0.1                        # Divide the whole dataset into training and validation sets by this ratio
 
-    # See formatting of structure list from below if example is not enough. Note that weights for structure type is not supported yet.
+    # Refer to the formatting of the structure list below if the example is not enough. Note that weights for structure types are not yet supported
     # https://simple-nn-v2.readthedocs.io/en/latest/inputs/structure_list.html
-    structure_list: ['./structure_list']          # Path to structure list, it can be list. 
-    #load_dataset_path: ['./total.sevenn_data']   # Load saved dataset by save_dataset_path. It can be list.
+    structure_list: ['./structure_list']          # Path to structure list. This can be a list 
+    #load_dataset_path: ['./total.sevenn_data']   # Load saved dataset by save_dataset_path. This can be a list
+
+    save_dataset_path: 'total'                    # Save the preprocessed dataset for later use without the structure_list
+    save_by_label: False                          # Save the dataset by labels specified in the structure_list
 
     save_dataset_path: 'total'                    # Save preprocessed dataset for later use with out structure_list.
     save_by_label: False                          # Save dataset by labels specified on structure_list
