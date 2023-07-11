@@ -6,7 +6,7 @@ from sevenn.nn.activation import ShiftedSoftPlus
 import sevenn._keys as KEY
 from typing import Dict, Any
 
-SEVENN_VERSION = "0.8.0"
+SEVENN_VERSION = "0.8.1"
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut']
 
