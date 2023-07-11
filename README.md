@@ -157,10 +157,9 @@ mpirun -np {# of GPUs you want to use} {path to lammps binary} -in {lammps input
 
 If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
 
-## Known Bugs
+## Known issues
 
 * When parsing VASP `OUTCARs` with `structure_list`, if the folder contains a `POSCAR` with selective dynamics, it does not read the `OUTCAR` correctly.
 * When parsing VASP `OUTCARs` with `structure_list`, spin polarized calculations are not yet supported.
-* Models with a large number of parameters (>=5 message passing layers, >= 64 channels) show initial RMSEs of energy and force significantly larger than the original `nequip`. Since the difference should be marginal, we are actively investigating this issue.
 * The calculated stress on `LAMMPS` is incorrect.
 
