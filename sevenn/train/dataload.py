@@ -1,10 +1,18 @@
 from typing import List, Optional
+from itertools import islice
 import pickle
 
 import numpy as np
+from braceexpand import braceexpand
 from ase import io, units, Atoms
 from ase.neighborlist import primitive_neighbor_list
-from braceexpand import braceexpand
+from ase.io.vasp_parsers.vasp_outcar_parsers import DefaultParsersContainer,\
+    OutcarChunkParser, Cell, PositionsAndForces, Stress, Energy, outcarchunks
+from ase.io.utils import string2index
+
+parsers = DefaultParsersContainer(PositionsAndForces,
+                                  Stress, Energy, Cell).make_parsers()
+ocp = OutcarChunkParser(parsers=parsers)
 
 
 def ASE_atoms_to_data(atoms, cutoff: float):
@@ -30,7 +38,7 @@ def ASE_atoms_to_data(atoms, cutoff: float):
 
     # 'y' of data
     E = atoms.get_potential_energy(force_consistent=True)
-    F = atoms.get_forces()
+    F = atoms.get_forces(apply_constraint=False)
     # xx yy zz xy yz zx order
     S = -1 * atoms.get_stress()  # units of eV/$\AA^{3}$
     S = [S[[0, 1, 2, 5, 3, 4]]]
@@ -143,8 +151,17 @@ def parse_structure_list(filename: str, format_outputs='vasp-out'):
         stct_lists = []
         for file_line in file_lines:
             files_expr, index_expr = file_line
+            index = string2index(index_expr)
             for expanded_filename in list(braceexpand(files_expr)):
+                f_stream = open(expanded_filename, "r")
+                """
                 stct_lists += io.read(expanded_filename, index=index_expr,
                                       format=format_outputs, parallel=False)
+                """
+                # generator of all outcar ionic steps
+                gen_all = outcarchunks(f_stream, ocp)
+                it_atoms = islice(gen_all, index.start, index.stop, index.step)
+                stct_lists += [o.build() for o in it_atoms]
+                f_stream.close()
         structures_dict[title] = stct_lists
     return structures_dict

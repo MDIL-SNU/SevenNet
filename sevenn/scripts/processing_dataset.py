@@ -33,8 +33,15 @@ def from_structure_list(data_config):
     full_dataset = None
     for structure_list in structure_list_files:
         Logger().write(f"loading {structure_list} (it takes several minitues..)\n")
+        Logger().timer_start("parsing structure_list")
         raw_dct = parse_structure_list(structure_list, format_outputs)
+        Logger().timer_end("parsing structure_list",
+                           f"parsing {structure_list} is done")
+
+        Logger().timer_start("constructing graph")
         dataset = AtomGraphDataset(raw_dct, preprocessor, metadata=data_config)
+        Logger().timer_end("constructing graph",
+                           f"constructing graph is done")
         if full_dataset is None:
             full_dataset = dataset
         else:
