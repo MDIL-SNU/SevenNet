@@ -37,8 +37,8 @@ def ASE_atoms_to_data(atoms, cutoff: float):
     """
 
     # 'y' of data
-    E = atoms.get_potential_energy(force_consistent=True)
-    F = atoms.get_forces(apply_constraint=False)
+    E = atoms.get_potential_energy(force_consistent=True)  # It gives 'free energy' of vasp
+    F = atoms.get_forces(apply_constraint=False)           # It negelcts constraints like selective dynamics
     # xx yy zz xy yz zx order
     S = -1 * atoms.get_stress()  # units of eV/$\AA^{3}$
     S = [S[[0, 1, 2, 5, 3, 4]]]
