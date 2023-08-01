@@ -12,7 +12,6 @@ from typing import Final
 #==================================================#
 # some raw properties of graph
 ATOMIC_NUMBERS: Final[str] = "atomic_numbers"  # (N)
-CHEMICAL_SYMBOL: Final[str] = "chemical_symbol"  # (N)
 POS: Final[str] = "pos"                        # (N, 3) PyG
 CELL: Final[str] = "cell_lattice_vectors"      # (3, 3)
 CELL_SHIFT: Final[str] = "pbc_shift"           # (N, 3)
@@ -115,6 +114,7 @@ SAVE_DATA_PICKLE: Final[str] = "save_data_pickle"
 MODEL_TYPE: Final[str] = "model_type"
 CUTOFF: Final[str] = "cutoff"
 CHEMICAL_SPECIES: Final[str] = "chemical_species"
+CHEMICAL_SPECIES_BY_ATOMIC_NUMBER: Final[str] = "chemical_species_by_atomic_number"
 NUM_SPECIES: Final[str] = "number_of_species"
 TYPE_MAP: Final[str] = "type_map"
 

@@ -3,6 +3,7 @@ from typing import List, Callable
 
 import yaml
 import torch
+from ase.data import atomic_numbers
 
 from sevenn.train.optim import (optim_dict, scheduler_dict,
                                 optim_param_name_type_dict,
@@ -11,6 +12,7 @@ from sevenn.train.optim import (optim_dict, scheduler_dict,
 from sevenn.nn.node_embedding import get_type_mapper_from_specie
 import sevenn._keys as KEY
 import sevenn._const as _const
+
 #TODO: fix for ex)data key on train key and some auto spell check
 
 
@@ -117,6 +119,8 @@ def init_model_config(config: dict):
 
     chemical_specie = sorted([x.strip() for x in input_chem])
     model_meta[KEY.CHEMICAL_SPECIES] = chemical_specie
+    model_meta[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = \
+        [atomic_numbers[x] for x in chemical_specie]
     model_meta[KEY.NUM_SPECIES] = len(chemical_specie)
     model_meta[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
 

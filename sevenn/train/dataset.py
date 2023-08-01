@@ -23,6 +23,9 @@ class AtomGraphDataset:
         data (Union[Dict[str, List], List]: dataset as dict or pure list
         preprocessor (Callable, Optional): preprocess function for each data
         metadata (Dict, Optional): metadata of data used for whether augment is valid
+
+    for now, metadata 'might' have following keys:
+        KEY.CUTFF (float), KEY.CHEMICAL_SPECIES (Dict)
     """
     DATA_KEY_ENERGY = KEY.ENERGY
     DATA_KEY_FORCE = KEY.FORCE

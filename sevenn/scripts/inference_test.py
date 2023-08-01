@@ -31,7 +31,7 @@ def test_model_inference(deployed_file, outcar):
     #print(data[KEY.FORCE])
 
     data = data.to_dict()
-    data = {k: v for k, v in data.items() if k != KEY.CHEMICAL_SYMBOL}
+    data = {k: v for k, v in data.items()}
 
     data[KEY.EDGE_VEC].requires_grad = True
 
@@ -67,7 +67,7 @@ def pure_python_model(checkpoint, outcar):
 
     atoms = io.read(outcar, format='vasp-out')
     data = AtomGraphData.data_for_E3_equivariant_model(atoms, cutoff, type_map)
-    data = {k: v for k, v in data.items() if k != KEY.CHEMICAL_SYMBOL}
+    data = {k: v for k, v in data.items()}
     for k, v in data.items():
         if isinstance(v, torch.Tensor):
             continue

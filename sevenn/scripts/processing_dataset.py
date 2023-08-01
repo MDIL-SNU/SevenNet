@@ -5,7 +5,7 @@ from torch_geometric.loader import DataLoader
 
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
-from sevenn.train.dataload import parse_structure_list
+from sevenn.train.dataload import parse_structure_list, data_for_E3_equivariant_model
 from sevenn.sevenn_logger import Logger
 import sevenn._keys as KEY
 
@@ -21,7 +21,7 @@ def from_structure_list(data_config):
 
     if model_type == 'E3_equivariant_model':
         def preprocessor(x):
-            return AtomGraphData.data_for_E3_equivariant_model(x, cutoff, type_map)
+            return data_for_E3_equivariant_model(x, cutoff, type_map)
     elif model_type == 'new awesome model':
         pass
     else:
@@ -40,8 +40,7 @@ def from_structure_list(data_config):
 
         Logger().timer_start("constructing graph")
         dataset = AtomGraphDataset(raw_dct, preprocessor, metadata=data_config)
-        Logger().timer_end("constructing graph",
-                           f"constructing graph is done")
+        Logger().timer_end("constructing graph", "constructing graph is done")
         if full_dataset is None:
             full_dataset = dataset
         else:

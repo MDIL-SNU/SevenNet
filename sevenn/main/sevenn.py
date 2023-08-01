@@ -2,11 +2,8 @@ import os
 import sys
 import argparse
 
-import torch
-
 from sevenn.parse_input import read_config_yaml
 from sevenn.scripts.train import train
-#from train.data_init import data_init
 import sevenn._keys as KEY
 from sevenn._const import SEVENN_VERSION
 from sevenn.sevenn_logger import Logger

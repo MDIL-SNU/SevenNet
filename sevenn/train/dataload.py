@@ -1,8 +1,9 @@
-from typing import List, Optional
+from typing import List, Optional, Dict
 from itertools import islice
 import pickle
 
 import numpy as np
+import torch
 from braceexpand import braceexpand
 from ase import io, units, Atoms
 from ase.neighborlist import primitive_neighbor_list
@@ -10,11 +11,12 @@ from ase.io.vasp_parsers.vasp_outcar_parsers import DefaultParsersContainer,\
     OutcarChunkParser, Cell, PositionsAndForces, Stress, Energy, outcarchunks
 from ase.io.utils import string2index
 
-parsers = DefaultParsersContainer(PositionsAndForces,
-                                  Stress, Energy, Cell).make_parsers()
-ocp = OutcarChunkParser(parsers=parsers)
+from sevenn.nn.node_embedding import one_hot_atom_embedding
+from sevenn.atom_graph_data import AtomGraphData
+import sevenn._keys as KEY
 
 
+# deprecated
 def ASE_atoms_to_data(atoms, cutoff: float):
     """ very primitive function to extract properties from atoms
     Args:
@@ -31,14 +33,15 @@ def ASE_atoms_to_data(atoms, cutoff: float):
         edge_dst : index of atoms for edge dst (N(edge))
         edge_vec : vector representing edge (N(edge), 3)
         atomic_numbers : list of atomic number by index (n)
-        chemical_symbol: list of chemical symbol by index (n)
 
         * this is full neighborlist
     """
 
     # 'y' of data
-    E = atoms.get_potential_energy(force_consistent=True)  # It gives 'free energy' of vasp
-    F = atoms.get_forces(apply_constraint=False)           # It negelcts constraints like selective dynamics
+    # It gives 'free energy' of vasp
+    E = atoms.get_potential_energy(force_consistent=True)
+    # It negelcts constraints like selective dynamics
+    F = atoms.get_forces(apply_constraint=False)
     # xx yy zz xy yz zx order
     S = -1 * atoms.get_stress()  # units of eV/$\AA^{3}$
     S = [S[[0, 1, 2, 5, 3, 4]]]
@@ -64,10 +67,9 @@ def ASE_atoms_to_data(atoms, cutoff: float):
     edge_vec = edge_vec[non_trivials]
     shift = shifts[non_trivials]
     atomic_numbers = atoms.get_atomic_numbers()
-    chemical_symbol = atoms.get_chemical_symbols()
     edge_idx = np.array([edge_src, edge_dst])
 
-    return atomic_numbers, chemical_symbol, edge_idx, edge_vec, \
+    return atomic_numbers, edge_idx, edge_vec, \
         shift, pos, cell, E, F, S
 
 
@@ -94,10 +96,112 @@ def poscar_ASE_atoms_to_data(atoms, cutoff: float):  # This is only for debuggin
     edge_vec = edge_vec[non_trivials]
     shift = shifts[non_trivials]
     atomic_numbers = atoms.get_atomic_numbers()
-    chemical_symbol = atoms.get_chemical_symbols()
     edge_idx = np.array([edge_src, edge_dst])
 
-    return atomic_numbers, chemical_symbol, edge_idx, edge_vec, shift, pos, cell
+    return atomic_numbers, edge_idx, edge_vec, shift, pos, cell
+
+
+#deprecated
+def data_for_E3_equivariant_model(atoms, cutoff, type_map: Dict[int, int]):
+    """
+    Args:
+        atoms : 'atoms' object from ASE
+        cutoff : float
+        type_map : Z(atomic_number) -> one_hot index
+    Returns:
+        AtomGraphData for E2_equivariant_model
+    """
+    atomic_numbers, edge_idx, edge_vec, \
+        shift, pos, cell, E, F, S = ASE_atoms_to_data(atoms, cutoff)
+    edge_vec = torch.Tensor(edge_vec)
+
+    edge_idx = torch.LongTensor(edge_idx)
+    pos = torch.Tensor(pos)
+
+    """
+    if is_stress:
+        pos.requires_grad_(True)
+    else:
+        edge_vec.requires_grad_(True)
+    """
+
+    F = torch.Tensor(F)
+    S = torch.Tensor(np.array(S))
+
+    cell = torch.Tensor(np.array(cell))
+    shift = torch.Tensor(np.array(shift))
+
+    embd = one_hot_atom_embedding(atomic_numbers, type_map)
+    data = AtomGraphData(embd, edge_idx, pos,
+                         y_energy=E, y_force=F, y_stress=S,
+                         edge_vec=edge_vec, init_node_attr=True)
+
+    data[KEY.ATOMIC_NUMBERS] = atomic_numbers
+    data[KEY.CELL] = cell
+    data[KEY.CELL_SHIFT] = shift
+    volume = torch.einsum(
+        "i,i",
+        cell[-1, :],
+        torch.cross(cell[0, :], cell[2, :])
+    )
+    data[KEY.CELL_VOLUME] = volume
+
+    data[KEY.NUM_ATOMS] = len(pos)
+    data.num_nodes = data[KEY.NUM_ATOMS]  # for general perpose
+    data[KEY.PER_ATOM_ENERGY] = E / len(pos)
+
+    avg_num_neigh = np.average(np.unique(edge_idx[-1], return_counts=True)[1])
+    data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
+    return data
+
+
+def poscar_for_E3_equivariant_model(atoms, cutoff: float,
+                                    type_map: Dict[int, int],
+                                    is_stress: bool):
+    """
+    This is only for debugging
+    """
+    atomic_numbers, edge_idx, edge_vec, \
+        shift, pos, cell = poscar_ASE_atoms_to_data(atoms, cutoff)
+    edge_vec = torch.Tensor(edge_vec)
+
+    edge_idx = torch.LongTensor(edge_idx)
+    pos = torch.Tensor(pos)
+
+    if is_stress:
+        pos.requires_grad_(True)
+    else:
+        edge_vec.requires_grad_(True)
+
+    cell = torch.Tensor(np.array(cell))
+    shift = torch.Tensor(np.array(shift))
+
+    embd = one_hot_atom_embedding(atomic_numbers, type_map)
+    data = AtomGraphData(embd, edge_idx, pos,
+                         y_energy=None, y_force=None, y_stress=None,
+                         edge_vec=edge_vec, init_node_attr=True)
+
+    data[KEY.ATOMIC_NUMBERS] = atomic_numbers
+    data[KEY.CELL] = cell
+    data[KEY.CELL_SHIFT] = shift
+    volume = torch.einsum(
+        "i,i",
+        cell[-1, :],
+        torch.cross(cell[0, :], cell[2, :])
+    )
+    data[KEY.CELL_VOLUME] = volume
+
+    data[KEY.NUM_ATOMS] = len(pos)
+    data.num_nodes = data[KEY.NUM_ATOMS]  # for general perpose
+
+    avg_num_neigh = np.average(np.unique(edge_idx[-1], return_counts=True)[1])
+    data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
+    return data
+
+
+parsers = DefaultParsersContainer(PositionsAndForces,
+                                  Stress, Energy, Cell).make_parsers()
+ocp = OutcarChunkParser(parsers=parsers)
 
 
 def parse_structure_list(filename: str, format_outputs='vasp-out'):
