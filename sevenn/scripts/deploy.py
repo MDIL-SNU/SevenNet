@@ -36,7 +36,7 @@ def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
     model_new = build_E3_equivariant_model(config)
 
     num_species = config[KEY.NUM_SPECIES]
-    model_new.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
+    #model_new.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
     model_new.set_is_batch_data(False)
     model_new.eval()
 
@@ -74,7 +74,7 @@ def deploy(model_state_dct, config, fname):
     model.load_state_dict(model_state_dct, strict=False)  # copy model
 
     num_species = config[KEY.NUM_SPECIES]
-    model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
+    #model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
     model.replace_module("force output",
                          ForceOutputFromEdge(
                              data_key_energy=KEY.SCALED_ENERGY,
@@ -131,8 +131,8 @@ def deploy_parallel(model_state_dct, config, fname):
 
     # one_hot prepand & one_hot ghost prepand
     num_species = config[KEY.NUM_SPECIES]
-    model_list[0].prepand_module('one_hot', OnehotEmbedding(
-        data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
+    #model_list[0].prepand_module('one_hot', OnehotEmbedding(
+    #    data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
     model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
         data_key_in=KEY.NODE_FEATURE_GHOST,
         num_classes=num_species,

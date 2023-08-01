@@ -61,6 +61,7 @@ BATCH: Final[str] = "batch"
 #etc
 SELF_CONNECTION_TEMP: Final[str] = "self_cont_tmp"
 BATCH_SIZE: Final[str] = "batch_size"
+INFO: Final[str] = "data_info"
 
 #==================================================#
 # ~~~~~~~~ KEY for train configuration ~~~~~~~~~~~ #

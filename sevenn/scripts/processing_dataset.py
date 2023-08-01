@@ -6,26 +6,16 @@ from torch_geometric.loader import DataLoader
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.train.dataload import parse_structure_list, data_for_E3_equivariant_model
+from sevenn.scripts.graph_build import label_atoms_dict_to_dataset
 from sevenn.sevenn_logger import Logger
 import sevenn._keys as KEY
 
 
 def from_structure_list(data_config):
     cutoff = data_config[KEY.CUTOFF]
-    # chemical_species = data_config[KEY.CHEMICAL_SPECIES]
     format_outputs = data_config[KEY.FORMAT_OUTPUTS]
     structure_list_files = data_config[KEY.STRUCTURE_LIST]
     model_type = data_config[KEY.MODEL_TYPE]
-
-    type_map = data_config[KEY.TYPE_MAP]
-
-    if model_type == 'E3_equivariant_model':
-        def preprocessor(x):
-            return data_for_E3_equivariant_model(x, cutoff, type_map)
-    elif model_type == 'new awesome model':
-        pass
-    else:
-        raise ValueError('unknown model type')
 
     if type(structure_list_files) is str:
         structure_list_files = [structure_list_files]
@@ -37,9 +27,8 @@ def from_structure_list(data_config):
         raw_dct = parse_structure_list(structure_list, format_outputs)
         Logger().timer_end("parsing structure_list",
                            f"parsing {structure_list} is done")
-
         Logger().timer_start("constructing graph")
-        dataset = AtomGraphDataset(raw_dct, preprocessor, metadata=data_config)
+        dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, metadata=data_config)
         Logger().timer_end("constructing graph", "constructing graph is done")
         if full_dataset is None:
             full_dataset = dataset
@@ -95,7 +84,8 @@ def init_dataset(data_config, working_dir):
 
 
 def processing_dataset(config, working_dir):
-    # load data set
+    # note that type_map is based on user input(chemical_species)
+    type_map = config[KEY.TYPE_MAP]
 
     Logger().write("\nInitializing dataset...\n")
     dataset = init_dataset(config, working_dir)
@@ -106,7 +96,8 @@ def processing_dataset(config, working_dir):
     else:
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
-    natoms = dataset.get_natoms(config[KEY.TYPE_MAP])
+    natoms = dataset.get_natoms()
+    dataset.x_to_one_hot_idx(type_map)
 
     Logger().write("\nNumber of atoms in total dataset:\n")
     Logger().natoms_write(natoms)

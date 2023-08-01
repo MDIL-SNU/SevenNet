@@ -8,17 +8,20 @@ import sevenn._keys as KEY
 class AtomGraphData(torch_geometric.data.Data):
     """
     Args:
-        x (Tensor, optional): Node feature matrix with shape :obj:`[num_nodes,
-            num_node_features]`. (default: :obj:`None`)
+        x (Tensor, optional): atomic numbers with shape :obj:`[num_nodes,
+            atomic_numbers]`. (default: :obj:`None`)
         edge_index (LongTensor, optional): Graph connectivity in COO format
             with shape :obj:`[2, num_edges]`. (default: :obj:`None`)
         edge_attr (Tensor, optional): Edge feature matrix with shape
             :obj:`[num_edges, num_edge_features]`. (default: :obj:`None`)
-        y (Tensor, optional): Graph-level or node-level ground-truth labels
-            with arbitrary shape. (default: :obj:`None`)
+        y_energy: scalar # unit of eV (VASP raw)
+        y_force: [num_nodes, 3] # unit of eV/A (VASP raw)
+        y_stress: [6]  # [xx, yy, zz, xy, yz, zx] # unit of eV/A^3 (VASP raw)
         pos (Tensor, optional): Node position matrix with shape
             :obj:`[num_nodes, num_dimensions]`. (default: :obj:`None`)
         **kwargs (optional): Additional attributes.
+
+    x, y_force, pos should be aligned with each other.
     """
     def __init__(
         self,

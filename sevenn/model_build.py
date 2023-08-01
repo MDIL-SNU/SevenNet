@@ -7,7 +7,7 @@ from e3nn.o3 import Irreps
 from e3nn.o3 import FullTensorProduct
 from torch.nn import Sequential
 
-import sevenn.nn.node_embedding
+from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.ghost_control import GhostControlCat, GhostControlSplit
 from sevenn.nn.edge_embedding import EdgeEmbedding, EdgePreprocess,\
     PolynomialCutoff, BesselBasis, SphericalEncoding
@@ -133,6 +133,10 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     f_in_irreps = Irreps(f"{feature_multiplicity}x0e")
     layers.update(
         {
+            "onehot_idx_to_onehot":
+            OnehotEmbedding(
+                num_classes=num_species
+            ),
             "onehot_to_feature_x":
             IrrepsLinear(
                 irreps_in=one_hot_irreps,
