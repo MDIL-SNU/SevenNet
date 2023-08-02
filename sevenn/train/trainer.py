@@ -181,8 +181,7 @@ class Trainer():
         for step, batch in enumerate(loader):
             batch.to(self.device)
             label = batch[KEY.USER_LABEL]
-            atom_type_list = \
-                [atom for atoms in batch[KEY.ATOMIC_NUMBERS] for atom in atoms]
+            atom_type_list = batch[KEY.ATOMIC_NUMBERS]
             self.optimizer.zero_grad(set_to_none=True)
 
             result = self.model(batch)

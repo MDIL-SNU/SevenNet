@@ -1,3 +1,4 @@
+import warnings
 import random
 import itertools
 from collections import Counter
@@ -82,6 +83,23 @@ class AtomGraphDataset:
             self.dataset[key].append(datum)
         self.user_labels = list(self.dataset.keys())
 
+    def get_species(self):
+        """
+        You can also use get_natoms and extract keys from there istead of this
+        (And it is more efficient)
+        get chemical species of dataset
+        return list of chemical species (as str)
+        """
+        if hasattr(self, "type_map"):
+            natoms = self.get_natoms(self.type_map)
+        else:
+            natoms = self.get_natoms()
+        species = set()
+        for natom_dct in natoms.values():
+            species.update(natom_dct.keys())
+        species = sorted(list(species))
+        return species
+
     def len(self):
         if len(self.dataset.keys()) == 1 and \
            list(self.dataset.keys())[0] == AtomGraphDataset.KEY_DEFAULT:
@@ -114,7 +132,9 @@ class AtomGraphDataset:
         for data_list in self.dataset.values():
             for datum in data_list:
                 datum[self.DATA_KEY_X] = \
-                    torch.LongTensor([type_map[z.item()] for z in datum[self.DATA_KEY_X]])
+                    torch.LongTensor([type_map[z.item()]
+                                      for z in datum[self.DATA_KEY_X]])
+        self.type_map = type_map
         self.x_is_one_hot_idx = True
 
     def toggle_requires_grad_of_data(self, key: str, requires_grad_value: bool):
@@ -183,7 +203,7 @@ class AtomGraphDataset:
             natoms[label] = Counter()
             for datum in data:
                 # list of atomic number
-                Zs = datum[self.DATA_KEY_X].tolist()
+                Zs = [chemical_symbols[z] for z in datum[self.DATA_KEY_X].tolist()]
                 if self.x_is_one_hot_idx:
                     Zs = [type_map_rev[z] for z in Zs]
                 cnt = Counter(Zs)

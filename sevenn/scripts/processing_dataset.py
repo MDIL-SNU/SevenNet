@@ -29,6 +29,7 @@ def from_structure_list(data_config):
         Logger().timer_end("parsing structure_list",
                            f"parsing {structure_list} is done")
         Logger().timer_start("constructing graph")
+        Logger().writeline("constructing graph...")
         dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, ncores, metadata=data_config)
         Logger().timer_end("constructing graph", "constructing graph is done")
         if full_dataset is None:

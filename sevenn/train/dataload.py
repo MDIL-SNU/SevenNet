@@ -24,7 +24,8 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
         cutoff (float): cutoff radius
         transfer_info (bool): if True, transfer ".info" from atoms to graph
     Returns:
-        AtomGraphData
+        numpy dict that can be used to initialize AtomGraphData
+        by AtomGraphData(**atoms_to_graph(atoms, cutoff))
     Raises:
         RuntimeError: if ase atoms are somewhat imperfect
 
@@ -60,7 +61,7 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     is_zero_idx = np.all(edge_vec == 0, axis=1)
     is_self_idx = edge_src == edge_dst
     non_trivials = ~(is_zero_idx & is_self_idx)
-    cell_shift = torch.Tensor(shifts[non_trivials])
+    cell_shift = shifts[non_trivials]
 
     edge_vec = edge_vec[non_trivials]
     edge_src = edge_src[non_trivials]
@@ -69,35 +70,28 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
 
     atomic_numbers = atoms.get_atomic_numbers()
 
-    data = AtomGraphData(
-        torch.LongTensor(atomic_numbers),
-        torch.LongTensor(edge_idx),
-        torch.Tensor(pos),
-        y_energy=y_energy,
-        y_force=torch.Tensor(y_force),
-        y_stress=torch.Tensor(y_stress),
-        edge_vec=torch.Tensor(edge_vec)
-    )
-
-    # Add some additional informations
-    # give atomic_numbers as x(node feature),
-    # below as information for later use
-    data[KEY.ATOMIC_NUMBERS] = atomic_numbers
-    data[KEY.NUM_ATOMS] = len(atomic_numbers)
-    data.num_nodes = data[KEY.NUM_ATOMS]  # Maybe, this is not true (ghost atoms?)
-    # TODO: Should I remove it and calculate it when needed?
-    data[KEY.PER_ATOM_ENERGY] = y_energy / len(pos)
-    # TODO: Should I do this only if stress is present?
-    cell = torch.Tensor(cell)
-    data[KEY.CELL] = cell
-    data[KEY.CELL_SHIFT] = cell_shift
-    volume = torch.einsum(
-        "i,i",
-        cell[-1, :],
-        torch.cross(cell[0, :], cell[2, :])
-    )
-    data[KEY.CELL_VOLUME] = volume
-
+    data = {
+        KEY.NODE_FEATURE: atomic_numbers,
+        KEY.ATOMIC_NUMBERS: atomic_numbers,
+        KEY.POS: pos,
+        KEY.EDGE_IDX: edge_idx,
+        KEY.EDGE_VEC: edge_vec,
+        KEY.ENERGY: y_energy,
+        KEY.FORCE: y_force,
+        KEY.STRESS: y_stress,
+        # TODO: Should I do this only if stress is present?
+        KEY.CELL: cell,
+        KEY.CELL_SHIFT: cell_shift,
+        KEY.CELL_VOLUME: np.einsum(
+            "i,i",
+            cell[-1, :],
+            np.cross(cell[0, :], cell[2, :])
+        ),
+        KEY.NUM_ATOMS: len(atomic_numbers),
+        # TODO: Should I remove it and calculate it when needed?
+        KEY.PER_ATOM_ENERGY: y_energy / len(pos),
+    }
+    # data.num_nodes = data[KEY.NUM_ATOMS]  # is it really necessary?
     if transfer_info and atoms.info is not None:
         data[KEY.INFO] = atoms.info
 
@@ -364,7 +358,6 @@ def parse_structure_list(filename: str, format_outputs='vasp-out'):
                         atoms = o.build()
                         atoms.info = info_dct_f
                     stct_lists.append(atoms)
-                #stct_lists += [o.build() for o in it_atoms]
                 f_stream.close()
         structures_dict[title] = stct_lists
     return structures_dict

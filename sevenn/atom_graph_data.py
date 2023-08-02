@@ -1,5 +1,7 @@
 from typing import List, Dict
 
+import numpy as np
+import torch
 import torch_geometric
 
 import sevenn._keys as KEY
@@ -29,11 +31,7 @@ class AtomGraphData(torch_geometric.data.Data):
         edge_index,
         pos,
         edge_attr=None,
-        y_energy=None,
-        y_force=None,
-        y_stress=None,
-        edge_vec=None,
-        init_node_attr=True,
+        **kwargs
     ):
         super(AtomGraphData, self).__init__(
             x,
@@ -41,12 +39,33 @@ class AtomGraphData(torch_geometric.data.Data):
             edge_attr,
             pos=pos
         )
-        self[KEY.ENERGY] = y_energy
-        self[KEY.FORCE] = y_force
-        self[KEY.STRESS] = y_stress
-        self[KEY.EDGE_VEC] = edge_vec
-        if init_node_attr:
-            self[KEY.NODE_ATTR] = x
+
+        # This is very strange... but I couldn't find a better way yet
+        self[KEY.NODE_ATTR] = x
+
+        for k, v in kwargs.items():
+            self[k] = v
 
     def to_dict(self):
+        """
+        'maybe' Dict[str, Tensor]
+        """
         return {k: v for k, v in self.items()}
+
+    def to_numpy_dict(self):
+        # This is not debuged yet!
+        dct = {k: v.detach().cpu().numpy() if type(v) is torch.Tensor else v
+               for k, v in self.items()}
+        return dct
+
+    @staticmethod
+    def from_numpy_dict(dct):
+        for k, v in dct.items():
+            if type(v) is np.ndarray:
+                if np.issubdtype(v.dtype, np.floating):
+                    dct[k] = torch.Tensor(v)
+                elif np.issubdtype(v.dtype, np.integer):
+                    dct[k] = torch.LongTensor(v)
+            else:
+                dct[k] = v
+        return AtomGraphData(**dct)

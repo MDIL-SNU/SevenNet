@@ -1,9 +1,8 @@
 from typing import List, Optional
-import multiprocessing as mp
-
 import tqdm
 
 import torch
+import torch.multiprocessing as mp
 from torch_geometric.loader import DataLoader
 
 from sevenn.train.dataload import atoms_to_graph
@@ -27,14 +26,47 @@ def graph_build(atoms_list: List,
     Returns:
         List[AtomGraphData]: list of AtomGraphData
     """
+    inputs = [(atoms, cutoff, transfer_info) for atoms in atoms_list]
+    #with mp.Pool(num_cores) as pool:
+    #    graph_list = pool.starmap(atoms_to_graph, inputs)
+
     pool = mp.Pool(num_cores)
     inputs = [(atoms, cutoff, transfer_info) for atoms in atoms_list]
     # this is not strictly correct because it updates for every input not output
     graph_list = pool.starmap(atoms_to_graph,
                               tqdm.tqdm(inputs, total=len(atoms_list)))
+    #graph_list = pool.starmap(atoms_to_graph, inputs)
     pool.close()
     pool.join()
+
+    graph_list = [AtomGraphData.from_numpy_dict(g) for g in graph_list]
+
+    #graph_list = []
+    #for at in atoms_list:
+    #    graph_list.append(atoms_to_graph(at, cutoff, transfer_info))
     return graph_list
+
+
+def default_pkl_reader(fname):
+    """
+    Assume the content is plane list of ase.Atoms
+    """
+    with open(fname, 'rb') as f:
+        atoms_list = pickle.load(f)
+    if type(atoms_list) != list:
+        raise TypeError("The content of the pkl is not list")
+    if type(atoms_list[0]) != Atoms:
+        raise TypeError("The content of the pkl is not list of ase.Atoms")
+    return atoms_list
+
+
+def pkl_to_dataset(pkl_file: str,
+                   cutoff: float,
+                   num_cores: int,
+                   transfer_info=True,
+                   reader=default_pkl_reader):
+    atoms_list = reader(os.path.join(root, file))
+    return graph_build(atoms_list, cutoff, num_cores, copy_info)
 
 
 def label_atoms_dict_to_dataset(data_dict, cutoff, ncores, metadata=None):
