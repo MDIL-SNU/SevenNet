@@ -67,6 +67,7 @@ INFO: Final[str] = "data_info"
 # ~~~~~~~~ KEY for train configuration ~~~~~~~~~~~ #
 #==================================================#
 STRUCTURE_LIST: Final[str] = "structure_list"
+PREPROCESS_NUM_CORES: Final[str] = "preprocess_num_cores"
 SAVE_DATASET: Final[str] = "save_dataset_path"
 SAVE_BY_LABEL: Final[str] = "save_by_label"
 LOAD_DATASET: Final[str] = "load_dataset_path"

@@ -16,6 +16,7 @@ def from_structure_list(data_config):
     format_outputs = data_config[KEY.FORMAT_OUTPUTS]
     structure_list_files = data_config[KEY.STRUCTURE_LIST]
     model_type = data_config[KEY.MODEL_TYPE]
+    ncores = data_config[KEY.PREPROCESS_NUM_CORES]
 
     if type(structure_list_files) is str:
         structure_list_files = [structure_list_files]
@@ -28,7 +29,7 @@ def from_structure_list(data_config):
         Logger().timer_end("parsing structure_list",
                            f"parsing {structure_list} is done")
         Logger().timer_start("constructing graph")
-        dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, metadata=data_config)
+        dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, ncores, metadata=data_config)
         Logger().timer_end("constructing graph", "constructing graph is done")
         if full_dataset is None:
             full_dataset = dataset

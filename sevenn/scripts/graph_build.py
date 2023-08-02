@@ -37,7 +37,7 @@ def graph_build(atoms_list: List,
     return graph_list
 
 
-def label_atoms_dict_to_dataset(data_dict, cutoff, metadata=None):
+def label_atoms_dict_to_dataset(data_dict, cutoff, ncores, metadata=None):
     """
     Script that create AtomGraphDataset from structure_list dict
     each data is correctly labeled by the key of the dict
@@ -59,7 +59,7 @@ def label_atoms_dict_to_dataset(data_dict, cutoff, metadata=None):
             label_list.append(label)
             unrolled_atoms_list.append(atoms)
 
-    graph_list = graph_build(unrolled_atoms_list, cutoff)
+    graph_list = graph_build(unrolled_atoms_list, cutoff, ncores)
     for graph in graph_list:
         graph[KEY.USER_LABEL] = label_list.pop(0)
 
