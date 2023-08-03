@@ -11,6 +11,7 @@ import sevenn._keys as KEY
 
 CHEM_SYMBOLS = {v: k for k, v in atomic_numbers.items()}
 
+
 class Singleton(type):
     _instances = {}
 
@@ -36,6 +37,13 @@ class Logger(metaclass=Singleton):
 
     def write(self, content: str):
         # no newline!
+        self.logfile.write(content)
+        if self.screen:
+            print(content, end='')
+
+    def writeline(self, content: str):
+        # yes newline!
+        content = content + '\n'
         self.logfile.write(content)
         if self.screen:
             print(content, end='')
@@ -197,4 +205,28 @@ class Logger(metaclass=Singleton):
         del self.timer_dct[name]
         self.write(f"{message}: {elapsed[:-4]}\n")
 
+    def dict_of_counter(self, counter_dict):
+        # Find the Counter with the most keys and use it as a reference
+        ref_counter = max(counter_dict.values(), key=lambda x: len(x))
+
+        # Find the longest name and value length for formatting
+        max_name_length = max(len(name) for name in counter_dict.keys())
+        max_value_length = max(len(str(value))
+                               for counter in counter_dict.values()
+                               for value in counter.values())
+
+        # Create the header
+        header_parts = ["Name".ljust(max_name_length)] \
+            + [key.rjust(max_value_length) for key in ref_counter.keys()]
+        header = " ".join(header_parts)
+        table_output = [header, '-' * len(header)]
+
+        # Create each row
+        for name, counter in counter_dict.items():
+            row_parts = [name.ljust(max_name_length)] \
+                + [str(counter.get(key, '')).rjust(max_value_length)
+                    for key in ref_counter.keys()]
+            table_output.append(" ".join(row_parts))
+
+        self.writeline('\n'.join(table_output))
 
