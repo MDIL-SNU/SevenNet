@@ -158,7 +158,9 @@ def from_root_dir(source: str,
         Logger().writeline(f"Building graphs with label {label}")
         Logger().timer_start("graph_build")
         with mp.Pool(processes=num_cores) as pool:
-            results = pool.starmap(process_file, process_file_inps)
+            results = pool.starmap(process_file,
+                                   tqdm.tqdm(process_file_inps,
+                                             total=len(files_to_read)))
         Logger().timer_end("graph_build", f"{label} graph build time")
         Logger().writeline(f"data is saved to {path_to}")
         Logger().writeline("")
