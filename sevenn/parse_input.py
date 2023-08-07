@@ -278,8 +278,8 @@ def init_data_config(config: dict):
             raise ValueError(f"unexpected input {inp} for sturcture_list")
         if type(inp) is str:
             inp = [inp]
-        if all([os.path.isfile(f) for f in inp]) is False:
-            raise ValueError("given load_data does not exist")
+        #if all([os.path.isfile(f) for f in inp]) is False:
+        #    raise ValueError("given load_data does not exist")
         data_meta[KEY.LOAD_DATASET] = inp
     else:
         data_meta[KEY.LOAD_DATASET] = False

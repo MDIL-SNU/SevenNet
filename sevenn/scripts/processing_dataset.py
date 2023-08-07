@@ -50,6 +50,7 @@ def from_structure_list(data_config):
 def from_sevenn_data(load_dataset):
     Logger().write("Loading dataset from load_dataset\n")
 
+    Logger().timer_start("loading dataset")
     dataset = None
     if type(load_dataset) is str:
         load_dataset = [load_dataset]
@@ -66,6 +67,7 @@ def from_sevenn_data(load_dataset):
             Logger().write(f"loading {file} is done\n")
             Logger().format_k_v("current dataset size is",
                                 dataset.len(), write=True)
+    Logger().timer_end("loading dataset", "data set loading time")
     return dataset
 
 
@@ -83,23 +85,11 @@ def init_dataset(data_config, working_dir):
         else:
             full_dataset.augment(from_sevenn_data(data_config[KEY.LOAD_DATASET]))
 
-    """
-    if data_config[KEY.LOAD_DATASET] is not False:
-        load_dataset = data_config[KEY.LOAD_DATASET]
-        Logger().write("Loading dataset from load_dataset\n")
-        if type(load_dataset) is str:
-            load_dataset = [load_dataset]
-        for dataset_path in load_dataset:
-            Logger().write(f"loading {dataset_path}\n")
-            if full_dataset is None:
-                full_dataset = torch.load(dataset_path)
-            else:
-                full_dataset.augment(torch.load(dataset_path))
-            Logger().write(f"loading {dataset_path} is done\n")
-            Logger().format_k_v("current dataset size is",
-                                full_dataset.len(), write=True)
-            #Logger().write(f"current dataset size is :{full_dataset.len()}\n")
-    """
+    full_dataset.group_by_key()  # apply labels inside original datapoint
+    # TODO: make info_list accessible from somewhere during, after training
+    #       It gives metadata of each data point
+    info_list = full_dataset.seperate_info()
+    full_dataset.unify_dtypes()  # unify dtypes of all data points
 
     prefix = f"{os.path.abspath(working_dir)}/"
     save_dataset = data_config[KEY.SAVE_DATASET]
@@ -128,6 +118,10 @@ def processing_dataset(config, working_dir):
     if is_stress:
         dataset.toggle_requires_grad_of_data(KEY.POS, True)
     else:
+        dataset.delete_data_key(KEY.STRESS)
+        dataset.delete_data_key(KEY.CELL)
+        dataset.delete_data_key(KEY.CELL_SHIFT)
+        dataset.delete_data_key(KEY.CELL_VOLUME)
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
     if config[KEY.CHEMICAL_SPECIES] == "auto":
