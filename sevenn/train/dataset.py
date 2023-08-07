@@ -129,6 +129,7 @@ class AtomGraphDataset:
         or chemical species user want to consider
         """
         assert self.x_is_one_hot_idx is False
+        print(type_map)
         for data_list in self.dataset.values():
             for datum in data_list:
                 datum[self.DATA_KEY_X] = \

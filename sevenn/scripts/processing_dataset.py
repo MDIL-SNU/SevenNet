@@ -1,8 +1,10 @@
 import os
+import glob
 
 import torch
 from torch_geometric.loader import DataLoader
 
+from sevenn.util import chemical_species_preprocess
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.train.dataload import parse_structure_list, data_for_E3_equivariant_model
@@ -30,7 +32,8 @@ def from_structure_list(data_config):
                            f"parsing {structure_list} is done")
         Logger().timer_start("constructing graph")
         Logger().writeline("constructing graph...")
-        dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, ncores, metadata=data_config)
+        dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, ncores)
+        dataset.meta = data_config
         Logger().timer_end("constructing graph", "constructing graph is done")
         if full_dataset is None:
             full_dataset = dataset
@@ -44,6 +47,28 @@ def from_structure_list(data_config):
     return full_dataset
 
 
+def from_sevenn_data(load_dataset):
+    Logger().write("Loading dataset from load_dataset\n")
+
+    dataset = None
+    if type(load_dataset) is str:
+        load_dataset = [load_dataset]
+    for dataset_path in load_dataset:
+        files = glob.glob(dataset_path)
+        for file in files:
+            if not file.endswith(".sevenn_data"):
+                continue
+            Logger().write(f"loading {file}\n")
+            if dataset is None:
+                dataset = torch.load(file)
+            else:
+                dataset.augment(torch.load(file))
+            Logger().write(f"loading {file} is done\n")
+            Logger().format_k_v("current dataset size is",
+                                dataset.len(), write=True)
+    return dataset
+
+
 def init_dataset(data_config, working_dir):
     full_dataset = None
 
@@ -51,6 +76,14 @@ def init_dataset(data_config, working_dir):
         Logger().write("Loading dataset from structure lists\n")
         full_dataset = from_structure_list(data_config)
 
+    if data_config[KEY.LOAD_DATASET] is not False:
+        # TODO: I hate this pattern
+        if full_dataset is None:
+            full_dataset = from_sevenn_data(data_config[KEY.LOAD_DATASET])
+        else:
+            full_dataset.augment(from_sevenn_data(data_config[KEY.LOAD_DATASET]))
+
+    """
     if data_config[KEY.LOAD_DATASET] is not False:
         load_dataset = data_config[KEY.LOAD_DATASET]
         Logger().write("Loading dataset from load_dataset\n")
@@ -66,6 +99,7 @@ def init_dataset(data_config, working_dir):
             Logger().format_k_v("current dataset size is",
                                 full_dataset.len(), write=True)
             #Logger().write(f"current dataset size is :{full_dataset.len()}\n")
+    """
 
     prefix = f"{os.path.abspath(working_dir)}/"
     save_dataset = data_config[KEY.SAVE_DATASET]
@@ -87,8 +121,6 @@ def init_dataset(data_config, working_dir):
 
 def processing_dataset(config, working_dir):
     # note that type_map is based on user input(chemical_species)
-    type_map = config[KEY.TYPE_MAP]
-
     Logger().write("\nInitializing dataset...\n")
     dataset = init_dataset(config, working_dir)
     Logger().write("Dataset initialization was successful\n")
@@ -98,8 +130,11 @@ def processing_dataset(config, working_dir):
     else:
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
+    if config[KEY.CHEMICAL_SPECIES] == "auto":
+        input_chem = dataset.get_species()
+        config.update(chemical_species_preprocess(input_chem))
     natoms = dataset.get_natoms()
-    dataset.x_to_one_hot_idx(type_map)
+    dataset.x_to_one_hot_idx(config[KEY.TYPE_MAP])
 
     Logger().write("\nNumber of atoms in total dataset:\n")
     Logger().natoms_write(natoms)
