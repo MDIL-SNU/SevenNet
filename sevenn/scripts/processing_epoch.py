@@ -114,6 +114,7 @@ def processing_epoch(trainer, config, loaders, working_dir):
 
         if epoch < skip_output_until:
             continue
+        Logger().timer_start("output_write")
         if valid_total_loss < min_loss:
             min_loss = valid_total_loss
             output(is_best=True)
@@ -122,5 +123,6 @@ def processing_epoch(trainer, config, loaders, working_dir):
         if epoch % per_epoch == 0:
             output(is_best=False)
             Logger().write(f"output written at epoch: {epoch}\n")
+        Logger().timer_end("output_write", message=f"Output write elapsed")
     # deploy(best_model, config, f'{prefix}/deployed_model.pt')
     # subroutine for loss (rescale, record loss, ..)
