@@ -61,10 +61,11 @@ train:
     # Continue training from a checkpoint. If you augment the dataset, recalculated shift, scale, avg_num_neigh will be used
     # Also, you can enable train_shift_scale or train_avg_num_neigh
     # input.yaml for original and continued training should have the same model hyperparameters except for avg_num_neigh and shift scale
+    # Note that it will overwrite log and .pt or .pth files if the training continue on the same directory.
     # continue: 
     #    reset_optimizer: False 
     #    reset_scheduler: False 
-    #    checkpoint: False
+    #    checkpoint: 'path_to_previous_checkpoint/checkpoint_best.pth'
 
 data:
     batch_size: 2                                 # Batch size. If training fails due to memory shortage, lower this value
@@ -77,6 +78,3 @@ data:
 
     save_dataset_path: 'total'                    # Save the preprocessed dataset for later use without the structure_list
     save_by_label: False                          # Save the dataset by labels specified in the structure_list
-
-    save_dataset_path: 'total'                    # Save preprocessed dataset for later use with out structure_list.
-    save_by_label: False                          # Save dataset by labels specified on structure_list
