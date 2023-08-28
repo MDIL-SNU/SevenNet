@@ -48,6 +48,8 @@ def config_initialize(key: str, config: dict, default_dct: dict,
             user_input = required_type(user_input)
         except ValueError:
             raise ValueError(f"given {user_input} for {key} is strange")
+        except TypeError:
+            raise TypeError(f"given {user_input} for {key} is strange")
     elif required_type == bool:
         if type(user_input) == str:
             if user_input.lower() in ('yes', 'true', 't', '.t.', '1'):

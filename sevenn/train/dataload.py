@@ -44,6 +44,8 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     y_force = atoms.get_forces(apply_constraint=False)
     try:
         # xx yy zz xy yz zx order
+        # We expect this is eV/A^3 unit (ASE automatically converts vasp kB to eV/A^3)
+        # So we restore it
         y_stress = -1 * atoms.get_stress()
         y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
     except RuntimeError as e:
@@ -95,7 +97,6 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
             np.cross(cell[1, :], cell[2, :])
         ),
         KEY.NUM_ATOMS: len(atomic_numbers),
-        # TODO: Should I remove it and calculate it when needed?
         KEY.PER_ATOM_ENERGY: y_energy / len(pos),
     }
     # data.num_nodes = data[KEY.NUM_ATOMS]  # is it really necessary?

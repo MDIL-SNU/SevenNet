@@ -82,7 +82,7 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.OPTIMIZER: 'adam',
     KEY.SCHEDULER: 'exponentiallr',
     KEY.FORCE_WEIGHT: 0.1,
-    KEY.STRESS_WEIGHT: 1e-6,  # for kbar unit
+    KEY.STRESS_WEIGHT: 1e-6,  # for kbar unit (SIMPLE-NN default)
     KEY.SKIP_OUTPUT_UNTIL: 20,
     KEY.OUTPUT_PER_EPOCH: 10,  # False or positive integer
     KEY.DRAW_LC: True,

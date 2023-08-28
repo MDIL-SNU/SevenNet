@@ -89,6 +89,7 @@ def processing_epoch(trainer, config, loaders, working_dir):
         DataSetType.VALID: {LossType.ENERGY: [], LossType.FORCE: []}
     }
 
+
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
         Logger().bar()

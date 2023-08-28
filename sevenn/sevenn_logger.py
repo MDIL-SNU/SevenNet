@@ -58,7 +58,20 @@ class Logger(metaclass=Singleton):
                     total_natom[specie] += num
                 except KeyError:
                     total_natom[specie] = num
-        content += self.format_k_v("total", total_natom)
+        content += self.format_k_v("Total, label wise", total_natom)
+        content += self.format_k_v("Total", sum(total_natom.values()))
+        self.write(content)
+
+    def statistic_write(self, statistic):
+        """
+        expect statistic is dict(key as label) of dict(key of mean, std, and so on)
+        """
+        content = ""
+        for label, dct in statistic.items():
+            dct_new = {}
+            for k, v in dct.items():
+                dct_new[k] = f"{v:.3f}"
+            content += self.format_k_v(label, dct_new)
         self.write(content)
 
     # TODO : refactoring!!!
@@ -122,6 +135,7 @@ class Logger(metaclass=Singleton):
 
             content += "\n"
         self.write(content)
+
 
     @staticmethod
     def format_k_v(key, val, write=False):

@@ -114,15 +114,7 @@ def processing_dataset(config, working_dir):
     Logger().write("\nInitializing dataset...\n")
     dataset = init_dataset(config, working_dir)
     Logger().write("Dataset initialization was successful\n")
-    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
-    if is_stress:
-        dataset.toggle_requires_grad_of_data(KEY.POS, True)
-    else:
-        dataset.delete_data_key(KEY.STRESS)
-        dataset.delete_data_key(KEY.CELL)
-        dataset.delete_data_key(KEY.CELL_SHIFT)
-        dataset.delete_data_key(KEY.CELL_VOLUME)
-        dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
+
 
     if config[KEY.CHEMICAL_SPECIES] == "auto":
         input_chem = dataset.get_species()
@@ -132,6 +124,35 @@ def processing_dataset(config, working_dir):
 
     Logger().write("\nNumber of atoms in total dataset:\n")
     Logger().natoms_write(natoms)
+
+    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
+
+    Logger().bar()
+    Logger().write("Per atom energy(eV/atom) distribution:\n")
+    Logger().statistic_write(dataset.get_statistics(KEY.PER_ATOM_ENERGY))
+    Logger().bar()
+    Logger().write("Force(eV/Angstrom) distribution:\n")
+    Logger().statistic_write(dataset.get_statistics(KEY.FORCE))
+    Logger().bar()
+    Logger().write("Stress(eV/Angstrom^3) distribution:\n")
+    try:
+        Logger().statistic_write(dataset.get_statistics(KEY.STRESS))
+    except TypeError:
+        Logger().write("\n Stress is not included in the dataset\n")
+        if is_stress:
+            is_stress = False
+            Logger().write("Turn off stress training\n")
+    Logger().bar()
+
+    if is_stress:
+        dataset.toggle_requires_grad_of_data(KEY.POS, True)
+    else:
+        dataset.delete_data_key(KEY.STRESS)
+        dataset.delete_data_key(KEY.CELL)
+        dataset.delete_data_key(KEY.CELL_SHIFT)
+        dataset.delete_data_key(KEY.CELL_VOLUME)
+        dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
+
 
     # calculate shift and scale from dataset
     ignore_test = not config[KEY.USE_TESTSET]
@@ -150,7 +171,7 @@ def processing_dataset(config, working_dir):
     config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
     #valid_set.shift_scale_dataset(shift=shift, scale=scale)
     Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
-    Logger().write(f"calculated force rms scale is {scale:.6f}\n")
+    Logger().write(f"calculated force rms scale is {scale:.6f} eV/Angstrom\n")
 
     avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
     if avg_num_neigh:

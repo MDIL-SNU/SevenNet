@@ -258,6 +258,30 @@ class AtomGraphDataset:
         avg_num_neigh = np.average(n_neigh)
         return avg_num_neigh
 
+    def get_statistics(self, key):
+        """
+        return dict of statistics of given key (energy, force, stress)
+        key of dict is its label and _total for total statistics
+        value of dict is dict of statistics (mean, std, median, max, min)
+        """
+        def _get_statistic_dict(tensor_list):
+            data_list = torch.cat([tensor.reshape(-1,) for tensor in tensor_list])
+            return {
+                'mean': float(torch.mean(data_list)),
+                'std': float(torch.std(data_list)),
+                'median': float(torch.median(data_list)),
+                'max': float(torch.max(data_list)),
+                'min': float(torch.min(data_list))
+            }
+        res = {}
+        for label, values in self.dataset.items():
+            # flatten list of torch.Tensor (values)
+            tensor_list = [x[key] for x in values]
+            res[label] = _get_statistic_dict(tensor_list)
+        tensor_list = [x[key] for x in self.to_list()]
+        res['Total'] = _get_statistic_dict(tensor_list)
+        return res
+
     def augment(self, dataset, validator: Optional[Callable] = None):
         """check meta compatiblity here
         dataset(AtomGraphDataset): data to augment

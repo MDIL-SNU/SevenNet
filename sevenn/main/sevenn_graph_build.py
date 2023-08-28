@@ -10,7 +10,12 @@ from sevenn._const import SEVENN_VERSION
 import sevenn._keys as KEY
 
 description = f"sevenn version={SEVENN_VERSION}, sevenn_graph_build, "\
-    + "build graph from ase atoms or VASP OUTCARs (by structure_list)"
+    + "build graph from ase atoms or VASP OUTCARs (by structure_list)"\
+    + "CAUTION: If the atoms are not from ase read of VASP, you must check units"\
+    + "energy: eV (vasp free energy), force: eV/Angstrom, stress: eV/Angstrom^3" \
+    + "and stress tensor to be 6x1 vector in order of xx, yy, zz, yz, xz, xy of INTERNAL stress"\
+    + "What you see from VASP(grep 'in kB') is external stress in kB"
+
 
 source_help = "primitive data to build graph, assume structure_list if file "\
     + "or assume root dir of pickles of ase.Atoms list if directory"
