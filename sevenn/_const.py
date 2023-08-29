@@ -79,6 +79,7 @@ DEFAULT_DATA_CONFIG = {
 DEFAULT_TRAINING_CONFIG = {
     KEY.RANDOM_SEED: 1,
     KEY.EPOCH: 300,
+    KEY.LOSS: 'mse',
     KEY.OPTIMIZER: 'adam',
     KEY.SCHEDULER: 'exponentiallr',
     KEY.FORCE_WEIGHT: 0.1,

@@ -1,5 +1,6 @@
 import torch.optim as optim
 import torch.optim.lr_scheduler as scheduler
+import torch.nn as nn
 
 optim_dict = {
     'sgd': optim.SGD,
@@ -80,7 +81,16 @@ scheduler_param_name_type_dict = {
         'gamma': float
     },
     'cosineannealinglr': {
-        'T_max': int,
+        't_max': int,
         'eta_min': float
     }
 }
+
+loss_dict = {"mse": nn.MSELoss, "huber": nn.HuberLoss}
+loss_param_name_type_dict = {
+    'universial': {},
+    "mse": {},
+    "huber": {"delta": float}  # default = 1.0
+}
+
+

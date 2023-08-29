@@ -6,7 +6,8 @@ import torch
 
 from sevenn.train.optim import (optim_dict, scheduler_dict,
                                 optim_param_name_type_dict,
-                                scheduler_param_name_type_dict)
+                                scheduler_param_name_type_dict,
+                                loss_dict, loss_param_name_type_dict)
 
 from sevenn.util import chemical_species_preprocess
 import sevenn._keys as KEY
@@ -171,15 +172,15 @@ def init_train_config(config: dict):
         train_meta[KEY.DEVICE] = torch.device("cuda") if torch.cuda.is_available() \
             else torch.device("cpu")
 
-    optim_schedule_dict = [optim_dict, scheduler_dict]
-    optim_schedule_key = [KEY.OPTIMIZER, KEY.SCHEDULER]
-    for idx, type_key in enumerate(optim_schedule_key):
+    name_dicts = [optim_dict, scheduler_dict, loss_dict]
+    name_keys = [KEY.OPTIMIZER, KEY.SCHEDULER, KEY.LOSS]
+    for idx, type_key in enumerate(name_keys):
         if type_key not in config.keys():
             train_meta[type_key] = defaults[type_key]
             continue
 
         user_input = config[type_key].lower()
-        available_keys = optim_schedule_dict[idx].keys()
+        available_keys = name_dicts[idx].keys()
 
         if type(user_input) is not str:
             raise ValueError(f"{type_key} should be type: string.")
@@ -194,18 +195,19 @@ def init_train_config(config: dict):
             raise ValueError(f'{type_key} should be one of {ava_key_to_str}')
         train_meta[type_key] = user_input
 
-    default_optim_schedule_param_dict = [optim_param_name_type_dict,
-                                         scheduler_param_name_type_dict]
-    for idx, param_key in enumerate([KEY.OPTIM_PARAM, KEY.SCHEDULER_PARAM]):
+    param_type_dicts = [optim_param_name_type_dict,
+                        scheduler_param_name_type_dict,
+                        loss_param_name_type_dict]
+    for idx, param_key in enumerate([KEY.OPTIM_PARAM, KEY.SCHEDULER_PARAM, KEY.LOSS_PARAM]):
         if param_key not in config.keys():
             continue
 
         user_input = config[param_key]
-        type_value = train_meta[optim_schedule_key[idx]]
+        type_value = train_meta[name_keys[idx]]
         universal_keys = \
-            list(default_optim_schedule_param_dict[idx]['universial'].keys())
+            list(param_type_dicts[idx]['universial'].keys())
         available_keys = \
-            list(default_optim_schedule_param_dict[idx][type_value].keys())
+            list(param_type_dicts[idx][type_value].keys())
         available_keys.extend(universal_keys)
         for key, value in user_input.items():
             key = key.lower()
@@ -219,9 +221,9 @@ def init_train_config(config: dict):
                 raise ValueError(
                     f'{param_key}: {key} should be one of {available_keys}')
             if key in universal_keys:
-                type_ = default_optim_schedule_param_dict[idx]['universial'][key]
+                type_ = param_type_dicts[idx]['universial'][key]
             else:
-                type_ = default_optim_schedule_param_dict[idx][type_value][key]
+                type_ = param_type_dicts[idx][type_value][key]
 
             if type(value) is not type_:
                 raise ValueError(f'{param_key}: {key} should be type: {type_}')
