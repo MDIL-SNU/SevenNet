@@ -3,13 +3,12 @@ from typing import List, Callable
 
 import yaml
 import torch
-from ase.data import atomic_numbers
 
 from sevenn.train.optim import (optim_dict, scheduler_dict,
                                 optim_param_name_type_dict,
                                 scheduler_param_name_type_dict)
 
-from sevenn.nn.node_embedding import get_type_mapper_from_specie
+from sevenn.util import chemical_species_preprocess
 import sevenn._keys as KEY
 import sevenn._const as _const
 
@@ -49,6 +48,8 @@ def config_initialize(key: str, config: dict, default_dct: dict,
             user_input = required_type(user_input)
         except ValueError:
             raise ValueError(f"given {user_input} for {key} is strange")
+        except TypeError:
+            raise TypeError(f"given {user_input} for {key} is strange")
     elif required_type == bool:
         if type(user_input) == str:
             if user_input.lower() in ('yes', 'true', 't', '.t.', '1'):
@@ -108,21 +109,28 @@ def init_model_config(config: dict):
     if KEY.CHEMICAL_SPECIES not in config.keys():
         raise ValueError('required key chemical_species not exist')
     input_chem = config[KEY.CHEMICAL_SPECIES]
-    if type(input_chem) == list and \
-       all(type(x) == str for x in input_chem):
-        pass
-    elif type(input_chem) == str:
-        input_chem = input_chem.replace('-', ',').replace(' ', ',').split(',')
-        input_chem = [chem for chem in input_chem if len(chem) != 0]
+    if type(input_chem) == str and input_chem.lower() == 'auto':
+        model_meta[KEY.CHEMICAL_SPECIES] = "auto"
+        model_meta[KEY.NUM_SPECIES] = "auto"
+        model_meta[KEY.TYPE_MAP] = "auto"
     else:
-        raise ValueError(f'given {KEY.CHEMICAL_SPECIES} input is strange')
-
-    chemical_specie = sorted([x.strip() for x in input_chem])
-    model_meta[KEY.CHEMICAL_SPECIES] = chemical_specie
-    model_meta[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = \
-        [atomic_numbers[x] for x in chemical_specie]
-    model_meta[KEY.NUM_SPECIES] = len(chemical_specie)
-    model_meta[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
+        if type(input_chem) == list and \
+           all(type(x) == str for x in input_chem):
+            pass
+        elif type(input_chem) == str:
+            input_chem = input_chem.replace('-', ',').replace(' ', ',').split(',')
+            input_chem = [chem for chem in input_chem if len(chem) != 0]
+        else:
+            raise ValueError(f'given {KEY.CHEMICAL_SPECIES} input is strange')
+        model_meta.update(chemical_species_preprocess(input_chem))
+        """
+        chemical_specie = sorted([x.strip() for x in input_chem])
+        model_meta[KEY.CHEMICAL_SPECIES] = chemical_specie
+        model_meta[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = \
+            [atomic_numbers[x] for x in chemical_specie]
+        model_meta[KEY.NUM_SPECIES] = len(chemical_specie)
+        model_meta[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
+        """
 
     for act_key in [KEY.ACTIVATION_GATE, KEY.ACTIVATION_SCARLAR]:
         if act_key not in config.keys():
@@ -272,8 +280,8 @@ def init_data_config(config: dict):
             raise ValueError(f"unexpected input {inp} for sturcture_list")
         if type(inp) is str:
             inp = [inp]
-        if all([os.path.isfile(f) for f in inp]) is False:
-            raise ValueError("given load_data does not exist")
+        #if all([os.path.isfile(f) for f in inp]) is False:
+        #    raise ValueError("given load_data does not exist")
         data_meta[KEY.LOAD_DATASET] = inp
     else:
         data_meta[KEY.LOAD_DATASET] = False

@@ -11,6 +11,7 @@ import sevenn._keys as KEY
 
 CHEM_SYMBOLS = {v: k for k, v in atomic_numbers.items()}
 
+
 class Singleton(type):
     _instances = {}
 
@@ -40,6 +41,13 @@ class Logger(metaclass=Singleton):
         if self.screen:
             print(content, end='')
 
+    def writeline(self, content: str):
+        # yes newline!
+        content = content + '\n'
+        self.logfile.write(content)
+        if self.screen:
+            print(content, end='')
+
     def natoms_write(self, natoms):
         content = ""
         total_natom = {}
@@ -50,7 +58,20 @@ class Logger(metaclass=Singleton):
                     total_natom[specie] += num
                 except KeyError:
                     total_natom[specie] = num
-        content += self.format_k_v("total", total_natom)
+        content += self.format_k_v("Total, label wise", total_natom)
+        content += self.format_k_v("Total", sum(total_natom.values()))
+        self.write(content)
+
+    def statistic_write(self, statistic):
+        """
+        expect statistic is dict(key as label) of dict(key of mean, std, and so on)
+        """
+        content = ""
+        for label, dct in statistic.items():
+            dct_new = {}
+            for k, v in dct.items():
+                dct_new[k] = f"{v:.3f}"
+            content += self.format_k_v(label, dct_new)
         self.write(content)
 
     # TODO : refactoring!!!
@@ -114,6 +135,7 @@ class Logger(metaclass=Singleton):
 
             content += "\n"
         self.write(content)
+
 
     @staticmethod
     def format_k_v(key, val, write=False):
@@ -197,4 +219,28 @@ class Logger(metaclass=Singleton):
         del self.timer_dct[name]
         self.write(f"{message}: {elapsed[:-4]}\n")
 
+    def dict_of_counter(self, counter_dict):
+        # Find the Counter with the most keys and use it as a reference
+        ref_counter = max(counter_dict.values(), key=lambda x: len(x))
+
+        # Find the longest name and value length for formatting
+        max_name_length = max(len(name) for name in counter_dict.keys())
+        max_value_length = max(len(str(value))
+                               for counter in counter_dict.values()
+                               for value in counter.values())
+
+        # Create the header
+        header_parts = ["Name".ljust(max_name_length)] \
+            + [key.rjust(max_value_length) for key in ref_counter.keys()]
+        header = " ".join(header_parts)
+        table_output = [header, '-' * len(header)]
+
+        # Create each row
+        for name, counter in counter_dict.items():
+            row_parts = [name.ljust(max_name_length)] \
+                + [str(counter.get(key, '')).rjust(max_value_length)
+                    for key in ref_counter.keys()]
+            table_output.append(" ".join(row_parts))
+
+        self.writeline('\n'.join(table_output))
 

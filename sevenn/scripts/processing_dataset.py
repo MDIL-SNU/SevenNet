@@ -1,8 +1,10 @@
 import os
+import glob
 
 import torch
 from torch_geometric.loader import DataLoader
 
+from sevenn.util import chemical_species_preprocess
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.train.dataload import parse_structure_list, data_for_E3_equivariant_model
@@ -30,7 +32,8 @@ def from_structure_list(data_config):
                            f"parsing {structure_list} is done")
         Logger().timer_start("constructing graph")
         Logger().writeline("constructing graph...")
-        dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, ncores, metadata=data_config)
+        dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, ncores)
+        dataset.meta = data_config
         Logger().timer_end("constructing graph", "constructing graph is done")
         if full_dataset is None:
             full_dataset = dataset
@@ -44,6 +47,30 @@ def from_structure_list(data_config):
     return full_dataset
 
 
+def from_sevenn_data(load_dataset):
+    Logger().write("Loading dataset from load_dataset\n")
+
+    Logger().timer_start("loading dataset")
+    dataset = None
+    if type(load_dataset) is str:
+        load_dataset = [load_dataset]
+    for dataset_path in load_dataset:
+        files = glob.glob(dataset_path)
+        for file in files:
+            if not file.endswith(".sevenn_data"):
+                continue
+            Logger().write(f"loading {file}\n")
+            if dataset is None:
+                dataset = torch.load(file)
+            else:
+                dataset.augment(torch.load(file))
+            Logger().write(f"loading {file} is done\n")
+            Logger().format_k_v("current dataset size is",
+                                dataset.len(), write=True)
+    Logger().timer_end("loading dataset", "data set loading time")
+    return dataset
+
+
 def init_dataset(data_config, working_dir):
     full_dataset = None
 
@@ -52,20 +79,17 @@ def init_dataset(data_config, working_dir):
         full_dataset = from_structure_list(data_config)
 
     if data_config[KEY.LOAD_DATASET] is not False:
-        load_dataset = data_config[KEY.LOAD_DATASET]
-        Logger().write("Loading dataset from load_dataset\n")
-        if type(load_dataset) is str:
-            load_dataset = [load_dataset]
-        for dataset_path in load_dataset:
-            Logger().write(f"loading {dataset_path}\n")
-            if full_dataset is None:
-                full_dataset = torch.load(dataset_path)
-            else:
-                full_dataset.augment(torch.load(dataset_path))
-            Logger().write(f"loading {dataset_path} is done\n")
-            Logger().format_k_v("current dataset size is",
-                                full_dataset.len(), write=True)
-            #Logger().write(f"current dataset size is :{full_dataset.len()}\n")
+        # TODO: I hate this pattern
+        if full_dataset is None:
+            full_dataset = from_sevenn_data(data_config[KEY.LOAD_DATASET])
+        else:
+            full_dataset.augment(from_sevenn_data(data_config[KEY.LOAD_DATASET]))
+
+    full_dataset.group_by_key()  # apply labels inside original datapoint
+    # TODO: make info_list accessible from somewhere during, after training
+    #       It gives metadata of each data point
+    info_list = full_dataset.seperate_info()
+    full_dataset.unify_dtypes()  # unify dtypes of all data points
 
     prefix = f"{os.path.abspath(working_dir)}/"
     save_dataset = data_config[KEY.SAVE_DATASET]
@@ -87,22 +111,48 @@ def init_dataset(data_config, working_dir):
 
 def processing_dataset(config, working_dir):
     # note that type_map is based on user input(chemical_species)
-    type_map = config[KEY.TYPE_MAP]
-
     Logger().write("\nInitializing dataset...\n")
     dataset = init_dataset(config, working_dir)
     Logger().write("Dataset initialization was successful\n")
-    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
-    if is_stress:
-        dataset.toggle_requires_grad_of_data(KEY.POS, True)
-    else:
-        dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
+
+    if config[KEY.CHEMICAL_SPECIES] == "auto":
+        input_chem = dataset.get_species()
+        config.update(chemical_species_preprocess(input_chem))
     natoms = dataset.get_natoms()
-    dataset.x_to_one_hot_idx(type_map)
+    dataset.x_to_one_hot_idx(config[KEY.TYPE_MAP])
 
     Logger().write("\nNumber of atoms in total dataset:\n")
     Logger().natoms_write(natoms)
+
+    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
+
+    Logger().bar()
+    Logger().write("Per atom energy(eV/atom) distribution:\n")
+    Logger().statistic_write(dataset.get_statistics(KEY.PER_ATOM_ENERGY))
+    Logger().bar()
+    Logger().write("Force(eV/Angstrom) distribution:\n")
+    Logger().statistic_write(dataset.get_statistics(KEY.FORCE))
+    Logger().bar()
+    Logger().write("Stress(eV/Angstrom^3) distribution:\n")
+    try:
+        Logger().statistic_write(dataset.get_statistics(KEY.STRESS))
+    except TypeError:
+        Logger().write("\n Stress is not included in the dataset\n")
+        if is_stress:
+            is_stress = False
+            Logger().write("Turn off stress training\n")
+    Logger().bar()
+
+    if is_stress:
+        dataset.toggle_requires_grad_of_data(KEY.POS, True)
+    else:
+        dataset.delete_data_key(KEY.STRESS)
+        dataset.delete_data_key(KEY.CELL)
+        dataset.delete_data_key(KEY.CELL_SHIFT)
+        dataset.delete_data_key(KEY.CELL_VOLUME)
+        dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
+
 
     # calculate shift and scale from dataset
     ignore_test = not config[KEY.USE_TESTSET]
@@ -121,7 +171,7 @@ def processing_dataset(config, working_dir):
     config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
     #valid_set.shift_scale_dataset(shift=shift, scale=scale)
     Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
-    Logger().write(f"calculated force rms scale is {scale:.6f}\n")
+    Logger().write(f"calculated force rms scale is {scale:.6f} eV/Angstrom\n")
 
     avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
     if avg_num_neigh:

@@ -8,6 +8,7 @@ import torch
 from ase.data import chemical_symbols
 import numpy as np
 
+import sevenn.util
 import sevenn._keys as KEY
 
 
@@ -82,6 +83,21 @@ class AtomGraphDataset:
                 self.dataset[key] = []
             self.dataset[key].append(datum)
         self.user_labels = list(self.dataset.keys())
+
+    def seperate_info(self, data_key=KEY.INFO):
+        """
+        seperate info from data and save it as list of dict
+        to make it compatible with torch_geometric
+        """
+        data_list = self.to_list()
+        info_list = []
+        for datum in data_list:
+            info_list.append(datum[data_key])
+            del datum[data_key]  # It really changes the self.dataset
+            datum[data_key] = len(info_list) - 1
+        self.info_list = info_list
+
+        return data_list, info_list
 
     def get_species(self):
         """
@@ -242,6 +258,30 @@ class AtomGraphDataset:
         avg_num_neigh = np.average(n_neigh)
         return avg_num_neigh
 
+    def get_statistics(self, key):
+        """
+        return dict of statistics of given key (energy, force, stress)
+        key of dict is its label and _total for total statistics
+        value of dict is dict of statistics (mean, std, median, max, min)
+        """
+        def _get_statistic_dict(tensor_list):
+            data_list = torch.cat([tensor.reshape(-1,) for tensor in tensor_list])
+            return {
+                'mean': float(torch.mean(data_list)),
+                'std': float(torch.std(data_list)),
+                'median': float(torch.median(data_list)),
+                'max': float(torch.max(data_list)),
+                'min': float(torch.min(data_list))
+            }
+        res = {}
+        for label, values in self.dataset.items():
+            # flatten list of torch.Tensor (values)
+            tensor_list = [x[key] for x in values]
+            res[label] = _get_statistic_dict(tensor_list)
+        tensor_list = [x[key] for x in self.to_list()]
+        res['Total'] = _get_statistic_dict(tensor_list)
+        return res
+
     def augment(self, dataset, validator: Optional[Callable] = None):
         """check meta compatiblity here
         dataset(AtomGraphDataset): data to augment
@@ -249,6 +289,8 @@ class AtomGraphDataset:
 
         if validator is None, by default it checks
         whether cutoff & chemical_species are same before augment
+
+        check consistent data type, float, double, long integer etc
         """
         assert type(dataset) == AtomGraphDataset
 
@@ -257,25 +299,38 @@ class AtomGraphDataset:
             meta2 = dataset2.meta
             cutoff1 = dataset1.cutoff
             cutoff2 = dataset2.cutoff
+            cut_consis = cutoff1 == cutoff2
             # compare unordered lists
-            chem_1 = Counter(meta1[KEY.CHEMICAL_SPECIES])
-            chem_2 = Counter(meta2[KEY.CHEMICAL_SPECIES])
+            try:
+                chem_1 = Counter(meta1[KEY.CHEMICAL_SPECIES])
+                chem_2 = Counter(meta2[KEY.CHEMICAL_SPECIES])
+                chem_consis = chem_1 == chem_2
+            except KeyError:
+                chem_consis = dataset1.x_is_one_hot_idx is False \
+                    and dataset2.x_is_one_hot_idx is False
 
-            # info for print error
-            info = f"cutoff1: {cutoff1}, cutoff2: {cutoff2},\n"\
-                + f"chem_1: {chem_1}, chem_2: {chem_2}"
-            return (cutoff1 == cutoff2 and chem_1 == chem_2, info)
+            return cut_consis and chem_consis
         if validator is None:
             validator = default_validator
-        is_valid, info = validator(self, dataset)
+        is_valid = validator(self, dataset)
         if not is_valid:
-            raise ValueError(f'given datasets are not compatible {info}')
+            raise ValueError('given datasets are not compatible')
         for key, val in dataset.items():
             if key in self.dataset:
                 self.dataset[key].extend(val)
             else:
                 self.dataset.update({key: val})
         self.user_labels = list(self.dataset.keys())
+
+    def unify_dtypes(self, float_dtype=torch.float32, int_dtype=torch.int64):
+        data_list = self.to_list()
+        for datum in data_list:
+            for k, v in list(datum.items()):
+                datum[k] = sevenn.util.dtype_correct(v, float_dtype, int_dtype)
+
+    def delete_data_key(self, key):
+        for data in self.to_list():
+            del data[key]
 
     def save(self, path, by_label=False):
         """
@@ -285,6 +340,7 @@ class AtomGraphDataset:
         if by_label:
             for label, data in self.dataset.items():
                 to = f"{path}/{label}.sevenn_data"
-                torch.save(AtomGraphDataset({label: data}, metadata=self.meta), to)
+                #torch.save(AtomGraphDataset({label: data}, metadata=self.meta), to)
+                torch.save(AtomGraphDataset({label: data}, self.cutoff, metadata=self.meta), to)
         else:
             torch.save(self, path)

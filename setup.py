@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="sevenn",
-    version="0.8.1",
+    version="0.8.5",
     description="SEVENNet",
     author="Yutack Park, Jaesun Kim",
     python_requires=">=3.8",
@@ -20,7 +20,8 @@ setup(
     entry_points={
         "console_scripts": [
             "sevenn = sevenn.main.sevenn:main",
-            "sevenn_get_parallel = sevenn.main.sevenn_get_parallel:main"
+            "sevenn_get_parallel = sevenn.main.sevenn_get_parallel:main",
+            "sevenn_graph_build = sevenn.main.sevenn_graph_build:main"
         ]
     }
 )

@@ -47,7 +47,9 @@ class EdgePreprocess(nn.Module):
                 data["_strain"] = strain
 
                 sym_strain = 0.5 * (strain + strain.transpose(-1, -2))
-                pos = pos + torch.bmm(pos.unsqueeze(-2), sym_strain[batch]).squeeze(-2)
+                # Do not modify it to pos += or cell += !!!!!
+                pos = pos + \
+                    torch.bmm(pos.unsqueeze(-2), sym_strain[batch]).squeeze(-2)
                 cell = cell + torch.bmm(cell, sym_strain)
 
         idx_src = data[KEY.EDGE_IDX][0]

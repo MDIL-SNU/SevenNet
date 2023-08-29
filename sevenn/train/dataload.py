@@ -44,6 +44,8 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     y_force = atoms.get_forces(apply_constraint=False)
     try:
         # xx yy zz xy yz zx order
+        # We expect this is eV/A^3 unit (ASE automatically converts vasp kB to eV/A^3)
+        # So we restore it
         y_stress = -1 * atoms.get_stress()
         y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
     except RuntimeError as e:
@@ -61,7 +63,7 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     is_zero_idx = np.all(edge_vec == 0, axis=1)
     is_self_idx = edge_src == edge_dst
     non_trivials = ~(is_zero_idx & is_self_idx)
-    cell_shift = shifts[non_trivials]
+    cell_shift = np.array(shifts[non_trivials])
 
     edge_vec = edge_vec[non_trivials]
     edge_src = edge_src[non_trivials]
@@ -69,6 +71,13 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     edge_idx = np.array([edge_src, edge_dst])
 
     atomic_numbers = atoms.get_atomic_numbers()
+
+    cell = np.array(cell)
+    #print(type(cell))
+    #print(type(cell_shift))
+    #print(cell_shift.dtype)
+    #print(cell)
+    #print(cell_shift)
 
     data = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -84,11 +93,10 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
         KEY.CELL_SHIFT: cell_shift,
         KEY.CELL_VOLUME: np.einsum(
             "i,i",
-            cell[-1, :],
-            np.cross(cell[0, :], cell[2, :])
+            cell[0, :],
+            np.cross(cell[1, :], cell[2, :])
         ),
         KEY.NUM_ATOMS: len(atomic_numbers),
-        # TODO: Should I remove it and calculate it when needed?
         KEY.PER_ATOM_ENERGY: y_energy / len(pos),
     }
     # data.num_nodes = data[KEY.NUM_ATOMS]  # is it really necessary?

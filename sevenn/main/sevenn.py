@@ -4,11 +4,11 @@ import argparse
 
 from sevenn.parse_input import read_config_yaml
 from sevenn.scripts.train import train
-import sevenn._keys as KEY
-from sevenn._const import SEVENN_VERSION
 from sevenn.sevenn_logger import Logger
+from sevenn._const import SEVENN_VERSION
+import sevenn._keys as KEY
 
-description = f"sevenn version={SEVENN_VERSION}"
+description = f"sevenn version={SEVENN_VERSION}, based on input.yaml, train model"
 
 input_yaml_help = "main input.yaml file for model & training"
 working_dir_help = "directory path to write output. default is cwd"

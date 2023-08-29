@@ -14,7 +14,7 @@ from sevenn.train.optim import optim_dict, scheduler_dict
 #TODO: Optimizer type/parameter selection, loss type selection,
 # for only one [title] in structure_list: not implemented, early stopping?
 
-TO_KB = 1602.1766208
+TO_KB = 1602.1766208  # eV/A^3 to kbar
 
 
 class LossType(Enum):
@@ -123,7 +123,7 @@ class Trainer():
             self.stress_weight * stress_loss / 6
 
     def postprocess_output(self, output, loss_type: LossType):
-        # pred, ref, loss
+        # return pred, ref, loss
         if loss_type is LossType.ENERGY:
             pred = torch.squeeze(output[self.energy_key], -1)
             ref = output[self.ref_energy_key]
@@ -134,12 +134,13 @@ class Trainer():
             pred, ref, loss = \
                 self.get_vector_component_and_loss(pred_raw, ref_raw, 3)
         elif loss_type is LossType.STRESS:
+            # calculate stress loss based on kB unit (was eV/A^3)
             pred_raw = output[self.stress_key] * TO_KB
             ref_raw = output[self.ref_stress_key] * TO_KB
             pred, ref, loss = \
                 self.get_vector_component_and_loss(pred_raw, ref_raw, 6)
         else:
-            print("CODE SHOULD NOT REACH HERE")
+            raise ValueError(f'Unknown loss type: {loss_type}')
 
         return pred, ref, loss
 
@@ -203,7 +204,6 @@ class Trainer():
             )
 
             # store postprocessed results to history
-            # gpt said this is the most readable and pythonic way to flatten arr
             self._update_force_loss_by_atom_type(
                 force_loss_by_atom_type,
                 atom_type_list, loss_dct[LossType.FORCE]

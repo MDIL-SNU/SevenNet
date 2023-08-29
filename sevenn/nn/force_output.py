@@ -134,7 +134,7 @@ class ForceStressOutput(nn.Module):
         self.KEY_ENERGY = data_key_energy
         self.KEY_FORCE = data_key_force
         self.KEY_STRESS = data_key_stress
-    
+
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         pos_tensor = data[self.KEY_POS]
         energy = [(data[self.KEY_ENERGY]).sum()]
@@ -153,5 +153,5 @@ class ForceStressOutput(nn.Module):
 
         voigt_stress = torch.vstack((stress[:,0,0], stress[:,1,1], stress[:,2,2], stress[:,0,1], stress[:,1,2], stress[:,0,2]))
         data[self.KEY_STRESS] = voigt_stress.transpose(0, 1)
-        
+
         return data

@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torch_geometric
 
+import sevenn.util
 import sevenn._keys as KEY
 
 
@@ -61,11 +62,8 @@ class AtomGraphData(torch_geometric.data.Data):
     @staticmethod
     def from_numpy_dict(dct):
         for k, v in dct.items():
-            if type(v) is np.ndarray:
-                if np.issubdtype(v.dtype, np.floating):
-                    dct[k] = torch.Tensor(v)
-                elif np.issubdtype(v.dtype, np.integer):
-                    dct[k] = torch.LongTensor(v)
+            if k == KEY.CELL_SHIFT:
+                dct[k] = torch.Tensor(v)  # this is special
             else:
-                dct[k] = v
+                dct[k] = sevenn.util.dtype_correct(v)
         return AtomGraphData(**dct)
