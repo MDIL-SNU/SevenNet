@@ -93,7 +93,11 @@ class Trainer():
             self.scheduler.load_state_dict(scheduler_state_dict)
 
         loss = loss_dict[config[KEY.LOSS].lower()] # class
-        loss_param = config[KEY.LOSS_PARAM]
+        # TODO: handle this kind of case in parse_input not here
+        try:
+            loss_param = config[KEY.LOSS_PARAM]
+        except KeyError:
+            loss_param = {}
         # TODO: is reduction param universal in pytorch? should I set it to none?
         self.criterion = loss(**loss_param)
 
@@ -114,14 +118,11 @@ class Trainer():
                 self.mse_hist[data_set_key][label] = \
                     {lt: [] for lt in self.loss_types}
 
-    def loss_function(self, loss_dct: Dict[LossType, Union[float, torch.Tensor]]):
-        """
-        for mean of mse of pred, ref pair
-        """
-        energy_loss = loss_dct[LossType.ENERGY]
-        force_loss = loss_dct[LossType.FORCE]
+    def mse_loss(self, mse_dct):
+        energy_loss = mse_dct[LossType.ENERGY]
+        force_loss = mse_dct[LossType.FORCE]
         try:
-            stress_loss = loss_dct[LossType.STRESS]
+            stress_loss = mse_dct[LossType.STRESS]
         except KeyError:
             stress_loss = 0
         return energy_loss + \
@@ -229,21 +230,18 @@ class Trainer():
                 force_mse_by_atom_type,
                 atom_type_list, mse_dct[LossType.FORCE]
             )
-
             if is_train:
                 total_loss.backward()
                 self.optimizer.step()
-
         if is_train:
             self.scheduler.step()
 
-        # self._update_mse_hist(set_type + '_loss')
-        loss_record = {}
+        mse_record = {}
         for label in self.user_labels:
-            loss_record[label] = {}
+            mse_record[label] = {}
             for loss_type in self.loss_types:
                 mse = np.mean(epoch_mse[label][loss_type])
-                loss_record[label][loss_type] = mse
+                mse_record[label][loss_type] = mse
                 self.mse_hist[set_type][label][loss_type].append(mse)
 
         specie_wise_mse_record = {}
@@ -252,7 +250,7 @@ class Trainer():
             self.force_mse_hist_by_atom_type[set_type][atom_type].append(F_mse)
             specie_wise_mse_record[atom_type] = F_mse
 
-        return parity_set, loss_record, specie_wise_mse_record
+        return parity_set, mse_record, specie_wise_mse_record
 
     def get_checkpoint_dict(self):
         return {'model_state_dict': self.model.state_dict(),

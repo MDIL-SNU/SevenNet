@@ -201,7 +201,6 @@ def init_train_config(config: dict):
     for idx, param_key in enumerate([KEY.OPTIM_PARAM, KEY.SCHEDULER_PARAM, KEY.LOSS_PARAM]):
         if param_key not in config.keys():
             continue
-
         user_input = config[param_key]
         type_value = train_meta[name_keys[idx]]
         universal_keys = \
