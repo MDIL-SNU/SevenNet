@@ -55,7 +55,7 @@ class Trainer():
 
         device = config[KEY.DEVICE]
         self.model = model.to(device)
-        total_atom_type = config[KEY.CHEMICAL_SPECIES]
+        total_atom_type = config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER]
         if 'total' not in user_labels:
             user_labels.insert(0, 'total')  # prepand total
         self.user_labels = user_labels
@@ -181,8 +181,7 @@ class Trainer():
         for step, batch in enumerate(loader):
             batch.to(self.device)
             label = batch[KEY.USER_LABEL]
-            atom_type_list = \
-                [atom for atoms in batch[KEY.CHEMICAL_SYMBOL] for atom in atoms]
+            atom_type_list = batch[KEY.ATOMIC_NUMBERS]
             self.optimizer.zero_grad(set_to_none=True)
 
             result = self.model(batch)
@@ -263,9 +262,9 @@ class Trainer():
                 loss_labeld[loss_type].extend(loss_indexed.tolist())
 
     def _update_force_loss_by_atom_type(self, force_loss_by_atom_type,
-                                        chemical_symbol: list,
+                                        atomic_numbers: list,
                                         F_loss: torch.Tensor) -> dict:
         for key in force_loss_by_atom_type.keys():
-            indices = [i for i, v in enumerate(chemical_symbol) if v == key]
+            indices = [i for i, v in enumerate(atomic_numbers) if v == key]
             F_loss_list = F_loss[indices]
             force_loss_by_atom_type[key].extend(F_loss_list.tolist())

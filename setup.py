@@ -19,8 +19,8 @@ setup(
     ],
     entry_points={
         "console_scripts": [
-            "sevenn = sevenn.scripts.sevenn_script:main",
-            "sevenn_get_parallel = sevenn.scripts.sevenn_get_parallel:main"
+            "sevenn = sevenn.main.sevenn:main",
+            "sevenn_get_parallel = sevenn.main.sevenn_get_parallel:main"
         ]
     }
 )

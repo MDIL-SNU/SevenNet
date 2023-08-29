@@ -72,6 +72,7 @@ DEFAULT_DATA_CONFIG = {
     KEY.LOAD_DATASET: False,
     KEY.RATIO: 0.1,
     KEY.BATCH_SIZE: 6,
+    KEY.PREPROCESS_NUM_CORES: 1,
 }
 
 
@@ -136,6 +137,7 @@ DATA_CONFIG_CONDITION = {
     KEY.SAVE_BY_LABEL: None,
     KEY.RATIO: lambda x: type(x) is float and x > 0.0 and x < 0.5,
     KEY.BATCH_SIZE: is_positive,
+    KEY.PREPROCESS_NUM_CORES: is_positive,
 }
 
 TRAINING_CONFIG_CONDITION = {

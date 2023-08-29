@@ -1,3 +1,4 @@
+import warnings
 import random
 import itertools
 from collections import Counter
@@ -15,41 +16,89 @@ import sevenn._keys as KEY
 # TODO: label specific or atom specie wise statistic?
 class AtomGraphDataset:
     """
-    class representing dataset containing fully preprocessed data ready
-    for model input
+    class representing dataset of AtomGraphData
+    the dataset is handled as dict, {label: data}
     if given data is List, it stores data as {KEY_DEFAULT: data}
 
-    Args:
-        data (Union[Dict[str, List], List]: dataset as dict or pure list
-        preprocessor (Callable, Optional): preprocess function for each data
-        metadata (Dict, Optional): metadata of data used for whether augment is valid
+    Every data expected to have one unique cutoff
+    No validity or check of the condition is done inside the object
+
+    attribute:
+        dataset (Dict[str, List]): key is data label(str), value is list of data
+        user_labels (List[str]): list of user labels same as dataset.keys()
+        meta (Dict, Optional): metadata of dataset
+    for now, metadata 'might' have following keys:
+        KEY.CUTFF (float), KEY.CHEMICAL_SPECIES (Dict)
     """
+    DATA_KEY_X = KEY.NODE_FEATURE
     DATA_KEY_ENERGY = KEY.ENERGY
     DATA_KEY_FORCE = KEY.FORCE
     KEY_DEFAULT = 'No_label'
 
-    # TODO: mpi thing? logging?
     def __init__(self,
-                 data: Union[Dict[str, List], List],
-                 preprocessor: Optional[Callable] = None,
+                 dataset: Union[Dict[str, List], List],
+                 cutoff: float,
                  metadata: Optional[Dict] = None,
-                 is_modified: bool = False):
+                 x_is_one_hot_idx: Optional[bool] = False):
+        """
+        Default constructor of AtomGraphDataset
+        Args:
+            dataset (Union[Dict[str, List], List]: dataset as dict or pure list
+            metadata (Dict, Optional): metadata of data
+            cutoff (float): cutoff radius of graphs inside the dataset
+            x_is_one_hot_idx (bool, Optional): if True, x is one_hot_idx, eles 'Z'
 
-        self.is_modified = is_modified
+        'x' (node feature) of dataset can have 3 states, atomic_numbers,
+        one_hot_idx, or one_hot_vector.
+
+        atomic_numbers is the most general one but cannot directly used for input
+        one_hot_idx is can be input of the model but requires 'type_map'
+        one_hot_idx to one_hot_vector is done by model, so it should not be used here
+        """
+        self.cutoff = cutoff
+        self.x_is_one_hot_idx = x_is_one_hot_idx
         self.meta = metadata
-        if type(data) is list:
-            data = {self.KEY_DEFAULT: data}
+        if type(dataset) is list:
+            self.dataset = {self.KEY_DEFAULT: dataset}
+        else:
+            self.dataset = dataset
+        self.user_labels = list(self.dataset.keys())
 
+    def group_by_key(self, data_key=KEY.USER_LABEL):
+        """
+        group dataset list by given key and save it as dict
+        and change in-place
+        Args:
+            data_key (str): data key to group by
+
+        original use is USER_LABEL, but it can be used for other keys
+        if someone established it from data[KEY.INFO]
+        """
+        data_list = self.to_list()
         self.dataset = {}
-        for user_label, data_list in data.items():
-            self.dataset[user_label] = []
-            for datum in data_list:
-                if preprocessor is not None:
-                    datum = preprocessor(datum)
-                if KEY.USER_LABEL not in datum:  # init label only when data is fresh
-                    datum[KEY.USER_LABEL] = user_label
-                self.dataset[user_label].append(datum)
-        self.user_labels = list(data.keys())
+        for datum in data_list:
+            key = datum[data_key]
+            if key not in self.dataset:
+                self.dataset[key] = []
+            self.dataset[key].append(datum)
+        self.user_labels = list(self.dataset.keys())
+
+    def get_species(self):
+        """
+        You can also use get_natoms and extract keys from there istead of this
+        (And it is more efficient)
+        get chemical species of dataset
+        return list of chemical species (as str)
+        """
+        if hasattr(self, "type_map"):
+            natoms = self.get_natoms(self.type_map)
+        else:
+            natoms = self.get_natoms()
+        species = set()
+        for natom_dct in natoms.values():
+            species.update(natom_dct.keys())
+        species = sorted(list(species))
+        return species
 
     def len(self):
         if len(self.dataset.keys()) == 1 and \
@@ -72,6 +121,21 @@ class AtomGraphDataset:
             dct_dataset[label] = [datum.to_dict() for datum in data_list]
         self.dataset = dct_dataset
         return self
+
+    def x_to_one_hot_idx(self, type_map: Dict[int, int]):
+        """
+        type_map is dict of {atomic_number: one_hot_idx}
+        after this process, the dataset has dependency on type_map
+        or chemical species user want to consider
+        """
+        assert self.x_is_one_hot_idx is False
+        for data_list in self.dataset.values():
+            for datum in data_list:
+                datum[self.DATA_KEY_X] = \
+                    torch.LongTensor([type_map[z.item()]
+                                      for z in datum[self.DATA_KEY_X]])
+        self.type_map = type_map
+        self.x_is_one_hot_idx = True
 
     def toggle_requires_grad_of_data(self, key: str, requires_grad_value: bool):
         """
@@ -119,28 +183,32 @@ class AtomGraphDataset:
         else:
             lists = divide(ratio, self.to_list())
 
-        return tuple(AtomGraphDataset(data, metadata=self.meta) for data in lists)
+        return tuple(AtomGraphDataset(data, self.cutoff,
+                                      metadata=self.meta) for data in lists)
 
     def to_list(self):
         return list(itertools.chain(*self.dataset.values()))
 
-    def get_natoms(self, type_map):
+    def get_natoms(self, type_map=None):
         """
+        if x_is_one_hot_idx, type_map is required
         type_map: Z->one_hot_index(node_feature)
         return Dict{label: {symbol, natom}]}
         """
-        KEY_TO_LOOK = KEY.NODE_FEATURE
+        assert not(self.x_is_one_hot_idx is True and type_map is None)
         natoms = {}
-        species = [chemical_symbols[Z] for Z in type_map.keys()]
-        type_map_rev = {v: k for k, v in type_map.items()}
-        for label in self.user_labels:
-            data = self.dataset[label]
-            natoms[label] = {sym: 0 for sym in species}
+        if type_map is not None:
+            type_map_rev = {v: k for k, v in type_map.items()}
+        for label, data in self.dataset.items():
+            natoms[label] = Counter()
             for datum in data:
-                cnt = Counter(torch.argmax(datum[KEY_TO_LOOK], dim=1))
-                for k, v in cnt.items():
-                    atomic_num = type_map_rev[k.item()]
-                    natoms[label][chemical_symbols[atomic_num]] += v
+                # list of atomic number
+                Zs = [chemical_symbols[z] for z in datum[self.DATA_KEY_X].tolist()]
+                if self.x_is_one_hot_idx:
+                    Zs = [type_map_rev[z] for z in Zs]
+                cnt = Counter(Zs)
+                natoms[label] += cnt
+            natoms[label] = dict(natoms[label])
         return natoms
 
     def get_per_atom_mean(self, key, key_num_atoms=KEY.NUM_ATOMS):
@@ -187,8 +255,8 @@ class AtomGraphDataset:
         def default_validator(dataset1, dataset2):
             meta1 = dataset1.meta
             meta2 = dataset2.meta
-            cutoff1 = dataset1.meta[KEY.CUTOFF]
-            cutoff2 = dataset2.meta[KEY.CUTOFF]
+            cutoff1 = dataset1.cutoff
+            cutoff2 = dataset2.cutoff
             # compare unordered lists
             chem_1 = Counter(meta1[KEY.CHEMICAL_SPECIES])
             chem_2 = Counter(meta2[KEY.CHEMICAL_SPECIES])
@@ -200,14 +268,13 @@ class AtomGraphDataset:
         if validator is None:
             validator = default_validator
         is_valid, info = validator(self, dataset)
-        if is_valid:
-            for key, val in dataset.items():
-                if key in self.dataset:
-                    self.dataset[key].extend(val)
-                else:
-                    self.dataset.update({key: val})
-        else:
+        if not is_valid:
             raise ValueError(f'given datasets are not compatible {info}')
+        for key, val in dataset.items():
+            if key in self.dataset:
+                self.dataset[key].extend(val)
+            else:
+                self.dataset.update({key: val})
         self.user_labels = list(self.dataset.keys())
 
     def save(self, path, by_label=False):

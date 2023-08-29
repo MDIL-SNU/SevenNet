@@ -25,8 +25,10 @@ def train(config: Dict, working_dir: str):
     torch.manual_seed(seed)
 
     try:
+        # config updated
         statistic_values, loaders, user_labels = \
             processing_dataset(config, working_dir)
+
         #avg_num_neigh, shift, scale = statistic_values
         #train_loader, valid_loader, test_loader = loaders
 
@@ -35,6 +37,8 @@ def train(config: Dict, working_dir: str):
         Logger().write("Model building was successful\n")
 
         optimizer_state_dict, scheduler_state_dict = None, None
+
+        # config updated
         if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
             optimizer_state_dict, scheduler_state_dict = \
                 processing_continue(config, model, statistic_values)

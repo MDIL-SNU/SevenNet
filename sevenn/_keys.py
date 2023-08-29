@@ -12,7 +12,6 @@ from typing import Final
 #==================================================#
 # some raw properties of graph
 ATOMIC_NUMBERS: Final[str] = "atomic_numbers"  # (N)
-CHEMICAL_SYMBOL: Final[str] = "chemical_symbol"  # (N)
 POS: Final[str] = "pos"                        # (N, 3) PyG
 CELL: Final[str] = "cell_lattice_vectors"      # (3, 3)
 CELL_SHIFT: Final[str] = "pbc_shift"           # (N, 3)
@@ -62,11 +61,13 @@ BATCH: Final[str] = "batch"
 #etc
 SELF_CONNECTION_TEMP: Final[str] = "self_cont_tmp"
 BATCH_SIZE: Final[str] = "batch_size"
+INFO: Final[str] = "data_info"
 
 #==================================================#
 # ~~~~~~~~ KEY for train configuration ~~~~~~~~~~~ #
 #==================================================#
 STRUCTURE_LIST: Final[str] = "structure_list"
+PREPROCESS_NUM_CORES: Final[str] = "preprocess_num_cores"
 SAVE_DATASET: Final[str] = "save_dataset_path"
 SAVE_BY_LABEL: Final[str] = "save_by_label"
 LOAD_DATASET: Final[str] = "load_dataset_path"
@@ -85,7 +86,7 @@ STRESS_WEIGHT: Final[str] = 'stress_loss_weight'
 DEVICE: Final[str] = "device"
 DTYPE: Final[str] = "dtype"
 
-IS_TRACE_STRESS: Final[str] = "is_trace_stress"
+IS_TRACE_STRESS: Final[str] = "_is_trace_stress"
 IS_TRAIN_STRESS: Final[str] = "is_train_stress"
 
 CONTINUE: Final[str] = "continue"
@@ -93,7 +94,7 @@ CHECKPOINT: Final[str] = "checkpoint"
 RESET_OPTIMIZER: Final[str] = "reset_optimizer"
 RESET_SCHEDULER: Final[str] = "reset_scheduler"
 
-NUM_WORKERS: Final[str] = "num_workers"  # not work
+NUM_WORKERS: Final[str] = "_num_workers"  # not work
 
 # ~~~~~~~~ KEY for output configuration ~~~~~~~~~~~ #
 SKIP_OUTPUT_UNTIL: Final[str] = "skip_output_until"
@@ -112,11 +113,12 @@ SAVE_DATA_PICKLE: Final[str] = "save_data_pickle"
 #==================================================#
 # ~~ global model configuration ~~ #
 # note that these names are directly used for input.yaml for user input
-MODEL_TYPE: Final[str] = "model_type"
+MODEL_TYPE: Final[str] = "_model_type"
 CUTOFF: Final[str] = "cutoff"
 CHEMICAL_SPECIES: Final[str] = "chemical_species"
-NUM_SPECIES: Final[str] = "number_of_species"
-TYPE_MAP: Final[str] = "type_map"
+CHEMICAL_SPECIES_BY_ATOMIC_NUMBER: Final[str] = "_chemical_species_by_atomic_number"
+NUM_SPECIES: Final[str] = "_number_of_species"
+TYPE_MAP: Final[str] = "_type_map"
 
 # ~~ E3 equivariant model build configuration keys ~~ #
 # see model_build default_config for type

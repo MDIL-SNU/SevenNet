@@ -3,10 +3,13 @@ import sys
 import traceback
 from datetime import datetime
 
+from ase.data import atomic_numbers
+
 from sevenn.train.trainer import DataSetType, LossType
 import sevenn._const as _const
 import sevenn._keys as KEY
 
+CHEM_SYMBOLS = {v: k for k, v in atomic_numbers.items()}
 
 class Singleton(type):
     _instances = {}
@@ -69,8 +72,9 @@ class Logger(metaclass=Singleton):
         for at in total_atom_type:
             t_F = train_loss[at]
             v_F = valid_loss[at]
+            at_sym = CHEM_SYMBOLS[at]
             content += "{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}".\
-                format(label=at, t_E=ln, v_E=ln, lb_pad=lb_pad, pad=pad, fs=fs)\
+                format(label=at_sym, t_E=ln, v_E=ln, lb_pad=lb_pad, pad=pad, fs=fs)\
                 + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}".\
                 format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
             content += "{t_S:<{pad}.{fs}s}{v_S:<{pad}.{fs}s}".\
