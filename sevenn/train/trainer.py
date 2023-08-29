@@ -95,17 +95,17 @@ class Trainer():
         self.criterion = torch.nn.MSELoss(reduction='none')
 
         # initialize loss history containers
-        # loss_hist is 3-dim: [DataSetType][Label][LossType]
-        # force_loss_hist is 2-dim: [DataSetType][Specie]
-        self.loss_hist = {}
-        self.force_loss_hist_by_atom_type = {}
+        # rmse_hist is 3-dim: [DataSetType][Label][LossType]
+        # force_rmse_hist is 2-dim: [DataSetType][Specie]
+        self.rmse_hist = {}
+        self.force_rmse_hist_by_atom_type = {}
         for data_set_key in DataSetType:
-            self.loss_hist[data_set_key] = {}
-            self.force_loss_hist_by_atom_type[data_set_key] = \
+            self.rmse_hist[data_set_key] = {}
+            self.force_rmse_hist_by_atom_type[data_set_key] = \
                 {at: [] for at in total_atom_type}
 
             for label in self.user_labels:
-                self.loss_hist[data_set_key][label] = \
+                self.rmse_hist[data_set_key][label] = \
                     {lt: [] for lt in self.loss_types}
 
     def loss_function(self, loss_dct: Dict[LossType, Union[float, torch.Tensor]]):
@@ -124,6 +124,15 @@ class Trainer():
 
     def postprocess_output(self, output, loss_type: LossType):
         # return pred, ref, loss
+        def get_vector_component_and_loss(pred_V: torch.Tensor,
+                                          ref_V: torch.Tensor, vdim: int):
+            pred_V_component = torch.reshape(pred_V, (-1,))
+            ref_V_component = torch.reshape(ref_V, (-1,))
+            loss = self.criterion(pred_V_component, ref_V_component)
+            loss = torch.reshape(loss, (-1, vdim))
+            loss = loss.sum(dim=1)
+            return pred_V_component, ref_V_component, loss
+
         if loss_type is LossType.ENERGY:
             pred = torch.squeeze(output[self.energy_key], -1)
             ref = output[self.ref_energy_key]
@@ -132,29 +141,17 @@ class Trainer():
             pred_raw = output[self.force_key]
             ref_raw = output[self.ref_force_key]
             pred, ref, loss = \
-                self.get_vector_component_and_loss(pred_raw, ref_raw, 3)
+                get_vector_component_and_loss(pred_raw, ref_raw, 3)
         elif loss_type is LossType.STRESS:
             # calculate stress loss based on kB unit (was eV/A^3)
             pred_raw = output[self.stress_key] * TO_KB
             ref_raw = output[self.ref_stress_key] * TO_KB
             pred, ref, loss = \
-                self.get_vector_component_and_loss(pred_raw, ref_raw, 6)
+                get_vector_component_and_loss(pred_raw, ref_raw, 6)
         else:
             raise ValueError(f'Unknown loss type: {loss_type}')
 
         return pred, ref, loss
-
-    def get_vector_component_and_loss(self, pred_V: torch.Tensor,
-                                      ref_V: torch.Tensor, vdim: int):
-
-        pred_V_component = torch.reshape(pred_V, (-1,))
-        ref_V_component = torch.reshape(ref_V, (-1,))
-
-        loss = self.criterion(pred_V_component, ref_V_component)
-        loss = torch.reshape(loss, (-1, vdim))
-        loss = loss.sum(dim=1)
-
-        return pred_V_component, ref_V_component, loss
 
     def run_one_epoch(self, loader, set_type: DataSetType):
         is_train = set_type == DataSetType.TRAIN
@@ -167,11 +164,10 @@ class Trainer():
         # actual loss tensor for backprop
         total_loss = None
         # container for print
-        epoch_loss = {label:
+        epoch_rmse = {label:
                       {lt: [] for lt in self.loss_types}
-                      for label in self.user_labels
-                      }
-        force_loss_by_atom_type = {at: [] for at in self.total_atom_type}
+                      for label in self.user_labels}
+        force_rmse_by_atom_type = {at: [] for at in self.total_atom_type}
 
         parity_set = {"labels": [], "species": []}
         # save raw string instead of LossType for user
@@ -187,84 +183,85 @@ class Trainer():
 
             result = self.model(batch)
 
-            loss_dct = {}
+            rmse_dct = {}
             for loss_type in self.loss_types:
+                pred, ref, rmse = self.postprocess_output(result, loss_type)
+                rmse_dct[loss_type] = rmse
+
                 str_key = str(loss_type.value)
-                pred, ref, loss = self.postprocess_output(result, loss_type)
                 parity_set[str_key]["pred"].extend(pred.tolist())
                 parity_set[str_key]["ref"].extend(ref.tolist())
-                loss_dct[loss_type] = loss
 
             parity_set["labels"].extend(label)
             parity_set["species"].extend(atom_type_list)
 
             # store postprocessed results to history
-            self._update_epoch_loss(
-                epoch_loss, label, batch[KEY.BATCH], loss_dct
-            )
 
-            # store postprocessed results to history
-            self._update_force_loss_by_atom_type(
-                force_loss_by_atom_type,
-                atom_type_list, loss_dct[LossType.FORCE]
+            # Before mean loss is required for structure-wise loss print
+            self._update_epoch_rmse(
+                epoch_rmse, label, batch[KEY.BATCH], rmse_dct
+            )
+            self._update_force_rmse_by_atom_type(
+                force_rmse_by_atom_type,
+                atom_type_list, rmse_dct[LossType.FORCE]
             )
 
             if is_train:
                 # mean inside loss_function? I don't know dim of loss_X
                 # TODO: maybe safe to mean inside loss_function, fix later
-                loss_dct = {k: torch.mean(v) for k, v in loss_dct.items()}
-                total_loss = self.loss_function(loss_dct)
+                mean_rmse_dct = {k: torch.mean(v) for k, v in rmse_dct.items()}
+                total_loss = self.loss_function(mean_rmse_dct)
                 total_loss.backward()
                 self.optimizer.step()
 
         if is_train:
             self.scheduler.step()
 
-        # self._update_loss_hist(set_type + '_loss')
+        # self._update_rmse_hist(set_type + '_loss')
         loss_record = {}
         for label in self.user_labels:
             loss_record[label] = {}
             for loss_type in self.loss_types:
-                mse = np.mean(epoch_loss[label][loss_type])
+                mse = np.mean(epoch_rmse[label][loss_type])
                 loss_record[label][loss_type] = mse
-                self.loss_hist[set_type][label][loss_type].append(mse)
+                self.rmse_hist[set_type][label][loss_type].append(mse)
 
-        specie_wise_loss_record = {}
+        specie_wise_rmse_record = {}
         for atom_type in self.total_atom_type:
-            F_mse = np.mean(force_loss_by_atom_type[atom_type])
-            self.force_loss_hist_by_atom_type[set_type][atom_type].append(F_mse)
-            specie_wise_loss_record[atom_type] = F_mse
+            F_mse = np.mean(force_rmse_by_atom_type[atom_type])
+            self.force_rmse_hist_by_atom_type[set_type][atom_type].append(F_mse)
+            specie_wise_rmse_record[atom_type] = F_mse
 
-        return parity_set, loss_record, specie_wise_loss_record
+        return parity_set, loss_record, specie_wise_rmse_record
 
     def get_checkpoint_dict(self):
         return {'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
-                'loss': self.loss_hist}
+                'loss': self.rmse_hist}
 
-    def _update_epoch_loss(self, epoch_loss, user_label: list,
-                           batch, loss_dct) -> dict:
+    def _update_epoch_rmse(self, epoch_rmse, user_label: list,
+                           batch, rmse_dct) -> dict:
         f_user_label = [user_label[int(i)] for i in batch]
 
-        for key in epoch_loss.keys():
-            loss_labeld = epoch_loss[key]
+        for key in epoch_rmse.keys():
+            rmse_labeld = epoch_rmse[key]
             for loss_type in self.loss_types:
-                loss = loss_dct[loss_type]
+                rmse = rmse_dct[loss_type]
                 if key == 'total':
-                    loss_labeld[loss_type].extend(loss.tolist())
+                    rmse_labeld[loss_type].extend(rmse.tolist())
                     continue
                 if loss_type is LossType.FORCE:
                     indicies = [i for i, v in enumerate(f_user_label) if v == key]
                 else:  # energy or stress
                     indicies = [i for i, v in enumerate(user_label) if v == key]
-                loss_indexed = loss[indicies]
-                loss_labeld[loss_type].extend(loss_indexed.tolist())
+                rmse_indexed = rmse[indicies]
+                rmse_labeld[loss_type].extend(rmse_indexed.tolist())
 
-    def _update_force_loss_by_atom_type(self, force_loss_by_atom_type,
+    def _update_force_rmse_by_atom_type(self, force_rmse_by_atom_type,
                                         atomic_numbers: list,
                                         F_loss: torch.Tensor) -> dict:
-        for key in force_loss_by_atom_type.keys():
+        for key in force_rmse_by_atom_type.keys():
             indices = [i for i, v in enumerate(atomic_numbers) if v == key]
-            F_loss_list = F_loss[indices]
-            force_loss_by_atom_type[key].extend(F_loss_list.tolist())
+            F_rmse_list = F_loss[indices]
+            force_rmse_by_atom_type[key].extend(F_rmse_list.tolist())
