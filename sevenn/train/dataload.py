@@ -44,7 +44,8 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     y_force = atoms.get_forces(apply_constraint=False)
     try:
         # xx yy zz xy yz zx order
-        # We expect this is eV/A^3 unit (ASE automatically converts vasp kB to eV/A^3)
+        # We expect this is eV/A^3 unit
+        # (ASE automatically converts vasp kB to eV/A^3)
         # So we restore it
         y_stress = -1 * atoms.get_stress()
         y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])

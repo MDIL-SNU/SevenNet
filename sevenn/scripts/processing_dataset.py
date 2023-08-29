@@ -115,7 +115,6 @@ def processing_dataset(config, working_dir):
     dataset = init_dataset(config, working_dir)
     Logger().write("Dataset initialization was successful\n")
 
-
     if config[KEY.CHEMICAL_SPECIES] == "auto":
         input_chem = dataset.get_species()
         config.update(chemical_species_preprocess(input_chem))
@@ -152,7 +151,6 @@ def processing_dataset(config, working_dir):
         dataset.delete_data_key(KEY.CELL_SHIFT)
         dataset.delete_data_key(KEY.CELL_VOLUME)
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
-
 
     # calculate shift and scale from dataset
     ignore_test = not config[KEY.USE_TESTSET]

@@ -136,7 +136,6 @@ class Logger(metaclass=Singleton):
             content += "\n"
         self.write(content)
 
-
     @staticmethod
     def format_k_v(key, val, write=False):
         MAX_KEY_SIZE = 20

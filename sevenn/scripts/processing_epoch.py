@@ -89,7 +89,6 @@ def processing_epoch(trainer, config, loaders, working_dir):
         DataSetType.VALID: {LossType.ENERGY: [], LossType.FORCE: []}
     }
 
-
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
         Logger().bar()
@@ -124,6 +123,6 @@ def processing_epoch(trainer, config, loaders, working_dir):
         if epoch % per_epoch == 0:
             output(is_best=False)
             Logger().write(f"output written at epoch: {epoch}\n")
-        Logger().timer_end("output_write", message=f"Output write elapsed")
+        Logger().timer_end("output_write", message="Output write elapsed")
     # deploy(best_model, config, f'{prefix}/deployed_model.pt')
     # subroutine for loss (rescale, record loss, ..)

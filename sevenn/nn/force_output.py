@@ -140,18 +140,17 @@ class ForceStressOutput(nn.Module):
         energy = [(data[self.KEY_ENERGY]).sum()]
 
         grad = torch.autograd.grad(energy, [pos_tensor, data["_strain"]],
-                            create_graph=self.training)
+                                   create_graph=self.training)
 
         force = torch.neg(grad[0])
-
         data[self.KEY_FORCE] = force
-
         volume = data[KEY.CELL_VOLUME]
-
         stress = grad[1] / volume.view(-1, 1, 1)
         stress = torch.neg(stress)
 
-        voigt_stress = torch.vstack((stress[:,0,0], stress[:,1,1], stress[:,2,2], stress[:,0,1], stress[:,1,2], stress[:,0,2]))
+        voigt_stress = \
+            torch.vstack((stress[:, 0, 0], stress[:, 1, 1], stress[:, 2, 2],
+                          stress[:, 0, 1], stress[:, 1, 2], stress[:, 0, 2]))
         data[self.KEY_STRESS] = voigt_stress.transpose(0, 1)
 
         return data

@@ -53,10 +53,10 @@ def train(config: Dict, working_dir: str):
         Logger().write(f"Total number of weight in model is {num_weights}\n")
         Logger().write("Trainer initialized. The program is ready to training\n")
 
-        Logger().write(f"Note that...\n")
-        Logger().write(f"Energy unit of rmse: eV/atom\n")
-        Logger().write(f"Force unit of rmse: eV/Angstrom\n")
-        Logger().write(f"Stress unit of rmse: kB\n")
+        Logger().write("Note that...\n")
+        Logger().write("Energy unit of rmse: eV/atom\n")
+        Logger().write("Force unit of rmse: eV/Angstrom\n")
+        Logger().write("Stress unit of rmse: kB\n")
 
         Logger().bar()
 

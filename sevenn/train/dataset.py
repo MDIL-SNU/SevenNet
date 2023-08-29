@@ -12,9 +12,6 @@ import sevenn.util
 import sevenn._keys as KEY
 
 
-# TODO: inherit torch_geometry dataset?
-# TODO: url things?
-# TODO: label specific or atom specie wise statistic?
 class AtomGraphDataset:
     """
     class representing dataset of AtomGraphData
@@ -341,6 +338,7 @@ class AtomGraphDataset:
             for label, data in self.dataset.items():
                 to = f"{path}/{label}.sevenn_data"
                 #torch.save(AtomGraphDataset({label: data}, metadata=self.meta), to)
-                torch.save(AtomGraphDataset({label: data}, self.cutoff, metadata=self.meta), to)
+                torch.save(AtomGraphDataset({label: data}, self.cutoff,
+                                            metadata=self.meta), to)
         else:
             torch.save(self, path)
