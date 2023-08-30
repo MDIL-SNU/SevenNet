@@ -6,8 +6,6 @@ import torch
 import numpy as np
 
 from sevenn.sevenn_logger import Logger
-from sevenn.scripts.deploy import deploy
-from sevenn.scripts.plot import draw_learning_curve, draw_every_parity
 from sevenn.train.trainer import Trainer, DataSetType, LossType
 import sevenn._keys as KEY
 
@@ -18,30 +16,9 @@ def processing_epoch(trainer, config, loaders, working_dir):
     prefix = f"{os.path.abspath(working_dir)}/"
     train_loader, valid_loader, test_loader = loaders
 
-    min_loss = 100
+    min_loss = 10000
     total_epoch = config[KEY.EPOCH]
-    skip_output_until = config[KEY.SKIP_OUTPUT_UNTIL]
-
-    output_per_epoch = config[KEY.OUTPUT_PER_EPOCH]
-    per_epoch = output_per_epoch[KEY.PER_EPOCH]
-    per_epoch = total_epoch if per_epoch is False else per_epoch
-    draw_parity = output_per_epoch[KEY.DRAW_PARITY]
-    is_save_data_pickle = output_per_epoch[KEY.SAVE_DATA_PICKLE]
-    is_model_check_point = output_per_epoch[KEY.MODEL_CHECK_POINT]
-    is_deploy_model = output_per_epoch[KEY.DEPLOY_MODEL]
-    draw_lc = config[KEY.DRAW_LC]
-
-    def postprocess_loss(train_loss, valid_loss,
-                         train_specie_loss, valid_specie_loss,
-                         scale, loss_history):
-        loss_history[DataSetType.TRAIN][LossType.ENERGY].append(
-            train_loss['total'][LossType.ENERGY])
-        loss_history[DataSetType.TRAIN][LossType.FORCE].append(
-            train_loss['total'][LossType.FORCE])
-        loss_history[DataSetType.VALID][LossType.ENERGY].append(
-            valid_loss['total'][LossType.ENERGY])
-        loss_history[DataSetType.VALID][LossType.FORCE].append(
-            valid_loss['total'][LossType.FORCE])
+    per_epoch = config[KEY.PER_EPOCH]
 
     def sqrt_dict(dct):
         for key in dct.keys():
@@ -51,67 +28,22 @@ def processing_epoch(trainer, config, loaders, working_dir):
                 sqrt_dict(dct[key])
         return dct
 
-    """
-    def rescale_loss(loss_record: Dict[str, Dict[LossType, float]], scale: float):
-        for label in loss_record.keys():
-            loss_labeld = loss_record[label]
-            for loss_type in loss_labeld.keys():
-                loss_labeld[loss_type] = math.sqrt(loss_labeld[loss_type]) * scale
-
-    def rescale_specie_wise_floss(f_loss_record: Dict[str, float], scale: float):
-        for specie in f_loss_record.keys():
-            f_loss_record[specie] = math.sqrt(f_loss_record[specie]) * scale
-    """
-
-    # TODO: implement multiprocessing. Drawing graph is too expansive
-    def output(is_best):
-        """
-        by default, make all outputs if best (it will overwrite previous one)
-        """
+    def write_checkpoint(is_best=False, epoch=None):
         suffix = "_best" if is_best else f"_{epoch}"
-
-        if draw_lc:
-            draw_learning_curve(loss_history, f"{prefix}/learning_curve.png")
-        if is_deploy_model or is_best:
-            deploy(trainer.model.state_dict(), config,
-                   f"{prefix}/deployed_model{suffix}.pt")
-        if is_model_check_point or is_best:
-            checkpoint = trainer.get_checkpoint_dict()
-            checkpoint.update({'config': config, 'epoch': epoch})
-            torch.save(checkpoint, f"{prefix}/checkpoint{suffix}.pth")
-        if is_save_data_pickle or is_best:
-            info_parity = {"train": train_parity_set, "valid": valid_parity_set}
-            #torch.save(loss_hist_print, f"{prefix}/loss_hist{suffix}.pth")
-            torch.save(info_parity, f"{prefix}/parity_at{suffix}.pth")
-        if draw_parity or is_best:
-            pass
-            #dirty things inside plot.py
-            #draw_every_parity(train_parity_set, valid_parity_set,
-            #                  train_loss, valid_loss, f"{prefix}/parity_at{suffix}")
-
-    loss_history = {
-        DataSetType.TRAIN: {LossType.ENERGY: [], LossType.FORCE: []},
-        DataSetType.VALID: {LossType.ENERGY: [], LossType.FORCE: []}
-    }
+        checkpoint = trainer.get_checkpoint_dict()
+        checkpoint.update({'config': config, 'epoch': epoch})
+        torch.save(checkpoint, f"{prefix}/checkpoint{suffix}.pth")
 
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
         Logger().bar()
-        Logger().write(f"Epoch {epoch}/{total_epoch}\n")
+        Logger().write(f"Epoch {epoch}/{total_epoch}  learning_rate: {trainer.get_lr():8f}\n")
         Logger().bar()
 
-        train_parity_set, train_mse, train_specie_mse =\
+        train_mse, train_specie_mse, loss_dct =\
             trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
-        valid_parity_set, valid_mse, valid_specie_mse =\
+        valid_mse, valid_specie_mse, _ =\
             trainer.run_one_epoch(valid_loader, DataSetType.VALID)
-
-        valid_mse_tot = {k: np.mean(v) for k, v in valid_mse['total'].items()}
-        valid_loss = trainer.mse_loss(valid_mse_tot)
-
-        # subroutine for loss (rescale, record loss, ..)
-        postprocess_loss(train_mse, valid_mse,
-                         train_specie_mse, valid_specie_mse,
-                         1, loss_history)
 
         train_rmse = sqrt_dict(train_mse)
         valid_rmse = sqrt_dict(valid_mse)
@@ -120,20 +52,13 @@ def processing_epoch(trainer, config, loaders, working_dir):
 
         Logger().epoch_write_loss(train_rmse, valid_rmse)
         Logger().epoch_write_specie_wise_loss(train_specie_rmse, valid_specie_rmse)
+        Logger().epoch_write_train_loss(loss_dct)
         Logger().timer_end("epoch", message=f"Epoch {epoch} elapsed")
 
-        if epoch < skip_output_until:
-            continue
-
-        Logger().timer_start("output_write")
-        if valid_loss < min_loss:
-            min_loss = valid_loss
-            output(is_best=True)
-            Logger().write(f"output written at epoch(best): {epoch}\n")
-            # continue  # skip per epoch output if best is written
+        loss_tot = sum(loss_dct.values())
+        if loss_tot < min_loss:
+            min_loss = loss_tot
+            Logger().write(f"best train loss at epoch: {epoch}\n")
+            write_checkpoint(is_best=True)
         if epoch % per_epoch == 0:
-            output(is_best=False)
-            Logger().write(f"output written at epoch: {epoch}\n")
-        Logger().timer_end("output_write", message="Output write elapsed")
-    # deploy(best_model, config, f'{prefix}/deployed_model.pt')
-    # subroutine for loss (rescale, record loss, ..)
+            write_checkpoint(epoch=epoch)

@@ -118,6 +118,7 @@ class Trainer():
                 self.mse_hist[data_set_key][label] = \
                     {lt: [] for lt in self.loss_types}
 
+    """
     def mse_loss(self, mse_dct):
         energy_loss = mse_dct[LossType.ENERGY]
         force_loss = mse_dct[LossType.FORCE]
@@ -128,6 +129,7 @@ class Trainer():
         return energy_loss + \
             self.force_weight * force_loss / 3 + \
             self.stress_weight * stress_loss / 6
+    """
 
     def postprocess_output(self, output, loss_type: LossType, is_train: bool):
         # from the output of model, calculate mse, loss
@@ -189,11 +191,6 @@ class Trainer():
                       {lt: [] for lt in self.loss_types}
                       for label in self.user_labels}
         force_mse_by_atom_type = {at: [] for at in self.total_atom_type}
-        parity_set = {"labels": [], "species": []}
-        # save raw string instead of LossType for user
-        # this is really strange... better way? see plot.py parity plot
-        for y_value in ("energy", "force", "stress"):
-            parity_set.update({y_value: {"pred": [], "ref": []}})
 
         # iterate over batch
         for step, batch in enumerate(loader):
@@ -206,20 +203,16 @@ class Trainer():
             result = self.model(batch)
 
             mse_dct = {}
+            loss_dct = {}
             total_loss = None
             for loss_type in self.loss_types:
                 # loss is ignored if it is_train false
                 pred, ref, mse, loss = \
                     self.postprocess_output(result, loss_type, is_train)
                 total_loss = loss if total_loss is None else total_loss + loss
-
                 mse_dct[loss_type] = mse
-                str_key = str(loss_type.value)
-                parity_set[str_key]["pred"].extend(pred.tolist())
-                parity_set[str_key]["ref"].extend(ref.tolist())
-
-            parity_set["labels"].extend(label)
-            parity_set["species"].extend(atom_type_list)
+                if is_train:
+                    loss_dct[loss_type] = loss.item()
 
             # store postprocessed results to history
             # Before mean loss is required for structure-wise loss print
@@ -250,13 +243,16 @@ class Trainer():
             self.force_mse_hist_by_atom_type[set_type][atom_type].append(F_mse)
             specie_wise_mse_record[atom_type] = F_mse
 
-        return parity_set, mse_record, specie_wise_mse_record
+        return mse_record, specie_wise_mse_record, loss_dct
+
+    def get_lr(self):
+        return self.scheduler.get_last_lr()[0]
 
     def get_checkpoint_dict(self):
         return {'model_state_dict': self.model.state_dict(),
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
-                'loss': self.mse_hist}
+                'loss': self.mse_hist}  # not loss, mse
 
     def _update_epoch_mse(self, epoch_mse, user_label: list,
                            batch, mse_dct) -> dict:

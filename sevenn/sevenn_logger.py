@@ -74,7 +74,14 @@ class Logger(metaclass=Singleton):
             content += self.format_k_v(label, dct_new)
         self.write(content)
 
-    # TODO : refactoring!!!
+    def epoch_write_train_loss(self, loss):
+        content = ""
+        for label, val in loss.items():
+            content += self.format_k_v(str(label), f"{val:.6f}")
+        content += self.format_k_v("Total loss", f"{sum(loss.values()):.6f}")
+        self.write(content)
+
+    # TODO : refactoring!!!, this is not loss, rmse
     def epoch_write_specie_wise_loss(self, train_loss, valid_loss):
         lb_pad = 21
         fs = 6
@@ -103,7 +110,7 @@ class Logger(metaclass=Singleton):
             content += "\n"
         self.write(content)
 
-    # TODO : refactoring!!!
+    # TODO : refactoring!!!, this is not loss, rmse
     def epoch_write_loss(self, train_loss, valid_loss):
         lb_pad = 21
         fs = 6

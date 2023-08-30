@@ -24,47 +24,43 @@ def train(config: Dict, working_dir: str):
     random.seed(seed)
     torch.manual_seed(seed)
 
-    try:
-        # config updated
-        statistic_values, loaders, user_labels = \
-            processing_dataset(config, working_dir)
+    # config updated
+    statistic_values, loaders, user_labels = \
+        processing_dataset(config, working_dir)
 
-        #avg_num_neigh, shift, scale = statistic_values
-        #train_loader, valid_loader, test_loader = loaders
+    #avg_num_neigh, shift, scale = statistic_values
+    #train_loader, valid_loader, test_loader = loaders
 
-        Logger().write("\nModel building...\n")
-        model = build_E3_equivariant_model(config)
-        Logger().write("Model building was successful\n")
+    Logger().write("\nModel building...\n")
+    model = build_E3_equivariant_model(config)
+    Logger().write("Model building was successful\n")
 
-        optimizer_state_dict, scheduler_state_dict = None, None
+    optimizer_state_dict, scheduler_state_dict = None, None
 
-        # config updated
-        if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
-            optimizer_state_dict, scheduler_state_dict = \
-                processing_continue(config, model, statistic_values)
+    # config updated
+    if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
+        optimizer_state_dict, scheduler_state_dict = \
+            processing_continue(config, model, statistic_values)
 
-        trainer = Trainer(
-            model, user_labels, config,
-            optimizer_state_dict=optimizer_state_dict,
-            scheduler_state_dict=scheduler_state_dict
-        )
+    trainer = Trainer(
+        model, user_labels, config,
+        optimizer_state_dict=optimizer_state_dict,
+        scheduler_state_dict=scheduler_state_dict
+    )
 
-        num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        Logger().write(f"Total number of weight in model is {num_weights}\n")
-        Logger().write("Trainer initialized. The program is ready to training\n")
+    num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    Logger().write(f"Total number of weight in model is {num_weights}\n")
+    Logger().write("Trainer initialized. The program is ready to training\n")
 
-        Logger().write("Note that...\n")
-        Logger().write("Energy unit of rmse: eV/atom\n")
-        Logger().write("Force unit of rmse: eV/Angstrom\n")
-        Logger().write("Stress unit of rmse: kB\n")
+    Logger().write("Note that...\n")
+    Logger().write("Energy unit of rmse: eV/atom\n")
+    Logger().write("Force unit of rmse: eV/Angstrom\n")
+    Logger().write("Stress unit of rmse: kB\n")
 
-        Logger().bar()
+    Logger().bar()
 
-        processing_epoch(trainer, config, loaders, working_dir)
-        Logger().timer_end("total", message="Total wall time")
-    except Exception as e:
-        Logger().error(e)
-        sys.exit(1)
+    processing_epoch(trainer, config, loaders, working_dir)
+    Logger().timer_end("total", message="Total wall time")
 
 
 """

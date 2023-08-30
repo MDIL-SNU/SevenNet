@@ -84,10 +84,7 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.SCHEDULER: 'exponentiallr',
     KEY.FORCE_WEIGHT: 0.1,
     KEY.STRESS_WEIGHT: 1e-6,  # SIMPLE-NN default
-    KEY.SKIP_OUTPUT_UNTIL: 20,
-    KEY.OUTPUT_PER_EPOCH: 10,  # False or positive integer
-    KEY.DRAW_LC: True,
-    KEY.DRAW_PARITY: True,
+    KEY.PER_EPOCH: 5,
     KEY.USE_TESTSET: False,
     KEY.CONTINUE: {
         # KEY.CHECKPOINT: False, > handled manually in parse_input
@@ -97,14 +94,6 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRACE_STRESS: False,
     KEY.IS_TRAIN_STRESS: True,
-
-    KEY.OUTPUT_PER_EPOCH: {
-        KEY.PER_EPOCH: 30,
-        KEY.DRAW_PARITY: False,
-        KEY.MODEL_CHECK_POINT: True,
-        KEY.DEPLOY_MODEL: True,
-        KEY.SAVE_DATA_PICKLE: False,
-    }
 }
 
 
@@ -146,18 +135,9 @@ TRAINING_CONFIG_CONDITION = {
     KEY.EPOCH: is_positive,
     KEY.FORCE_WEIGHT: is_positive,
     KEY.STRESS_WEIGHT: lambda x: x is None or is_positive(x),
-    KEY.SKIP_OUTPUT_UNTIL: is_positive,
-    KEY.DRAW_LC: None,
-    KEY.DRAW_PARITY: None,
     KEY.USE_TESTSET: None,
     KEY.NUM_WORKERS: is_positive,
-    KEY.OUTPUT_PER_EPOCH: {
-        KEY.PER_EPOCH: lambda x: is_positive(x) or x is False,
-        KEY.DRAW_PARITY: None,
-        KEY.MODEL_CHECK_POINT: None,
-        KEY.DEPLOY_MODEL: None,
-        KEY.SAVE_DATA_PICKLE: None,
-    },
+    KEY.PER_EPOCH: lambda x: is_positive(x) or x is False,
     KEY.CONTINUE: {
         KEY.CHECKPOINT: None,
         KEY.RESET_OPTIMIZER: None,

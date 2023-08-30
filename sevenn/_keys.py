@@ -99,16 +99,10 @@ RESET_SCHEDULER: Final[str] = "reset_scheduler"
 NUM_WORKERS: Final[str] = "_num_workers"  # not work
 
 # ~~~~~~~~ KEY for output configuration ~~~~~~~~~~~ #
-SKIP_OUTPUT_UNTIL: Final[str] = "skip_output_until"
-DRAW_LC: Final[str] = "draw_learning_curve"
 
-OUTPUT_PER_EPOCH: Final[str] = "output_per_epoch"
 # blow 4 keys are child of output_per_epoch
 PER_EPOCH: Final[str] = "per_epoch"
-DRAW_PARITY: Final[str] = "draw_parity"
-MODEL_CHECK_POINT: Final[str] = "model_check_point"
-DEPLOY_MODEL: Final[str] = "deploy_model"
-SAVE_DATA_PICKLE: Final[str] = "save_data_pickle"
+
 
 #==================================================#
 # ~~~~~~~~ KEY for model configuration ~~~~~~~~~~~ #
@@ -147,3 +141,12 @@ SHIFT: Final[str] = "shift"
 SCALE: Final[str] = "scale"
 TRAIN_SHIFT_SCALE = "train_shift_scale"
 TRAIN_AVG_NUM_NEIGH = "train_avg_num_neigh"
+
+# deprecated
+DRAW_PARITY: Final[str] = "draw_parity"
+MODEL_CHECK_POINT: Final[str] = "model_check_point"
+DEPLOY_MODEL: Final[str] = "deploy_model"
+SAVE_DATA_PICKLE: Final[str] = "save_data_pickle"
+SKIP_OUTPUT_UNTIL: Final[str] = "skip_output_until"
+DRAW_LC: Final[str] = "draw_learning_curve"
+OUTPUT_PER_EPOCH: Final[str] = "output_per_epoch"
