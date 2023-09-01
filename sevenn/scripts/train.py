@@ -45,7 +45,7 @@ def train(config: Dict, working_dir: str):
     trainer = Trainer(
         model, user_labels, config,
         optimizer_state_dict=optimizer_state_dict,
-        scheduler_state_dict=scheduler_state_dict
+        scheduler_state_dict=scheduler_state_dict,
     )
 
     num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)

@@ -41,7 +41,7 @@ class Trainer():
         ref_force_key: str = KEY.FORCE,
         stress_key: str = KEY.PRED_STRESS,
         ref_stress_key: str = KEY.STRESS,
-        optimizer_state_dict=None, scheduler_state_dict=None
+        optimizer_state_dict=None, scheduler_state_dict=None,
     ):
         """
         note that energy key is 'per-atom'
@@ -107,13 +107,13 @@ class Trainer():
         # initialize loss history containers
         # mse_hist is 3-dim: [DataSetType][Label][LossType]
         # force_mse_hist is 2-dim: [DataSetType][Specie]
+
         self.mse_hist = {}
         self.force_mse_hist_by_atom_type = {}
         for data_set_key in DataSetType:
             self.mse_hist[data_set_key] = {}
             self.force_mse_hist_by_atom_type[data_set_key] = \
                 {at: [] for at in total_atom_type}
-
             for label in self.user_labels:
                 self.mse_hist[data_set_key][label] = \
                     {lt: [] for lt in self.loss_types}

@@ -48,6 +48,7 @@ def check_config_compatible(config, config_cp):
 
 
 def processing_continue(config, model, statistic_values):
+    # model is updated here, not returned
 
     avg_num_neigh, shift, scale = statistic_values
     continue_dct = config[KEY.CONTINUE]
@@ -63,7 +64,6 @@ def processing_continue(config, model, statistic_values):
         None if reset_optimizer else checkpoint['optimizer_state_dict']
     scheduler_state_dict = \
         None if reset_scheduler else checkpoint['scheduler_state_dict']
-    loss_cp = checkpoint['loss']
     config_cp = checkpoint['config']
 
     if(avg_num_neigh != config_cp[KEY.AVG_NUM_NEIGHBOR]
@@ -92,5 +92,3 @@ def processing_continue(config, model, statistic_values):
     Logger().write(f"checkpoint previous epoch was: {from_epoch}\n")
     Logger().write("checkpoint loading was successful\n")
     return optimizer_state_dict, scheduler_state_dict
-
-

@@ -20,7 +20,7 @@ setup(
     entry_points={
         "console_scripts": [
             "sevenn = sevenn.main.sevenn:main",
-            "sevenn_get_parallel = sevenn.main.sevenn_get_parallel:main",
+            "sevenn_get_model = sevenn.main.sevenn_get_model:main",
             "sevenn_graph_build = sevenn.main.sevenn_graph_build:main"
         ]
     }
