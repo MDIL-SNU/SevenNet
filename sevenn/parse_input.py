@@ -275,17 +275,19 @@ def init_data_config(config: dict):
         data_meta[KEY.STRUCTURE_LIST] = False  # this is default
 
     # same as above
-    if KEY.LOAD_DATASET in config.keys():
-        inp = config[KEY.LOAD_DATASET]
-        if type(inp) not in [str, list]:
-            raise ValueError(f"unexpected input {inp} for sturcture_list")
-        if type(inp) is str:
-            inp = [inp]
-        #if all([os.path.isfile(f) for f in inp]) is False:
-        #    raise ValueError("given load_data does not exist")
-        data_meta[KEY.LOAD_DATASET] = inp
-    else:
-        data_meta[KEY.LOAD_DATASET] = False
+    for load_data_key in [KEY.LOAD_DATASET, KEY.LOAD_VALIDSET]:
+        if load_data_key in config.keys():
+            inp = config[load_data_key]
+            if type(inp) not in [str, list]:
+                raise ValueError(f"unexpected input {inp} for sturcture_list")
+            if type(inp) is str:
+                inp = [inp]
+            # to allow glob work...
+            #if all([os.path.isfile(f) for f in inp]) is False:
+            #    raise ValueError("given load_data does not exist")
+            data_meta[load_data_key] = inp
+        else:
+            data_meta[load_data_key] = False
 
     if KEY.SAVE_DATASET in config.keys():
         inp = config[KEY.SAVE_DATASET]

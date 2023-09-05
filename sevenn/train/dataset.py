@@ -94,7 +94,7 @@ class AtomGraphDataset:
             datum[data_key] = len(info_list) - 1
         self.info_list = info_list
 
-        return data_list, info_list
+        return (data_list, info_list)
 
     def get_species(self):
         """
@@ -216,9 +216,10 @@ class AtomGraphDataset:
             natoms[label] = Counter()
             for datum in data:
                 # list of atomic number
-                Zs = [chemical_symbols[z] for z in datum[self.DATA_KEY_X].tolist()]
                 if self.x_is_one_hot_idx:
-                    Zs = [type_map_rev[z] for z in Zs]
+                    Zs = [chemical_symbols[type_map_rev[z]] for z in datum[self.DATA_KEY_X].tolist()]
+                else:
+                    Zs = [chemical_symbols[z] for z in datum[self.DATA_KEY_X].tolist()]
                 cnt = Counter(Zs)
                 natoms[label] += cnt
             natoms[label] = dict(natoms[label])
@@ -298,14 +299,13 @@ class AtomGraphDataset:
             cutoff2 = dataset2.cutoff
             cut_consis = cutoff1 == cutoff2
             # compare unordered lists
-            try:
-                chem_1 = Counter(meta1[KEY.CHEMICAL_SPECIES])
-                chem_2 = Counter(meta2[KEY.CHEMICAL_SPECIES])
-                chem_consis = chem_1 == chem_2
-            except KeyError:
-                chem_consis = dataset1.x_is_one_hot_idx is False \
-                    and dataset2.x_is_one_hot_idx is False
-
+            chem_1 = Counter(meta1[KEY.CHEMICAL_SPECIES])
+            chem_2 = Counter(meta2[KEY.CHEMICAL_SPECIES])
+            # if both are not one-hot-idx (are atomic number)
+            # the chem species can be initialized from that
+            chem_consis = chem_1 == chem_2 or \
+                (dataset1.x_is_one_hot_idx is False
+                 and dataset2.x_is_one_hot_idx is False)
             return cut_consis and chem_consis
         if validator is None:
             validator = default_validator
@@ -329,6 +329,7 @@ class AtomGraphDataset:
         for data in self.to_list():
             del data[key]
 
+    # TODO: this by_label is not straightforward
     def save(self, path, by_label=False):
         """
         with open(path, 'wb') as f:
@@ -341,4 +342,6 @@ class AtomGraphDataset:
                 torch.save(AtomGraphDataset({label: data}, self.cutoff,
                                             metadata=self.meta), to)
         else:
+            if path.endswith('.sevenn_data') is False:
+                path += '.sevenn_data'
             torch.save(self, path)

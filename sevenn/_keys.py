@@ -66,11 +66,13 @@ INFO: Final[str] = "data_info"
 #==================================================#
 # ~~~~~~~~ KEY for train configuration ~~~~~~~~~~~ #
 #==================================================#
-STRUCTURE_LIST: Final[str] = "structure_list"
 PREPROCESS_NUM_CORES: Final[str] = "preprocess_num_cores"
 SAVE_DATASET: Final[str] = "save_dataset_path"
 SAVE_BY_LABEL: Final[str] = "save_by_label"
+SAVE_BY_TRAIN_VALID: Final[str] = "save_by_train_valid"
+STRUCTURE_LIST: Final[str] = "structure_list"
 LOAD_DATASET: Final[str] = "load_dataset_path"
+LOAD_VALIDSET: Final[str] = "load_validset_path"
 FORMAT_OUTPUTS: Final[str] = "format_outputs_for_ase"
 
 RANDOM_SEED: Final[str] = "random_seed"

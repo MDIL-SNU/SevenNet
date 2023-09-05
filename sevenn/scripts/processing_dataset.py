@@ -65,7 +65,7 @@ def from_sevenn_data(load_dataset):
             else:
                 dataset.augment(torch.load(file))
             Logger().write(f"loading {file} is done\n")
-            Logger().format_k_v("current dataset size is",
+            Logger().format_k_v("current dataset size from load_dataset is",
                                 dataset.len(), write=True)
     Logger().timer_end("loading dataset", "data set loading time")
     return dataset
@@ -84,47 +84,33 @@ def init_dataset(data_config, working_dir):
             full_dataset = from_sevenn_data(data_config[KEY.LOAD_DATASET])
         else:
             full_dataset.augment(from_sevenn_data(data_config[KEY.LOAD_DATASET]))
-
+    Logger().format_k_v("\nfinal dataset size is", full_dataset.len(), write=True)
     full_dataset.group_by_key()  # apply labels inside original datapoint
-    # TODO: make info_list accessible from somewhere during, after training
-    #       It gives metadata of each data point
-    info_list = full_dataset.seperate_info()
     full_dataset.unify_dtypes()  # unify dtypes of all data points
-
-    prefix = f"{os.path.abspath(working_dir)}/"
-    save_dataset = data_config[KEY.SAVE_DATASET]
-    save_by_label = data_config[KEY.SAVE_BY_LABEL]
-    if save_dataset:
-        if save_dataset.endswith('.sevenn_data') is False:
-            save_dataset += '.sevenn_data'
-        if (save_dataset.startswith('.') or save_dataset.startswith('/')) is False:
-            save_dataset = prefix + save_dataset  # save_data set is plain file name
-        full_dataset.save(save_dataset)
-        Logger().format_k_v("Dataset saved to", save_dataset, write=True)
-        #Logger().write(f"Loaded full dataset saved to : {save_dataset}\n")
-    if save_by_label:
-        full_dataset.save(prefix, True)
-        Logger().format_k_v("Dataset saved by label", prefix, write=True)
 
     return full_dataset
 
 
 def processing_dataset(config, working_dir):
     # note that type_map is based on user input(chemical_species)
+    prefix = f"{os.path.abspath(working_dir)}/"
+
     Logger().write("\nInitializing dataset...\n")
+    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
     dataset = init_dataset(config, working_dir)
     Logger().write("Dataset initialization was successful\n")
 
+    # TODO: make info_list accessible from somewhere during, after training
+    #       It gives metadata of each data point
+    info_tuple = dataset.seperate_info()
+
+    # initialize type_map chemical_species and so on based on total dataset
     if config[KEY.CHEMICAL_SPECIES] == "auto":
         input_chem = dataset.get_species()
         config.update(chemical_species_preprocess(input_chem))
-    natoms = dataset.get_natoms()
-    dataset.x_to_one_hot_idx(config[KEY.TYPE_MAP])
 
-    Logger().write("\nNumber of atoms in total dataset:\n")
-    Logger().natoms_write(natoms)
-
-    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
+    Logger().write("\nNumber of atoms in the dataset:\n")
+    Logger().natoms_write(dataset.get_natoms(config[KEY.TYPE_MAP]))
 
     Logger().bar()
     Logger().write("Per atom energy(eV/atom) distribution:\n")
@@ -153,14 +139,54 @@ def processing_dataset(config, working_dir):
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
     # calculate shift and scale from dataset
+    # TODO: testset is not used
     ignore_test = not config[KEY.USE_TESTSET]
-    train_set, valid_set, test_set = \
-        dataset.divide_dataset(config[KEY.RATIO], ignore_test=ignore_test)
-    Logger().write("The dataset divided into train, valid, test set\n")
+    if config[KEY.LOAD_VALIDSET] is not False:
+        train_set = dataset
+        test_set = AtomGraphDataset([], config[KEY.CUTOFF])
+        Logger().write("Loading validset from load_validset\n")
+        valid_set = from_sevenn_data(config[KEY.LOAD_VALIDSET])
+        valid_set.group_by_key()
+        valid_set.unify_dtypes()
+        if is_stress:
+            valid_set.toggle_requires_grad_of_data(KEY.POS, True)
+        else:
+            valid_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
+        Logger().write("WARNING! the validset loaded ratio will be ignored\n")
+    else:
+        train_set, valid_set, test_set = \
+            dataset.divide_dataset(config[KEY.RATIO], ignore_test=ignore_test)
+        Logger().write(f"The dataset divided into train, valid by {KEY.RATIO}\n")
+
+    save_dataset = config[KEY.SAVE_DATASET]
+    save_by_label = config[KEY.SAVE_BY_LABEL]
+    save_by_train_valid = config[KEY.SAVE_BY_TRAIN_VALID]
+    if save_dataset:
+        if save_dataset.endswith('.sevenn_data') is False:
+            save_dataset += '.sevenn_data'
+        if (save_dataset.startswith('.') or save_dataset.startswith('/')) is False:
+            save_dataset = prefix + save_dataset  # save_data set is plain file name
+        dataset.save(save_dataset)
+        Logger().format_k_v("Dataset saved to", save_dataset, write=True)
+        #Logger().write(f"Loaded full dataset saved to : {save_dataset}\n")
+    if save_by_label:
+        full_dataset.save(prefix, by_label=True)
+        Logger().format_k_v("Dataset saved by label", prefix, write=True)
+    if save_by_train_valid:
+        train_set.save(prefix + "train")
+        valid_set.save(prefix + "valid")
+        Logger().format_k_v("Dataset saved by train, valid", prefix, write=True)
+
+    # make sure x is one hot index
+    if train_set.x_is_one_hot_idx is False:
+        train_set.x_to_one_hot_idx(config[KEY.TYPE_MAP])
+    if valid_set.x_is_one_hot_idx is False:
+        valid_set.x_to_one_hot_idx(config[KEY.TYPE_MAP])
+
     Logger().write(Logger.format_k_v("training_set size", train_set.len()))
     Logger().write(Logger.format_k_v("validation_set size", valid_set.len()))
-    Logger().write(Logger.format_k_v("test_set size", test_set.len()
-                                     if test_set is not None else 0))
+    #Logger().write(Logger.format_k_v("test_set size", test_set.len()
+    #                                 if test_set is not None else 0))
 
     Logger().write("\nCalculating shift and scale from training set...\n")
     #shift, scale = train_set.shift_scale_dataset()
@@ -188,7 +214,6 @@ def processing_dataset(config, working_dir):
     valid_loader = DataLoader(valid_set.to_list(), batch_size,
                               num_workers=num_workers,)
     if test_set is not None:
-        #test_set.shift_scale_dataset(shift=shift, scale=scale)
         test_loader = DataLoader(test_set.to_list(), batch_size)
 
     statistic_values = (avg_num_neigh, shift, scale)
