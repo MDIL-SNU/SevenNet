@@ -163,6 +163,8 @@ If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3
 
 * When parsing VASP `OUTCARs` with `structure_list`, if the folder contains a `POSCAR` with selective dynamics, it does not read the `OUTCAR` correctly.
 * When parsing VASP `OUTCARs` with `structure_list`, spin polarized calculations are not yet supported.
+  
   ---------------- The above issues are pathced in dev branch -------------------
+
 * The calculated stress on `LAMMPS` is incorrect.
 * When inference with LAMMPS, if the cell is too small (one of cell dimension < cutoff radius), the calculated result is incorrect 
