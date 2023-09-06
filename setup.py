@@ -21,7 +21,8 @@ setup(
         "console_scripts": [
             "sevenn = sevenn.main.sevenn:main",
             "sevenn_get_model = sevenn.main.sevenn_get_model:main",
-            "sevenn_graph_build = sevenn.main.sevenn_graph_build:main"
+            "sevenn_graph_build = sevenn.main.sevenn_graph_build:main",
+            "sevenn_inference = sevenn.main.sevenn_inference:main"
         ]
     }
 )
