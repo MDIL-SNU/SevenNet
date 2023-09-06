@@ -6,7 +6,6 @@ import torch
 import e3nn.util.jit
 from ase.data import chemical_symbols
 
-from sevenn.atom_graph_data import AtomGraphData
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.sequential import AtomGraphSequential
@@ -153,11 +152,15 @@ def deploy_parallel(model_state_dct, config, fname):
     # TODO: this code is error prone
     comm_size = model_list[-1][1].convolution.irreps_in1.dim
 
+    # TODO: I think this is somewhat dangerous...
+    shift = model_state_dct["rescale.shift"].item()
+    scale = model_state_dct["rescale.scale"].item()
+
     md_configs.update({"chemical_symbols_to_index": chem_list})
     md_configs.update({"cutoff": str(config[KEY.CUTOFF])})
     md_configs.update({"num_species": str(config[KEY.NUM_SPECIES])})
-    md_configs.update({"shift": str(config[KEY.SHIFT])})
-    md_configs.update({"scale": str(config[KEY.SCALE])})
+    md_configs.update({"shift": str(shift)})
+    md_configs.update({"scale": str(scale)})
     md_configs.update({"comm_size": str(comm_size)})
     md_configs.update({"model_type": config[KEY.MODEL_TYPE]})
     md_configs.update({"version": _const.SEVENN_VERSION})
