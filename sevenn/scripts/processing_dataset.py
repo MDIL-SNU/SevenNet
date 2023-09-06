@@ -100,10 +100,6 @@ def processing_dataset(config, working_dir):
     dataset = init_dataset(config, working_dir)
     Logger().write("Dataset initialization was successful\n")
 
-    # TODO: make info_list accessible from somewhere during, after training
-    #       It gives metadata of each data point
-    info_tuple = dataset.seperate_info()
-
     # initialize type_map chemical_species and so on based on total dataset
     if config[KEY.CHEMICAL_SPECIES] == "auto":
         input_chem = dataset.get_species()
@@ -158,6 +154,7 @@ def processing_dataset(config, working_dir):
             dataset.divide_dataset(config[KEY.RATIO], ignore_test=ignore_test)
         Logger().write(f"The dataset divided into train, valid by {KEY.RATIO}\n")
 
+    # If I did right job, saved data must have atomic numbers as X not one hot idx
     save_dataset = config[KEY.SAVE_DATASET]
     save_by_label = config[KEY.SAVE_BY_LABEL]
     save_by_train_valid = config[KEY.SAVE_BY_TRAIN_VALID]
@@ -176,6 +173,10 @@ def processing_dataset(config, working_dir):
         train_set.save(prefix + "train")
         valid_set.save(prefix + "valid")
         Logger().format_k_v("Dataset saved by train, valid", prefix, write=True)
+
+    # TODO: Maybe it is need during training for logging?
+    _, _ = train_set.seperate_info()
+    _, _ = valid_set.seperate_info()
 
     # make sure x is one hot index
     if train_set.x_is_one_hot_idx is False:
@@ -218,4 +219,9 @@ def processing_dataset(config, working_dir):
 
     statistic_values = (avg_num_neigh, shift, scale)
     loaders = (train_loader, valid_loader, test_loader)
-    return statistic_values, loaders, dataset.user_labels
+
+    # TODO: After I indtroduce valid_set manually, there is chance that
+    #       the user_labels is not the same as the dataset.user_labels
+    #       the case is not debugged!
+    user_labels = dataset.user_labels.copy()
+    return statistic_values, loaders, user_labels

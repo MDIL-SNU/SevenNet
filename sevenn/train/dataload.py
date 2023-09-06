@@ -1,3 +1,4 @@
+import os.path
 from typing import List, Optional, Dict
 from itertools import islice
 import pickle
@@ -74,11 +75,6 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     atomic_numbers = atoms.get_atomic_numbers()
 
     cell = np.array(cell)
-    #print(type(cell))
-    #print(type(cell_shift))
-    #print(cell_shift.dtype)
-    #print(cell)
-    #print(cell_shift)
 
     data = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -357,7 +353,7 @@ def parse_structure_list(filename: str, format_outputs='vasp-out'):
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
                 it_atoms = islice(gen_all, index.start, index.stop, index.step)
-                info_dct_f = {**info_dct, "file": expanded_filename}
+                info_dct_f = {**info_dct, "file": os.path.abspath(expanded_filename)}
                 for idx, o in enumerate(it_atoms):
                     try:
                         istep = index.start + idx * index.step
