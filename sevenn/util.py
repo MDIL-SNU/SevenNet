@@ -1,13 +1,32 @@
 import numpy as np
 import torch
-from ase.data import atomic_numbers
 
 import sevenn._keys as KEY
 import sevenn._const
-from sevenn.nn.node_embedding import get_type_mapper_from_specie
+
+
+def load_model_from_checkpoint(checkpoint):
+    from sevenn.model_build import build_E3_equivariant_model
+    if isinstance(checkpoint, str):
+        checkpoint = torch.load(checkpoint)
+    elif isinstance(checkpoint, dict):
+        pass
+    else:
+        raise ValueError("checkpoint must be either str or dict")
+
+    #mse_hist = checkpoint["loss"]
+    model_state_dict = checkpoint["model_state_dict"]
+    config = checkpoint["config"]
+
+    model = build_E3_equivariant_model(config)
+    model.load_state_dict(model_state_dict, strict=False)
+
+    return model
 
 
 def chemical_species_preprocess(input_chem):
+    from ase.data import atomic_numbers
+    from sevenn.nn.node_embedding import get_type_mapper_from_specie
     config = {}
     chemical_specie = sorted([x.strip() for x in input_chem])
     config[KEY.CHEMICAL_SPECIES] = chemical_specie

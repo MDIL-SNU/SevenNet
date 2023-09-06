@@ -18,6 +18,7 @@ class AtomGraphDataset:
     the dataset is handled as dict, {label: data}
     if given data is List, it stores data as {KEY_DEFAULT: data}
 
+    cutoff is for metadata of the graphs not used for some calc
     Every data expected to have one unique cutoff
     No validity or check of the condition is done inside the object
 
@@ -84,13 +85,13 @@ class AtomGraphDataset:
     def seperate_info(self, data_key=KEY.INFO):
         """
         seperate info from data and save it as list of dict
-        to make it compatible with torch_geometric
+        to make it compatible with torch_geometric and later training
         """
         data_list = self.to_list()
         info_list = []
         for datum in data_list:
             info_list.append(datum[data_key])
-            del datum[data_key]  # It really changes the self.dataset
+            del datum[data_key]  # It does change the self.dataset
             datum[data_key] = len(info_list) - 1
         self.info_list = info_list
 

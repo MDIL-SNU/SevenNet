@@ -2,13 +2,12 @@ import argparse
 
 import torch
 
-from sevenn._const import SEVENN_VERSION
 from sevenn.scripts.deploy import deploy_parallel, deploy
 import sevenn._const as _const
 import sevenn._keys as KEY
 
 description_get_model = \
-    f"sevenn version={SEVENN_VERSION}, sevenn_get_model"\
+    f"sevenn version={_const.SEVENN_VERSION}, sevenn_get_model"\
     + ": deploy model from checkpoint"
 checkpoint_help = "checkpoint to make model"
 output_name_help = "prefix of deployed model"
@@ -32,7 +31,7 @@ def main(args=None):
     defaults.update(_const.DEFAULT_TRAINING_CONFIG)
     for k_d, v_d in defaults.items():
         if k_d not in config.keys():
-            print(f"{k_d} was not found in givne config")
+            print(f"{k_d} was not found in given config")
             print(f"{v_d} inserted as defaults")
             config[k_d] = v_d
 

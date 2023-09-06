@@ -15,6 +15,7 @@ import sevenn._keys as KEY
 
 
 # TODO: E3_equivariant model assumed
+# TODO: More clear logging
 def train(config: Dict, working_dir: str):
     """
     Main program flow
