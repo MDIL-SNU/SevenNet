@@ -134,6 +134,7 @@ class ForceStressOutput(nn.Module):
         self.KEY_ENERGY = data_key_energy
         self.KEY_FORCE = data_key_force
         self.KEY_STRESS = data_key_stress
+        self._is_batch_data = True
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         pos_tensor = data[self.KEY_POS]
@@ -144,13 +145,20 @@ class ForceStressOutput(nn.Module):
 
         force = torch.neg(grad[0])
         data[self.KEY_FORCE] = force
-        volume = data[KEY.CELL_VOLUME]
-        stress = grad[1] / volume.view(-1, 1, 1)
-        stress = torch.neg(stress)
 
-        voigt_stress = \
-            torch.vstack((stress[:, 0, 0], stress[:, 1, 1], stress[:, 2, 2],
-                          stress[:, 0, 1], stress[:, 1, 2], stress[:, 0, 2]))
-        data[self.KEY_STRESS] = voigt_stress.transpose(0, 1)
+        volume = data[KEY.CELL_VOLUME]
+        if self._is_batch_data:
+            stress = grad[1] / volume.view(-1, 1, 1)
+            stress = torch.neg(stress)
+            voigt_stress = \
+                torch.vstack((stress[:, 0, 0], stress[:, 1, 1], stress[:, 2, 2],
+                              stress[:, 0, 1], stress[:, 1, 2], stress[:, 0, 2]))
+            data[self.KEY_STRESS] = voigt_stress.transpose(0, 1)
+        else:
+            stress = grad[1] / volume
+            stress = torch.neg(stress)
+            voigt_stress = torch.tensor([stress[0, 0], stress[1, 1], stress[2, 2],
+                                         stress[0, 1], stress[1, 2], stress[0, 2]])
+            data[self.KEY_STRESS] = voigt_stress
 
         return data

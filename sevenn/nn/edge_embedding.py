@@ -7,7 +7,6 @@ from e3nn.o3 import Irreps
 from e3nn.o3 import SphericalHarmonics
 from e3nn.util.jit import compile_mode
 
-from sevenn.atom_graph_data import AtomGraphData
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
@@ -16,7 +15,7 @@ from sevenn._const import AtomGraphDataType
 class EdgePreprocess(nn.Module):
     """
     preprocessing pos to edge vectors and edge lengths
-    actually this is calculation is duplicated.
+    actually, this is calculation is redundant.
     but required for pos.requires_grad to work
 
     initialize edge_vec and edge_length
@@ -31,15 +30,17 @@ class EdgePreprocess(nn.Module):
         self._is_batch_data = True
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        cell = data[KEY.CELL].view(-1, 3, 3)
+        if self._is_batch_data:
+            cell = data[KEY.CELL].view(-1, 3, 3)
+        else:
+            cell = data[KEY.CELL].view(3, 3)
         cell_shift = data[KEY.CELL_SHIFT]
-        batch = data[KEY.BATCH]
         pos = data[KEY.POS]
 
-        num_batch = int(batch.max().cpu().item()) + 1
-
-        if self._is_batch_data:  # Only for training mode
-            if self.is_stress:
+        if self.is_stress:
+            if self._is_batch_data:  # Only for training mode
+                batch = data[KEY.BATCH]
+                num_batch = int(batch.max().cpu().item()) + 1
                 strain = torch.zeros((num_batch, 3, 3),
                                      dtype=pos.dtype,
                                      device=pos.device,)
@@ -51,6 +52,16 @@ class EdgePreprocess(nn.Module):
                 pos = pos + \
                     torch.bmm(pos.unsqueeze(-2), sym_strain[batch]).squeeze(-2)
                 cell = cell + torch.bmm(cell, sym_strain)
+            else:
+                strain = torch.zeros((3, 3),
+                                     dtype=pos.dtype,
+                                     device=pos.device,)
+                strain.requires_grad_(True)
+                data["_strain"] = strain
+
+                sym_strain = 0.5 * (strain + strain.transpose(-1, -2))
+                pos = pos + torch.mm(pos, sym_strain)
+                cell = cell + torch.mm(cell, sym_strain)
 
         idx_src = data[KEY.EDGE_IDX][0]
         idx_dst = data[KEY.EDGE_IDX][1]
