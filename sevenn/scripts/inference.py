@@ -5,6 +5,8 @@ from typing import List
 import torch
 import numpy as np
 
+from tqdm import tqdm
+
 from ase import io, Atoms
 from ase.calculators.singlepoint import SinglePointCalculator
 
@@ -218,7 +220,6 @@ def inference_main(checkpoint, fnames, output_path, num_cores=1, device="cpu"):
     type_map = config[KEY.TYPE_MAP]
 
     model = load_model_from_checkpoint(checkpoint)
-    model.to(device)
     model.set_is_batch_data(False)
     model.eval()
 
@@ -245,8 +246,9 @@ def inference_main(checkpoint, fnames, output_path, num_cores=1, device="cpu"):
     infer_list = inference_set.to_list()
     output_list = []
 
+    model.to(device)
     # TODO: make it multicore parallel (you know it is not pickable directly...)
-    for datum in infer_list:
+    for datum in tqdm(infer_list):
         datum.to(device)
         output = model(datum)
         output_list.append(output)
