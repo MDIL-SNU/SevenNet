@@ -157,8 +157,8 @@ class ForceStressOutput(nn.Module):
         else:
             stress = grad[1] / volume
             stress = torch.neg(stress)
-            voigt_stress = torch.tensor([stress[0, 0], stress[1, 1], stress[2, 2],
-                                         stress[0, 1], stress[1, 2], stress[0, 2]])
+            voigt_stress = torch.stack((stress[0, 0], stress[1, 1], stress[2, 2],
+                                        stress[0, 1], stress[1, 2], stress[0, 2]))
             data[self.KEY_STRESS] = voigt_stress
 
         return data
