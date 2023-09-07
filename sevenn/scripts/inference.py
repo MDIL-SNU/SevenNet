@@ -244,11 +244,10 @@ def inference_main(checkpoint, fnames, output_path, num_cores=1, device="cpu"):
 
     infer_list = inference_set.to_list()
     output_list = []
-    for datum in infer_list:
-        datum.to(device)
 
     # TODO: make it multicore parallel (you know it is not pickable directly...)
     for datum in infer_list:
+        datum.to(device)
         output = model(datum)
         output_list.append(output)
 
