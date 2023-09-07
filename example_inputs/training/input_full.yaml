@@ -44,19 +44,8 @@ train:
     stress_loss_weight  : 1e-06                   # Coefficient for stress loss
 
     # By default, SEVENNet prints the batch RMSE of validation and training every epoch.
-    # Outputs include learning_curve, serialized model, parity low data, and checkpoint. These outputs are generated every 'best' epoch or 'per_epoch'
-    # It is recommended not to use per_epoch too frequently as it is optional, and the best results are available by default
 
-    skip_output_until: 3                          # Do not create output files (learning curve, serialized models, etc) until this epoch
-    draw_learning_curve: True
-
-    # Note that outputs for the best loss are written by default. These options are for tracking detailed information during learning
-    output_per_epoch: 
-        per_epoch: 5                              # Generate epoch every this number of times
-        save_data_pickle: False                   # Raw data includes every RMSE for each structure
-        # draw_parity: True  # unstable           # Under development
-        deploy_model: True                        # Deploy serialized model every per_epoch
-        model_check_point: False                  # Generate checkpoint every per_epoch
+    per_epoch: 5                              # Generate checkpoint
 
     # Continue training from a checkpoint. If you augment the dataset, recalculated shift, scale, avg_num_neigh will be used
     # Also, you can enable train_shift_scale or train_avg_num_neigh
@@ -64,7 +53,7 @@ train:
     # continue: 
     #    reset_optimizer: False 
     #    reset_scheduler: False 
-    #    checkpoint: False
+    #    checkpoint: "path_to_previous_checkpoint/checkpoint_best.pth"
 
 data:
     batch_size: 2                                 # Batch size. If training fails due to memory shortage, lower this value
@@ -74,9 +63,8 @@ data:
     # https://simple-nn-v2.readthedocs.io/en/latest/inputs/structure_list.html
     structure_list: ['./structure_list']          # Path to structure list. This can be a list 
     #load_dataset_path: ['./total.sevenn_data']   # Load saved dataset by save_dataset_path. This can be a list
+    #load_validset_path: './valid.sevenn_data'    # Use validset explicitly, in this case, sevenn do not split total dataset by train valid by ratio
 
     save_dataset_path: 'total'                    # Save the preprocessed dataset for later use without the structure_list
+    save_by_train_valid: True                     # By default, save train.sevenn, valid.sevenn in working directory
     save_by_label: False                          # Save the dataset by labels specified in the structure_list
-
-    save_dataset_path: 'total'                    # Save preprocessed dataset for later use with out structure_list.
-    save_by_label: False                          # Save dataset by labels specified on structure_list
