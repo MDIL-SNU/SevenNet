@@ -68,4 +68,3 @@ data:
     save_dataset_path: 'total'                    # Save the preprocessed dataset for later use without the structure_list
     save_by_train_valid: True                     # By default, save train.sevenn, valid.sevenn in working directory
     save_by_label: False                          # Save the dataset by labels specified in the structure_list
-
