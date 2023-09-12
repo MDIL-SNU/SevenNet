@@ -251,6 +251,11 @@ def inference_main(checkpoint, fnames, output_path, num_cores=1, device="cpu"):
     for datum in tqdm(infer_list):
         datum.to(device)
         output = model(datum)
+        for k, v in output:
+            if isinstance(v, torch.Tensor):
+                output[k] = v.detach().cpu()
+            else:
+                output[k] = v
         output_list.append(output)
 
     pred_ref_dct, pred_ref_concat_dct, rmse_dct \
