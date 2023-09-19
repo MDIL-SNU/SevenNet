@@ -22,10 +22,10 @@ def processing_epoch(trainer, config, loaders, working_dir):
 
     def sqrt_dict(dct):
         for key in dct.keys():
-            if isinstance(dct[key], float):
-                dct[key] = math.sqrt(dct[key])
-            elif isinstance(dct[key], dict):
+            if isinstance(dct[key], dict):
                 sqrt_dict(dct[key])
+            else:
+                dct[key] = math.sqrt(dct[key])
         return dct
 
     def write_checkpoint(is_best=False, epoch=None):
@@ -40,18 +40,22 @@ def processing_epoch(trainer, config, loaders, working_dir):
         Logger().write(f"Epoch {epoch}/{total_epoch}  learning_rate: {trainer.get_lr():8f}\n")
         Logger().bar()
 
+        Logger().timer_start("train")
         train_mse, train_specie_mse, loss_dct =\
             trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
+        Logger().timer_end("train", message=f"Train elapsed")
+        Logger().timer_start("valid")
         valid_mse, valid_specie_mse, _ =\
             trainer.run_one_epoch(valid_loader, DataSetType.VALID)
+        Logger().timer_end("valid", message=f"Valid elapsed")
 
         train_rmse = sqrt_dict(train_mse)
         valid_rmse = sqrt_dict(valid_mse)
-        train_specie_rmse = sqrt_dict(train_specie_mse)
-        valid_specie_rmse = sqrt_dict(valid_specie_mse)
+        #train_specie_rmse = sqrt_dict(train_specie_mse)
+        #valid_specie_rmse = sqrt_dict(valid_specie_mse)
 
         Logger().epoch_write_loss(train_rmse, valid_rmse)
-        Logger().epoch_write_specie_wise_loss(train_specie_rmse, valid_specie_rmse)
+        #Logger().epoch_write_specie_wise_loss(train_specie_rmse, valid_specie_rmse)
         Logger().epoch_write_train_loss(loss_dct)
         Logger().timer_end("epoch", message=f"Epoch {epoch} elapsed")
 

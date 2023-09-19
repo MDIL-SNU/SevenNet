@@ -118,7 +118,7 @@ def processing_dataset(config, working_dir):
     Logger().write("Stress(eV/Angstrom^3) distribution:\n")
     try:
         Logger().statistic_write(dataset.get_statistics(KEY.STRESS))
-    except TypeError:
+    except KeyError:
         Logger().write("\n Stress is not included in the dataset\n")
         if is_stress:
             is_stress = False

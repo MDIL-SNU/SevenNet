@@ -1,10 +1,8 @@
+import copy
 from enum import Enum
 from typing import Dict, Union
 
 import torch
-from torch.nn.utils import clip_grad_norm
-from torch import linalg as LA
-from torch_scatter import scatter
 import numpy as np
 
 import sevenn._keys as KEY
@@ -118,19 +116,6 @@ class Trainer():
                 self.mse_hist[data_set_key][label] = \
                     {lt: [] for lt in self.loss_types}
 
-    """
-    def mse_loss(self, mse_dct):
-        energy_loss = mse_dct[LossType.ENERGY]
-        force_loss = mse_dct[LossType.FORCE]
-        try:
-            stress_loss = mse_dct[LossType.STRESS]
-        except KeyError:
-            stress_loss = 0
-        return energy_loss + \
-            self.force_weight * force_loss / 3 + \
-            self.stress_weight * stress_loss / 6
-    """
-
     def postprocess_output(self, output, loss_type: LossType, is_train: bool):
         # from the output of model, calculate mse, loss
         # since they're all LossType wise
@@ -184,24 +169,21 @@ class Trainer():
         else:
             self.model.eval()
 
-        # initialize dict variables
-        # actual loss tensor for backprop
-        # container for print
+        # Recorder of epoch loss (label, loss type wise)
         epoch_mse = {label:
-                      {lt: [] for lt in self.loss_types}
+                      {lt: 0 for lt in self.loss_types}
                       for label in self.user_labels}
-        force_mse_by_atom_type = {at: [] for at in self.total_atom_type}
+        epoch_counter = copy.deepcopy(epoch_mse)
+        #force_mse_by_atom_type = {at: [] for at in self.total_atom_type}
 
         # iterate over batch
         for step, batch in enumerate(loader):
-            batch.to(self.device)
+            batch_device = batch.to(self.device, non_blocking=True)
             label = batch[KEY.USER_LABEL]
-            atom_type_list = batch[KEY.ATOMIC_NUMBERS]
+            #atom_type_list = batch[KEY.ATOMIC_NUMBERS]
             self.optimizer.zero_grad(set_to_none=True)
-
             # forward
             result = self.model(batch)
-
             mse_dct = {}
             loss_dct = {}
             total_loss = None
@@ -210,22 +192,24 @@ class Trainer():
                 pred, ref, mse, loss = \
                     self.postprocess_output(result, loss_type, is_train)
                 total_loss = loss if total_loss is None else total_loss + loss
-                mse_dct[loss_type] = mse
+                mse_dct[loss_type] = mse.detach().cpu().numpy()
                 if is_train:
-                    loss_dct[loss_type] = loss.item()
+                    loss_dct[loss_type] = loss.detach().cpu()
+            if is_train:
+                total_loss.backward()
+                self.optimizer.step()
 
             # store postprocessed results to history
             # Before mean loss is required for structure-wise loss print
             self._update_epoch_mse(
-                epoch_mse, label, batch[KEY.BATCH], mse_dct
+                epoch_mse, label, batch[KEY.NUM_ATOMS], mse_dct, epoch_counter
             )
+            """
             self._update_force_mse_by_atom_type(
                 force_mse_by_atom_type,
                 atom_type_list, mse_dct[LossType.FORCE]
             )
-            if is_train:
-                total_loss.backward()
-                self.optimizer.step()
+            """
         if is_train:
             self.scheduler.step()
 
@@ -233,15 +217,18 @@ class Trainer():
         for label in self.user_labels:
             mse_record[label] = {}
             for loss_type in self.loss_types:
-                mse = np.mean(epoch_mse[label][loss_type])
+                #mse = np.mean(epoch_mse[label][loss_type])
+                mse = epoch_mse[label][loss_type] / epoch_counter[label][loss_type]
                 mse_record[label][loss_type] = mse
                 self.mse_hist[set_type][label][loss_type].append(mse)
 
         specie_wise_mse_record = {}
+        """
         for atom_type in self.total_atom_type:
             F_mse = np.mean(force_mse_by_atom_type[atom_type])
             self.force_mse_hist_by_atom_type[set_type][atom_type].append(F_mse)
             specie_wise_mse_record[atom_type] = F_mse
+        """
 
         return mse_record, specie_wise_mse_record, loss_dct
 
@@ -255,22 +242,24 @@ class Trainer():
                 'loss': self.mse_hist}  # not loss, mse
 
     def _update_epoch_mse(self, epoch_mse, user_label: list,
-                           batch, mse_dct) -> dict:
-        f_user_label = [user_label[int(i)] for i in batch]
+                          natoms, mse_dct, epoch_counter):
+        for loss_type in self.loss_types:
+            epoch_mse['total'][loss_type] += np.sum(mse_dct[loss_type])
+            epoch_counter['total'][loss_type] += len(mse_dct[loss_type])
 
-        for key in epoch_mse.keys():
-            mse_labeld = epoch_mse[key]
-            for loss_type in self.loss_types:
-                mse = mse_dct[loss_type]
-                if key == 'total':
-                    mse_labeld[loss_type].extend(mse.tolist())
-                    continue
-                if loss_type is LossType.FORCE:
-                    indicies = [i for i, v in enumerate(f_user_label) if v == key]
-                else:  # energy or stress
-                    indicies = [i for i, v in enumerate(user_label) if v == key]
-                mse_indexed = mse[indicies]
-                mse_labeld[loss_type].extend(mse_indexed.tolist())
+        mse_force = mse_dct[LossType.FORCE]
+        for idx, label in enumerate(user_label):
+            mse_labeled = epoch_mse[label]
+            mse_labeled[LossType.ENERGY] += mse_dct[LossType.ENERGY][idx]
+            epoch_counter[label][LossType.ENERGY] += 1
+            if LossType.STRESS in self.loss_types:
+                mse_labeled[LossType.STRESS] += mse_dct[LossType.STRESS][idx]
+                epoch_counter[label][LossType.STRESS] += 1
+            natom = natoms[idx].item()
+            force_mse = np.sum(mse_force[:natom])
+            mse_force = mse_force[natom:]
+            epoch_counter[label][LossType.FORCE] += natom
+            mse_labeled[LossType.FORCE] += force_mse
 
     def _update_force_mse_by_atom_type(self, force_mse_by_atom_type,
                                         atomic_numbers: list,
