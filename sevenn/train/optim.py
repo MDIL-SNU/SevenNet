@@ -61,7 +61,8 @@ scheduler_dict = {
     'steplr': scheduler.StepLR,
     'multisteplr': scheduler.MultiStepLR,
     'exponentiallr': scheduler.ExponentialLR,
-    'cosineannealinglr': scheduler.CosineAnnealingLR
+    'cosineannealinglr': scheduler.CosineAnnealingLR,
+    'reducelronplateau': scheduler.ReduceLROnPlateau
 }
 
 scheduler_param_name_type_dict = {
@@ -83,6 +84,16 @@ scheduler_param_name_type_dict = {
     'cosineannealinglr': {
         't_max': int,
         'eta_min': float
+    },
+    'reducelronplateau': {
+        'mode': str,
+        'factor': float,
+        'patience': int,
+        'threshold': float,
+        'threshold_mode': str,
+        'cooldown': int,
+        'min_lr': float,
+        'eps': float,
     }
 }
 

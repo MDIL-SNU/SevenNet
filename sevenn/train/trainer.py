@@ -185,7 +185,6 @@ class Trainer():
             # forward
             result = self.model(batch)
             mse_dct = {}
-            loss_dct = {}
             total_loss = None
             for loss_type in self.loss_types:
                 # loss is ignored if it is_train false
@@ -193,8 +192,6 @@ class Trainer():
                     self.postprocess_output(result, loss_type, is_train)
                 total_loss = loss if total_loss is None else total_loss + loss
                 mse_dct[loss_type] = mse.detach().cpu().numpy()
-                if is_train:
-                    loss_dct[loss_type] = loss.detach().cpu()
             if is_train:
                 total_loss.backward()
                 self.optimizer.step()
@@ -210,9 +207,6 @@ class Trainer():
                 atom_type_list, mse_dct[LossType.FORCE]
             )
             """
-        if is_train:
-            self.scheduler.step()
-
         mse_record = {}
         for label in self.user_labels:
             mse_record[label] = {}
@@ -230,10 +224,23 @@ class Trainer():
             specie_wise_mse_record[atom_type] = F_mse
         """
 
-        return mse_record, specie_wise_mse_record, loss_dct
+        return mse_record, specie_wise_mse_record
+
+    def scheduler_step(self, metric=None):
+        if self.scheduler is not None:
+            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+                self.scheduler.step(metric)
+            else:
+                self.scheduler.step()
+            """
+            if metric is None:
+                self.scheduler.step()
+            else:
+                self.scheduler.step(metric)
+            """
 
     def get_lr(self):
-        return self.scheduler.get_last_lr()[0]
+        return self.optimizer.param_groups[0]['lr']
 
     def get_checkpoint_dict(self):
         return {'model_state_dict': self.model.state_dict(),
