@@ -2,9 +2,6 @@ from enum import Enum
 from typing import Dict, Union
 
 import torch
-from torch.nn.utils import clip_grad_norm
-from torch import linalg as LA
-from torch_scatter import scatter
 import numpy as np
 
 import sevenn._keys as KEY
@@ -176,6 +173,7 @@ class Trainer():
         return pred, ref, mse, loss
 
     def run_one_epoch(self, loader, set_type: DataSetType):
+        from sevenn.sevenn_logger import Logger
         # set model to train/eval mode
         is_train = set_type == DataSetType.TRAIN
         self.model.set_is_batch_data(True)
@@ -188,44 +186,61 @@ class Trainer():
         # actual loss tensor for backprop
         # container for print
         epoch_mse = {label:
-                      {lt: [] for lt in self.loss_types}
+                      {lt: 0 for lt in self.loss_types}
                       for label in self.user_labels}
+        epoch_counter = {label:
+                          {lt: 0 for lt in self.loss_types}
+                          for label in self.user_labels}
         force_mse_by_atom_type = {at: [] for at in self.total_atom_type}
 
         # iterate over batch
         for step, batch in enumerate(loader):
-            batch.to(self.device)
+            Logger().timer_start("batch loop")
+            Logger().timer_start("pre_forward")
+            batch_device = batch.to(self.device, non_blocking=True)
             label = batch[KEY.USER_LABEL]
             atom_type_list = batch[KEY.ATOMIC_NUMBERS]
             self.optimizer.zero_grad(set_to_none=True)
 
             # forward
-            result = self.model(batch)
-
-            mse_dct = {}
-            loss_dct = {}
+            Logger().timer_end("pre_forward", message="\tpre_forward")
+            Logger().timer_start("forward")
+            result = self.model(batch_device)
+            Logger().timer_end("forward", message="\tforward")
+            Logger().timer_start("post_forward")
+            mse_dct_record = {}  # for postprocess
+            loss_dct_record = {}  # for record
             total_loss = None
+            Logger().timer_start("loss_postprocess")
             for loss_type in self.loss_types:
                 # loss is ignored if it is_train false
-                pred, ref, mse, loss = \
+                _, _, mse, loss = \
                     self.postprocess_output(result, loss_type, is_train)
                 total_loss = loss if total_loss is None else total_loss + loss
-                mse_dct[loss_type] = mse
+                mse_dct_record[loss_type] = mse.detach().cpu().numpy()
                 if is_train:
-                    loss_dct[loss_type] = loss.item()
-
+                    loss_dct_record[loss_type] = loss.detach().cpu()
+            Logger().timer_end("loss_postprocess", message="\t\tloss_postprocess")
+            if is_train:
+                Logger().timer_start("backward")
+                total_loss.backward()
+                Logger().timer_end("backward", message="\tbackward")
+                self.optimizer.step()
             # store postprocessed results to history
             # Before mean loss is required for structure-wise loss print
+            Logger().timer_start("record loss tot")
             self._update_epoch_mse(
-                epoch_mse, label, batch[KEY.BATCH], mse_dct
+                epoch_mse, label, batch[KEY.NUM_ATOMS], mse_dct_record, epoch_counter
             )
+            Logger().timer_end("record loss tot", message="\trecord loss tot")
+            """
             self._update_force_mse_by_atom_type(
                 force_mse_by_atom_type,
-                atom_type_list, mse_dct[LossType.FORCE]
+                atom_type_list, mse_dct_record[LossType.FORCE]
             )
-            if is_train:
-                total_loss.backward()
-                self.optimizer.step()
+            """
+            Logger().timer_end("post_forward", message="\tpost_forward")
+            Logger().timer_end("batch loop", message="batch loop")
         if is_train:
             self.scheduler.step()
 
@@ -233,7 +248,8 @@ class Trainer():
         for label in self.user_labels:
             mse_record[label] = {}
             for loss_type in self.loss_types:
-                mse = np.mean(epoch_mse[label][loss_type])
+                #mse = np.mean(epoch_mse[label][loss_type])
+                mse = epoch_mse[label][loss_type]/epoch_counter[label][loss_type]
                 mse_record[label][loss_type] = mse
                 self.mse_hist[set_type][label][loss_type].append(mse)
 
@@ -243,7 +259,7 @@ class Trainer():
             self.force_mse_hist_by_atom_type[set_type][atom_type].append(F_mse)
             specie_wise_mse_record[atom_type] = F_mse
 
-        return mse_record, specie_wise_mse_record, loss_dct
+        return mse_record, specie_wise_mse_record, loss_dct_record
 
     def get_lr(self):
         return self.scheduler.get_last_lr()[0]
@@ -255,10 +271,50 @@ class Trainer():
                 'loss': self.mse_hist}  # not loss, mse
 
     def _update_epoch_mse(self, epoch_mse, user_label: list,
-                           batch, mse_dct) -> dict:
-        f_user_label = [user_label[int(i)] for i in batch]
+                          natoms, mse_dct, epoch_counter) -> dict:
 
-        for key in epoch_mse.keys():
+        for loss_type in self.loss_types:
+            epoch_mse['total'][loss_type] += np.sum(mse_dct[loss_type])
+            epoch_counter['total'][loss_type] += len(mse_dct[loss_type])
+
+        mse_force = mse_dct[LossType.FORCE]
+        for idx, label in enumerate(user_label):
+            mse_labeled = epoch_mse[label]
+            mse_labeled[LossType.ENERGY] += mse_dct[LossType.ENERGY][idx]
+            epoch_counter[label][LossType.ENERGY] += 1
+            if LossType.STRESS in self.loss_types:
+                mse_labeled[LossType.STRESS] += mse_dct[LossType.STRESS][idx]
+                epoch_counter[label][LossType.STRESS] += 1
+            natom = natoms[idx].item()
+            force_mse = np.sum(mse_force[:natom])
+            mse_force = mse_force[natom:]
+            epoch_counter[label][LossType.FORCE] += natom
+            mse_labeled[LossType.FORCE] += force_mse
+
+        """
+        for loss_type in self.loss_types:
+            epoch_mse['total'][loss_type] = \
+                np.concatenate((epoch_mse['total'][loss_type], mse_dct[loss_type]), axis=0)
+
+        mse_force = mse_dct[LossType.FORCE]
+        for idx, label in enumerate(user_label):
+            mse_labeled = epoch_mse[label]
+            mse_labeled[LossType.ENERGY] = \
+                np.append(mse_labeled[LossType.ENERGY], mse_dct[LossType.ENERGY][idx])
+            if LossType.STRESS in self.loss_types:
+                mse_labeled[LossType.STRESS] = \
+                    np.append(mse_labeled[LossType.STRESS], mse_dct[LossType.STRESS][idx])
+            natom = natoms[idx]
+            force_mse = mse_force[:natom]
+            mse_force = mse_force[natom:]
+            mse_labeled[LossType.FORCE] = \
+                np.concatenate((mse_labeled[LossType.FORCE], force_mse), axis=0)
+        """
+
+
+        """
+        f_user_label = [user_label[int(i)] for i in batch]
+        for key in epoch_mse.keys():  # label wise
             mse_labeld = epoch_mse[key]
             for loss_type in self.loss_types:
                 mse = mse_dct[loss_type]
@@ -271,6 +327,7 @@ class Trainer():
                     indicies = [i for i, v in enumerate(user_label) if v == key]
                 mse_indexed = mse[indicies]
                 mse_labeld[loss_type].extend(mse_indexed.tolist())
+        """
 
     def _update_force_mse_by_atom_type(self, force_mse_by_atom_type,
                                         atomic_numbers: list,
