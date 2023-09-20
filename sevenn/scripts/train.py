@@ -4,6 +4,9 @@ import sys
 import random
 
 import torch
+import torch.distributed as dist
+from torch.utils.data.distributed import DistributedSampler
+from torch_geometric.loader import DataLoader
 
 from sevenn.train.trainer import Trainer
 from sevenn.model_build import build_E3_equivariant_model
@@ -21,13 +24,38 @@ def train(config: Dict, working_dir: str):
     Main program flow
     """
     Logger().timer_start("total")
+    rank = config[KEY.RANK]
+    is_ddp = config[KEY.IS_DDP]
     seed = config[KEY.RANDOM_SEED]
     random.seed(seed)
     torch.manual_seed(seed)
 
     # config updated
-    statistic_values, loaders, user_labels = \
+    statistic_values, data_lists, user_labels = \
         processing_dataset(config, working_dir)
+    train, valid, test = data_lists
+    if is_ddp:
+        dist.barrier()
+        train_sampler = DistributedSampler(train,
+                                           num_replicas=dist.get_world_size(),
+                                           rank=dist.get_rank())
+        valid_sampler = DistributedSampler(valid,
+                                           num_replicas=dist.get_world_size(),
+                                           rank=dist.get_rank())
+        """
+        train_loader = DataLoader(train, batch_size=config[KEY.BATCH_SIZE],
+                                  sampler=train_sampler, num_workers=config[KEY.NUM_WORKERS])
+        valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE],
+                                  sampler=valid_sampler, num_workers=config[KEY.NUM_WORKERS])
+        """
+        train_loader = DataLoader(train, batch_size=config[KEY.BATCH_SIZE],
+                                  sampler=train_sampler)
+        valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE],
+                                  sampler=valid_sampler)
+    else:
+        train_loader = DataLoader(train, batch_size=config[KEY.BATCH_SIZE])
+        valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE])
+    loaders = (train_loader, valid_loader, None)
 
     #avg_num_neigh, shift, scale = statistic_values
     #train_loader, valid_loader, test_loader = loaders
@@ -62,43 +90,3 @@ def train(config: Dict, working_dir: str):
 
     processing_epoch(trainer, config, loaders, working_dir)
     Logger().timer_end("total", message="Total wall time")
-
-
-"""
-def inference_poscar(config: Dict, working_dir: str):  # This is only for debugging
-    prefix = f"{os.path.abspath(working_dir)}/"
-    is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
-    device = config[KEY.DEVICE]
-
-    dataset = init_dataset(config, working_dir, is_stress, True)
-
-    loader = DataLoader(dataset.to_list(), 1, shuffle=False)
-
-    checkpoint = torch.load('checkpoint_20.pth')
-    old_config = checkpoint['config']
-
-    config.update({KEY.SHIFT: old_config[KEY.SHIFT],
-                   KEY.SCALE: old_config[KEY.SCALE],
-                   KEY.AVG_NUM_NEIGHBOR: old_config[KEY.AVG_NUM_NEIGHBOR]})
-
-    for key, value in old_config.items():
-        if key not in config.keys():
-            print(f'{key} does not exist')
-        elif config[key] != value:
-            print(f'{key} is updated')
-
-    model = build_E3_equivariant_model(config)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    model.to(device)
-
-    for idx, data in enumerate(loader):
-        data.to(device)
-
-        result = model(data)
-
-        if idx == 0:
-            print(result[KEY.PRED_TOTAL_ENERGY])
-            print(result[KEY.PRED_FORCE])
-            print(result[KEY.SCALED_STRESS])
-            break
-"""

@@ -48,7 +48,7 @@ def from_structure_list(data_config):
 
 
 def from_sevenn_data(load_dataset):
-    Logger().write("Loading dataset from load_dataset\n")
+    Logger().write("Loading dataset from sevenn_data\n")
 
     Logger().timer_start("loading dataset")
     dataset = None
@@ -210,18 +210,20 @@ def processing_dataset(config, working_dir):
     batch_size = config[KEY.BATCH_SIZE]
     num_workers = config[KEY.NUM_WORKERS]
     # pin_memory = (device != torch.device("cpu"))
+    """
     train_loader = DataLoader(train_set.to_list(), batch_size,
                               shuffle=True, num_workers=num_workers,)
     valid_loader = DataLoader(valid_set.to_list(), batch_size,
                               num_workers=num_workers,)
-    if test_set is not None:
-        test_loader = DataLoader(test_set.to_list(), batch_size)
+    """
+    #if test_set is not None:
+    #    test_loader = DataLoader(test_set.to_list(), batch_size)
 
     statistic_values = (avg_num_neigh, shift, scale)
-    loaders = (train_loader, valid_loader, test_loader)
+    data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
 
     # TODO: After I indtroduce valid_set manually, there is chance that
     #       the user_labels is not the same as the dataset.user_labels
     #       the case is not debugged!
     user_labels = dataset.user_labels.copy()
-    return statistic_values, loaders, user_labels
+    return statistic_values, data_lists, user_labels

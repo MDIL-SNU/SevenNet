@@ -63,6 +63,7 @@ SELF_CONNECTION_TEMP: Final[str] = "self_cont_tmp"
 BATCH_SIZE: Final[str] = "batch_size"
 INFO: Final[str] = "data_info"
 
+
 #==================================================#
 # ~~~~~~~~ KEY for train configuration ~~~~~~~~~~~ #
 #==================================================#
@@ -100,6 +101,10 @@ RESET_SCHEDULER: Final[str] = "reset_scheduler"
 
 NUM_WORKERS: Final[str] = "_num_workers"  # not work
 
+RANK: Final[str] = "rank"
+LOCAL_RANK: Final[str] = "local_rank"
+WORLD_SIZE: Final[str] = "world_size"
+IS_DDP : Final[str] = "is_ddp"
 # ~~~~~~~~ KEY for output configuration ~~~~~~~~~~~ #
 
 # blow 4 keys are child of output_per_epoch

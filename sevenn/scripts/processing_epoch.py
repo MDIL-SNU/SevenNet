@@ -17,6 +17,8 @@ def processing_epoch(trainer, config, loaders, working_dir):
     train_loader, valid_loader, test_loader = loaders
 
     min_loss = 10000
+    is_distributed = config[KEY.IS_DDP]
+    rank = config[KEY.RANK]
     total_epoch = config[KEY.EPOCH]
     per_epoch = config[KEY.PER_EPOCH]
 
@@ -43,10 +45,11 @@ def processing_epoch(trainer, config, loaders, working_dir):
         return dct
 
     def write_checkpoint(is_best=False, epoch=None):
-        suffix = "_best" if is_best else f"_{epoch}"
-        checkpoint = trainer.get_checkpoint_dict()
-        checkpoint.update({'config': config, 'epoch': epoch})
-        torch.save(checkpoint, f"{prefix}/checkpoint{suffix}.pth")
+        if not is_distributed or rank == 0:
+            suffix = "_best" if is_best else f"_{epoch}"
+            checkpoint = trainer.get_checkpoint_dict()
+            checkpoint.update({'config': config, 'epoch': epoch})
+            torch.save(checkpoint, f"{prefix}/checkpoint{suffix}.pth")
 
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")

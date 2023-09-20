@@ -27,26 +27,34 @@ class Logger(metaclass=Singleton):
     """
     SCREEN_WIDTH = 120  # half size of my screen / changed due to stress output
 
-    def __init__(self, filename: str, screen: bool):
-        self.logfile = open(filename, 'w', buffering=1)
-        self.screen = screen
+    def __init__(self, filename: str, screen: bool, rank: int = 0):
+        self.rank = rank
+        if rank == 0:
+            self.logfile = open(filename, 'w', buffering=1)
+            self.screen = screen
+        else:
+            self.logfile = None
+            self.screen = False
         self.timer_dct = {}
+        #self.logfile = open(filename, 'w', buffering=1)
+        #self.screen = screen
+        #self.timer_dct = {}
 
     def __del__(self):
         self.logfile.close()
 
     def write(self, content: str):
         # no newline!
-        self.logfile.write(content)
-        if self.screen:
-            print(content, end='')
+        if self.rank == 0:
+            self.logfile.write(content)
+            if self.screen:
+                print(content, end='')
+        else:
+            pass
 
     def writeline(self, content: str):
-        # yes newline!
         content = content + '\n'
-        self.logfile.write(content)
-        if self.screen:
-            print(content, end='')
+        self.write(content)
 
     def natoms_write(self, natoms):
         content = ""

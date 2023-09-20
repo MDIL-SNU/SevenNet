@@ -3,6 +3,9 @@ from enum import Enum
 from typing import Dict, Union
 
 import torch
+import torch.distributed as dist
+from torch.nn.parallel import DistributedDataParallel as DDP
+#from torch.nn.utils import clip_grad_norm
 import numpy as np
 
 import sevenn._keys as KEY
@@ -51,8 +54,15 @@ class Trainer():
         self.stress_key = stress_key
         self.ref_stress_key = ref_stress_key
 
-        device = config[KEY.DEVICE]
-        self.model = model.to(device)
+        self.distributed = config[KEY.IS_DDP]
+
+        if self.distributed:
+            device = torch.device('cuda', config[KEY.LOCAL_RANK])
+            dist.barrier()
+            self.model = DDP(model.to(device), device_ids=[device])
+        else:
+            device = config[KEY.DEVICE]
+            self.model = model.to(device)
         total_atom_type = config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER]
         if 'total' not in user_labels:
             user_labels.insert(0, 'total')  # prepand total
@@ -163,7 +173,11 @@ class Trainer():
     def run_one_epoch(self, loader, set_type: DataSetType):
         # set model to train/eval mode
         is_train = set_type == DataSetType.TRAIN
-        self.model.set_is_batch_data(True)
+        if self.distributed:
+            self.model.module.set_is_batch_data(True)
+        else:
+            self.model.set_is_batch_data(True)
+
         if is_train:
             self.model.train()
         else:
@@ -171,16 +185,17 @@ class Trainer():
 
         # Recorder of epoch loss (label, loss type wise)
         epoch_mse = {label:
-                      {lt: 0 for lt in self.loss_types}
+                      {lt: torch.zeros(1, device=self.device) for lt in self.loss_types}
                       for label in self.user_labels}
-        epoch_counter = copy.deepcopy(epoch_mse)
+        epoch_counter = {label:
+                      {lt: torch.zeros(1, device=self.device) for lt in self.loss_types}
+                      for label in self.user_labels}
         #force_mse_by_atom_type = {at: [] for at in self.total_atom_type}
 
         # iterate over batch
         for step, batch in enumerate(loader):
             batch_device = batch.to(self.device, non_blocking=True)
             label = batch[KEY.USER_LABEL]
-            #atom_type_list = batch[KEY.ATOMIC_NUMBERS]
             self.optimizer.zero_grad(set_to_none=True)
             # forward
             result = self.model(batch)
@@ -191,7 +206,7 @@ class Trainer():
                 pred, ref, mse, loss = \
                     self.postprocess_output(result, loss_type, is_train)
                 total_loss = loss if total_loss is None else total_loss + loss
-                mse_dct[loss_type] = mse.detach().cpu().numpy()
+                mse_dct[loss_type] = mse.detach()
             if is_train:
                 total_loss.backward()
                 self.optimizer.step()
@@ -207,14 +222,18 @@ class Trainer():
                 atom_type_list, mse_dct[LossType.FORCE]
             )
             """
-        mse_record = {}
-        for label in self.user_labels:
-            mse_record[label] = {}
-            for loss_type in self.loss_types:
-                #mse = np.mean(epoch_mse[label][loss_type])
-                mse = epoch_mse[label][loss_type] / epoch_counter[label][loss_type]
-                mse_record[label][loss_type] = mse
-                self.mse_hist[set_type][label][loss_type].append(mse)
+        with torch.no_grad():
+            if self.distributed:
+                self._recursive_all_reduce(epoch_mse)
+                self._recursive_all_reduce(epoch_counter)
+
+            mse_record = {}
+            for label in self.user_labels:
+                mse_record[label] = {}
+                for loss_type in self.loss_types:
+                    mse = epoch_mse[label][loss_type] / epoch_counter[label][loss_type]
+                    mse_record[label][loss_type] = mse.item()
+                    self.mse_hist[set_type][label][loss_type].append(mse)
 
         specie_wise_mse_record = {}
         """
@@ -242,31 +261,50 @@ class Trainer():
     def get_lr(self):
         return self.optimizer.param_groups[0]['lr']
 
+    def _recursive_all_reduce(self, dct):
+        for k, v in dct.items():
+            if isinstance(v, dict):
+                self._recursive_all_reduce(v)
+            else:
+                dist.all_reduce(v, op=dist.ReduceOp.SUM)
+
+    # Not used, ddp automatically averages gradients
+    def average_gradient(self):
+        size = float(dist.get_world_size())
+        for param in self.model.parameters():
+            dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
+            param.grad.data /= size
+
     def get_checkpoint_dict(self):
-        return {'model_state_dict': self.model.state_dict(),
+        if self.distributed:
+            model_state_dct = self.model.module.state_dict()
+        else:
+            model_state_dct = self.model.state_dict()
+        return {'model_state_dict': model_state_dct,
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict(),
                 'loss': self.mse_hist}  # not loss, mse
 
     def _update_epoch_mse(self, epoch_mse, user_label: list,
                           natoms, mse_dct, epoch_counter):
-        for loss_type in self.loss_types:
-            epoch_mse['total'][loss_type] += np.sum(mse_dct[loss_type])
-            epoch_counter['total'][loss_type] += len(mse_dct[loss_type])
+        with torch.no_grad():
+            for loss_type in self.loss_types:
+                epoch_mse['total'][loss_type] += torch.sum(mse_dct[loss_type])
+                epoch_counter['total'][loss_type] += len(mse_dct[loss_type])
 
-        mse_force = mse_dct[LossType.FORCE]
-        for idx, label in enumerate(user_label):
-            mse_labeled = epoch_mse[label]
-            mse_labeled[LossType.ENERGY] += mse_dct[LossType.ENERGY][idx]
-            epoch_counter[label][LossType.ENERGY] += 1
-            if LossType.STRESS in self.loss_types:
-                mse_labeled[LossType.STRESS] += mse_dct[LossType.STRESS][idx]
-                epoch_counter[label][LossType.STRESS] += 1
-            natom = natoms[idx].item()
-            force_mse = np.sum(mse_force[:natom])
-            mse_force = mse_force[natom:]
-            epoch_counter[label][LossType.FORCE] += natom
-            mse_labeled[LossType.FORCE] += force_mse
+            mse_force = mse_dct[LossType.FORCE]
+            for idx, label in enumerate(user_label):
+                mse_labeled = epoch_mse[label]
+                mse_labeled[LossType.ENERGY] += mse_dct[LossType.ENERGY][idx]
+                epoch_counter[label][LossType.ENERGY] += 1
+                if LossType.STRESS in self.loss_types:
+                    mse_labeled[LossType.STRESS] += mse_dct[LossType.STRESS][idx]
+                    epoch_counter[label][LossType.STRESS] += 1
+                natom = natoms[idx].item()
+                force_mse = torch.sum(mse_force[:natom])
+                mse_force = mse_force[natom:]
+                epoch_counter[label][LossType.FORCE] += natom
+                mse_labeled[LossType.FORCE] += force_mse
 
     def _update_force_mse_by_atom_type(self, force_mse_by_atom_type,
                                         atomic_numbers: list,
