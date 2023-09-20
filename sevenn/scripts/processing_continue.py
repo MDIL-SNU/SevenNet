@@ -44,7 +44,7 @@ def check_config_compatible(config, config_cp):
     if any((not cntdct[KEY.RESET_SCHEDULER], not cntdct[KEY.RESET_OPTIMIZER])) \
        and all(config[k] == config_cp[k] for k in TRAINABLE_CONFIGS) is False:
         raise ValueError("trainable shift_scale or avg_num_neigh should match"
-                         + " if one of reset optimizer or scheduler is false")
+                         + " ,if one of reset optimizer or scheduler")
 
 
 def processing_continue(config, model, statistic_values):
@@ -69,20 +69,23 @@ def processing_continue(config, model, statistic_values):
     if(avg_num_neigh != config_cp[KEY.AVG_NUM_NEIGHBOR]
             or shift != config_cp[KEY.SHIFT]
             or scale != config_cp[KEY.SCALE]):
-        Logger().write("\nWARNING: dataset is updated\n")
+        Logger().write("\nWARNING: dataset is updated (prev vs now)\n")
         Logger().write(f"avg_num_neigh: {config_cp[KEY.AVG_NUM_NEIGHBOR]:.4f}"
-                       + f"-> {avg_num_neigh:.4f}\n")
-        Logger().write(f"shift: {config_cp[KEY.SHIFT]:.4f} -> {shift:.4f}\n")
-        Logger().write(f"scale: {config_cp[KEY.SCALE]:.4f} -> {scale:.4f}\n")
-        Logger().write("The model(trained on previous dataset) "
-                       + "gonna use updated shift, scale and avg_num_neigh\n")
+                       + f"!= {avg_num_neigh:.4f}\n")
+        Logger().write(f"shift: {config_cp[KEY.SHIFT]:.4f} != {shift:.4f}\n")
+        Logger().write(f"scale: {config_cp[KEY.SCALE]:.4f} != {scale:.4f}\n")
+        Logger().write(f"If current config states 'not' trainable, use updated value\n")
+        Logger().write(f"Else, we will ignore updated shfit, scale and avg_num_neigh\n")
+        Logger().write(f"The model keep using previous values\n")
 
-    #TODO: hard coded
+    #TODO: Make it optional?
+    """
     IGNORE_WIEHGT_KEYS = ["rescale.shift", "rescale.scale"]
     for i in range(0, config[KEY.NUM_CONVOLUTION]):
         IGNORE_WIEHGT_KEYS.append(f"{i}_convolution.denumerator")
     model_state_dict_cp = {k: v for k, v in model_state_dict_cp.items()
                            if k not in IGNORE_WIEHGT_KEYS}
+    """
 
     # it will raise error if not compatible
     check_config_compatible(config, config_cp)
