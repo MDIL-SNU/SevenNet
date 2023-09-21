@@ -88,7 +88,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     scale = model_config[KEY.SCALE]
     train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
 
-    optimize_by_reduce = config[KEY.OPTIMIZE_BY_REDUCE]
+    optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
 
     act_gate = {}
     act_scalar = {}
