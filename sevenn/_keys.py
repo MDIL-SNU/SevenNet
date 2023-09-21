@@ -146,8 +146,10 @@ CUTOFF_FUNCTION_NAME = "cutoff_function_name"
 AVG_NUM_NEIGHBOR: Final[str] = "avg_num_neigh"
 SHIFT: Final[str] = "shift"
 SCALE: Final[str] = "scale"
-TRAIN_SHIFT_SCALE = "train_shift_scale"
-TRAIN_AVG_NUM_NEIGH = "train_avg_num_neigh"
+TRAIN_SHIFT_SCALE: Final[str] = "train_shift_scale"
+TRAIN_AVG_NUM_NEIGH: Final[str] = "train_avg_num_neigh"
+
+OPTIMIZE_BY_REDUCE: Final[str] = "optimize_by_reduce"
 
 # deprecated
 DRAW_PARITY: Final[str] = "draw_parity"

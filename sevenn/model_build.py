@@ -56,6 +56,7 @@ def init_radial_basis(config):
 def init_cutoff_function(config):
     cutoff_function_dct = config[KEY.CUTOFF_FUNCTION]
     cutoff = config[KEY.CUTOFF]
+    optimize_by_reduce = config[KEY.OPTIMIZE_BY_REDUCE]
 
     if cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'poly_cut':
         p = cutoff_function_dct[KEY.POLY_CUT_P]
@@ -175,6 +176,10 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     for i in range(num_convolution_layer):
         # here, we can infer irreps of x after interaction from lmax and f0_irreps
         interaction_block = {}
+
+        if optimize_by_reduce:
+            if i == num_convolution_layer - 1:
+                lmax = 0
 
         tp_irreps_out = infer_irreps_out(irreps_x,
                                          irreps_spherical_harm,
@@ -305,6 +310,9 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     if parallel:
         return [AtomGraphSequential(v) for v in layers_list]
     else:
+        #p = AtomGraphSequential(layers)
+        #print(p)
+        #raise ValueError("debug")
         return AtomGraphSequential(layers)
 
 
