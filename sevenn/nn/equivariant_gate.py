@@ -25,6 +25,11 @@ class EquivariantGate(nn.Module):
     https://docs.e3nn.org/en/stable/api/nn/nn_gate.html
     in nequip, result of convolution and self-interaction linear2
     is directly used for irreps_gates
+
+    Usage in NequIP
+    irreps_x: Representation of lmax, fixed multiplicity applied irreps
+    act_scalar/gate_dict: dictionary of parity and activation function
+        depends on parity, the activation function is regulated (odd or even function)
     """
     def __init__(
         self,
@@ -42,6 +47,7 @@ class EquivariantGate(nn.Module):
 
         irreps_gated_elem = []
         irreps_scalars_elem = []
+        # non scalar irreps > gated / scalar irreps > scalars
         for mul, irreps in irreps_x:
             if irreps.l > 0:
                 irreps_gated_elem.append((mul, irreps))
@@ -62,11 +68,10 @@ class EquivariantGate(nn.Module):
 
         self.gate = \
             Gate(irreps_scalars, act_scalars, irreps_gates, act_gates, irreps_gated)
-        self.required_irreps_in = self.gate.irreps_in
 
     def get_gate_irreps_in(self):
         """
-        user must call this function to get adequate irreps in for forward
+        user must call this function to get proper irreps in for forward
         """
         return self.gate.irreps_in
 
