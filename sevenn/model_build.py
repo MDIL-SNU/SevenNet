@@ -56,7 +56,6 @@ def init_radial_basis(config):
 def init_cutoff_function(config):
     cutoff_function_dct = config[KEY.CUTOFF_FUNCTION]
     cutoff = config[KEY.CUTOFF]
-    optimize_by_reduce = config[KEY.OPTIMIZE_BY_REDUCE]
 
     if cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'poly_cut':
         p = cutoff_function_dct[KEY.POLY_CUT_P]
@@ -88,6 +87,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     shift = model_config[KEY.SHIFT]
     scale = model_config[KEY.SCALE]
     train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
+
+    optimize_by_reduce = config[KEY.OPTIMIZE_BY_REDUCE]
 
     act_gate = {}
     act_scalar = {}
