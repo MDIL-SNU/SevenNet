@@ -143,6 +143,8 @@ ACTIVATION_GATE: Final[str] = "act_gate"
 RADIAL_BASIS_NAME = "radial_basis_name"
 CUTOFF_FUNCTION_NAME = "cutoff_function_name"
 
+USE_BIAS_IN_LINEAR = "use_bias_in_linear"
+
 AVG_NUM_NEIGHBOR: Final[str] = "avg_num_neigh"
 SHIFT: Final[str] = "shift"
 SCALE: Final[str] = "scale"

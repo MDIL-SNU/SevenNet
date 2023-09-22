@@ -8,7 +8,6 @@ from e3nn.o3 import FullTensorProduct
 from torch.nn import Sequential
 
 from sevenn.nn.node_embedding import OnehotEmbedding
-from sevenn.nn.ghost_control import GhostControlCat, GhostControlSplit
 from sevenn.nn.edge_embedding import EdgeEmbedding, EdgePreprocess,\
     PolynomialCutoff, BesselBasis, SphericalEncoding
 from sevenn.nn.force_output import ForceOutput, ForceOutputFromEdge, \
@@ -89,6 +88,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
 
     optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
+    use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
 
     act_gate = {}
     act_scalar = {}
@@ -143,7 +143,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             IrrepsLinear(
                 irreps_in=one_hot_irreps,
                 irreps_out=f_in_irreps,
-                data_key_in=KEY.NODE_FEATURE
+                data_key_in=KEY.NODE_FEATURE,
+                biases=use_bias_in_linear
             )
         }
     )
@@ -154,7 +155,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 IrrepsLinear(
                     irreps_in=one_hot_irreps,
                     irreps_out=f_in_irreps,
-                    data_key_in=KEY.NODE_FEATURE_GHOST
+                    data_key_in=KEY.NODE_FEATURE_GHOST,
+                    biases=use_bias_in_linear
                 )
             }
         )
@@ -210,11 +212,17 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                                 irreps_out=irreps_for_gate_in)
 
         interaction_block[f"{i}_self_interaction_1"] = \
-            IrrepsLinear(irreps_x, irreps_x, data_key_in=KEY.NODE_FEATURE)
+            IrrepsLinear(irreps_x,
+                         irreps_x,
+                         data_key_in=KEY.NODE_FEATURE,
+                         biases=use_bias_in_linear)
 
         if parallel and i == 0:
             interaction_block[f"ghost_{i}_self_interaction_1"] = \
-                IrrepsLinear(irreps_x, irreps_x, data_key_in=KEY.NODE_FEATURE_GHOST)
+                IrrepsLinear(irreps_x,
+                             irreps_x,
+                             data_key_in=KEY.NODE_FEATURE_GHOST,
+                             biases=use_bias_in_linear)
         elif parallel and i != 0:
             layers_idx += 1
             layers.update(interaction_block)
@@ -253,7 +261,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         interaction_block[f"{i} self interaction 2"] = \
             IrrepsLinear(tp_irreps_out,
                          irreps_for_gate_in,
-                         data_key_in=KEY.NODE_FEATURE)
+                         data_key_in=KEY.NODE_FEATURE,
+                         biases=use_bias_in_linear)
 
         interaction_block[f"{i} self connection outro"] = \
             SelfConnectionOutro()
@@ -276,6 +285,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 irreps_x,
                 hidden_irreps,
                 data_key_in=KEY.NODE_FEATURE,
+                biases=use_bias_in_linear
             ),
             "reducing nn hidden to energy":
             IrrepsLinear(
@@ -283,6 +293,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 Irreps([(1, (0, 1))]),
                 data_key_in=KEY.NODE_FEATURE,
                 data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                biases=use_bias_in_linear
             ),
             "reduce to total enegy":
             AtomReduce(
@@ -311,9 +322,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     if parallel:
         return [AtomGraphSequential(v) for v in layers_list]
     else:
-        #p = AtomGraphSequential(layers)
-        #print(p)
-        #raise ValueError("debug")
         return AtomGraphSequential(layers)
 
 
