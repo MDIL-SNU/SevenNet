@@ -209,7 +209,7 @@ def init_train_config(config: dict):
             list(param_type_dicts[idx][type_value].keys())
         available_keys.extend(universal_keys)
         for key, value in user_input.items():
-            key = key.lower()
+            #key = key.lower()  # case sensitive detect of param name
             if key not in available_keys:
                 ava_key_to_str = ''
                 for i, k in enumerate(available_keys):
