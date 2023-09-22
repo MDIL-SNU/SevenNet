@@ -300,23 +300,25 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 data_key_in=KEY.SCALED_ATOMIC_ENERGY,
                 data_key_out=KEY.SCALED_ENERGY,
                 constant=1.0,
-            )
-        }
-    )
-    if not parallel:
-        gradient_module = ForceStressOutput() if is_stress else ForceOutputFromEdge()
-        layers.update(
-            {
-                "force output": gradient_module,
-                # rescale scaled value to real physical values
-                "rescale": Rescale(
+            ),
+            "rescale":
+            Rescale(
                     shift=shift,
                     scale=scale,
                     train_shift_scale=train_shift_scale,
                     is_stress=is_stress
-                )
-            }
-        )
+            )
+        }
+    )
+    if not parallel:
+        fso = ForceStressOutput(data_key_energy = KEY.PRED_TOTAL_ENERGY,
+                                data_key_force = KEY.PRED_FORCE,
+                                data_key_stress = KEY.PRED_STRESS)
+        fof = ForceOutputFromEdge(data_key_energy = KEY.PRED_TOTAL_ENERGY,
+                                  data_key_force = KEY.PRED_FORCE)
+        gradient_module = fso if is_stress else fof
+        #gradient_module = ForceStressOutput() if is_stress else ForceOutputFromEdge()
+        layers.update({"force output": gradient_module})
 
     # output extraction part
     if parallel:

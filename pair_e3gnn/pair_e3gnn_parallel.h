@@ -30,8 +30,6 @@ namespace LAMMPS_NS{
     private:
       double cutoff;
       double cutoff_square;
-      float shift;
-      float scale;
       std::vector<torch::jit::Module> model_list;
       torch::Device device = torch::kCPU;
       torch::Device get_cuda_device();

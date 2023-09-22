@@ -39,12 +39,7 @@ class Rescale(nn.Module):
         data[KEY.PRED_PER_ATOM_ENERGY] = \
             torch.div(data[KEY.PRED_TOTAL_ENERGY], data[KEY.NUM_ATOMS].unsqueeze(-1))
 
-        """
-        data[self.scaled_energy_key] =
-            torch.div(data[KEY.SCALED_ENERGY], data[KEY.NUM_ATOMS].unsqueeze(-1))
-        """
-
-        data[KEY.PRED_FORCE] = data[KEY.SCALED_FORCE] * self.scale
-        if self.is_stress:
-            data[KEY.PRED_STRESS] = data[KEY.SCALED_STRESS] * self.scale
+        #data[KEY.PRED_FORCE] = data[KEY.SCALED_FORCE] * self.scale
+        #if self.is_stress:
+        #    data[KEY.PRED_STRESS] = data[KEY.SCALED_STRESS] * self.scale
         return data
