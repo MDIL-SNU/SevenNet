@@ -175,8 +175,8 @@ def processing_dataset(config, working_dir):
         Logger().format_k_v("Dataset saved by train, valid", prefix, write=True)
 
     # TODO: Maybe it is need during training for logging?
-    _, _ = train_set.seperate_info()
-    _, _ = valid_set.seperate_info()
+    #_, _ = train_set.seperate_info()
+    #_, _ = valid_set.seperate_info()
 
     # make sure x is one hot index
     if train_set.x_is_one_hot_idx is False:

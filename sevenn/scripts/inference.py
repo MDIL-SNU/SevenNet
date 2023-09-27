@@ -205,6 +205,13 @@ def _postprocess_output_list(output_list):
         # there is no option.. (since force has num of atoms dimension)
         pred_list = [torch.squeeze(t).detach().numpy() for t in pred_list]
         ref_list = [torch.squeeze(t).detach().numpy() for t in ref_list]
+        ###############################################
+        if key == "force":
+            for idx, (pr, rf) in enumerate(zip(pred_list, ref_list)):
+                if pr.shape == (3,):
+                    pred_list[idx] = pr.reshape(1, 3)
+                    ref_list[idx] = rf.reshape(1, 3)
+        ###############################################
         pred_ref_dct[key] = (pred_list, ref_list)
         pred_ref_concat_dct[key] = (pred_tensor, ref_tensor)
         _, _, rmse = get_vector_component_and_rmse(pred_tensor, ref_tensor, vdim)
