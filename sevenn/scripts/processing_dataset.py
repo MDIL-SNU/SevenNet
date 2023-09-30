@@ -8,7 +8,7 @@ from sevenn.util import chemical_species_preprocess
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.train.dataload import parse_structure_list, data_for_E3_equivariant_model
-from sevenn.scripts.graph_build import label_atoms_dict_to_dataset
+from sevenn.scripts.graph_build import file_to_dataset
 from sevenn.sevenn_logger import Logger
 import sevenn._keys as KEY
 
@@ -26,13 +26,10 @@ def from_structure_list(data_config):
     full_dataset = None
     for structure_list in structure_list_files:
         Logger().write(f"loading {structure_list} (it takes several minitues..)\n")
-        Logger().timer_start("parsing structure_list")
-        raw_dct = parse_structure_list(structure_list, format_outputs)
-        Logger().timer_end("parsing structure_list",
-                           f"parsing {structure_list} is done")
         Logger().timer_start("constructing graph")
         Logger().writeline("constructing graph...")
-        dataset = label_atoms_dict_to_dataset(raw_dct, cutoff, ncores)
+        dataset =\
+            file_to_dataset(structure_list, cutoff, ncores, reader = parse_structure_list)
         dataset.meta = data_config
         Logger().timer_end("constructing graph", "constructing graph is done")
         if full_dataset is None:

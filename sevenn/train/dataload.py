@@ -99,6 +99,8 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     # data.num_nodes = data[KEY.NUM_ATOMS]  # is it really necessary?
     if transfer_info and atoms.info is not None:
         data[KEY.INFO] = atoms.info
+    else:
+        data[KEY.INFO] = {}
 
     return data
 
@@ -332,9 +334,11 @@ def parse_structure_list(filename: str, format_outputs='vasp-out'):
             label = tmp_label
             raw_str_dict[label] = []
             continue
-        else:
+        elif label in raw_str_dict:
             files_expr, index_expr = parse_fileline(line)
             raw_str_dict[label].append((files_expr, index_expr))
+        else:
+            raise ValueError('wrong structure_list format')
     structure_list_file.close()
 
     structures_dict = {}
@@ -366,3 +370,10 @@ def parse_structure_list(filename: str, format_outputs='vasp-out'):
                 f_stream.close()
         structures_dict[title] = stct_lists
     return structures_dict
+
+def ase_compatible_load(filename:str, index = ':', format: Optional[str] = None):
+    ret = ase.io.read(filename, index=index, format=format)
+    if type(ret) != list:
+        ret = [ret]
+    return ret
+

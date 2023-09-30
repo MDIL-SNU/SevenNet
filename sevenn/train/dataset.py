@@ -27,7 +27,7 @@ class AtomGraphDataset:
         user_labels (List[str]): list of user labels same as dataset.keys()
         meta (Dict, Optional): metadata of dataset
     for now, metadata 'might' have following keys:
-        KEY.CUTFF (float), KEY.CHEMICAL_SPECIES (Dict)
+        KEY.CUTOFF (float), KEY.CHEMICAL_SPECIES (Dict)
     """
     DATA_KEY_X = KEY.NODE_FEATURE
     DATA_KEY_ENERGY = KEY.ENERGY
@@ -56,6 +56,9 @@ class AtomGraphDataset:
         """
         self.cutoff = cutoff
         self.x_is_one_hot_idx = x_is_one_hot_idx
+        if metadata is None:
+            metadata = {KEY.CUTOFF: cutoff,
+                        KEY.CHEMICAL_SPECIES: set()}
         self.meta = metadata
         if type(dataset) is list:
             self.dataset = {self.KEY_DEFAULT: dataset}
