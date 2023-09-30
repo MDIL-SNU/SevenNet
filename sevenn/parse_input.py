@@ -272,7 +272,7 @@ def init_data_config(config: dict):
             raise ValueError("given structure_list does not exist")
         data_meta[KEY.STRUCTURE_LIST] = inp
     else:
-        data_meta[KEY.STRUCTURE_LIST] = False  # this is default
+        data_meta[KEY.STRUCTURE_LIST] = defaults[KEY.STRUCTURE_LIST]
 
     # same as above
     for load_data_key in [KEY.LOAD_DATASET, KEY.LOAD_VALIDSET]:
@@ -287,7 +287,7 @@ def init_data_config(config: dict):
             #    raise ValueError("given load_data does not exist")
             data_meta[load_data_key] = inp
         else:
-            data_meta[load_data_key] = False
+            data_meta[load_data_key] = defaults[load_data_key]
 
     if KEY.SAVE_DATASET in config.keys():
         inp = config[KEY.SAVE_DATASET]
@@ -296,6 +296,20 @@ def init_data_config(config: dict):
         data_meta[KEY.SAVE_DATASET] = inp
     else:
         data_meta[KEY.SAVE_DATASET] = False
+
+    for skey in [KEY.SHIFT, KEY.SCALE]:
+        if skey not in config.keys():
+            data_meta[skey] = defaults[skey]
+            continue
+        inp = config[skey]
+        if type(inp) is int or type(inp) is float:
+            data_meta[skey] = float(inp)
+        elif type(inp) is list and all([type(i) is float for i in inp]):
+            data_meta[skey] = inp
+            config[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = True
+            data_meta[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = True
+        else:
+            raise ValueError(f"shift/scale should be float or list of float")
 
     for key, cond in _const.DATA_CONFIG_CONDITION.items():
         data_meta[key] = config_initialize(key, config, defaults, cond)

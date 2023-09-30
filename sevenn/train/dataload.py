@@ -243,7 +243,7 @@ def data_for_E3_equivariant_model(atoms, cutoff, type_map: Dict[int, int]):
     data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
     return data
 
-
+# deprecated
 def poscar_for_E3_equivariant_model(atoms, cutoff: float,
                                     type_map: Dict[int, int],
                                     is_stress: bool):

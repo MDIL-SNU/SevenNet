@@ -18,7 +18,7 @@ from sevenn.nn.self_connection import SelfConnectionIntro, SelfConnectionOutro
 from sevenn.nn.convolution import IrrepsConvolution
 from sevenn.nn.equivariant_gate import EquivariantGate
 from sevenn.nn.activation import ShiftedSoftPlus
-from sevenn.nn.scale import Rescale
+from sevenn.nn.scale import Rescale, SpeciesWiseRescale
 
 import sevenn._keys as KEY
 import sevenn._const as _const
@@ -83,9 +83,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     else:
         layers = OrderedDict()
 
-    shift = model_config[KEY.SHIFT]
-    scale = model_config[KEY.SCALE]
-    train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
 
     optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
     use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
@@ -253,6 +250,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 irreps_out=tp_irreps_out,
                 weight_layer_input_to_hidden=weight_nn_layers,
                 weight_layer_act=act_scalar["e"],
+                # TODO: BOTNet says no sqrt is better
                 denumerator=avg_num_neigh**0.5,
                 train_denumerator=train_avg_num_neigh,
                 is_parallel=parallel)
@@ -278,6 +276,13 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
     hidden_irreps = Irreps([(feature_multiplicity // 2, (0, 1))])
 
+    shift = model_config[KEY.SHIFT]
+    scale = model_config[KEY.SCALE]
+    train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
+    rescale_module = SpeciesWiseRescale \
+        if model_config[KEY.USE_SPECIES_WISE_SHIFT_SCALE] \
+        else Rescale
+
     layers.update(
         {
             "reducing nn input to hidden":
@@ -295,19 +300,20 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 data_key_out=KEY.SCALED_ATOMIC_ENERGY,
                 biases=use_bias_in_linear
             ),
-            "reduce to total enegy":
-            AtomReduce(
-                data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-                data_key_out=KEY.SCALED_ENERGY,
-                constant=1.0,
-            ),
-            "rescale":
-            Rescale(
+            "rescale atomic energy":
+            rescale_module(
                     shift=shift,
                     scale=scale,
+                    data_key_in=KEY.SCALED_ATOMIC_ENERGY,
+                    data_key_out=KEY.ATOMIC_ENERGY,
                     train_shift_scale=train_shift_scale,
-                    is_stress=is_stress
-            )
+            ),
+            "reduce to total enegy":
+            AtomReduce(
+                data_key_in=KEY.ATOMIC_ENERGY,
+                data_key_out=KEY.PRED_TOTAL_ENERGY,
+                constant=1.0,
+            ),
         }
     )
     if not parallel:

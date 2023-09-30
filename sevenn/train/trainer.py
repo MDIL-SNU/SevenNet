@@ -36,12 +36,13 @@ class Trainer():
         self, model, user_labels: list, config: dict,
         # TODO: replace per atom energy to total energy (divide here)
         #       remove from _keys.py
-        energy_key: str = KEY.PRED_PER_ATOM_ENERGY,
-        ref_energy_key: str = KEY.PER_ATOM_ENERGY,
+        energy_key: str = KEY.PRED_TOTAL_ENERGY,
+        ref_energy_key: str = KEY.ENERGY,
         force_key: str = KEY.PRED_FORCE,
         ref_force_key: str = KEY.FORCE,
         stress_key: str = KEY.PRED_STRESS,
         ref_stress_key: str = KEY.STRESS,
+        num_atoms_key: str = KEY.NUM_ATOMS,
         optimizer_state_dict=None, scheduler_state_dict=None,
     ):
         """
@@ -53,6 +54,7 @@ class Trainer():
         self.ref_force_key = ref_force_key
         self.stress_key = stress_key
         self.ref_stress_key = ref_stress_key
+        self.num_atoms_key = num_atoms_key
 
         self.distributed = config[KEY.IS_DDP]
 
@@ -140,8 +142,9 @@ class Trainer():
 
         loss_weight = 0
         if loss_type is LossType.ENERGY:
-            pred = torch.squeeze(output[self.energy_key], -1)
-            ref = output[self.ref_energy_key]
+            num_atoms = output[self.num_atoms_key]
+            pred = torch.squeeze(output[self.energy_key], -1) / num_atoms
+            ref = output[self.ref_energy_key] / num_atoms
             mse = self.mse(pred, ref)
             loss_weight = 1 # energy loss weight is 1 (it is reference)
         elif loss_type is LossType.FORCE:
@@ -214,7 +217,7 @@ class Trainer():
             # store postprocessed results to history
             # Before mean loss is required for structure-wise loss print
             self._update_epoch_mse(
-                epoch_mse, label, batch[KEY.NUM_ATOMS], mse_dct, epoch_counter
+                epoch_mse, label, batch[self.num_atoms_key], mse_dct, epoch_counter
             )
             """
             self._update_force_mse_by_atom_type(

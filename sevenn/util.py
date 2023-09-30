@@ -5,6 +5,12 @@ import sevenn._keys as KEY
 import sevenn._const
 
 
+def onehot_to_chem(one_hot_indicies, type_map):
+    from ase.data import chemical_symbols
+    type_map_rev = {v: k for k, v in type_map.items()}
+    return [chemical_symbols[type_map_rev[x]] for x in one_hot_indicies]
+
+
 def load_model_from_checkpoint(checkpoint):
     from sevenn.model_build import build_E3_equivariant_model
     if isinstance(checkpoint, str):
