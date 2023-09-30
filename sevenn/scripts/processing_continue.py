@@ -18,10 +18,10 @@ def check_config_compatible(config, config_cp):
         KEY.ACTIVATION_GATE,
         KEY.ACTIVATION_SCARLAR,
         KEY.DTYPE,
-        KEY.OPTIMIZER,
-        KEY.OPTIM_PARAM,
-        KEY.SCHEDULER,
-        KEY.SCHEDULER_PARAM,
+        #KEY.OPTIMIZER,
+        #KEY.OPTIM_PARAM,
+        #KEY.SCHEDULER,
+        #KEY.SCHEDULER_PARAM,
     ]
     for sbs in SHOULD_BE_SAME:
         if config[sbs] == config_cp[sbs]:

@@ -82,7 +82,7 @@ scheduler_param_name_type_dict = {
         'gamma': float
     },
     'cosineannealinglr': {
-        't_max': int,
+        'T_max': int,
         'eta_min': float
     },
     'reducelronplateau': {
