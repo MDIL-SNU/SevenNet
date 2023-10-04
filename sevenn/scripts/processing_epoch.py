@@ -6,7 +6,8 @@ import torch
 import numpy as np
 
 from sevenn.sevenn_logger import Logger
-from sevenn.train.trainer import Trainer, DataSetType, LossType
+from sevenn.train.trainer import Trainer
+from sevenn._const import LossType, DataSetType
 import sevenn._keys as KEY
 
 import multiprocessing
@@ -54,17 +55,17 @@ def processing_epoch(trainer, config, loaders, working_dir):
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
         Logger().bar()
-        Logger().write(f"Epoch {epoch}/{total_epoch}  learning_rate: {trainer.get_lr():8f}\n")
+        Logger().write(f"Epoch {epoch}/{total_epoch}  lr: {trainer.get_lr():8f}\n")
         Logger().bar()
 
         Logger().timer_start("train")
         train_mse, train_specie_mse =\
             trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
-        Logger().timer_end("train", message=f"Train elapsed")
+        Logger().timer_end("train", message="Train elapsed")
         Logger().timer_start("valid")
         valid_mse, valid_specie_mse =\
             trainer.run_one_epoch(valid_loader, DataSetType.VALID)
-        Logger().timer_end("valid", message=f"Valid elapsed")
+        Logger().timer_end("valid", message="Valid elapsed")
 
         train_rmse = sqrt_dict(train_mse)
         valid_rmse = sqrt_dict(valid_mse)

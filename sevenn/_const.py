@@ -1,4 +1,5 @@
 import os.path
+from enum import Enum
 
 import torch
 
@@ -18,6 +19,18 @@ ACTIVATION_FOR_ODD = {"tanh": torch.tanh, "abs": torch.abs}
 ACTIVATION_DICT = {"e": ACTIVATION_FOR_EVEN, "o": ACTIVATION_FOR_ODD}
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]
+
+
+class LossType(Enum):
+    ENERGY = 'energy'  # I hope user store per atom energy (eV/atom)
+    FORCE = 'force'    # eV/A
+    STRESS = 'stress'  # kB(?)
+
+
+class DataSetType(Enum):
+    TRAIN = 'train'
+    VALID = 'valid'
+    TEST = 'test'
 
 
 def is_dir_avail(x):

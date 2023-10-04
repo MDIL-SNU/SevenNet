@@ -5,8 +5,8 @@ from datetime import datetime
 
 from ase.data import atomic_numbers
 
-from sevenn.train.trainer import DataSetType, LossType
-import sevenn._const as _const
+import sevenn._const
+from sevenn._const import LossType, DataSetType
 import sevenn._keys as KEY
 
 CHEM_SYMBOLS = {v: k for k, v in atomic_numbers.items()}
@@ -187,7 +187,7 @@ class Logger(metaclass=Singleton):
         with open(LOGO_ASCII_FILE, 'r') as logo_f:
             logo_ascii = logo_f.read()
         content = "SEVENN: Scalable EquVariance-Enabled Neural Network\n"
-        content += f"sevenn version {_const.SEVENN_VERSION}\n"
+        content += f"sevenn version {sevenn._const.SEVENN_VERSION}\n"
         content += "reading yaml config..."
         self.write(content)
         self.write(logo_ascii)

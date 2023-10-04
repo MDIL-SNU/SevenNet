@@ -83,7 +83,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     else:
         layers = OrderedDict()
 
-
     optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
     use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
 
@@ -148,6 +147,13 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     if parallel:
         layers.update(
             {
+                "one_hot_ghost":
+                OnehotEmbedding(
+                    data_key_x=KEY.NODE_FEATURE_GHOST,
+                    num_classes=num_species,
+                    data_key_save=None,
+                    data_key_additional=None
+                ),
                 "ghost_onehot_to_feature_x":
                 IrrepsLinear(
                     irreps_in=one_hot_irreps,
@@ -302,11 +308,11 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             ),
             "rescale atomic energy":
             rescale_module(
-                    shift=shift,
-                    scale=scale,
-                    data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-                    data_key_out=KEY.ATOMIC_ENERGY,
-                    train_shift_scale=train_shift_scale,
+                shift=shift,
+                scale=scale,
+                data_key_in=KEY.SCALED_ATOMIC_ENERGY,
+                data_key_out=KEY.ATOMIC_ENERGY,
+                train_shift_scale=train_shift_scale,
             ),
             "reduce to total enegy":
             AtomReduce(
@@ -317,13 +323,12 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         }
     )
     if not parallel:
-        fso = ForceStressOutput(data_key_energy = KEY.PRED_TOTAL_ENERGY,
-                                data_key_force = KEY.PRED_FORCE,
-                                data_key_stress = KEY.PRED_STRESS)
-        fof = ForceOutputFromEdge(data_key_energy = KEY.PRED_TOTAL_ENERGY,
-                                  data_key_force = KEY.PRED_FORCE)
+        fso = ForceStressOutput(data_key_energy=KEY.PRED_TOTAL_ENERGY,
+                                data_key_force=KEY.PRED_FORCE,
+                                data_key_stress=KEY.PRED_STRESS)
+        fof = ForceOutputFromEdge(data_key_energy=KEY.PRED_TOTAL_ENERGY,
+                                  data_key_force=KEY.PRED_FORCE)
         gradient_module = fso if is_stress else fof
-        #gradient_module = ForceStressOutput() if is_stress else ForceOutputFromEdge()
         layers.update({"force output": gradient_module})
 
     # output extraction part

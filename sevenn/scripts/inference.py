@@ -73,6 +73,7 @@ def poscars_to_atoms(poscars: List[str]):
     return atoms_list
 
 
+# TODO: Refactor, meta, energy, stress to one csv file, only force is exception
 def _write_inference_csv(pred_ref_dct, rmse_dct, output_path, no_ref):
     """
     subroutine for inference
@@ -89,7 +90,7 @@ def _write_inference_csv(pred_ref_dct, rmse_dct, output_path, no_ref):
         for idx, info in enumerate(pred_ref_dct["info"]):
             f.write(f"{idx}: {info}\n")
 
-    with open(f"{output_path}/energies.csv", "w", newline="") as f:
+    with open(f"{output_path}/energy.csv", "w", newline="") as f:
         fieldnames = ["StructureID", "Pred_energy(eV/atom)", "Ref_energy(eV/atom)"]
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -99,7 +100,7 @@ def _write_inference_csv(pred_ref_dct, rmse_dct, output_path, no_ref):
                              "Pred_energy(eV/atom)": pred,
                              "Ref_energy(eV/atom)": ref})
 
-    with open(f"{output_path}/forces.csv", "w", newline="") as f:
+    with open(f"{output_path}/force.csv", "w", newline="") as f:
         fieldnames = ["StructureID", "AtomIndex",
                       "Pred_force_x", "Pred_force_y", "Pred_force_z",
                       "Ref_force_x", "Ref_force_y", "Ref_force_z"]
@@ -119,7 +120,7 @@ def _write_inference_csv(pred_ref_dct, rmse_dct, output_path, no_ref):
     if not "stress" in rmse_dct:
         return
 
-    with open(f"{output_path}/stresses.csv", "w", newline="") as f:
+    with open(f"{output_path}/stress.csv", "w", newline="") as f:
         fieldnames = ["StructureID",
                       "Pred_stress_xx", "Pred_stress_yy", "Pred_stress_zz",
                       "Pred_stress_xy", "Pred_stress_yz", "Pred_stress_zx",
@@ -145,6 +146,7 @@ def _write_inference_csv(pred_ref_dct, rmse_dct, output_path, no_ref):
     return
 
 
+# TODO: Refactor, treat as list of batched outpus, now is super ugly
 def _postprocess_output_list(output_list):
     """
     subroutine for inference
@@ -157,8 +159,8 @@ def _postprocess_output_list(output_list):
     TO_KB = 1602.1766208  # eV/A^3 to kbar
     POSTPROCESS_KEY_DCT = \
         {"per_atom_energy":
-            {"pred_key": KEY.PRED_PER_ATOM_ENERGY,
-             "ref_key": KEY.PER_ATOM_ENERGY,
+            {"pred_key": KEY.PRED_TOTAL_ENERGY,
+             "ref_key": KEY.ENERGY,
              "vdim": 1,
              "coeff": 1,
              },
@@ -205,13 +207,18 @@ def _postprocess_output_list(output_list):
         # there is no option.. (since force has num of atoms dimension)
         pred_list = [torch.squeeze(t).detach().numpy() for t in pred_list]
         ref_list = [torch.squeeze(t).detach().numpy() for t in ref_list]
-        ###############################################
-        if key == "force":
+        if key == "force":  # edge case of force, only one atom > squeeze > DOOM
             for idx, (pr, rf) in enumerate(zip(pred_list, ref_list)):
                 if pr.shape == (3,):
                     pred_list[idx] = pr.reshape(1, 3)
                     ref_list[idx] = rf.reshape(1, 3)
-        ###############################################
+        if key == "per_atom_energy":
+            natoms = np.array([o[KEY.NUM_ATOMS].item() for o in output_list])
+            pred_list = pred_list / natoms
+            ref_list = ref_list / natoms
+            pred_tensor = pred_tensor / natoms
+            ref_tensor = ref_tensor / natoms
+
         pred_ref_dct[key] = (pred_list, ref_list)
         pred_ref_concat_dct[key] = (pred_tensor, ref_tensor)
         _, _, rmse = get_vector_component_and_rmse(pred_tensor, ref_tensor, vdim)

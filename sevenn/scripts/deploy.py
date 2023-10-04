@@ -132,10 +132,10 @@ def deploy_parallel(model_state_dct, config, fname):
     num_species = config[KEY.NUM_SPECIES]
     #model_list[0].prepand_module('one_hot', OnehotEmbedding(
     #    data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
-    model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
-        data_key_in=KEY.NODE_FEATURE_GHOST,
-        num_classes=num_species,
-        data_key_additional=None))
+    #model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
+    #    data_key_in=KEY.NODE_FEATURE_GHOST,
+    #    num_classes=num_species,
+    #    data_key_additional=None))
 
     #print(config)
     # prepare some extra information for MD

@@ -1,61 +1,36 @@
-import copy
-from enum import Enum
 from typing import Dict, Union
 
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 #from torch.nn.utils import clip_grad_norm
-import numpy as np
 
+from sevenn._const import LossType, DataSetType
 import sevenn._keys as KEY
+from sevenn.util import postprocess_output
 from sevenn.train.optim import optim_dict, scheduler_dict, loss_dict
-
 
 #TODO: Optimizer type/parameter selection, loss type selection,
 # for only one [title] in structure_list: not implemented, early stopping?
 
-TO_KB = 1602.1766208  # eV/A^3 to kbar
-
-
-class LossType(Enum):
-    ENERGY = 'energy'
-    FORCE = 'force'
-    STRESS = 'stress'
-
-
-class DataSetType(Enum):
-    TRAIN = 'train'
-    VALID = 'valid'
-    TEST = 'test'
+# Introducing some builder intermetiates can remove dependency with config
+# and KEY. But is that really necessary?
 
 
 class Trainer():
 
     def __init__(
         self, model, user_labels: list, config: dict,
-        # TODO: replace per atom energy to total energy (divide here)
-        #       remove from _keys.py
-        energy_key: str = KEY.PRED_TOTAL_ENERGY,
-        ref_energy_key: str = KEY.ENERGY,
-        force_key: str = KEY.PRED_FORCE,
-        ref_force_key: str = KEY.FORCE,
-        stress_key: str = KEY.PRED_STRESS,
-        ref_stress_key: str = KEY.STRESS,
         num_atoms_key: str = KEY.NUM_ATOMS,
         optimizer_state_dict=None, scheduler_state_dict=None,
     ):
         """
         note that energy key is 'per-atom'
         """
-        self.energy_key = energy_key
-        self.ref_energy_key = ref_energy_key
-        self.force_key = force_key
-        self.ref_force_key = ref_force_key
-        self.stress_key = stress_key
-        self.ref_stress_key = ref_stress_key
-        self.num_atoms_key = num_atoms_key
 
+        # This is only data key remained after refactoring
+        # TODO: How to remove these dependencies clearly?
+        self.num_atoms_key = num_atoms_key
         self.distributed = config[KEY.IS_DDP]
 
         if self.distributed:
@@ -102,7 +77,7 @@ class Trainer():
         if scheduler_state_dict is not None:
             self.scheduler.load_state_dict(scheduler_state_dict)
 
-        loss = loss_dict[config[KEY.LOSS].lower()] # class
+        loss = loss_dict[config[KEY.LOSS].lower()]
         # TODO: handle this kind of case in parse_input not here
         try:
             loss_param = config[KEY.LOSS_PARAM]
@@ -128,54 +103,10 @@ class Trainer():
                 self.mse_hist[data_set_key][label] = \
                     {lt: [] for lt in self.loss_types}
 
-    def postprocess_output(self, output, loss_type: LossType, is_train: bool):
-        # from the output of model, calculate mse, loss
-        # since they're all LossType wise
-        def get_vector_component_and_mse(pred_V: torch.Tensor,
-                                          ref_V: torch.Tensor, vdim: int):
-            pred_V_component = torch.reshape(pred_V, (-1,))
-            ref_V_component = torch.reshape(ref_V, (-1,))
-            mse = self.mse(pred_V_component, ref_V_component)
-            mse = torch.reshape(mse, (-1, vdim))
-            mse = mse.sum(dim=1)
-            return pred_V_component, ref_V_component, mse
-
-        loss_weight = 0
-        if loss_type is LossType.ENERGY:
-            num_atoms = output[self.num_atoms_key]
-            pred = torch.squeeze(output[self.energy_key], -1) / num_atoms
-            ref = output[self.ref_energy_key] / num_atoms
-            mse = self.mse(pred, ref)
-            loss_weight = 1 # energy loss weight is 1 (it is reference)
-        elif loss_type is LossType.FORCE:
-            pred_raw = output[self.force_key]
-            ref_raw = output[self.ref_force_key]
-            pred, ref, mse = \
-                get_vector_component_and_mse(pred_raw, ref_raw, 3)
-            loss_weight = self.force_weight / 3  # normalize by # of comp
-        elif loss_type is LossType.STRESS:
-            # calculate stress loss based on kB unit (was eV/A^3)
-            pred_raw = output[self.stress_key] * TO_KB
-            ref_raw = output[self.ref_stress_key] * TO_KB
-            pred, ref, mse = \
-                get_vector_component_and_mse(pred_raw, ref_raw, 6)
-            loss_weight = self.stress_weight / 6 # normalize by # of comp
-        else:
-            raise ValueError(f'Unknown loss type: {loss_type}')
-
-        loss = None
-        if is_train:
-            if isinstance(self.criterion, torch.nn.MSELoss):
-                # mse for L2 loss is already calculated
-                loss = torch.mean(mse) * loss_weight
-            else:
-                loss = self.criterion(pred, ref) * loss_weight
-
-        return pred, ref, mse, loss
-
     def run_one_epoch(self, loader, set_type: DataSetType):
         # set model to train/eval mode
         is_train = set_type == DataSetType.TRAIN
+        criterion = self.criterion if is_train else None
         if self.distributed:
             self.model.module.set_is_batch_data(True)
         else:
@@ -187,12 +118,18 @@ class Trainer():
             self.model.eval()
 
         # Recorder of epoch loss (label, loss type wise)
-        epoch_mse = {label:
-                      {lt: torch.zeros(1, device=self.device) for lt in self.loss_types}
-                      for label in self.user_labels}
-        epoch_counter = {label:
-                      {lt: torch.zeros(1, device=self.device) for lt in self.loss_types}
-                      for label in self.user_labels}
+        epoch_mse = {
+            label: {
+                lt: torch.zeros(1, device=self.device) for lt in self.loss_types
+            }
+            for label in self.user_labels
+        }
+        epoch_counter = {
+            label: {
+                lt: torch.zeros(1, device=self.device) for lt in self.loss_types
+            }
+            for label in self.user_labels
+        }
         #force_mse_by_atom_type = {at: [] for at in self.total_atom_type}
 
         # iterate over batch
@@ -206,16 +143,20 @@ class Trainer():
             total_loss = None
             for loss_type in self.loss_types:
                 # loss is ignored if it is_train false
+                # Not strictly mse since it is not Rduced. Just (y1-y2)^2
+                # Average is done at the end of epoch
                 pred, ref, mse, loss = \
-                    self.postprocess_output(result, loss_type, is_train)
+                    postprocess_output(result, loss_type, criterion,
+                                       force_weight=self.force_weight,
+                                       stress_weight=self.stress_weight)
                 total_loss = loss if total_loss is None else total_loss + loss
                 mse_dct[loss_type] = mse.detach()
             if is_train:
                 total_loss.backward()
                 self.optimizer.step()
 
-            # store postprocessed results to history
-            # Before mean loss is required for structure-wise loss print
+            # TODO:This function call and inside is super ugly
+            # Deal with label wise arrange ment
             self._update_epoch_mse(
                 epoch_mse, label, batch[self.num_atoms_key], mse_dct, epoch_counter
             )
@@ -230,11 +171,13 @@ class Trainer():
                 self._recursive_all_reduce(epoch_mse)
                 self._recursive_all_reduce(epoch_counter)
 
+            # TODO:This is super ugly
             mse_record = {}
             for label in self.user_labels:
                 mse_record[label] = {}
                 for loss_type in self.loss_types:
-                    mse = epoch_mse[label][loss_type] / epoch_counter[label][loss_type]
+                    mse =\
+                        epoch_mse[label][loss_type] / epoch_counter[label][loss_type]
                     mse_record[label][loss_type] = mse.item()
                     self.mse_hist[set_type][label][loss_type].append(mse)
 
@@ -249,17 +192,18 @@ class Trainer():
         return mse_record, specie_wise_mse_record
 
     def scheduler_step(self, metric=None):
-        if self.scheduler is not None:
-            if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                self.scheduler.step(metric)
-            else:
-                self.scheduler.step()
-            """
-            if metric is None:
-                self.scheduler.step()
-            else:
-                self.scheduler.step(metric)
-            """
+        if self.scheduler is None:
+            return
+        if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+            self.scheduler.step(metric)
+        else:
+            self.scheduler.step()
+        """
+        if metric is None:
+            self.scheduler.step()
+        else:
+            self.scheduler.step(metric)
+        """
 
     def get_lr(self):
         return self.optimizer.param_groups[0]['lr']
@@ -309,9 +253,11 @@ class Trainer():
                 epoch_counter[label][LossType.FORCE] += natom
                 mse_labeled[LossType.FORCE] += force_mse
 
+    # Deprecated
     def _update_force_mse_by_atom_type(self, force_mse_by_atom_type,
-                                        atomic_numbers: list,
-                                        F_loss: torch.Tensor) -> dict:
+                                       atomic_numbers: list,
+                                       F_loss: torch.Tensor) -> dict:
+        # write force_mse_by_atom_type dict, element wise force loss
         for key in force_mse_by_atom_type.keys():
             indices = [i for i, v in enumerate(atomic_numbers) if v == key]
             F_mse_list = F_loss[indices]

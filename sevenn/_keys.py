@@ -1,5 +1,17 @@
 from typing import Final
 
+"""
+How to add new feature?
+
+1. Add new key to this file.
+2. Add new key to _const.py
+2.1. if the type of input is consistent,
+    write adequate condition and default to _const.py.
+2.2. if the type of input is not consistent,
+    you must add your own input validation code to
+    parse_input.py
+"""
+
 # see
 # https://github.com/pytorch/pytorch/issues/52312
 # for FYI
