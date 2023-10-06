@@ -79,6 +79,12 @@ def poscars_to_atoms(poscars: List[str]):
 # TODO: Refactor, meta, energy, stress to one csv file, only force is exception
 def write_inference_csv(output_list, rmse_dct, out, no_ref):
     is_stress = "STRESS" in rmse_dct
+    for i, output in enumerate(output_list):
+        output = output.fit_dimension()
+        if is_stress:
+            output[KEY.STRESS] = output[KEY.STRESS] * 1602.1766208
+            output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
+        output_list[i] = output.to_numpy_dict()
 
     per_graph_keys = [KEY.NUM_ATOMS, KEY.USER_LABEL,
                       KEY.ENERGY, KEY.PRED_TOTAL_ENERGY,
@@ -209,8 +215,6 @@ def inference_main(checkpoint, fnames, output_path,
             mse = mse.detach()
             mse_dct[loss_type] = torch.cat((mse_dct[loss_type], mse))
         output_list.extend(to_atom_graph_list(result))
-
-    output_list = [o.fit_dimension().to_numpy_dict() for o in output_list]
 
     # to more readable format
     rmse_dct = {k.name: v.mean().sqrt().item() for k, v in mse_dct.items()}

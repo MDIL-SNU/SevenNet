@@ -126,10 +126,6 @@ def processing_dataset(config, working_dir):
     if is_stress:
         dataset.toggle_requires_grad_of_data(KEY.POS, True)
     else:
-        dataset.delete_data_key(KEY.STRESS)
-        dataset.delete_data_key(KEY.CELL)
-        dataset.delete_data_key(KEY.CELL_SHIFT)
-        dataset.delete_data_key(KEY.CELL_VOLUME)
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
     # calculate shift and scale from dataset

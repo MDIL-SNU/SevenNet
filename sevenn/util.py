@@ -11,6 +11,8 @@ def to_atom_graph_list(atom_graph_batch):
     original to_data_list() by PyG is not enough since
     it doesn't handle inferred tensors
     """
+    is_stress = KEY.PRED_STRESS in atom_graph_batch
+
     data_list = atom_graph_batch.to_data_list()
 
     indices = atom_graph_batch[KEY.NUM_ATOMS].tolist()
@@ -21,15 +23,18 @@ def to_atom_graph_list(atom_graph_batch):
         torch.unbind(atom_graph_batch[KEY.PRED_TOTAL_ENERGY])
     inferred_force_list =\
         torch.split(atom_graph_batch[KEY.PRED_FORCE], indices)
-    inferred_stress_list =\
-        torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
+
+    if is_stress:
+        inferred_stress_list =\
+            torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
 
     for i, data in enumerate(data_list):
         data[KEY.ATOMIC_ENERGY] = atomic_energy_list[i]
         data[KEY.PRED_TOTAL_ENERGY] = inferred_total_energy_list[i]
         data[KEY.PRED_FORCE] = inferred_force_list[i]
         # To fit with KEY.STRESS (ref) format
-        data[KEY.PRED_STRESS] = torch.unsqueeze(inferred_stress_list[i], 0)
+        if is_stress:
+            data[KEY.PRED_STRESS] = torch.unsqueeze(inferred_stress_list[i], 0)
 
     return data_list
 
