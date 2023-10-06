@@ -134,7 +134,7 @@ class AtomGraphDataset:
     def items(self):
         return self.dataset.items()
 
-    def to_dct(self):
+    def to_dict(self):
         dct_dataset = {}
         for label, data_list in self.dataset.items():
             dct_dataset[label] = [datum.to_dict() for datum in data_list]

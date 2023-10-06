@@ -1,8 +1,9 @@
-import os
+import os, sys
 import csv
 from typing import List
 
 import torch
+from torch_geometric.loader import DataLoader
 import numpy as np
 
 from tqdm import tqdm
@@ -12,9 +13,11 @@ from ase.calculators.singlepoint import SinglePointCalculator
 
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.nn.node_embedding import get_type_mapper_from_specie
-from sevenn.util import load_model_from_checkpoint
+from sevenn.util import load_model_from_checkpoint, postprocess_output,\
+    to_atom_graph_list
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.scripts.graph_build import graph_build
+from sevenn._const import LossType
 import sevenn._keys as KEY
 
 
@@ -74,170 +77,96 @@ def poscars_to_atoms(poscars: List[str]):
 
 
 # TODO: Refactor, meta, energy, stress to one csv file, only force is exception
-def _write_inference_csv(pred_ref_dct, rmse_dct, output_path, no_ref):
-    """
-    subroutine for inference
-    """
+def write_inference_csv(output_list, rmse_dct, out, no_ref):
+    is_stress = "STRESS" in rmse_dct
 
-    with open(f"{output_path}/rmse.txt", "w") as f:
-        if not no_ref:
-            f.write(f"Energy rmse (eV/atom): {rmse_dct['per_atom_energy']}\n")
-            f.write(f"Force rmse (eV/A): {rmse_dct['force']}\n")
-            if "stress" in rmse_dct:
-                f.write(f"Stress rmse (kbar): {rmse_dct['stress']}\n")
-        else:
-            f.write("There is no ref data. RMSE is meaningless\n")
-        for idx, info in enumerate(pred_ref_dct["info"]):
-            f.write(f"{idx}: {info}\n")
+    per_graph_keys = [KEY.NUM_ATOMS, KEY.USER_LABEL,
+                      KEY.ENERGY, KEY.PRED_TOTAL_ENERGY,
+                      KEY.STRESS, KEY.PRED_STRESS]
 
-    with open(f"{output_path}/energy.csv", "w", newline="") as f:
-        fieldnames = ["StructureID", "Pred_energy(eV/atom)", "Ref_energy(eV/atom)"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for i, (pred, ref) in enumerate(zip(pred_ref_dct["per_atom_energy"][0],
-                                            pred_ref_dct["per_atom_energy"][1])):
-            writer.writerow({"StructureID": i,
-                             "Pred_energy(eV/atom)": pred,
-                             "Ref_energy(eV/atom)": ref})
+    per_atom_keys = [KEY.ATOMIC_NUMBERS, KEY.ATOMIC_ENERGY, KEY.POS,
+                     KEY.FORCE, KEY.PRED_FORCE]
 
-    with open(f"{output_path}/force.csv", "w", newline="") as f:
-        fieldnames = ["StructureID", "AtomIndex",
-                      "Pred_force_x", "Pred_force_y", "Pred_force_z",
-                      "Ref_force_x", "Ref_force_y", "Ref_force_z"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for i, (pred, ref) in enumerate(zip(pred_ref_dct["force"][0],
-                                            pred_ref_dct["force"][1])):
-            for j, (pred_f, ref_f) in enumerate(zip(pred, ref)):
-                writer.writerow({"StructureID": i,
-                                 "AtomIndex": j,
-                                 "Pred_force_x": pred_f[0],
-                                 "Pred_force_y": pred_f[1],
-                                 "Pred_force_z": pred_f[2],
-                                 "Ref_force_x": ref_f[0],
-                                 "Ref_force_y": ref_f[1],
-                                 "Ref_force_z": ref_f[2]})
-    if not "stress" in rmse_dct:
-        return
+    def unfold_dct_val(dct, keys, suffix_list=None):
+        res = {}
+        if suffix_list == None:
+            suffix_list = range(100)
+        for k in keys:
+            if k not in dct:
+                res[k] = "-"
+            elif isinstance(dct[k], np.ndarray) and dct[k].ndim != 0:
+                res.update({f"{k}_{suffix_list[i]}": v for i, v in enumerate(dct[k])})
+            else:
+                res[k] = dct[k]
+        return res
 
-    with open(f"{output_path}/stress.csv", "w", newline="") as f:
-        fieldnames = ["StructureID",
-                      "Pred_stress_xx", "Pred_stress_yy", "Pred_stress_zz",
-                      "Pred_stress_xy", "Pred_stress_yz", "Pred_stress_zx",
-                      "Ref_stress_xx", "Ref_stress_yy", "Ref_stress_zz",
-                      "Ref_stress_xy", "Ref_stress_yz", "Ref_stress_zx"]
-        writer = csv.DictWriter(f, fieldnames=fieldnames)
-        writer.writeheader()
-        for i, (pred, ref) in enumerate(zip(pred_ref_dct["stress"][0],
-                                            pred_ref_dct["stress"][1])):
-            writer.writerow({"StructureID": i,
-                             "Pred_stress_xx": pred[0],
-                             "Pred_stress_yy": pred[1],
-                             "Pred_stress_zz": pred[2],
-                             "Pred_stress_xy": pred[3],
-                             "Pred_stress_yz": pred[4],
-                             "Pred_stress_zx": pred[5],
-                             "Ref_stress_xx": ref[0],
-                             "Ref_stress_yy": ref[1],
-                             "Ref_stress_zz": ref[2],
-                             "Ref_stress_xy": ref[3],
-                             "Ref_stress_yz": ref[4],
-                             "Ref_stress_zx": ref[5]})
-    return
+    def per_atom_dct_list(dct, keys):
+        sfx_list = ["x", "y", "z"]
+        res = []
+        natoms = dct[KEY.NUM_ATOMS]
+        extracted = {k: dct[k] for k in keys}
+        for i in range(natoms):
+            raw = {}
+            raw.update({k: v[i] for k, v in extracted.items()})
+            per_atom_dct = unfold_dct_val(raw, keys, suffix_list=sfx_list)
+            res.append(per_atom_dct)
+        return res
 
+    if not no_ref:
+        with open(f"{out}/rmse.txt", "w") as f:
+            f.write(f"Energy rmse (eV/atom): {rmse_dct['ENERGY']}\n")
+            f.write(f"Force rmse (eV/A): {rmse_dct['FORCE']}\n")
+            if is_stress:
+                f.write(f"Stress rmse (kbar): {rmse_dct['STRESS']}\n")
 
-# TODO: Refactor, treat as list of batched outpus, now is super ugly
-def _postprocess_output_list(output_list):
-    """
-    subroutine for inference
-    return:
-        pred_ref_dct: dict of tuple(pred, ref) of list of numpy, energy and stress
-                      has extra dimension
-        pred_ref_concat_dct: dict of tuple of concatenated pred and ref tensors
-        rmse_dct: dict of rmse
-    """
-    TO_KB = 1602.1766208  # eV/A^3 to kbar
-    POSTPROCESS_KEY_DCT = \
-        {"per_atom_energy":
-            {"pred_key": KEY.PRED_TOTAL_ENERGY,
-             "ref_key": KEY.ENERGY,
-             "vdim": 1,
-             "coeff": 1,
-             },
-         "force":
-            {"pred_key": KEY.PRED_FORCE,
-             "ref_key": KEY.FORCE,
-             "vdim": 3,
-             "coeff": 1,
-             },
-         "stress":
-            {"pred_key": KEY.PRED_STRESS,
-             "ref_key": KEY.STRESS,
-             "vdim": 6,
-             "coeff": TO_KB,
-             }
-         }
+    try:
+        with open(f"{out}/info.csv", "w", newline="") as f:
+            header = output_list[0][KEY.INFO].keys()
+            writer = csv.DictWriter(f, fieldnames=header)
+            writer.writeheader()
+            for output in output_list:
+                writer.writerow(output[KEY.INFO])
+    except (KeyError, TypeError, AttributeError, csv.Error) as e:
+        print(e)
+        print("failed to write meta data, info.csv is not written")
 
-    def get_vector_component_and_rmse(pred_V, ref_V, vdim: int):
-        pred_V_component = torch.reshape(pred_V, (-1,))
-        ref_V_component = torch.reshape(ref_V, (-1,))
-        mse = (pred_V_component - ref_V_component) ** 2
-        mse = torch.reshape(mse, (-1, vdim))
-        mses = mse.sum(dim=1).tolist()
-        rmse = np.sqrt(np.mean(mses))
-        return pred_V_component, ref_V_component, rmse
+    with open(f"{out}/per_graph.csv", "w", newline="") as f:
+        sfx_list = ["xx", "yy", "zz", "xy", "yz", "zx"]  # for stress
+        writer = None
+        for output in output_list:
+            cell_dct = {KEY.CELL: output[KEY.CELL]}
+            cell_dct = unfold_dct_val(cell_dct, [KEY.CELL], ["a", "b", "c"])
+            data = {**unfold_dct_val(output, per_graph_keys, sfx_list), **cell_dct}
+            if writer == None:
+                writer = csv.DictWriter(f, fieldnames=data.keys())
+                writer.writeheader()
+            writer.writerow(data)
 
-    rmse_dct = {"per_atom_energy": {}, "force": {}}
-    if KEY.PRED_STRESS in output_list[0]:
-        rmse_dct["stress"] = {}
-
-    pred_ref_dct = {}
-    pred_ref_concat_dct = {}
-    nstct = len(output_list)
-    for key in rmse_dct.keys():
-        pks = POSTPROCESS_KEY_DCT[key]
-        vdim = pks["vdim"]
-        # as a list of tensors for rmse calc
-        pred_list = [o[pks["pred_key"]] * pks["coeff"] for o in output_list]
-        ref_list = [o[pks["ref_key"]] * pks["coeff"] for o in output_list]
-        pred_tensor = torch.cat([t.view(-1, vdim) for t in pred_list], dim=0)
-        ref_tensor = torch.cat([t.view(-1, vdim) for t in ref_list], dim=0)
-
-        # restuct to numpy, it gives extra dimension to energy and stress but
-        # there is no option.. (since force has num of atoms dimension)
-        pred_list = [torch.squeeze(t).detach().numpy() for t in pred_list]
-        ref_list = [torch.squeeze(t).detach().numpy() for t in ref_list]
-        if key == "force":  # edge case of force, only one atom > squeeze > DOOM
-            for idx, (pr, rf) in enumerate(zip(pred_list, ref_list)):
-                if pr.shape == (3,):
-                    pred_list[idx] = pr.reshape(1, 3)
-                    ref_list[idx] = rf.reshape(1, 3)
-        if key == "per_atom_energy":
-            natoms = np.array([o[KEY.NUM_ATOMS].item() for o in output_list])
-            pred_list = pred_list / natoms
-            ref_list = ref_list / natoms
-            pred_tensor = pred_tensor / natoms
-            ref_tensor = ref_tensor / natoms
-
-        pred_ref_dct[key] = (pred_list, ref_list)
-        pred_ref_concat_dct[key] = (pred_tensor, ref_tensor)
-        _, _, rmse = get_vector_component_and_rmse(pred_tensor, ref_tensor, vdim)
-        rmse_dct[key] = rmse
-    pred_ref_dct["info"] = [o[KEY.INFO] for o in output_list]
-    return pred_ref_dct, pred_ref_concat_dct, rmse_dct
+    with open(f"{out}/per_atom.csv", "w", newline="") as f:
+        writer = None
+        for i, output in enumerate(output_list):
+            list_of_dct = per_atom_dct_list(output, per_atom_keys)
+            for j, dct in enumerate(list_of_dct):
+                idx_dct = {"stct_id": i, "atom_id": j}
+                data = {**idx_dct, **dct}
+                if writer == None:
+                    writer = csv.DictWriter(f, fieldnames=data.keys())
+                    writer.writeheader()
+                writer.writerow(data)
 
 
-def inference_main(checkpoint, fnames, output_path, num_cores=1, device="cpu"):
+def inference_main(checkpoint, fnames, output_path,
+                   num_cores=1, device="cpu", batch_size=5):
     checkpoint = torch.load(checkpoint, map_location=device)
     config = checkpoint["config"]
     cutoff = config[KEY.CUTOFF]
     type_map = config[KEY.TYPE_MAP]
 
     model = load_model_from_checkpoint(checkpoint)
-    model.set_is_batch_data(False)
+    model.set_is_batch_data(True)
     model.eval()
 
-    head = os.path.basename(fnames[0])  # expect user did right thing
+    head = os.path.basename(fnames[0])
     atoms_list = None
     no_ref = False
     if head.endswith('sevenn_data'):
@@ -254,28 +183,39 @@ def inference_main(checkpoint, fnames, output_path, num_cores=1, device="cpu"):
     inference_set.x_to_one_hot_idx(type_map)
     if config[KEY.IS_TRAIN_STRESS]:
         inference_set.toggle_requires_grad_of_data(KEY.POS, True)
+        is_stress = True
     else:
         inference_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
+        is_stress= False
+
+    loss_types = [LossType.ENERGY, LossType.FORCE]
+    if is_stress:
+        loss_types.append(LossType.STRESS)
+    mse_dct = {k: torch.Tensor() for k in loss_types}
 
     infer_list = inference_set.to_list()
+    #infer_list, info_list = inference_set.seperate_info()
+    loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
+
     output_list = []
-
-    model.to(device)
     # TODO: make it multicore parallel (you know it is not pickable directly...)
-    for datum in tqdm(infer_list):
-        datum.to(device)
-        output = model(datum)
-        for k, v in output:
-            if isinstance(v, torch.Tensor):
-                output[k] = v.detach().cpu()
-            else:
-                output[k] = v
-        output_list.append(output)
+    #for batch, info in zip(tqdm(loader), info_list):
+    for batch in tqdm(loader):
+        batch_device = batch.to(device, non_blocking=True)
+        result = model(batch_device)
+        for loss_type in loss_types:
+            mse, _ = \
+                postprocess_output(result, loss_type)
+            mse = mse.detach()
+            mse_dct[loss_type] = torch.cat((mse_dct[loss_type], mse))
+        output_list.extend(to_atom_graph_list(result))
 
-    pred_ref_dct, pred_ref_concat_dct, rmse_dct \
-        = _postprocess_output_list(output_list)
+    output_list = [o.fit_dimension().to_numpy_dict() for o in output_list]
 
-    _write_inference_csv(pred_ref_dct, rmse_dct, output_path, no_ref=no_ref)
+    # to more readable format
+    rmse_dct = {k.name: v.mean().sqrt().item() for k, v in mse_dct.items()}
+
+    write_inference_csv(output_list, rmse_dct, output_path, no_ref=no_ref)
 
 
 if __name__ == "__main__":

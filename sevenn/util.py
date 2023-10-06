@@ -5,6 +5,36 @@ import sevenn._keys as KEY
 from sevenn._const import LossType
 
 
+def to_atom_graph_list(atom_graph_batch):
+    """
+    torch_geometric batched data to seperate list
+    original to_data_list() by PyG is not enough since
+    it doesn't handle inferred tensors
+    """
+    data_list = atom_graph_batch.to_data_list()
+
+    indices = atom_graph_batch[KEY.NUM_ATOMS].tolist()
+
+    atomic_energy_list =\
+        torch.split(atom_graph_batch[KEY.ATOMIC_ENERGY], indices)
+    inferred_total_energy_list =\
+        torch.unbind(atom_graph_batch[KEY.PRED_TOTAL_ENERGY])
+    inferred_force_list =\
+        torch.split(atom_graph_batch[KEY.PRED_FORCE], indices)
+    inferred_stress_list =\
+        torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
+
+    for i, data in enumerate(data_list):
+        data[KEY.ATOMIC_ENERGY] = atomic_energy_list[i]
+        data[KEY.PRED_TOTAL_ENERGY] = inferred_total_energy_list[i]
+        data[KEY.PRED_FORCE] = inferred_force_list[i]
+        # To fit with KEY.STRESS (ref) format
+        data[KEY.PRED_STRESS] = torch.unsqueeze(inferred_stress_list[i], 0)
+
+    return data_list
+
+
+# TODO: Also weight should be abstracted rather than hard-coded
 def postprocess_output(output, loss_type, criterion=None,
                        energy_weight=1.0, force_weight=1.0, stress_weight=1.0):
     """
@@ -43,6 +73,8 @@ def postprocess_output(output, loss_type, criterion=None,
     loss_weight = 0
     if loss_type is LossType.ENERGY:
         num_atoms = output[KEY.NUM_ATOMS]
+        # Inconsistency of shape of pred and ref total energy
+        # Should be fixed in the very far future
         pred = torch.squeeze(output[KEY.PRED_TOTAL_ENERGY], -1) / num_atoms
         ref = output[KEY.ENERGY] / num_atoms
         mse = MSE(pred, ref)
@@ -71,7 +103,7 @@ def postprocess_output(output, loss_type, criterion=None,
         else:
             loss = criterion(pred, ref) * loss_weight
 
-    return pred, ref, mse, loss
+    return mse, loss
 
 
 def onehot_to_chem(one_hot_indicies, type_map):

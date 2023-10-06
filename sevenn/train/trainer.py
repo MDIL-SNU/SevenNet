@@ -24,11 +24,7 @@ class Trainer():
         num_atoms_key: str = KEY.NUM_ATOMS,
         optimizer_state_dict=None, scheduler_state_dict=None,
     ):
-        """
-        note that energy key is 'per-atom'
-        """
-
-        # This is only data key remained after refactoring
+        # This(num_atoms) is only data key remained after refactoring
         # TODO: How to remove these dependencies clearly?
         self.num_atoms_key = num_atoms_key
         self.distributed = config[KEY.IS_DDP]
@@ -138,14 +134,14 @@ class Trainer():
             label = batch[KEY.USER_LABEL]
             self.optimizer.zero_grad(set_to_none=True)
             # forward
-            result = self.model(batch)
+            result = self.model(batch_device)
             mse_dct = {}
             total_loss = None
             for loss_type in self.loss_types:
                 # loss is ignored if it is_train false
                 # Not strictly mse since it is not Rduced. Just (y1-y2)^2
                 # Average is done at the end of epoch
-                pred, ref, mse, loss = \
+                mse, loss =\
                     postprocess_output(result, loss_type, criterion,
                                        force_weight=self.force_weight,
                                        stress_weight=self.stress_weight)
