@@ -1,0 +1,30 @@
+Testing custom_scale.yaml
+0
+Testing custom_shift.yaml
+0
+Testing input_base.yaml
+0
+Testing input_x_stress.yaml
+0
+Testing lmax_0.yaml
+0
+Testing lmax_3_layer_4.yaml
+0
+Testing loss_huber.yaml
+0
+Testing optimize_by_reduce.yaml
+0
+Testing parity_false.yaml
+0
+Testing species_wise_shift_scale.yaml
+0
+Testing species_wise_shift_scale_trainable.yaml
+0
+Testing species_wise_shift_scale_trainable_custom.yaml
+0
+Testing train_avg_num_neigh.yaml
+0
+Testing train_shift_scale.yaml
+0
+Testing use_bias_in_linear.yaml
+0

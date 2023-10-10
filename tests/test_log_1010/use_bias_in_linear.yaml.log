@@ -1,0 +1,95 @@
+Check files for testbot exist
+Hello, world!
+SEVENNet version 0.8.6
+PyTorch version 1.12.1+cu102
+ASE version 3.22.1
+
+Compiled lammps metadata:
+Large-scale Atomic/Molecular Massively Parallel Simulator - 23 Jun 2022 - Update 1
+OS: Linux "Ubuntu 20.04.5 LTS" 5.15.90.1-microsoft-standard-WSL2 x86_64
+Compiler: GNU C++ 11.1.0 with OpenMP 4.5
+C++ standard: C++14
+MPI v3.1: Open MPI v4.0.3, package: Debian OpenMPI, ident: 4.0.3, repo rev: v4.0.3, Mar 03, 2020
+----------------------------------------------------
+Atoms info:
+Number of atoms: 96
+Species: Counter({'O': 64, 'Hf': 32})
+Cell:
+ [[ 10.129786   0.         0.      ]
+ [  1.730355   0.       -10.371119]
+ [  0.        10.263143   0.      ]]
+Energy: -2759.11555469
+Energy per atom: -28.740787028020833
+Position of first atom: [10.40262  7.59496 -9.10077]
+Force of first atom: [ 1.575177  1.330752 -3.538164]
+Stress(kB):
+ [[-77.70829  -2.52352 -66.48603]
+ [ -2.52352 -12.0443   -9.28393]
+ [-66.48603  -9.28393 -62.22823]]
+----------------------------------------------------
+sevenn_graph_build on OUTCAR
+sevenn_graph_build succeeded
+sevenn_graph_build wall time: 0:00:01.936867
+----------------------------------------------------
+
+sevenn_train on data
+sevenn_train succeeded
+sevenn_train wall time: 0:00:03.977168
+----------------------------------------------------
+
+sevenn_inference on OUTCAR
+sevenn_inference succeeded
+sevenn_inference wall time: 0:00:03.708938
+----------------------------------------------------
+Since we used validation set of training to inference, we expect
+validation rmse of sevenn_train and rmse of sevenn_infer to be same
+Energy RMSE test passed
+Force RMSE test passed
+----------------------------------------------------
+
+test lmp serial potential
+
+sevenn_get_model
+sevenn_get_model succeeded
+sevenn_get_model wall time: 0:00:03.922691
+----------------------------------------------------
+
+LAMMPS test
+lammps run succeeded
+lammps run wall time: 0:00:00.739032
+----------------------------------------------------
+atoms1 and atoms2 have same total energy
+atoms1 and atoms2 have same forces, within atol=1e-06
+
+Inference and serial test passed
+----------------------------------------------------
+
+test lmp parallel potential
+
+sevenn_get_model
+sevenn_get_model succeeded
+sevenn_get_model wall time: 0:00:03.808566
+----------------------------------------------------
+
+Replicate cell by 3x3x3 to get correct force for parallel
+
+LAMMPS test
+lammps run succeeded
+lammps run wall time: 0:00:01.739040
+----------------------------------------------------
+
+Serial 333 lammps run done
+
+LAMMPS test
+lammps run succeeded
+lammps run wall time: 0:00:01.340243
+----------------------------------------------------
+
+Parallel 333 lammps run done
+atoms1 and atoms2 have same total energy
+atoms1 and atoms2 have same forces, within atol=1e-07
+
+Serial and parallel test passed
+----------------------------------------------------
+Energy RMSE (as classifier btw tests):
+0.009464263916015625
