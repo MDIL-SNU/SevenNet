@@ -70,12 +70,14 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     """
     feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]
     lmax = model_config[KEY.LMAX]
+    lmax_edge = lmax
+    lmax_node = lmax
     num_convolution_layer = model_config[KEY.NUM_CONVOLUTION]
     is_parity = model_config[KEY.IS_PARITY]  # boolean
     is_stress = \
         model_config[KEY.IS_TRACE_STRESS] or model_config[KEY.IS_TRAIN_STRESS]
     num_species = model_config[KEY.NUM_SPECIES]
-    irreps_spherical_harm = Irreps.spherical_harmonics(lmax, -1 if is_parity else 1)
+    irreps_spherical_harm = Irreps.spherical_harmonics(lmax_edge, -1 if is_parity else 1)
     if parallel:
         layers_list = [OrderedDict() for _ in range(num_convolution_layer)]
         layers_idx = 0
@@ -107,7 +109,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         basis_module=radial_basis_module,
         cutoff_module=cutoff_function_module,
         # operate on r/||r||
-        spherical_module=SphericalEncoding(lmax),
+        spherical_module=SphericalEncoding(lmax_edge),
     )
     if is_stress:
         layers.update(
@@ -185,15 +187,15 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
         if optimize_by_reduce:
             if i == num_convolution_layer - 1:
-                lmax = 0
+                lmax_node = 0
 
         tp_irreps_out = infer_irreps_out(irreps_x,
                                          irreps_spherical_harm,
-                                         drop_l=lmax)
+                                         drop_l=lmax_node)
 
         true_irreps_out = infer_irreps_out(irreps_x,
                                            irreps_spherical_harm,
-                                           drop_l=lmax,
+                                           drop_l=lmax_node,
                                            fix_multiplicity=feature_multiplicity)
 
         # output irreps of linear 2 & self_connection is determined by Gate
@@ -240,7 +242,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                         basis_module=radial_basis_module,
                         cutoff_module=cutoff_function_module,
                         # operate on r/||r||
-                        spherical_module=SphericalEncoding(lmax),
+                        spherical_module=SphericalEncoding(lmax_edge),
                     )
                 }
             )

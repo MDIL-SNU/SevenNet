@@ -120,7 +120,7 @@ DEFAULT_TRAINING_CONFIG = {
 # condition for each inputs, key omitted here should be initialized by hand
 MODEL_CONFIG_CONDITION = {
     KEY.NODE_FEATURE_MULTIPLICITY: is_positive,
-    KEY.LMAX: is_positive,
+    KEY.LMAX: lambda x: x >= 0,
     KEY.IS_PARITY: None,
     KEY.RADIAL_BASIS: {
         KEY.RADIAL_BASIS_NAME: lambda x: x in IMPLEMENTED_RADIAL_BASIS,
