@@ -52,11 +52,3 @@ class SelfConnectionOutro(nn.Module):
         del data[KEY.SELF_CONNECTION_TEMP]
         return data
 
-
-def main():
-    print('hi!')
-
-
-if __name__ == "__main__":
-    main()
-

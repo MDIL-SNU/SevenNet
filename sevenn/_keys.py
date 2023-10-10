@@ -1,5 +1,17 @@
 from typing import Final
 
+"""
+How to add new feature?
+
+1. Add new key to this file.
+2. Add new key to _const.py
+2.1. if the type of input is consistent,
+    write adequate condition and default to _const.py.
+2.2. if the type of input is not consistent,
+    you must add your own input validation code to
+    parse_input.py
+"""
+
 # see
 # https://github.com/pytorch/pytorch/issues/52312
 # for FYI
@@ -23,6 +35,7 @@ EDGE_LENGTH: Final[str] = "edge_length"        # (N_edge, 1)
 
 # some primary data of graph
 EDGE_IDX: Final[str] = "edge_index"            # (2, N_edge) PyG
+ATOM_TYPE: Final[str] = "atom_type"            # (N) one-hot index of nodes
 NODE_FEATURE: Final[str] = "x"                 # (N, ?) PyG
 NODE_FEATURE_GHOST: Final[str] = "x_ghost"
 NODE_ATTR: Final[str] = "node_attr"            # (N, N_species) from one_hot
@@ -39,6 +52,7 @@ SCALED_ENERGY: Final[str] = "scaled_total_energy"
 
 # general outputs of models
 SCALED_ATOMIC_ENERGY: Final[str] = "scaled_atomic_energy"
+ATOMIC_ENERGY: Final[str] = "atomic_energy"
 PRED_TOTAL_ENERGY: Final[str] = "inferred_total_energy"
 
 #TODO: remove later (after doing moving nn.Rescale TODO)
@@ -148,6 +162,9 @@ USE_BIAS_IN_LINEAR = "use_bias_in_linear"
 AVG_NUM_NEIGHBOR: Final[str] = "avg_num_neigh"
 SHIFT: Final[str] = "shift"
 SCALE: Final[str] = "scale"
+
+USE_SPECIES_WISE_SHIFT_SCALE: Final[str] = "use_species_wise_shift_scale"
+
 TRAIN_SHIFT_SCALE: Final[str] = "train_shift_scale"
 TRAIN_AVG_NUM_NEIGH: Final[str] = "train_avg_num_neigh"
 

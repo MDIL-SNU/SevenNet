@@ -5,10 +5,12 @@ from collections import Counter
 from typing import List, Dict, Callable, Optional, Union
 
 import torch
-from ase.data import chemical_symbols
+from torch_scatter import scatter
 import numpy as np
+from sklearn.linear_model import LinearRegression
+from ase.data import chemical_symbols
 
-import sevenn.util
+import sevenn.util as util
 import sevenn._keys as KEY
 
 
@@ -29,7 +31,7 @@ class AtomGraphDataset:
     for now, metadata 'might' have following keys:
         KEY.CUTOFF (float), KEY.CHEMICAL_SPECIES (Dict)
     """
-    DATA_KEY_X = KEY.NODE_FEATURE
+    DATA_KEY_X = KEY.NODE_FEATURE  # atomic_number > one_hot_idx > one_hot_vector
     DATA_KEY_ENERGY = KEY.ENERGY
     DATA_KEY_FORCE = KEY.FORCE
     KEY_DEFAULT = 'No_label'
@@ -132,7 +134,7 @@ class AtomGraphDataset:
     def items(self):
         return self.dataset.items()
 
-    def to_dct(self):
+    def to_dict(self):
         dct_dataset = {}
         for label, data_list in self.dataset.items():
             dct_dataset[label] = [datum.to_dict() for datum in data_list]
@@ -219,11 +221,11 @@ class AtomGraphDataset:
         for label, data in self.dataset.items():
             natoms[label] = Counter()
             for datum in data:
-                # list of atomic number
                 if self.x_is_one_hot_idx:
-                    Zs = [chemical_symbols[type_map_rev[z]] for z in datum[self.DATA_KEY_X].tolist()]
+                    Zs = util.onehot_to_chem(datum[self.DATA_KEY_X], type_map)
                 else:
-                    Zs = [chemical_symbols[z] for z in datum[self.DATA_KEY_X].tolist()]
+                    Zs = [chemical_symbols[z]
+                          for z in datum[self.DATA_KEY_X].tolist()]
                 cnt = Counter(Zs)
                 natoms[label] += cnt
             natoms[label] = dict(natoms[label])
@@ -240,14 +242,56 @@ class AtomGraphDataset:
         """
         alias for get_per_atom_mean(KEY.ENERGY)
         """
-        return self.get_per_atom_mean(KEY.ENERGY)
+        return self.get_per_atom_mean(self.DATA_KEY_ENERGY)
 
-    def get_force_rmse(self, force_key=KEY.FORCE):
+    def get_species_ref_energy_by_linear_comb(self, num_chem_species=0):
+        """
+        Total energy as y, composition as c_i,
+        solve linear regression of y = c_i*X
+        sklearn LinearRegression as solver
+
+        x should be one-hot-indexed
+        give num_chem_species if possible
+        """
+        assert self.x_is_one_hot_idx is True
+        data_list = self.to_list()
+
+        if num_chem_species == 0:
+            tmp = torch.concat([x[self.DATA_KEY_X] for x in data_list])
+            num_chem_species = int(tmp.max() + 1)
+
+        c = torch.zeros((len(data_list), num_chem_species))
+        for idx, datum in enumerate(data_list):
+            c[idx] = torch.bincount(datum[self.DATA_KEY_X],
+                                    minlength=num_chem_species)
+        y = torch.Tensor([x[self.DATA_KEY_ENERGY] for x in data_list])
+        c = c.numpy()
+        y = y.numpy()
+        reg = LinearRegression(fit_intercept=False).fit(c, y)
+
+        return torch.Tensor(reg.coef_)
+
+    def get_force_rms(self):
         force_list = []
         for x in self.to_list():
-            force_list.extend(x[force_key].reshape(-1,).tolist())
+            force_list.extend(x[self.DATA_KEY_FORCE].reshape(-1,).tolist())
         force_list = torch.Tensor(force_list)
         return float(torch.sqrt(torch.mean(torch.pow(force_list, 2))))
+
+    def get_species_wise_force_rms(self):
+        """
+        Return force rms for each species
+        Averaged by each components (x, y, z)
+        """
+        assert self.x_is_one_hot_idx is True
+        data_list = self.to_list()
+
+        atomx = torch.concat([d[self.DATA_KEY_X] for d in data_list])
+        force = torch.concat([d[self.DATA_KEY_FORCE] for d in data_list])
+
+        return torch.sqrt(
+            scatter(force.square(), atomx, dim=0, reduce='mean').mean(dim=1)
+        )
 
     def get_avg_num_neigh(self):
         n_neigh = []
@@ -327,7 +371,7 @@ class AtomGraphDataset:
         data_list = self.to_list()
         for datum in data_list:
             for k, v in list(datum.items()):
-                datum[k] = sevenn.util.dtype_correct(v, float_dtype, int_dtype)
+                datum[k] = util.dtype_correct(v, float_dtype, int_dtype)
 
     def delete_data_key(self, key):
         for data in self.to_list():

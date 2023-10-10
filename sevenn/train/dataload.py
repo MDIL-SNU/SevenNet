@@ -85,7 +85,6 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
         KEY.ENERGY: y_energy,
         KEY.FORCE: y_force,
         KEY.STRESS: y_stress,
-        # TODO: Should I do this only if stress is present?
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
         KEY.CELL_VOLUME: np.einsum(
@@ -243,7 +242,7 @@ def data_for_E3_equivariant_model(atoms, cutoff, type_map: Dict[int, int]):
     data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
     return data
 
-
+# deprecated
 def poscar_for_E3_equivariant_model(atoms, cutoff: float,
                                     type_map: Dict[int, int],
                                     is_stress: bool):

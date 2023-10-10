@@ -4,7 +4,7 @@ import numpy as np
 from scipy.stats import gaussian_kde
 from sklearn.neighbors import KernelDensity
 
-from sevenn.train.trainer import DataSetType, LossType
+from sevenn._const import DataSetType, LossType
 
 matplotlib.use('pdf')
 

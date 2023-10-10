@@ -10,6 +10,7 @@ from sevenn.train.dataset import AtomGraphDataset
 from sevenn.train.dataload import parse_structure_list, data_for_E3_equivariant_model
 from sevenn.scripts.graph_build import file_to_dataset
 from sevenn.sevenn_logger import Logger
+from sevenn.util import onehot_to_chem
 import sevenn._keys as KEY
 
 
@@ -125,10 +126,6 @@ def processing_dataset(config, working_dir):
     if is_stress:
         dataset.toggle_requires_grad_of_data(KEY.POS, True)
     else:
-        dataset.delete_data_key(KEY.STRESS)
-        dataset.delete_data_key(KEY.CELL)
-        dataset.delete_data_key(KEY.CELL_SHIFT)
-        dataset.delete_data_key(KEY.CELL_VOLUME)
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
     # calculate shift and scale from dataset
@@ -187,13 +184,31 @@ def processing_dataset(config, working_dir):
     #                                 if test_set is not None else 0))
 
     Logger().write("\nCalculating shift and scale from training set...\n")
-    #shift, scale = train_set.shift_scale_dataset()
-    shift = train_set.get_per_atom_energy_mean()
-    scale = train_set.get_force_rmse()
+    if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+        shift = train_set.get_per_atom_energy_mean()
+        scale = train_set.get_force_rms()
+        Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
+        Logger().write(f"calculated force rms scale is {scale:.6f} eV/Angstrom\n")
+    else:
+        type_map = config[KEY.TYPE_MAP]
+        n_chem = len(type_map)
+        shift = \
+            train_set.get_species_ref_energy_by_linear_comb(n_chem)
+        scale = \
+            train_set.get_species_wise_force_rms()
+        chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
+        Logger().write("Calculated specie wise shift, scale is\n")
+        for k, (sft, scl) in zip(chem_strs, zip(shift, scale)):
+            Logger().write(f"{k:<3} : {sft:.6f} eV, {scl:.6f} eV/Angstrom\n")
+
+    if config[KEY.SHIFT] != False:
+        shift = config[KEY.SHIFT]
+        Logger().write(f"User defined shift found: overwrite shift to {shift}\n")
+    if config[KEY.SCALE] != False:
+        scale = config[KEY.SCALE]
+        Logger().write(f"User defined scale found: overwrite scale to {scale}\n")
+
     config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
-    #valid_set.shift_scale_dataset(shift=shift, scale=scale)
-    Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
-    Logger().write(f"calculated force rms scale is {scale:.6f} eV/Angstrom\n")
 
     avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
     if avg_num_neigh:

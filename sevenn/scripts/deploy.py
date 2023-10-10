@@ -76,8 +76,8 @@ def deploy(model_state_dct, config, fname):
     #model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
     model.replace_module("force output",
                          ForceOutputFromEdge(
-                             data_key_energy=KEY.SCALED_ENERGY,
-                             data_key_force=KEY.SCALED_FORCE)
+                             data_key_energy=KEY.PRED_TOTAL_ENERGY,
+                             data_key_force=KEY.PRED_FORCE)
                          )
     model.delete_module_by_key("EdgePreprocess")
     model.set_is_batch_data(False)
@@ -132,10 +132,10 @@ def deploy_parallel(model_state_dct, config, fname):
     num_species = config[KEY.NUM_SPECIES]
     #model_list[0].prepand_module('one_hot', OnehotEmbedding(
     #    data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
-    model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
-        data_key_in=KEY.NODE_FEATURE_GHOST,
-        num_classes=num_species,
-        data_key_additional=None))
+    #model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
+    #    data_key_in=KEY.NODE_FEATURE_GHOST,
+    #    num_classes=num_species,
+    #    data_key_additional=None))
 
     #print(config)
     # prepare some extra information for MD
@@ -152,15 +152,14 @@ def deploy_parallel(model_state_dct, config, fname):
     # TODO: this code is error prone
     comm_size = model_list[-1][1].convolution.irreps_in1.dim
 
-    # TODO: I think this is somewhat dangerous...
-    shift = model_state_dct["rescale.shift"].item()
-    scale = model_state_dct["rescale.scale"].item()
+    #shift = model_state_dct["rescale.shift"].item()
+    #scale = model_state_dct["rescale.scale"].item()
 
     md_configs.update({"chemical_symbols_to_index": chem_list})
     md_configs.update({"cutoff": str(config[KEY.CUTOFF])})
     md_configs.update({"num_species": str(config[KEY.NUM_SPECIES])})
-    md_configs.update({"shift": str(shift)})
-    md_configs.update({"scale": str(scale)})
+    #md_configs.update({"shift": str(shift)})
+    #md_configs.update({"scale": str(scale)})
     md_configs.update({"comm_size": str(comm_size)})
     md_configs.update({"model_type": config[KEY.MODEL_TYPE]})
     md_configs.update({"version": _const.SEVENN_VERSION})

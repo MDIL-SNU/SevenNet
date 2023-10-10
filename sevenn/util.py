@@ -2,7 +2,119 @@ import numpy as np
 import torch
 
 import sevenn._keys as KEY
-import sevenn._const
+from sevenn._const import LossType
+
+
+def to_atom_graph_list(atom_graph_batch):
+    """
+    torch_geometric batched data to seperate list
+    original to_data_list() by PyG is not enough since
+    it doesn't handle inferred tensors
+    """
+    is_stress = KEY.PRED_STRESS in atom_graph_batch
+
+    data_list = atom_graph_batch.to_data_list()
+
+    indices = atom_graph_batch[KEY.NUM_ATOMS].tolist()
+
+    atomic_energy_list =\
+        torch.split(atom_graph_batch[KEY.ATOMIC_ENERGY], indices)
+    inferred_total_energy_list =\
+        torch.unbind(atom_graph_batch[KEY.PRED_TOTAL_ENERGY])
+    inferred_force_list =\
+        torch.split(atom_graph_batch[KEY.PRED_FORCE], indices)
+
+    if is_stress:
+        inferred_stress_list =\
+            torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
+
+    for i, data in enumerate(data_list):
+        data[KEY.ATOMIC_ENERGY] = atomic_energy_list[i]
+        data[KEY.PRED_TOTAL_ENERGY] = inferred_total_energy_list[i]
+        data[KEY.PRED_FORCE] = inferred_force_list[i]
+        # To fit with KEY.STRESS (ref) format
+        if is_stress:
+            data[KEY.PRED_STRESS] = torch.unsqueeze(inferred_stress_list[i], 0)
+
+    return data_list
+
+
+# TODO: Also weight should be abstracted rather than hard-coded
+def postprocess_output(output, loss_type, criterion=None,
+                       energy_weight=1.0, force_weight=1.0, stress_weight=1.0):
+    """
+    Do dirty things about output of model (like unit conversion, normalization)
+    From the output of model (maybe batched), calculated NOT averaged mse
+    and loss if criterion is given.
+
+    Args:
+        output: output of model (maybe batched) (AtomGraphData)
+        loss_type: LossType
+        criterion: loss function (from torch)
+        energy_weight: weight of energy loss
+        force_weight: weight of force loss
+        stress_weight: weight of stress loss
+
+    Returns:
+        pred: predicted value, torch Tensor (maybe batched)
+        ref: reference value, torch Tensro (maybe batched)
+        mse: squared error (not averaged therefore, strictly, it is not mse)
+        loss: weighted backwardable loss, None if criterion is not given
+    """
+    TO_KB = 1602.1766208  # eV/A^3 to kbar
+
+    # from the output of model, calculate mse, loss
+    # since they're all LossType wise
+    MSE = torch.nn.MSELoss(reduction='none')
+    def get_vector_component_and_mse(pred_V: torch.Tensor,
+                                     ref_V: torch.Tensor, vdim: int):
+        pred_V_component = torch.reshape(pred_V, (-1,))
+        ref_V_component = torch.reshape(ref_V, (-1,))
+        mse = MSE(pred_V_component, ref_V_component)
+        mse = torch.reshape(mse, (-1, vdim))
+        mse = mse.sum(dim=1)
+        return pred_V_component, ref_V_component, mse
+
+    loss_weight = 0
+    if loss_type is LossType.ENERGY:
+        num_atoms = output[KEY.NUM_ATOMS]
+        # Inconsistency of shape of pred and ref total energy
+        # Should be fixed in the very far future
+        pred = torch.squeeze(output[KEY.PRED_TOTAL_ENERGY], -1) / num_atoms
+        ref = output[KEY.ENERGY] / num_atoms
+        mse = MSE(pred, ref)
+        loss_weight = energy_weight  # energy loss weight is 1 (it is reference)
+    elif loss_type is LossType.FORCE:
+        pred_raw = output[KEY.PRED_FORCE]
+        ref_raw = output[KEY.FORCE]
+        pred, ref, mse = \
+            get_vector_component_and_mse(pred_raw, ref_raw, 3)
+        loss_weight = force_weight / 3  # normalize by # of comp
+    elif loss_type is LossType.STRESS:
+        # calculate stress loss based on kB unit (was eV/A^3)
+        pred_raw = output[KEY.PRED_STRESS] * TO_KB
+        ref_raw = output[KEY.STRESS] * TO_KB
+        pred, ref, mse = \
+            get_vector_component_and_mse(pred_raw, ref_raw, 6)
+        loss_weight = stress_weight / 6  # normalize by # of comp
+    else:
+        raise ValueError(f'Unknown loss type: {loss_type}')
+
+    loss = None
+    if criterion is not None:
+        if isinstance(criterion, torch.nn.MSELoss):
+            # mse for L2 loss is already calculated
+            loss = torch.mean(mse) * loss_weight
+        else:
+            loss = criterion(pred, ref) * loss_weight
+
+    return mse, loss
+
+
+def onehot_to_chem(one_hot_indicies, type_map):
+    from ase.data import chemical_symbols
+    type_map_rev = {v: k for k, v in type_map.items()}
+    return [chemical_symbols[type_map_rev[x]] for x in one_hot_indicies]
 
 
 def load_model_from_checkpoint(checkpoint):

@@ -1,4 +1,5 @@
 import os.path
+from enum import Enum
 
 import torch
 
@@ -6,7 +7,7 @@ from sevenn.nn.activation import ShiftedSoftPlus
 import sevenn._keys as KEY
 from typing import Dict, Any
 
-SEVENN_VERSION = "0.8.5"
+SEVENN_VERSION = "0.8.6"
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut']
 
@@ -18,6 +19,18 @@ ACTIVATION_FOR_ODD = {"tanh": torch.tanh, "abs": torch.abs}
 ACTIVATION_DICT = {"e": ACTIVATION_FOR_EVEN, "o": ACTIVATION_FOR_ODD}
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]
+
+
+class LossType(Enum):
+    ENERGY = 'energy'  # I hope user store per atom energy (eV/atom)
+    FORCE = 'force'    # eV/A
+    STRESS = 'stress'  # kB(?)
+
+
+class DataSetType(Enum):
+    TRAIN = 'train'
+    VALID = 'valid'
+    TEST = 'test'
 
 
 def is_dir_avail(x):
@@ -61,7 +74,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.TRAIN_AVG_NUM_NEIGH: False,
     KEY.TRAIN_SHIFT_SCALE: False,
     KEY.OPTIMIZE_BY_REDUCE: False,
-    KEY.USE_BIAS_IN_LINEAR: False
+    KEY.USE_BIAS_IN_LINEAR: False,
 }
 
 
@@ -77,6 +90,9 @@ DEFAULT_DATA_CONFIG = {
     KEY.RATIO: 0.1,
     KEY.BATCH_SIZE: 6,
     KEY.PREPROCESS_NUM_CORES: 1,
+    KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
+    KEY.SHIFT: False,
+    KEY.SCALE: False,
 }
 
 
@@ -104,7 +120,7 @@ DEFAULT_TRAINING_CONFIG = {
 # condition for each inputs, key omitted here should be initialized by hand
 MODEL_CONFIG_CONDITION = {
     KEY.NODE_FEATURE_MULTIPLICITY: is_positive,
-    KEY.LMAX: is_positive,
+    KEY.LMAX: lambda x: x >= 0,
     KEY.IS_PARITY: None,
     KEY.RADIAL_BASIS: {
         KEY.RADIAL_BASIS_NAME: lambda x: x in IMPLEMENTED_RADIAL_BASIS,
@@ -122,7 +138,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.TRAIN_SHIFT_SCALE: None,
     KEY.TRAIN_AVG_NUM_NEIGH: None,
     KEY.OPTIMIZE_BY_REDUCE: None,
-    KEY.USE_BIAS_IN_LINEAR: None
+    KEY.USE_BIAS_IN_LINEAR: None,
 }
 
 
@@ -135,6 +151,7 @@ DATA_CONFIG_CONDITION = {
     KEY.RATIO: lambda x: type(x) is float and x > 0.0 and x < 0.5,
     KEY.BATCH_SIZE: is_positive,
     KEY.PREPROCESS_NUM_CORES: is_positive,
+    KEY.USE_SPECIES_WISE_SHIFT_SCALE: None,
 }
 
 TRAINING_CONFIG_CONDITION = {
