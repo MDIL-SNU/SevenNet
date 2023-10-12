@@ -1,4 +1,4 @@
-import os, sys
+import os
 import csv
 from typing import List
 
@@ -16,9 +16,12 @@ from sevenn.nn.node_embedding import get_type_mapper_from_specie
 from sevenn.util import load_model_from_checkpoint, postprocess_output,\
     to_atom_graph_list
 from sevenn.nn.sequential import AtomGraphSequential
-from sevenn.scripts.graph_build import graph_build
+from sevenn.train.dataload import graph_build
 from sevenn._const import LossType
 import sevenn._keys as KEY
+
+
+# TODO: use updated dataset construction scheme, not directly call graph_build
 
 
 def load_sevenn_datas(sevenn_datas: str, cutoff, type_map):
@@ -95,13 +98,14 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
 
     def unfold_dct_val(dct, keys, suffix_list=None):
         res = {}
-        if suffix_list == None:
+        if suffix_list is None:
             suffix_list = range(100)
         for k in keys:
             if k not in dct:
                 res[k] = "-"
             elif isinstance(dct[k], np.ndarray) and dct[k].ndim != 0:
-                res.update({f"{k}_{suffix_list[i]}": v for i, v in enumerate(dct[k])})
+                res.update({f"{k}_{suffix_list[i]}": v
+                            for i, v in enumerate(dct[k])})
             else:
                 res[k] = dct[k]
         return res
@@ -143,7 +147,7 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
             cell_dct = {KEY.CELL: output[KEY.CELL]}
             cell_dct = unfold_dct_val(cell_dct, [KEY.CELL], ["a", "b", "c"])
             data = {**unfold_dct_val(output, per_graph_keys, sfx_list), **cell_dct}
-            if writer == None:
+            if writer is None:
                 writer = csv.DictWriter(f, fieldnames=data.keys())
                 writer.writeheader()
             writer.writerow(data)
@@ -155,7 +159,7 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
             for j, dct in enumerate(list_of_dct):
                 idx_dct = {"stct_id": i, "atom_id": j}
                 data = {**idx_dct, **dct}
-                if writer == None:
+                if writer is None:
                     writer = csv.DictWriter(f, fieldnames=data.keys())
                     writer.writeheader()
                 writer.writerow(data)
@@ -192,7 +196,7 @@ def inference_main(checkpoint, fnames, output_path,
         is_stress = True
     else:
         inference_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
-        is_stress= False
+        is_stress = False
 
     loss_types = [LossType.ENERGY, LossType.FORCE]
     if is_stress:

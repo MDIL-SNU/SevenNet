@@ -65,9 +65,8 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     },
 
     KEY.CUTOFF: 4.5,
-    KEY.NUM_SPECIES: 2,  # remove later
     KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: [64, 64],
-    KEY.NUM_CONVOLUTION: 2,
+    KEY.NUM_CONVOLUTION: 3,
     KEY.ACTIVATION_SCARLAR: {"e": "silu", "o": "tanh"},
     KEY.ACTIVATION_GATE: {"e": "silu", "o": "tanh"},
     KEY.AVG_NUM_NEIGHBOR: True,
@@ -80,13 +79,13 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
 
 DEFAULT_DATA_CONFIG = {
     KEY.DTYPE: "single",
+    KEY.DATA_FORMAT: "structure_list",
+    KEY.DATA_FORMAT_ARGS: {},
     KEY.FORMAT_OUTPUTS: 'vasp-out',
     KEY.STRUCTURE_LIST: False,
     KEY.SAVE_DATASET: False,
     KEY.SAVE_BY_LABEL: False,
     KEY.SAVE_BY_TRAIN_VALID: False,
-    KEY.LOAD_DATASET: False,
-    KEY.LOAD_VALIDSET: False,
     KEY.RATIO: 0.1,
     KEY.BATCH_SIZE: 6,
     KEY.PREPROCESS_NUM_CORES: 1,
@@ -144,6 +143,8 @@ MODEL_CONFIG_CONDITION = {
 
 DATA_CONFIG_CONDITION = {
     KEY.DTYPE: lambda x: x.lower() in ["single", "double"],
+    KEY.DATA_FORMAT: lambda x: x in ["structure_list", "ase", "pkl", "pickle"],
+    KEY.DATA_FORMAT_ARGS: lambda x: type(x) is dict,
     KEY.FORMAT_OUTPUTS: lambda x: x in ["vasp-out", "vasp", "vasp-xdatcar"],
     KEY.SAVE_DATASET: None,
     KEY.SAVE_BY_LABEL: None,

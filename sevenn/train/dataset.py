@@ -34,7 +34,7 @@ class AtomGraphDataset:
     DATA_KEY_X = KEY.NODE_FEATURE  # atomic_number > one_hot_idx > one_hot_vector
     DATA_KEY_ENERGY = KEY.ENERGY
     DATA_KEY_FORCE = KEY.FORCE
-    KEY_DEFAULT = 'No_label'
+    KEY_DEFAULT = KEY.LABEL_NONE
 
     def __init__(self,
                  dataset: Union[Dict[str, List], List],
@@ -59,14 +59,25 @@ class AtomGraphDataset:
         self.cutoff = cutoff
         self.x_is_one_hot_idx = x_is_one_hot_idx
         if metadata is None:
-            metadata = {KEY.CUTOFF: cutoff,
-                        KEY.CHEMICAL_SPECIES: set()}
+            metadata = {KEY.CUTOFF: cutoff}
         self.meta = metadata
         if type(dataset) is list:
             self.dataset = {self.KEY_DEFAULT: dataset}
         else:
             self.dataset = dataset
         self.user_labels = list(self.dataset.keys())
+        # group_by_key here? or not?
+
+    def rewrite_labels_to_data(self):
+        """
+        Based on self.dataset dict's keys
+        write data[KEY.USER_LABEL] to correspond to dict's keys
+        Most of times, it is already correctly written
+        But required to rewrite if someone rearrange dataset by their own way
+        """
+        for label, data_list in self.dataset.items():
+            for data in data_list:
+                data[KEY.USER_LABEL] = label
 
     def group_by_key(self, data_key=KEY.USER_LABEL):
         """
@@ -107,7 +118,7 @@ class AtomGraphDataset:
         You can also use get_natoms and extract keys from there istead of this
         (And it is more efficient)
         get chemical species of dataset
-        return list of chemical species (as str)
+        return list of SORTED chemical species (as str)
         """
         if hasattr(self, "type_map"):
             natoms = self.get_natoms(self.type_map)
@@ -202,8 +213,10 @@ class AtomGraphDataset:
         else:
             lists = divide(ratio, self.to_list())
 
-        return tuple(AtomGraphDataset(data, self.cutoff,
-                                      metadata=self.meta) for data in lists)
+        dbs = tuple(AtomGraphDataset(data, self.cutoff, self.meta) for data in lists)
+        for db in dbs:
+            db.group_by_key()
+        return dbs
 
     def to_list(self):
         return list(itertools.chain(*self.dataset.values()))
@@ -340,26 +353,16 @@ class AtomGraphDataset:
         """
         assert type(dataset) == AtomGraphDataset
 
-        def default_validator(dataset1, dataset2):
-            meta1 = dataset1.meta
-            meta2 = dataset2.meta
-            cutoff1 = dataset1.cutoff
-            cutoff2 = dataset2.cutoff
-            cut_consis = cutoff1 == cutoff2
+        def default_validator(db1, db2):
+            cut_consis = db1.cutoff == db2.cutoff
             # compare unordered lists
-            chem_1 = Counter(meta1[KEY.CHEMICAL_SPECIES])
-            chem_2 = Counter(meta2[KEY.CHEMICAL_SPECIES])
-            # if both are not one-hot-idx (are atomic number)
-            # the chem species can be initialized from that
-            chem_consis = chem_1 == chem_2 or \
-                (dataset1.x_is_one_hot_idx is False
-                 and dataset2.x_is_one_hot_idx is False)
-            return cut_consis and chem_consis
+            x_is_not_onehot =\
+                (not db1.x_is_one_hot_idx) and (not db2.x_is_one_hot_idx)
+            return cut_consis and x_is_not_onehot
         if validator is None:
             validator = default_validator
-        is_valid = validator(self, dataset)
-        if not is_valid:
-            raise ValueError('given datasets are not compatible')
+        if not validator(self, dataset):
+            raise ValueError('given datasets are not compatible check cutoffs')
         for key, val in dataset.items():
             if key in self.dataset:
                 self.dataset[key].extend(val)

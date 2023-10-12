@@ -1,23 +1,26 @@
-import os.path
 from typing import List, Optional, Dict
 from itertools import islice
+from functools import partial
+import os.path
 import pickle
 
 import numpy as np
-import torch
-from braceexpand import braceexpand
-from ase import io, units, Atoms
+import torch.multiprocessing as mp
+import ase
+import ase.io
 from ase.neighborlist import primitive_neighbor_list
 from ase.io.vasp_parsers.vasp_outcar_parsers import DefaultParsersContainer,\
     OutcarChunkParser, Cell, PositionsAndForces, Stress, Energy, outcarchunks
 from ase.io.utils import string2index
+from braceexpand import braceexpand
+import tqdm
 
-from sevenn.nn.node_embedding import one_hot_atom_embedding
 from sevenn.atom_graph_data import AtomGraphData
+from sevenn.train.dataset import AtomGraphDataset
 import sevenn._keys as KEY
 
 
-def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
+def atoms_to_graph(atoms: ase.Atoms, cutoff: float, transfer_info: bool = True):
     """
     From ase atoms, return AtomGraphData as graph based on cutoff radius
     Args:
@@ -104,195 +107,64 @@ def atoms_to_graph(atoms: Atoms, cutoff: float, transfer_info: bool = True):
     return data
 
 
-# deprecated
-def ASE_atoms_to_data(atoms, cutoff: float):
-    """ very primitive function to extract properties from atoms
+def graph_build(atoms_list: List,
+                cutoff: float,
+                num_cores: int = 1,
+                transfer_info: Optional[bool] = True) -> List[AtomGraphData]:
+    """
+    parallel version of graph_build
+    build graph from atoms_list and return list of AtomGraphData
     Args:
-        atoms : 'atoms' object from ASE
-        cutoff : float
+        atoms_list (List): list of ASE atoms
+        cutoff (float): cutoff radius of graph
+        num_cores (int, Optional): number of cores to use
+        transfer_info (bool, Optional): if True, copy info from atoms to graph
     Returns:
-        data represents one 'graph'
-
-        E : total energy of graph
-        F : forces of each atom (n, 3)
-
-        pos : (N(atoms), 3)
-        edge_src : index of atoms for edge src (N(edge))
-        edge_dst : index of atoms for edge dst (N(edge))
-        edge_vec : vector representing edge (N(edge), 3)
-        atomic_numbers : list of atomic number by index (n)
-
-        * this is full neighborlist
+        List[AtomGraphData]: list of AtomGraphData
     """
+    serial = num_cores == 1
+    inputs = [(atoms, cutoff, transfer_info) for atoms in atoms_list]
 
-    # 'y' of data
-    # It gives 'free energy' of vasp
-    E = atoms.get_potential_energy(force_consistent=True)
-    # It negelcts constraints like selective dynamics
-    F = atoms.get_forces(apply_constraint=False)
-    # xx yy zz xy yz zx order
-    S = -1 * atoms.get_stress()  # units of eV/$\AA^{3}$
-    S = [S[[0, 1, 2, 5, 3, 4]]]
-
-    cutoffs = np.full(len(atoms), cutoff)
-    pos = atoms.get_positions()
-    cell = atoms.get_cell()
-    edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
-        "ijDS", atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
-    )
-
-    # trivial : src == dst and not crossing pbc
-    # nontirivial_self_interatction : src == dst but cross pbc
-    # below is for eliminate trivial ones
-
-    is_zero_idx = np.all(edge_vec == 0, axis=1)
-    is_self_idx = edge_src == edge_dst
-    non_trivials = ~(is_zero_idx & is_self_idx)
-
-    # 'x' of data
-    edge_src = edge_src[non_trivials]
-    edge_dst = edge_dst[non_trivials]
-    edge_vec = edge_vec[non_trivials]
-    shift = shifts[non_trivials]
-    atomic_numbers = atoms.get_atomic_numbers()
-    edge_idx = np.array([edge_src, edge_dst])
-
-    return atomic_numbers, edge_idx, edge_vec, \
-        shift, pos, cell, E, F, S
-
-
-def poscar_ASE_atoms_to_data(atoms, cutoff: float):  # This is only for debugging
-
-    cutoffs = np.full(len(atoms), cutoff)
-    pos = atoms.get_positions()
-    cell = atoms.get_cell()
-    edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
-        "ijDS", atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
-    )
-
-    # trivial : src == dst and not crossing pbc
-    # nontirivial_self_interatction : src == dst but cross pbc
-    # below is for eliminate trivial ones
-
-    is_zero_idx = np.all(edge_vec == 0, axis=1)
-    is_self_idx = edge_src == edge_dst
-    non_trivials = ~(is_zero_idx & is_self_idx)
-
-    # 'x' of data
-    edge_src = edge_src[non_trivials]
-    edge_dst = edge_dst[non_trivials]
-    edge_vec = edge_vec[non_trivials]
-    shift = shifts[non_trivials]
-    atomic_numbers = atoms.get_atomic_numbers()
-    edge_idx = np.array([edge_src, edge_dst])
-
-    return atomic_numbers, edge_idx, edge_vec, shift, pos, cell
-
-
-#deprecated
-def data_for_E3_equivariant_model(atoms, cutoff, type_map: Dict[int, int]):
-    """
-    Args:
-        atoms : 'atoms' object from ASE
-        cutoff : float
-        type_map : Z(atomic_number) -> one_hot index
-    Returns:
-        AtomGraphData for E2_equivariant_model
-    """
-    atomic_numbers, edge_idx, edge_vec, \
-        shift, pos, cell, E, F, S = ASE_atoms_to_data(atoms, cutoff)
-    edge_vec = torch.Tensor(edge_vec)
-
-    edge_idx = torch.LongTensor(edge_idx)
-    pos = torch.Tensor(pos)
-
-    """
-    if is_stress:
-        pos.requires_grad_(True)
+    if not serial:
+        pool = mp.Pool(num_cores)
+        # this is not strictly correct because it updates for every input not output
+        graph_list = pool.starmap(atoms_to_graph,
+                                  tqdm.tqdm(inputs, total=len(atoms_list)))
+        pool.close()
+        pool.join()
     else:
-        edge_vec.requires_grad_(True)
+        graph_list = [atoms_to_graph(*input_) for input_ in inputs]
+
+    graph_list = [AtomGraphData.from_numpy_dict(g) for g in graph_list]
+
+    return graph_list
+
+
+def ase_reader(fname, **kwargs):
+    index = kwargs.pop('index', None)
+    if index is None:
+        index = ':'  # new default for ours
+    return ase.io.read(fname, index=index, **kwargs)
+
+
+def pkl_atoms_reader(fname):
     """
-
-    F = torch.Tensor(F)
-    S = torch.Tensor(np.array(S))
-
-    cell = torch.Tensor(np.array(cell))
-    shift = torch.Tensor(np.array(shift))
-
-    embd = one_hot_atom_embedding(atomic_numbers, type_map)
-    data = AtomGraphData(embd, edge_idx, pos,
-                         y_energy=E, y_force=F, y_stress=S,
-                         edge_vec=edge_vec, init_node_attr=True)
-
-    data[KEY.ATOMIC_NUMBERS] = atomic_numbers
-    data[KEY.CELL] = cell
-    data[KEY.CELL_SHIFT] = shift
-    volume = torch.einsum(
-        "i,i",
-        cell[-1, :],
-        torch.cross(cell[0, :], cell[2, :])
-    )
-    data[KEY.CELL_VOLUME] = volume
-
-    data[KEY.NUM_ATOMS] = len(pos)
-    data.num_nodes = data[KEY.NUM_ATOMS]  # for general perpose
-    data[KEY.PER_ATOM_ENERGY] = E / len(pos)
-
-    avg_num_neigh = np.average(np.unique(edge_idx[-1], return_counts=True)[1])
-    data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
-    return data
-
-# deprecated
-def poscar_for_E3_equivariant_model(atoms, cutoff: float,
-                                    type_map: Dict[int, int],
-                                    is_stress: bool):
+    Assume the content is plane list of ase.Atoms
     """
-    This is only for debugging
-    """
-    atomic_numbers, edge_idx, edge_vec, \
-        shift, pos, cell = poscar_ASE_atoms_to_data(atoms, cutoff)
-    edge_vec = torch.Tensor(edge_vec)
-
-    edge_idx = torch.LongTensor(edge_idx)
-    pos = torch.Tensor(pos)
-
-    if is_stress:
-        pos.requires_grad_(True)
-    else:
-        edge_vec.requires_grad_(True)
-
-    cell = torch.Tensor(np.array(cell))
-    shift = torch.Tensor(np.array(shift))
-
-    embd = one_hot_atom_embedding(atomic_numbers, type_map)
-    data = AtomGraphData(embd, edge_idx, pos,
-                         y_energy=None, y_force=None, y_stress=None,
-                         edge_vec=edge_vec, init_node_attr=True)
-
-    data[KEY.ATOMIC_NUMBERS] = atomic_numbers
-    data[KEY.CELL] = cell
-    data[KEY.CELL_SHIFT] = shift
-    volume = torch.einsum(
-        "i,i",
-        cell[-1, :],
-        torch.cross(cell[0, :], cell[2, :])
-    )
-    data[KEY.CELL_VOLUME] = volume
-
-    data[KEY.NUM_ATOMS] = len(pos)
-    data.num_nodes = data[KEY.NUM_ATOMS]  # for general perpose
-
-    avg_num_neigh = np.average(np.unique(edge_idx[-1], return_counts=True)[1])
-    data[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
-    return data
+    with open(fname, 'rb') as f:
+        atoms_list = pickle.load(f)
+    if type(atoms_list) != list:
+        raise TypeError("The content of the pkl is not list")
+    if type(atoms_list[0]) != ase.Atoms:
+        raise TypeError("The content of the pkl is not list of ase.Atoms")
+    return atoms_list
 
 
-parsers = DefaultParsersContainer(PositionsAndForces,
-                                  Stress, Energy, Cell).make_parsers()
-ocp = OutcarChunkParser(parsers=parsers)
-
-
-def parse_structure_list(filename: str, format_outputs='vasp-out'):
+# Reader
+def structure_list_reader(filename: str, format_outputs='vasp-out'):
+    parsers = DefaultParsersContainer(PositionsAndForces,
+                                      Stress, Energy, Cell).make_parsers()
+    ocp = OutcarChunkParser(parsers=parsers)
     """
     Read from structure_list using braceexpand and ASE
 
@@ -370,9 +242,57 @@ def parse_structure_list(filename: str, format_outputs='vasp-out'):
         structures_dict[title] = stct_lists
     return structures_dict
 
-def ase_compatible_load(filename:str, index = ':', format: Optional[str] = None):
-    ret = ase.io.read(filename, index=index, format=format)
-    if type(ret) != list:
-        ret = [ret]
-    return ret
+
+def match_reader(reader_name: str, **kwargs):
+    reader = None
+    metadata = {}
+    if reader_name == "pkl" or reader_name == "pickle":
+        reader = partial(pkl_atoms_reader, **kwargs)
+        metadata.update({"origin": "atoms_pkl"})
+    elif reader_name == "structure_list":
+        reader = partial(structure_list_reader, **kwargs)
+        metadata.update({"origin": "structure_list"})
+    else:
+        reader = partial(ase_reader, **kwargs)
+        metadata.update({"origin": f"ase_reader"})
+    return reader, metadata
+
+
+def file_to_dataset(file: str,
+                    cutoff: float,
+                    cores=1,
+                    reader=None,
+                    label: str = None,
+                    transfer_info: bool =True,
+                    ):
+    """
+    Read file by reader > get list of atoms or dict of atoms
+    """
+
+    # expect label: atoms_list dct or atoms or list of atoms
+    atoms = reader(file)
+
+    if type(atoms) == list:
+        if label is None:
+            label = KEY.LABEL_NONE
+        atoms_dct = {label: atoms}
+    elif type(atoms) == ase.Atoms:
+        if label is None:
+            label = KEY.LABEL_NONE
+        atoms_dct = {label: [atoms]}
+    elif type(atoms) == dict:
+        atoms_dct = atoms
+    else:
+        raise TypeError("The return of reader is not list or dict")
+
+    graph_dct = {}
+    for label, atoms_list in atoms_dct.items():
+        graph_list = graph_build(atoms_list, cutoff, cores,
+                                 transfer_info=transfer_info)
+        for graph in graph_list:
+            graph[KEY.USER_LABEL] = label
+        graph_dct[label] = graph_list
+    db = AtomGraphDataset(graph_dct, cutoff)
+    return db
+
 

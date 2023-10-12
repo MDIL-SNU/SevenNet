@@ -4,7 +4,7 @@
 # Defaults that works well of channel, lmax and num_convolution_layer are 32, 3, 3 respectively.
 
 model:
-    chemical_species: 'Hf, O'                     # Chemical symbols present in the dataset
+    chemical_species: 'Auto'                      # Chemical symbols present in the dataset, guess from load_dataset data if 'auto'
     cutoff: 4.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
     channel: 4                                    # Equivalent to 'num_features' in nequip. Represents the multiplicity of node features. 32 is recomanded as default.
     lmax: 2                                       # Maximum order of irreps (rotation order). 3 is recomanded as default
@@ -22,12 +22,16 @@ model:
     act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
     act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip.
 
+    is_parity: True                               # Use parity in representations
+
     avg_num_neigh       : True                    # Normalize the aggregation of messages by the average number of neighbors calculated from the training set
     train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
     train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
+    use_bias_in_linear: False                     # Use bias in scalar e3nn networks
+    optimize_by_reduce: False                     # Optimize by eliminating non-scalar computations at the last layer
                                                                   
 train:
-    random_seed: 1
+    random_seed: 1                                # Random seed to pytorch
     is_train_stress     : False                   # Includes stress in the loss function
     epoch: 10                                     # Ends training after this number of epochs
 
@@ -43,28 +47,38 @@ train:
     force_loss_weight   : 0.1                     # Coefficient for force loss
     stress_loss_weight  : 1e-06                   # Coefficient for stress loss
 
-    # By default, SEVENNet prints the batch RMSE of validation and training every epoch.
+    per_epoch: 5                                  # Generate checkpoints every this ratio
 
-    per_epoch: 5                              # Generate checkpoint
-
-    # Continue training from a checkpoint. If you augment the dataset, recalculated shift, scale, avg_num_neigh will be used
-    # Also, you can enable train_shift_scale or train_avg_num_neigh
-    # input.yaml for original and continued training should have the same model hyperparameters except for avg_num_neigh and shift scale
+    # WARNING: Seperate the training with previous dir. It will overwrite checkpoints
     # continue: 
     #    reset_optimizer: False 
     #    reset_scheduler: False 
-    #    checkpoint: "path_to_previous_checkpoint/checkpoint_best.pth"
+    #    checkpoint: 'path_to_previous_checkpoint/checkpoint_best.pth'
 
 data:
     batch_size: 2                                 # Batch size. If training fails due to memory shortage, lower this value
     data_divide_ratio: 0.1                        # Divide the whole dataset into training and validation sets by this ratio
 
-    # Refer to the formatting of the structure list below if the example is not enough. Note that weights for structure types are not yet supported
-    # https://simple-nn-v2.readthedocs.io/en/latest/inputs/structure_list.html
-    structure_list: ['./structure_list']          # Path to structure list. This can be a list 
-    #load_dataset_path: ['./total.sevenn_data']   # Load saved dataset by save_dataset_path. This can be a list
-    #load_validset_path: './valid.sevenn_data'    # Use validset explicitly, in this case, sevenn do not split total dataset by train valid by ratio
+    #shift: 0.0                                   # User defined global shift
+    #scale: 1.0                                   # User defined global scale
 
-    save_dataset_path: 'total'                    # Save the preprocessed dataset for later use without the structure_list
-    save_by_train_valid: True                     # By default, save train.sevenn, valid.sevenn in working directory
+    # Use element wise shift, scale (also trainable).
+    # The starting values are linear fitted element reference atomic energy and element wise force rms
+    use_species_wise_shift_scale: False           
+
+    # These sevenn_data can be created via 'sevenn_graph_build' command line tool or by training
+
+    data_format: 'ase'                           # Default is 'structure_list'
+    data_format_args:                            # Paramaters will be passed to ase.io.read
+        index: '-10:'
+
+    # .sevenn_data can be loaded regardless of data_foramt (since they're already graph)
+    # knows wild card *
+    # ASE tries to infer its type by extension, in this case, extxyz file is loaded by ase.
+    load_dataset_path: ['./train.sevenn_data', '../data/test.extxyz']   # Total dataset if load_validset is not speified, else training set
+    load_validset_path: ['./valid.sevenn_data']  # User defined validation set, ignores data_divided_ratio if specified
+
+    #save_dataset_path: 'total'                   # Save the preprocessed (in load_dataset_path) dataset
+    save_by_train_valid: True                     # Save the preprocessed train.sevenn_data, valid.sevenn_data
     save_by_label: False                          # Save the dataset by labels specified in the structure_list
+

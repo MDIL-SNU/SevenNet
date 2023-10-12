@@ -32,7 +32,7 @@ format_help = "format of the source, defualt is structure_list "\
 def main(args=None):
     metadata = {}
     now = datetime.now().strftime('%Y-%m-%d')
-    source, cutoff, num_cores, label_by, out, save_by_label, fmt, suffix, copy_info = \
+    source, cutoff, num_cores, label_by, out, save_by_label, fmt, suffix, copy_info, fmt_kwargs = \
         cmd_parse_data(args)
     metadata = {"sevenn_version": SEVENN_VERSION,
                 "when": now, "cutoff": cutoff}
@@ -43,7 +43,8 @@ def main(args=None):
 
     graph_build.build_script(source, cutoff, num_cores,
                              label_by, out, save_by_label, fmt,
-                             suffix, copy_info, metadata)
+                             suffix, copy_info, metadata,
+                             fmt_kwargs)
 
 def cmd_parse_data(args=None):
     ag = argparse.ArgumentParser(description=description)
@@ -66,12 +67,6 @@ def cmd_parse_data(args=None):
                     help=format_help,
                     type=str,
                     default='structure_list')
-    """
-    ag.add_argument('-m', '--merge',
-                    help='merge the whole dataset into one file',
-                    action='store_true',
-                    default=False)
-    """
     ag.add_argument('-s', '--suffix',
                     help=suffix_help,
                     type=str,
@@ -88,6 +83,8 @@ def cmd_parse_data(args=None):
                     help='save the graph by label',
                     action='store_true',
                     default=False)
+    ag.add_argument('--kwargs', nargs=argparse.REMAINDER,
+                    help='kwargs to pass to file reader (format)')
 
     args = ag.parse_args()
     source = args.source
@@ -99,4 +96,11 @@ def cmd_parse_data(args=None):
     suffix = args.suffix
     save_by_label = args.save_by_label
     copy_info = not args.no_copy_info
-    return source, cutoff, num_cores, label_by, out, save_by_label, fmt, suffix, copy_info
+
+    fmt_kwargs = {}
+    if args.kwargs:
+        for kwarg in args.kwargs:
+            k, v = kwarg.split('=')
+            fmt_kwargs[k] = v
+
+    return source, cutoff, num_cores, label_by, out, save_by_label, fmt, suffix, copy_info, fmt_kwargs

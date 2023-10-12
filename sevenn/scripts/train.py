@@ -42,12 +42,6 @@ def train(config: Dict, working_dir: str):
         valid_sampler = DistributedSampler(valid,
                                            num_replicas=dist.get_world_size(),
                                            rank=dist.get_rank())
-        """
-        train_loader = DataLoader(train, batch_size=config[KEY.BATCH_SIZE],
-                                  sampler=train_sampler, num_workers=config[KEY.NUM_WORKERS])
-        valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE],
-                                  sampler=valid_sampler, num_workers=config[KEY.NUM_WORKERS])
-        """
         train_loader = DataLoader(train, batch_size=config[KEY.BATCH_SIZE],
                                   sampler=train_sampler)
         valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE],

@@ -211,6 +211,7 @@ class Logger(metaclass=Singleton):
             content += Logger.format_k_v(k, v)
         self.write(content)
 
+    # TODO: This is not good make own exception
     def error(self, e: Exception):
         content = ""
         if type(e) is ValueError:
