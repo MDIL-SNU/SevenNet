@@ -1,6 +1,3 @@
-from typing import List, Dict
-
-import numpy as np
 import torch
 import torch_geometric
 
@@ -48,7 +45,7 @@ class AtomGraphData(torch_geometric.data.Data):
         for k, v in kwargs.items():
             self[k] = v
 
-    #def to_dict(self):
+    # def to_dict(self):
     #    """
     #    'maybe' Dict[str, Tensor]
     #    """
@@ -61,13 +58,16 @@ class AtomGraphData(torch_geometric.data.Data):
         return dct
 
     def fit_dimension(self):
+        per_atom_keys = [KEY.ATOMIC_NUMBERS, KEY.ATOMIC_ENERGY, KEY.POS,
+                         KEY.FORCE, KEY.PRED_FORCE]
         natoms = self.num_atoms.item()
         for k, v in self.items():
             if not isinstance(v, torch.Tensor):
                 continue
-            if natoms == 1 and (k == KEY.FORCE or k == KEY.ATOMIC_ENERGY):
-                continue
-            self[k] = v.squeeze()
+            if natoms == 1 and k in per_atom_keys:
+                self[k] = v.squeeze().unsqueeze(0)
+            else:
+                self[k] = v.squeeze()
         return self
 
     @staticmethod
@@ -78,4 +78,3 @@ class AtomGraphData(torch_geometric.data.Data):
             else:
                 dct[k] = sevenn.util.dtype_correct(v)
         return AtomGraphData(**dct)
-

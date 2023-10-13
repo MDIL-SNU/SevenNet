@@ -119,6 +119,8 @@ def onehot_to_chem(one_hot_indicies, type_map):
 
 def load_model_from_checkpoint(checkpoint):
     from sevenn.model_build import build_E3_equivariant_model
+    from sevenn._const import DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,\
+            DEFAULT_DATA_CONFIG, DEFAULT_TRAINING_CONFIG
     if isinstance(checkpoint, str):
         checkpoint = torch.load(checkpoint)
     elif isinstance(checkpoint, dict):
@@ -126,9 +128,18 @@ def load_model_from_checkpoint(checkpoint):
     else:
         raise ValueError("checkpoint must be either str or dict")
 
+    defaults = {**DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
+                **DEFAULT_DATA_CONFIG,
+                **DEFAULT_TRAINING_CONFIG}
+
     #mse_hist = checkpoint["loss"]
     model_state_dict = checkpoint["model_state_dict"]
     config = checkpoint["config"]
+
+    for k, v in defaults.items():
+        if k not in config:
+            print(f"Warning: {k} not in config, using default value {v}")
+            config[k] = v
 
     model = build_E3_equivariant_model(config)
     model.load_state_dict(model_state_dict, strict=False)

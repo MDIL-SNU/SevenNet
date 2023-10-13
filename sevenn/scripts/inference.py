@@ -89,6 +89,10 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
             output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
         output_list[i] = output.to_numpy_dict()
 
+    import pickle
+    with open("tmp.pkl", "wb") as f:
+        pickle.dump(output_list, f)
+
     per_graph_keys = [KEY.NUM_ATOMS, KEY.USER_LABEL,
                       KEY.ENERGY, KEY.PRED_TOTAL_ENERGY,
                       KEY.STRESS, KEY.PRED_STRESS]
@@ -173,6 +177,7 @@ def inference_main(checkpoint, fnames, output_path,
     type_map = config[KEY.TYPE_MAP]
 
     model = load_model_from_checkpoint(checkpoint)
+    model.to(device)
     model.set_is_batch_data(True)
     model.eval()
 
@@ -213,6 +218,7 @@ def inference_main(checkpoint, fnames, output_path,
     for batch in tqdm(loader):
         batch_device = batch.to(device, non_blocking=True)
         result = model(batch_device)
+        result.to("cpu")
         for loss_type in loss_types:
             mse, _ = \
                 postprocess_output(result, loss_type)
@@ -222,6 +228,7 @@ def inference_main(checkpoint, fnames, output_path,
 
     # to more readable format
     rmse_dct = {k.name: v.mean().sqrt().item() for k, v in mse_dct.items()}
+
 
     write_inference_csv(output_list, rmse_dct, output_path, no_ref=no_ref)
 
