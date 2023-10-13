@@ -22,6 +22,9 @@ def check_config_compatible(config, config_cp):
         #KEY.OPTIM_PARAM,
         #KEY.SCHEDULER,
         #KEY.SCHEDULER_PARAM,
+        KEY.USE_SPECIES_WISE_SHIFT_SCALE,
+        KEY.USE_BIAS_IN_LINEAR,
+        KEY.OPTIMIZE_BY_REDUCE,
     ]
     for sbs in SHOULD_BE_SAME:
         if config[sbs] == config_cp[sbs]:
@@ -66,19 +69,16 @@ def processing_continue(config, model, statistic_values):
         None if reset_scheduler else checkpoint['scheduler_state_dict']
     config_cp = checkpoint['config']
 
-    if(avg_num_neigh != config_cp[KEY.AVG_NUM_NEIGHBOR]
-            or shift != config_cp[KEY.SHIFT]
-            or scale != config_cp[KEY.SCALE]):
+    if avg_num_neigh != config_cp[KEY.AVG_NUM_NEIGHBOR]:
         Logger().write("\nWARNING: dataset is updated (prev vs now)\n")
         Logger().write(f"avg_num_neigh: {config_cp[KEY.AVG_NUM_NEIGHBOR]:.4f}"
                        + f"!= {avg_num_neigh:.4f}\n")
-        Logger().write(f"shift: {config_cp[KEY.SHIFT]:.4f} != {shift:.4f}\n")
-        Logger().write(f"scale: {config_cp[KEY.SCALE]:.4f} != {scale:.4f}\n")
-        Logger().write(f"If current config states 'not' trainable, use updated value\n")
+        Logger().write("Below comments include shift, scale and avg_num_neigh\n")
+        Logger().write(f"If current config states are not trainable, use updated value\n")
         Logger().write(f"Else, we will ignore updated shfit, scale and avg_num_neigh\n")
         Logger().write(f"The model keep using previous values\n")
 
-    #TODO: Make it optional?
+    #TODO: Updating shift, scale, avg~~ to updated ones, make it optional?
     """
     IGNORE_WIEHGT_KEYS = ["rescale.shift", "rescale.scale"]
     for i in range(0, config[KEY.NUM_CONVOLUTION]):
@@ -90,8 +90,12 @@ def processing_continue(config, model, statistic_values):
     # it will raise error if not compatible
     check_config_compatible(config, config_cp)
 
+    # If trainable (optional for shift, scale, avg_num_neigh), model_state_dict_cp
+    # includes thoes value as parameters, which leads to overwritting updated
+    # dataset's shift, scale, avg_num_neigh. So, we need to ignore those values
     model.load_state_dict(model_state_dict_cp, strict=False)
 
+    # TODO: make checkpoint starts from old epochs and extended loss history
     Logger().write(f"checkpoint previous epoch was: {from_epoch}\n")
     Logger().write("checkpoint loading was successful\n")
     return optimizer_state_dict, scheduler_state_dict
