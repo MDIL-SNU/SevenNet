@@ -3,6 +3,8 @@ import torch
 import sevenn._keys as KEY
 from sevenn.sevenn_logger import Logger
 
+from sevenn.train.trainer import Trainer
+
 
 def check_config_compatible(config, config_cp):
     SHOULD_BE_SAME = [
@@ -50,10 +52,13 @@ def check_config_compatible(config, config_cp):
                          + " ,if one of reset optimizer or scheduler")
 
 
-def processing_continue(config, model, statistic_values):
+def processing_continue(model, user_labels, config):
     # model is updated here, not returned
 
-    avg_num_neigh, shift, scale = statistic_values
+    avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
+    shift = config[KEY.SHIFT]
+    scale = config[KEY.SCALE]
+
     continue_dct = config[KEY.CONTINUE]
     Logger().write("\nContinue found, loading checkpoint\n")
 
@@ -95,7 +100,11 @@ def processing_continue(config, model, statistic_values):
     # dataset's shift, scale, avg_num_neigh. So, we need to ignore those values
     model.load_state_dict(model_state_dict_cp, strict=False)
 
+    trainer = Trainer(model, user_labels, config)
+    trainer.optimizer.load_state_dict(optimizer_state_dict)
+    trainer.scheduler.load_state_dict(scheduler_state_dict)
+
     # TODO: make checkpoint starts from old epochs and extended loss history
     Logger().write(f"checkpoint previous epoch was: {from_epoch}\n")
     Logger().write("checkpoint loading was successful\n")
-    return optimizer_state_dict, scheduler_state_dict
+    return trainer

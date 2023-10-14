@@ -31,8 +31,7 @@ def train(config: Dict, working_dir: str):
     torch.manual_seed(seed)
 
     # config updated
-    statistic_values, data_lists, user_labels = \
-        processing_dataset(config, working_dir)
+    data_lists, user_labels = processing_dataset(config, working_dir)
     train, valid, test = data_lists
     if is_ddp:
         dist.barrier()
@@ -51,25 +50,15 @@ def train(config: Dict, working_dir: str):
         valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE])
     loaders = (train_loader, valid_loader, None)
 
-    #avg_num_neigh, shift, scale = statistic_values
-    #train_loader, valid_loader, test_loader = loaders
-
     Logger().write("\nModel building...\n")
     model = build_E3_equivariant_model(config)
     Logger().write("Model building was successful\n")
 
-    optimizer_state_dict, scheduler_state_dict = None, None
-
     # config updated
     if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
-        optimizer_state_dict, scheduler_state_dict = \
-            processing_continue(config, model, statistic_values)
-
-    trainer = Trainer(
-        model, user_labels, config,
-        optimizer_state_dict=optimizer_state_dict,
-        scheduler_state_dict=scheduler_state_dict,
-    )
+        trainer = processing_continue(model, user_labels, config)
+    else:
+        trainer = Trainer(model, user_labels, config)
 
     num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
     Logger().write(f"Total number of weight in model is {num_weights}\n")

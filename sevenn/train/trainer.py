@@ -22,7 +22,6 @@ class Trainer():
     def __init__(
         self, model, user_labels: list, config: dict,
         num_atoms_key: str = KEY.NUM_ATOMS,
-        optimizer_state_dict=None, scheduler_state_dict=None,
     ):
         # This(num_atoms) is only data key remained after refactoring
         # TODO: How to remove these dependencies clearly?
@@ -63,15 +62,9 @@ class Trainer():
         optim_param = config[KEY.OPTIM_PARAM]
         self.optimizer = optimizer(self.param, **optim_param)
 
-        if optimizer_state_dict is not None:
-            self.optimizer.load_state_dict(optimizer_state_dict)
-
         scheduler = scheduler_dict[config[KEY.SCHEDULER].lower()]
         scheduler_param = config[KEY.SCHEDULER_PARAM]
         self.scheduler = scheduler(self.optimizer, **scheduler_param)
-
-        if scheduler_state_dict is not None:
-            self.scheduler.load_state_dict(scheduler_state_dict)
 
         loss = loss_dict[config[KEY.LOSS].lower()]
         # TODO: handle this kind of case in parse_input not here
@@ -151,8 +144,8 @@ class Trainer():
                 total_loss.backward()
                 self.optimizer.step()
 
-            # TODO:This function call and inside is super ugly
-            # Deal with label wise arrange ment
+            # TODO:This function call and inside is ugly
+            # Deal with label wise arrangement
             self._update_epoch_mse(
                 epoch_mse, label, batch[self.num_atoms_key], mse_dct, epoch_counter
             )
@@ -167,7 +160,7 @@ class Trainer():
                 self._recursive_all_reduce(epoch_mse)
                 self._recursive_all_reduce(epoch_counter)
 
-            # TODO:This is super ugly
+            # TODO:This is ugly
             mse_record = {}
             for label in self.user_labels:
                 mse_record[label] = {}
@@ -177,7 +170,6 @@ class Trainer():
                     mse_record[label][loss_type] = mse.item()
                     self.mse_hist[set_type][label][loss_type].append(mse)
 
-        specie_wise_mse_record = {}
         """
         for atom_type in self.total_atom_type:
             F_mse = np.mean(force_mse_by_atom_type[atom_type])
@@ -185,7 +177,7 @@ class Trainer():
             specie_wise_mse_record[atom_type] = F_mse
         """
 
-        return mse_record, specie_wise_mse_record
+        return mse_record
 
     def scheduler_step(self, metric=None):
         if self.scheduler is None:
@@ -194,12 +186,6 @@ class Trainer():
             self.scheduler.step(metric)
         else:
             self.scheduler.step()
-        """
-        if metric is None:
-            self.scheduler.step()
-        else:
-            self.scheduler.step(metric)
-        """
 
     def get_lr(self):
         return self.optimizer.param_groups[0]['lr']

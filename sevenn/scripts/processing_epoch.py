@@ -45,12 +45,13 @@ def processing_epoch(trainer, config, loaders, working_dir):
                 dct[key] = math.sqrt(dct[key])
         return dct
 
-    def write_checkpoint(is_best=False, epoch=None):
-        if not is_distributed or rank == 0:
-            suffix = "_best" if is_best else f"_{epoch}"
-            checkpoint = trainer.get_checkpoint_dict()
-            checkpoint.update({'config': config, 'epoch': epoch})
-            torch.save(checkpoint, f"{prefix}/checkpoint{suffix}.pth")
+    def write_checkpoint(epoch, is_best=False):
+        if is_distributed and rank != 0:
+            return
+        suffix = "_best" if is_best else f"_{epoch}"
+        checkpoint = trainer.get_checkpoint_dict()
+        checkpoint.update({'config': config, 'epoch': epoch})
+        torch.save(checkpoint, f"{prefix}/checkpoint{suffix}.pth")
 
     for epoch in range(1, total_epoch + 1):
         Logger().timer_start("epoch")
@@ -59,12 +60,10 @@ def processing_epoch(trainer, config, loaders, working_dir):
         Logger().bar()
 
         Logger().timer_start("train")
-        train_mse, train_specie_mse =\
-            trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
+        train_mse = trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
         Logger().timer_end("train", message="Train elapsed")
         Logger().timer_start("valid")
-        valid_mse, valid_specie_mse =\
-            trainer.run_one_epoch(valid_loader, DataSetType.VALID)
+        valid_mse = trainer.run_one_epoch(valid_loader, DataSetType.VALID)
         Logger().timer_end("valid", message="Valid elapsed")
 
         train_rmse = sqrt_dict(train_mse)
@@ -72,8 +71,6 @@ def processing_epoch(trainer, config, loaders, working_dir):
         train_L2_loss = combine_L2_loss(train_rmse)
         valid_L2_loss = combine_L2_loss(valid_rmse)
         trainer.scheduler_step(valid_L2_loss)
-        #train_specie_rmse = sqrt_dict(train_specie_mse)
-        #valid_specie_rmse = sqrt_dict(valid_specie_mse)
 
         Logger().epoch_write_loss(train_rmse, valid_rmse)
         #Logger().epoch_write_specie_wise_loss(train_specie_rmse, valid_specie_rmse)
@@ -83,6 +80,6 @@ def processing_epoch(trainer, config, loaders, working_dir):
         if valid_L2_loss < min_loss:
             min_loss = valid_L2_loss
             Logger().write(f"best valid loss: {min_loss:8f}\n")
-            write_checkpoint(is_best=True)
+            write_checkpoint(epoch, is_best=True)
         if epoch % per_epoch == 0:
-            write_checkpoint(epoch=epoch)
+            write_checkpoint(epoch)

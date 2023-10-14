@@ -182,15 +182,18 @@ def processing_dataset(config, working_dir):
 
     if config[KEY.SHIFT] is not False:
         shift = config[KEY.SHIFT]
+        if type(shift) != list and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            shift = [shift] * len(type_map)
         Logger().write(f"User defined shift found: overwrite shift to {shift}\n")
     if config[KEY.SCALE] is not False:
         scale = config[KEY.SCALE]
+        if type(scale) != list and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            shift = [shift] * len(type_map)
         Logger().write(f"User defined scale found: overwrite scale to {scale}\n")
 
     config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
 
-    avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
-    if avg_num_neigh:
+    if config[KEY.AVG_NUM_NEIGHBOR] is not False:
         Logger().write("Calculating average number of neighbor...\n")
         avg_num_neigh = train_set.get_avg_num_neigh()
         Logger().write(f"average number of neighbor is {avg_num_neigh:.6f}\n")
@@ -202,7 +205,6 @@ def processing_dataset(config, working_dir):
     num_workers = config[KEY.NUM_WORKERS]
 
     user_labels = train_set.user_labels.copy()
-    statistic_values = (avg_num_neigh, shift, scale)
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
 
-    return statistic_values, data_lists, user_labels
+    return data_lists, user_labels
