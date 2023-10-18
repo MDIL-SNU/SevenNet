@@ -141,7 +141,15 @@ def load_model_from_checkpoint(checkpoint):
             print(f"Warning: {k} not in config, using default value {v}")
             config[k] = v
 
+    # expect only non-tensor values in config, if exists, move to cpu
+    # This can be happen if config has torch tensor as value (shift, scale)
+    # TODO: putting only non-tensors at first place is better
+    for k, v in config.items():
+        if isinstance(v, torch.Tensor):
+            config[k] = v.cpu()
+
     model = build_E3_equivariant_model(config)
+
     model.load_state_dict(model_state_dict, strict=False)
 
     return model

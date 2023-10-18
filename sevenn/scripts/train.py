@@ -37,12 +37,13 @@ def train(config: Dict, working_dir: str):
         dist.barrier()
         train_sampler = DistributedSampler(train,
                                            num_replicas=dist.get_world_size(),
-                                           rank=dist.get_rank())
+                                           rank=dist.get_rank(),
+                                           shuffle=True)
         valid_sampler = DistributedSampler(valid,
                                            num_replicas=dist.get_world_size(),
                                            rank=dist.get_rank())
         train_loader = DataLoader(train, batch_size=config[KEY.BATCH_SIZE],
-                                  sampler=train_sampler, shuffle=True)
+                                  sampler=train_sampler)
         valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE],
                                   sampler=valid_sampler)
     else:
