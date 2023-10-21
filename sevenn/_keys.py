@@ -109,7 +109,7 @@ STRESS_WEIGHT = 'stress_loss_weight'
 DEVICE = "device"
 DTYPE = "dtype"
 
-DATA_SHUFFLE = "pre_shuffle"
+DATA_SHUFFLE = "data_shuffle"
 TRAIN_SHUFFLE = "train_shuffle"
 
 IS_TRACE_STRESS = "_is_trace_stress"
