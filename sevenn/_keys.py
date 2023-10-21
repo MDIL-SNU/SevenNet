@@ -109,6 +109,9 @@ STRESS_WEIGHT = 'stress_loss_weight'
 DEVICE = "device"
 DTYPE = "dtype"
 
+DATA_SHUFFLE = "pre_shuffle"
+TRAIN_SHUFFLE = "train_shuffle"
+
 IS_TRACE_STRESS = "_is_trace_stress"
 IS_TRAIN_STRESS = "is_train_stress"
 
@@ -150,6 +153,8 @@ CUTOFF_FUNCTION = "cutoff_function"
 POLY_CUT_P = "poly_cut_p_value"
 
 LMAX = "lmax"
+LMAX_EDGE = "lmax_edge"
+LMAX_NODE = "lmax_node"
 IS_PARITY = "is_parity"
 CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS = "weight_nn_hidden_neurons"
 NUM_CONVOLUTION = "num_convolution_layer"
@@ -160,6 +165,10 @@ RADIAL_BASIS_NAME = "radial_basis_name"
 CUTOFF_FUNCTION_NAME = "cutoff_function_name"
 
 USE_BIAS_IN_LINEAR = "use_bias_in_linear"
+
+READOUT_AS_FCN = "readout_as_fcn"
+READOUT_FCN_HIDDEN_NEURONS = "readout_fcn_hidden_neurons"
+READOUT_FCN_ACTIVATION = "readout_fcn_activation"
 
 AVG_NUM_NEIGHBOR = "avg_num_neigh"
 SHIFT = "shift"

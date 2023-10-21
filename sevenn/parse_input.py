@@ -158,6 +158,11 @@ def init_model_config(config: dict):
     if len(unknown_keys) != 0:
         raise ValueError(f"unknown keys : {unknown_keys} is given")
 
+    # remove unnecessary keys for briefness in log
+    if model_meta[KEY.READOUT_AS_FCN] is False:
+        model_meta.pop(KEY.READOUT_FCN_ACTIVATION)
+        model_meta.pop(KEY.READOUT_FCN_HIDDEN_NEURONS)
+
     return model_meta
 
 

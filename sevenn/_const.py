@@ -14,6 +14,9 @@ IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut']
 IMPLEMENTED_MODEL = ['E3_equivariant_model']
 
 # string input to real torch function
+ACTIVATION = {"relu": torch.nn.functional.relu, "silu": torch.nn.functional.silu,
+              "tanh": torch.tanh, "abs": torch.abs, "ssp": ShiftedSoftPlus,
+              "sigmoid": torch.sigmoid, "elu": torch.nn.functional.elu,}
 ACTIVATION_FOR_EVEN = {"ssp": ShiftedSoftPlus, "silu": torch.nn.functional.silu}
 ACTIVATION_FOR_ODD = {"tanh": torch.tanh, "abs": torch.abs}
 ACTIVATION_DICT = {"e": ACTIVATION_FOR_EVEN, "o": ACTIVATION_FOR_ODD}
@@ -54,6 +57,8 @@ def is_list_of_file_or_file(x):
 DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.NODE_FEATURE_MULTIPLICITY: 32,
     KEY.LMAX: 1,
+    KEY.LMAX_EDGE: -1,  # -1 means lmax_edge = lmax
+    KEY.LMAX_NODE: -1,  # -1 means lmax_node = lmax
     KEY.IS_PARITY: True,
     KEY.RADIAL_BASIS: {
         KEY.RADIAL_BASIS_NAME: 'bessel',
@@ -74,6 +79,10 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.TRAIN_SHIFT_SCALE: False,
     KEY.OPTIMIZE_BY_REDUCE: False,
     KEY.USE_BIAS_IN_LINEAR: False,
+    KEY.READOUT_AS_FCN: False,
+    # Applied af readout as fcn is True
+    KEY.READOUT_FCN_HIDDEN_NEURONS: [30, 30],
+    KEY.READOUT_FCN_ACTIVATION: "relu",
 }
 
 
@@ -92,6 +101,7 @@ DEFAULT_DATA_CONFIG = {
     KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
     KEY.SHIFT: False,
     KEY.SCALE: False,
+    KEY.DATA_SHUFFLE: True,
 }
 
 
@@ -113,6 +123,7 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRACE_STRESS: False,
     KEY.IS_TRAIN_STRESS: True,
+    KEY.TRAIN_SHUFFLE: True,
 }
 
 
@@ -120,6 +131,8 @@ DEFAULT_TRAINING_CONFIG = {
 MODEL_CONFIG_CONDITION = {
     KEY.NODE_FEATURE_MULTIPLICITY: is_positive,
     KEY.LMAX: lambda x: x >= 0,
+    KEY.LMAX_EDGE: lambda x: x >= -1,
+    KEY.LMAX_NODE: lambda x: x >= -1,
     KEY.IS_PARITY: None,
     KEY.RADIAL_BASIS: {
         KEY.RADIAL_BASIS_NAME: lambda x: x in IMPLEMENTED_RADIAL_BASIS,
@@ -138,6 +151,10 @@ MODEL_CONFIG_CONDITION = {
     KEY.TRAIN_AVG_NUM_NEIGH: None,
     KEY.OPTIMIZE_BY_REDUCE: None,
     KEY.USE_BIAS_IN_LINEAR: None,
+    KEY.READOUT_AS_FCN: None,
+    KEY.READOUT_FCN_HIDDEN_NEURONS:
+        lambda x: all(val > 0 and isinstance(val, int) for val in x),
+    KEY.READOUT_FCN_ACTIVATION: lambda x: x in ACTIVATION.keys(),
 }
 
 
@@ -153,6 +170,7 @@ DATA_CONFIG_CONDITION = {
     KEY.BATCH_SIZE: is_positive,
     KEY.PREPROCESS_NUM_CORES: is_positive,
     KEY.USE_SPECIES_WISE_SHIFT_SCALE: None,
+    KEY.DATA_SHUFFLE: None,
 }
 
 TRAINING_CONFIG_CONDITION = {
@@ -169,5 +187,6 @@ TRAINING_CONFIG_CONDITION = {
         KEY.RESET_SCHEDULER: None,
     },
     KEY.IS_TRACE_STRESS: None,
-    KEY.IS_TRAIN_STRESS: None
+    KEY.IS_TRAIN_STRESS: None,
+    KEY.TRAIN_SHUFFLE: None,
 }

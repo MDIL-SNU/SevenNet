@@ -1,5 +1,6 @@
 import os
 import glob
+import random
 
 import torch
 from torch_geometric.loader import DataLoader
@@ -206,5 +207,10 @@ def processing_dataset(config, working_dir):
 
     user_labels = train_set.user_labels.copy()
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
+
+    if config[KEY.DATA_SHUFFLE]:
+        Logger().write("Shuffle the train data\n")
+        for data_list in data_lists:
+            random.shuffle(data_list)
 
     return data_lists, user_labels

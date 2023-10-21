@@ -27,6 +27,7 @@ def train(config: Dict, working_dir: str):
     rank = config[KEY.RANK]
     is_ddp = config[KEY.IS_DDP]
     seed = config[KEY.RANDOM_SEED]
+    batch_size = config[KEY.BATCH_SIZE]
     random.seed(seed)
     torch.manual_seed(seed)
 
@@ -41,13 +42,13 @@ def train(config: Dict, working_dir: str):
         valid_sampler = DistributedSampler(valid,
                                            num_replicas=dist.get_world_size(),
                                            rank=dist.get_rank())
-        train_loader = DataLoader(train, batch_size=config[KEY.BATCH_SIZE],
-                                  sampler=train_sampler, shuffle=True)
-        valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE],
+        train_loader = DataLoader(train, batch_size=batch_size,
+                                  sampler=train_sampler, shuffle=config[KEY.TRAIN_SHUFFLE])
+        valid_loader = DataLoader(valid, batch_size=batch_size,
                                   sampler=valid_sampler)
     else:
-        train_loader = DataLoader(train, batch_size=config[KEY.BATCH_SIZE], shuffle=True)
-        valid_loader = DataLoader(valid, batch_size=config[KEY.BATCH_SIZE])
+        train_loader = DataLoader(train, batch_size=batch_size, shuffle=config[KEY.TRAIN_SHUFFLE])
+        valid_loader = DataLoader(valid, batch_size=batch_size)
     loaders = (train_loader, valid_loader, None)
 
     Logger().write("\nModel building...\n")
