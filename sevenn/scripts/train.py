@@ -44,7 +44,7 @@ def train(config: Dict, working_dir: str):
                                            num_replicas=dist.get_world_size(),
                                            rank=dist.get_rank())
         train_loader = DataLoader(train, batch_size=batch_size, sampler=train_sampler)
-        valid_loader = DataLoader(valid, batch_size=batch_size,
+        valid_loader = DataLoader(valid, batch_size=batch_size, sampler=valid_sampler)
     else:
         train_loader = DataLoader(train, batch_size=batch_size, shuffle=config[KEY.TRAIN_SHUFFLE])
         valid_loader = DataLoader(valid, batch_size=batch_size)
