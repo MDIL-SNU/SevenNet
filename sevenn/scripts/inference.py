@@ -89,10 +89,6 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
             output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
         output_list[i] = output.to_numpy_dict()
 
-    import pickle
-    with open("tmp.pkl", "wb") as f:
-        pickle.dump(output_list, f)
-
     per_graph_keys = [KEY.NUM_ATOMS, KEY.USER_LABEL,
                       KEY.ENERGY, KEY.PRED_TOTAL_ENERGY,
                       KEY.STRESS, KEY.PRED_STRESS]
