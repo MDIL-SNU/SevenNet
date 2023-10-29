@@ -14,7 +14,7 @@ from ase.calculators.singlepoint import SinglePointCalculator
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.nn.node_embedding import get_type_mapper_from_specie
 from sevenn.util import load_model_from_checkpoint, postprocess_output,\
-    to_atom_graph_list
+    to_atom_graph_list, squared_error, AverageNumber
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.train.dataload import graph_build
 from sevenn._const import LossType
@@ -24,7 +24,7 @@ import sevenn._keys as KEY
 # TODO: use updated dataset construction scheme, not directly call graph_build
 
 
-def load_sevenn_datas(sevenn_datas: str, cutoff, type_map):
+def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
     full_dataset = None
     for sevenn_data in sevenn_datas:
         with open(sevenn_data, "rb") as f:
@@ -79,7 +79,6 @@ def poscars_to_atoms(poscars: List[str]):
     return atoms_list
 
 
-# TODO: Refactor, meta, energy, stress to one csv file, only force is exception
 def write_inference_csv(output_list, rmse_dct, out, no_ref):
     is_stress = "STRESS" in rmse_dct
     for i, output in enumerate(output_list):
@@ -88,10 +87,6 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
             output[KEY.STRESS] = output[KEY.STRESS] * 1602.1766208
             output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
         output_list[i] = output.to_numpy_dict()
-
-    import pickle
-    with open("tmp.pkl", "wb") as f:
-        pickle.dump(output_list, f)
 
     per_graph_keys = [KEY.NUM_ATOMS, KEY.USER_LABEL,
                       KEY.ENERGY, KEY.PRED_TOTAL_ENERGY,
@@ -185,7 +180,7 @@ def inference_main(checkpoint, fnames, output_path,
     atoms_list = None
     no_ref = False
     if head.endswith('sevenn_data'):
-        inference_set = load_sevenn_datas(fnames, cutoff, type_map)
+        inference_set = load_sevenn_data(fnames, cutoff, type_map)
     else:
         if head.startswith('POSCAR'):
             atoms_list = poscars_to_atoms(fnames)
@@ -206,45 +201,22 @@ def inference_main(checkpoint, fnames, output_path,
     loss_types = [LossType.ENERGY, LossType.FORCE]
     if is_stress:
         loss_types.append(LossType.STRESS)
-    mse_dct = {k: torch.Tensor() for k in loss_types}
 
+    l2_err = {k: AverageNumber() for k in loss_types}
     infer_list = inference_set.to_list()
     #infer_list, info_list = inference_set.seperate_info()
     loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
 
     output_list = []
-    # TODO: make it multicore parallel (you know it is not pickable directly...)
-    #for batch, info in zip(tqdm(loader), info_list):
     for batch in tqdm(loader):
-        batch_device = batch.to(device, non_blocking=True)
-        result = model(batch_device)
-        result.to("cpu")
+        batch = batch.to(device, non_blocking=True)
+        output = model(batch)
+        output.detach().to("cpu")
+        results = postprocess_output(output, loss_types)
         for loss_type in loss_types:
-            mse, _ = \
-                postprocess_output(result, loss_type)
-            mse = mse.detach()
-            mse_dct[loss_type] = torch.cat((mse_dct[loss_type], mse))
-        output_list.extend(to_atom_graph_list(result))
+            l2_err[loss_type].update(squared_error(*results[loss_type]))
+        output_list.extend(to_atom_graph_list(output))  # unroll batch data
 
     # to more readable format
-    rmse_dct = {k.name: v.mean().sqrt().item() for k, v in mse_dct.items()}
-
-
+    rmse_dct = {k.name: np.sqrt(v.get()) for k, v in l2_err.items()}
     write_inference_csv(output_list, rmse_dct, output_path, no_ref=no_ref)
-
-
-if __name__ == "__main__":
-    prefix = "/home/parkyutack/SEVENNet/example_inputs/testing/"
-    checkpoint = f"{prefix}/checkpoint_5.pth"
-    train = f"{prefix}/train.sevenn_data"
-    valid = f"{prefix}/valid.sevenn_data"
-    outcars = f"{prefix}/outcars/OUTCAR*"
-    outcars = f"{prefix}/tmp/OUTCAR*"
-    poscars = f"{prefix}/poscars/POSCAR*"
-    #poscars = f"{prefix}/tmp/POSCAR*"
-
-    #inference_main(checkpoint, outcars, None, num_cores=1, device="cpu")
-    #inference_main(checkpoint, train, "debug", num_cores=1, device="cpu")
-    inference_main(checkpoint, poscars, "debug", num_cores=1, device="cpu")
-
-

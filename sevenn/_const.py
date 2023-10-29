@@ -1,3 +1,4 @@
+from typing import Dict, Any
 import os.path
 from enum import Enum
 
@@ -5,11 +6,13 @@ import torch
 
 from sevenn.nn.activation import ShiftedSoftPlus
 import sevenn._keys as KEY
-from typing import Dict, Any
 
 SEVENN_VERSION = "0.8.6"
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut']
+SUPPORTING_METRICS = ['RMSE', 'ComponentRMSE', 'MAE', 'Loss']
+SUPPORTING_ERROR_TYPES = ['TotalEnergy', 'Energy', 'Force', 'Stress', 'Stress_GPa', 'TotalLoss']
+
 
 IMPLEMENTED_MODEL = ['E3_equivariant_model']
 
@@ -20,16 +23,18 @@ ACTIVATION = {"relu": torch.nn.functional.relu, "silu": torch.nn.functional.silu
 ACTIVATION_FOR_EVEN = {"ssp": ShiftedSoftPlus, "silu": torch.nn.functional.silu}
 ACTIVATION_FOR_ODD = {"tanh": torch.tanh, "abs": torch.abs}
 ACTIVATION_DICT = {"e": ACTIVATION_FOR_EVEN, "o": ACTIVATION_FOR_ODD}
+
+
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]
 
 
 class LossType(Enum):
-    ENERGY = 'energy'  # I hope user store per atom energy (eV/atom)
+    ENERGY = 'energy'  # eV or eV/atom
     FORCE = 'force'    # eV/A
-    STRESS = 'stress'  # kB(?)
+    STRESS = 'stress'  # kB
 
-
+# deprecated
 class DataSetType(Enum):
     TRAIN = 'train'
     VALID = 'valid'
@@ -53,6 +58,20 @@ def is_list_of_file_or_file(x):
         x = [x]
     return all([os.path.isfile(v) for v in x])
 
+def error_record_condition(x):
+    if type(x) is not list:
+        return False
+    for v in x:
+        if type(v) is not list or len(v) != 2:
+            return False
+        if v[0] not in SUPPORTING_ERROR_TYPES:
+            return False
+        if v[0] == 'TotalLoss':
+            continue
+        if v[1] not in SUPPORTING_METRICS:
+            print('w')
+            return False
+    return True
 
 DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.NODE_FEATURE_MULTIPLICITY: 32,
@@ -91,7 +110,7 @@ DEFAULT_DATA_CONFIG = {
     KEY.DATA_FORMAT: "structure_list",
     KEY.DATA_FORMAT_ARGS: {},
     KEY.FORMAT_OUTPUTS: 'vasp-out',
-    KEY.STRUCTURE_LIST: False,
+    #KEY.STRUCTURE_LIST: False,  # deprecated
     KEY.SAVE_DATASET: False,
     KEY.SAVE_BY_LABEL: False,
     KEY.SAVE_BY_TRAIN_VALID: False,
@@ -124,6 +143,13 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.IS_TRACE_STRESS: False,
     KEY.IS_TRAIN_STRESS: True,
     KEY.TRAIN_SHUFFLE: True,
+    KEY.ERROR_RECORD: [
+        ["Energy", "RMSE"],
+        ["Force", "RMSE"],
+        ["Stress", "RMSE"],
+        ["TotalLoss", "None"],
+    ],
+    KEY.BEST_METRIC: "TotalLoss",
 }
 
 
@@ -189,4 +215,6 @@ TRAINING_CONFIG_CONDITION = {
     KEY.IS_TRACE_STRESS: None,
     KEY.IS_TRAIN_STRESS: None,
     KEY.TRAIN_SHUFFLE: None,
+    KEY.ERROR_RECORD: error_record_condition,
+    KEY.BEST_METRIC: lambda x: type(x) is str and x in ["Energy", "Force", "Stress", "TotalLoss"]
 }

@@ -32,7 +32,7 @@ def train(config: Dict, working_dir: str):
     torch.manual_seed(seed)
 
     # config updated
-    data_lists, user_labels = processing_dataset(config, working_dir)
+    data_lists = processing_dataset(config, working_dir)
     train, valid, test = data_lists
     if is_ddp:
         dist.barrier()
@@ -56,18 +56,13 @@ def train(config: Dict, working_dir: str):
 
     # config updated
     if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
-        trainer = processing_continue(model, user_labels, config)
+        trainer = processing_continue(model, config)
     else:
-        trainer = Trainer(model, user_labels, config)
+        trainer = Trainer(model, config)
 
     num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
     Logger().write(f"Total number of weight in model is {num_weights}\n")
     Logger().write("Trainer initialized. The program is ready to training\n")
-
-    Logger().write("Note that...\n")
-    Logger().write("Energy unit of rmse: eV/atom\n")
-    Logger().write("Force unit of rmse: eV/Angstrom\n")
-    Logger().write("Stress unit of rmse: kB\n")
 
     Logger().bar()
 
