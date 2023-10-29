@@ -6,7 +6,7 @@ from datetime import datetime
 from ase.data import atomic_numbers
 
 import sevenn._const
-from sevenn._const import LossType, DataSetType
+from sevenn._const import LossType
 import sevenn._keys as KEY
 
 CHEM_SYMBOLS = {v: k for k, v in atomic_numbers.items()}
@@ -150,6 +150,70 @@ class Logger(metaclass=Singleton):
 
             content += "\n"
         self.write(content)
+
+    @staticmethod
+    def write_table(dct):
+        keys = list(dct.keys())
+        values = [f"{dct[key]:.6f}" for key in keys]
+
+        # Calculate padding
+        padding = [max(len(k), len(v)) + 2 for k, v in zip(keys, values)]
+
+        # Create the key and value rows
+        key_row = "|".join(key.center(pad) for key, pad in zip(keys, padding))
+        value_row = "|".join(value.rjust(pad) for value, pad in zip(values, padding))
+
+        # Create separator
+        separator = "-" * sum(padding) + "-" * (len(padding) - 1)
+
+        # Print the table
+        Logger().writeline(key_row)
+        Logger().writeline(separator)
+        Logger().writeline(value_row)
+        Logger().writeline(separator)
+
+    @staticmethod
+    def write_full_table(dict_list, row_labels, decimal_places=6, pad=2):
+        data_dict = {k: [] for k in dict_list[0].keys()}
+        for dct in dict_list:
+            for k, v in dct.items():
+                data_dict[k].append(v)
+        label_len = max(map(len, row_labels))
+        # Extract the column names and create a 2D array of values
+        col_names = list(data_dict.keys())
+        values_2d = [data_dict[col_name] for col_name in col_names]
+
+        # Transpose the 2D array of values for easier row-wise iteration
+        transposed_values = list(zip(*values_2d))
+
+        # Format the numbers with the given decimal places
+        formatted_values = [
+            [f"{value:.{decimal_places}f}" for value in row]
+            for row in transposed_values
+        ]
+
+        # Calculate padding lengths for each column (with extra padding)
+        max_col_lengths = [
+            max(len(str(value)) for value in col) + pad
+            for col in zip(col_names, *formatted_values)
+        ]
+
+        # Create header row and separator
+        header = " " * (label_len + pad) + " ".join(
+            col_name.ljust(pad) for col_name, pad in zip(col_names, max_col_lengths)
+        )
+        separator = "-".join("-" * pad for pad in max_col_lengths) + "-" * (label_len + pad)
+
+        # Print header and separator
+        Logger().writeline(header)
+        Logger().writeline(separator)
+
+        # Print the data rows with row labels
+        for row_label, row in zip(row_labels, formatted_values):
+            data_row = " ".join(
+                value.rjust(pad) for value, pad in zip(row, max_col_lengths)
+            )
+            Logger().writeline(f"{row_label.ljust(label_len)}{data_row}")
 
     @staticmethod
     def format_k_v(key, val, write=False):

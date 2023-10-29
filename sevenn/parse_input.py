@@ -14,7 +14,8 @@ from sevenn.util import chemical_species_preprocess
 import sevenn._keys as KEY
 import sevenn._const as _const
 
-#TODO: fix for ex)data key on train key and some auto spell check
+# TODO: This file do too many things at once
+#       And roles are overlaped with _const conditions
 
 
 def config_initialize(key: str, config: dict, default_dct: dict,
@@ -160,8 +161,10 @@ def init_model_config(config: dict):
 
     # remove unnecessary keys for briefness in log
     if model_meta[KEY.READOUT_AS_FCN] is False:
-        model_meta.pop(KEY.READOUT_FCN_ACTIVATION)
-        model_meta.pop(KEY.READOUT_FCN_HIDDEN_NEURONS)
+        model_meta[KEY.READOUT_FCN_ACTIVATION] = None
+        model_meta[KEY.READOUT_FCN_HIDDEN_NEURONS] = None
+        #model_meta.pop(KEY.READOUT_FCN_ACTIVATION)
+        #model_meta.pop(KEY.READOUT_FCN_HIDDEN_NEURONS)
 
     return model_meta
 

@@ -55,7 +55,6 @@ SCALED_ATOMIC_ENERGY: Final[str] = "scaled_atomic_energy"
 ATOMIC_ENERGY: Final[str] = "atomic_energy"
 PRED_TOTAL_ENERGY: Final[str] = "inferred_total_energy"
 
-#TODO: remove later (after doing moving nn.Rescale TODO)
 PRED_PER_ATOM_ENERGY: Final[str] = "inferred_per_atom_energy"
 PER_ATOM_ENERGY: Final[str] = "per_atom_energy"
 
@@ -119,6 +118,9 @@ CONTINUE = "continue"
 CHECKPOINT = "checkpoint"
 RESET_OPTIMIZER = "reset_optimizer"
 RESET_SCHEDULER = "reset_scheduler"
+
+ERROR_RECORD = "error_record"
+BEST_METRIC = "best_metric"
 
 NUM_WORKERS = "_num_workers"  # not work
 

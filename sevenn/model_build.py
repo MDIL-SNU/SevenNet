@@ -371,34 +371,3 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         return [AtomGraphSequential(v) for v in layers_list]
     else:
         return AtomGraphSequential(layers)
-
-
-def main():
-    import pickle
-    import torch
-    from atom_graph_data import AtomGraphData
-
-    torch.manual_seed(777)
-    config = _const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG
-    config[KEY.LMAX] = 2
-    config[KEY.NUM_CONVOLUTION] = 3
-    config[KEY.SHIFT] = 1.0
-    config[KEY.SCALE] = 1.0
-    model = build_E3_equivariant_model(config)
-    #deploy_parallel(model, config, "deployed_test")
-
-    #model_list = build_parallel_model(model, config)
-    #print(model_list)
-
-    #model.eval()
-    #model.set_is_batch_data(False)
-    #stct_dct = model.state_dict()
-    #for k in stct_dct.keys():
-    #    print(k)
-
-    #model2.load_state_dict(stct_dct, strict=False)
-
-
-if __name__ == "__main__":
-    main()
-

@@ -205,7 +205,6 @@ def processing_dataset(config, working_dir):
     batch_size = config[KEY.BATCH_SIZE]
     num_workers = config[KEY.NUM_WORKERS]
 
-    user_labels = train_set.user_labels.copy()
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
 
     if config[KEY.DATA_SHUFFLE]:
@@ -213,4 +212,4 @@ def processing_dataset(config, working_dir):
         for data_list in data_lists:
             random.shuffle(data_list)
 
-    return data_lists, user_labels
+    return data_lists

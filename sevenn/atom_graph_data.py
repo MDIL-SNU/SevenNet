@@ -38,18 +38,10 @@ class AtomGraphData(torch_geometric.data.Data):
             edge_attr,
             pos=pos
         )
-
-        # This is very strange... but I couldn't find a better way yet
         self[KEY.NODE_ATTR] = x
-
         for k, v in kwargs.items():
             self[k] = v
 
-    # def to_dict(self):
-    #    """
-    #    'maybe' Dict[str, Tensor]
-    #    """
-    #    return {k: v for k, v in self.items()}
 
     def to_numpy_dict(self):
         # This is not debuged yet!

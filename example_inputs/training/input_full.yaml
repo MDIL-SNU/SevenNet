@@ -47,7 +47,15 @@ train:
     force_loss_weight   : 0.1                     # Coefficient for force loss
     stress_loss_weight  : 1e-06                   # Coefficient for stress loss
 
-    per_epoch: 5                                  # Generate checkpoints every this ratio
+    per_epoch:  10                                 # Generate checkpoints every this ratio
+
+    error_record:
+        - ['Energy', 'RMSE']
+        - ['Force', 'RMSE']
+        - ['Stress', 'RMSE']
+        - ['TotalLoss', 'None']
+
+    #loss: 'huber'
 
     # WARNING: Seperate the training with previous dir. It will overwrite checkpoints
     # continue: 
@@ -68,15 +76,18 @@ data:
 
     # These sevenn_data can be created via 'sevenn_graph_build' command line tool or by training
 
-    data_format: 'ase'                           # Default is 'structure_list'
-    data_format_args:                            # Paramaters will be passed to ase.io.read
-        index: '-10:'
+    #data_format: 'ase'                           # Default is 'structure_list'
+    #data_format_args:                            # Paramaters will be passed to ase.io.read
+        #index: '-10:'
+
+    data_format: 'structure_list'                           # Default is 'structure_list'
 
     # .sevenn_data can be loaded regardless of data_foramt (since they're already graph)
     # knows wild card *
     # ASE tries to infer its type by extension, in this case, extxyz file is loaded by ase.
-    load_dataset_path: ['./train.sevenn_data', '../data/test.extxyz']   # Total dataset if load_validset is not speified, else training set
-    load_validset_path: ['./valid.sevenn_data']  # User defined validation set, ignores data_divided_ratio if specified
+    #load_dataset_path: ['../data/test.extxyz']   # Total dataset if load_validset is not speified, else training set
+    load_dataset_path: ['structure_list']   # Total dataset if load_validset is not speified, else training set
+    #load_validset_path: ['./valid.sevenn_data']  # User defined validation set, ignores data_divided_ratio if specified
 
     #save_dataset_path: 'total'                   # Save the preprocessed (in load_dataset_path) dataset
     save_by_train_valid: True                     # Save the preprocessed train.sevenn_data, valid.sevenn_data

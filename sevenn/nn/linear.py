@@ -65,6 +65,7 @@ class AtomReduce(nn.Module):
             data[self.KEY_OUTPUT] = scatter(
                 data[self.KEY_INPUT], data[KEY.BATCH], dim=0, reduce=self.reduce
             ) * self.constant
+            data[self.KEY_OUTPUT] = data[self.KEY_OUTPUT].squeeze(1)
         else:
             data[self.KEY_OUTPUT] = torch.sum(data[self.KEY_INPUT]) * self.constant
 

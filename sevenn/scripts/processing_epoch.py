@@ -7,43 +7,23 @@ import numpy as np
 
 from sevenn.sevenn_logger import Logger
 from sevenn.train.trainer import Trainer
-from sevenn._const import LossType, DataSetType
+from sevenn.error_recorder import ErrorRecorder
+from sevenn._const import LossType
 import sevenn._keys as KEY
-
-import multiprocessing
 
 
 def processing_epoch(trainer, config, loaders, working_dir):
     prefix = f"{os.path.abspath(working_dir)}/"
     train_loader, valid_loader, test_loader = loaders
 
-    min_loss = 10000
     is_distributed = config[KEY.IS_DDP]
     rank = config[KEY.RANK]
     total_epoch = config[KEY.EPOCH]
     per_epoch = config[KEY.PER_EPOCH]
-
-    def combine_L2_loss(rmse_dct):
-        total_loss = 0
-        rmse_dct = rmse_dct['total']
-        for loss_type in trainer.loss_types:
-            if loss_type is LossType.ENERGY:
-                total_loss += rmse_dct[loss_type]
-            elif loss_type is LossType.FORCE:
-                total_loss += rmse_dct[loss_type] * config[KEY.FORCE_WEIGHT] / 3
-            elif loss_type is LossType.STRESS:
-                total_loss += rmse_dct[loss_type] * config[KEY.STRESS_WEIGHT] / 6
-            else:
-                raise ValueError(f"Unknown loss type: {loss_type}")
-        return total_loss
-
-    def sqrt_dict(dct):
-        for key in dct.keys():
-            if isinstance(dct[key], dict):
-                sqrt_dict(dct[key])
-            else:
-                dct[key] = math.sqrt(dct[key])
-        return dct
+    train_recorder = ErrorRecorder.from_config(config)
+    valid_recorder = ErrorRecorder.from_config(config)
+    best_metric = config[KEY.BEST_METRIC]
+    current_best = 9999999
 
     def write_checkpoint(epoch, is_best=False):
         if is_distributed and rank != 0:
@@ -60,26 +40,35 @@ def processing_epoch(trainer, config, loaders, working_dir):
         Logger().bar()
 
         Logger().timer_start("train")
-        train_mse = trainer.run_one_epoch(train_loader, DataSetType.TRAIN)
-        Logger().timer_end("train", message="Train elapsed")
+        trainer.run_one_epoch(train_loader, is_train=True,
+                              error_recorder=train_recorder)
+        train_err = train_recorder.epoch_forward()
+        #Logger().timer_end("train", message="Train elapsed")
+
         Logger().timer_start("valid")
-        valid_mse = trainer.run_one_epoch(valid_loader, DataSetType.VALID)
-        Logger().timer_end("valid", message="Valid elapsed")
+        trainer.run_one_epoch(valid_loader, error_recorder=valid_recorder)
+        valid_err = valid_recorder.epoch_forward()
+        #Logger().timer_end("valid", message="Valid elapsed")
 
-        train_rmse = sqrt_dict(train_mse)
-        valid_rmse = sqrt_dict(valid_mse)
-        train_L2_loss = combine_L2_loss(train_rmse)
-        valid_L2_loss = combine_L2_loss(valid_rmse)
-        trainer.scheduler_step(valid_L2_loss)
+        Logger().write_full_table([train_err, valid_err], ["Train", "Valid"])
 
-        Logger().epoch_write_loss(train_rmse, valid_rmse)
-        #Logger().epoch_write_specie_wise_loss(train_specie_rmse, valid_specie_rmse)
-        #Logger().epoch_write_train_loss(loss_dct)  # This is WRONG!
+        val = None
+        for metric in valid_err:
+            # loose string comparison,
+            # e.g. "Energy" in "TotalEnergy" or "Energy_Loss"
+            if best_metric in metric:
+                val = valid_err[metric]
+                break
+        assert val is not None, f"Metric {best_metric} not found in {valid_err}"
+
+        trainer.scheduler_step(val)
+
+        #Logger().epoch_write_loss(train_rmse, valid_rmse)
         Logger().timer_end("epoch", message=f"Epoch {epoch} elapsed")
 
-        if valid_L2_loss < min_loss:
-            min_loss = valid_L2_loss
-            Logger().write(f"best valid loss: {min_loss:8f}\n")
+        if val < current_best:
+            current_best = val
             write_checkpoint(epoch, is_best=True)
         if epoch % per_epoch == 0:
             write_checkpoint(epoch)
+
