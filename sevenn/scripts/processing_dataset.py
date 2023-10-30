@@ -190,7 +190,7 @@ def processing_dataset(config, working_dir):
     if config[KEY.SCALE] is not False:
         scale = config[KEY.SCALE]
         if type(scale) != list and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            shift = [shift] * len(type_map)
+            scale = [scale] * len(type_map)
         Logger().write(f"User defined scale found: overwrite scale to {scale}\n")
 
     config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
