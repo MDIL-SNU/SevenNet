@@ -118,6 +118,9 @@ CONTINUE = "continue"
 CHECKPOINT = "checkpoint"
 RESET_OPTIMIZER = "reset_optimizer"
 RESET_SCHEDULER = "reset_scheduler"
+RESET_EPOCH = "reset_epoch"
+
+CSV_LOG = "csv_log"
 
 ERROR_RECORD = "error_record"
 BEST_METRIC = "best_metric"

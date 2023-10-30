@@ -56,9 +56,11 @@ def train(config: Dict, working_dir: str):
 
     # config updated
     if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
-        trainer = processing_continue(model, config)
+        trainer, start_epoch, init_csv = processing_continue(model, config)
     else:
+        init_csv = True
         trainer = Trainer(model, config)
+        start_epoch = 1
 
     num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
     Logger().write(f"Total number of weight in model is {num_weights}\n")
@@ -66,5 +68,5 @@ def train(config: Dict, working_dir: str):
 
     Logger().bar()
 
-    processing_epoch(trainer, config, loaders, working_dir)
+    processing_epoch(trainer, config, loaders, start_epoch, init_csv, working_dir)
     Logger().timer_end("total", message="Total wall time")

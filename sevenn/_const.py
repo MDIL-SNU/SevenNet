@@ -138,7 +138,9 @@ DEFAULT_TRAINING_CONFIG = {
         # KEY.CHECKPOINT: False, > handled manually in parse_input
         KEY.RESET_OPTIMIZER: False,
         KEY.RESET_SCHEDULER: False,
+        KEY.RESET_EPOCH: False,
     },
+    KEY.CSV_LOG: "log.csv",
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRACE_STRESS: False,
     KEY.IS_TRAIN_STRESS: True,
@@ -211,10 +213,12 @@ TRAINING_CONFIG_CONDITION = {
         KEY.CHECKPOINT: None,
         KEY.RESET_OPTIMIZER: None,
         KEY.RESET_SCHEDULER: None,
+        KEY.RESET_EPOCH: None,
     },
     KEY.IS_TRACE_STRESS: None,
     KEY.IS_TRAIN_STRESS: None,
     KEY.TRAIN_SHUFFLE: None,
     KEY.ERROR_RECORD: error_record_condition,
-    KEY.BEST_METRIC: lambda x: type(x) is str and x in ["Energy", "Force", "Stress", "TotalLoss"]
+    KEY.BEST_METRIC: lambda x: type(x) is str and x in ["Energy", "Force", "Stress", "TotalLoss"],
+    KEY.CSV_LOG: lambda x: type(x) is str,
 }

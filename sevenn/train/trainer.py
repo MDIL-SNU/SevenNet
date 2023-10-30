@@ -101,14 +101,7 @@ class Trainer():
 
     def recorder_all_reduce(self, recorder: ErrorRecorder):
         for metric in recorder.metrics:
-            metric.value.ddp_reduce(self.device)
-
-    def _recursive_all_reduce(self, dct):
-        for k, v in dct.items():
-            if isinstance(v, dict):
-                self._recursive_all_reduce(v)
-            else:
-                dist.all_reduce(v, op=dist.ReduceOp.SUM)
+            metric.value._ddp_reduce(self.device)
 
     # Not used, ddp automatically averages gradients
     def average_gradient(self):

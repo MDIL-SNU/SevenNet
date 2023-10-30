@@ -1,3 +1,5 @@
+import os
+
 import torch
 
 import sevenn._keys as KEY
@@ -52,7 +54,7 @@ def check_config_compatible(config, config_cp):
                          + " ,if one of reset optimizer or scheduler")
 
 
-def processing_continue(model, user_labels, config):
+def processing_continue(model, config):
     # model is updated here, not returned
 
     avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
@@ -79,9 +81,13 @@ def processing_continue(model, user_labels, config):
         Logger().write(f"avg_num_neigh: {config_cp[KEY.AVG_NUM_NEIGHBOR]:.4f}"
                        + f"!= {avg_num_neigh:.4f}\n")
         Logger().write("Below comments include shift, scale and avg_num_neigh\n")
-        Logger().write(f"If current config states are not trainable, use updated value\n")
-        Logger().write(f"Else, we will ignore updated shfit, scale and avg_num_neigh\n")
-        Logger().write(f"The model keep using previous values\n")
+        Logger().write(
+            "If current config states are not trainable, use updated value\n"
+        )
+        Logger().write(
+            "Else, we will ignore updated shfit, scale and avg_num_neigh\n"
+        )
+        Logger().write("The model keep using previous values\n")
 
     #TODO: Updating shift, scale, avg~~ to updated ones, make it optional?
     """
@@ -100,11 +106,38 @@ def processing_continue(model, user_labels, config):
     # dataset's shift, scale, avg_num_neigh. So, we need to ignore those values
     model.load_state_dict(model_state_dict_cp, strict=False)
 
-    trainer = Trainer(model, user_labels, config)
+    trainer = Trainer(model, config)
     trainer.optimizer.load_state_dict(optimizer_state_dict)
     trainer.scheduler.load_state_dict(scheduler_state_dict)
 
-    # TODO: make checkpoint starts from old epochs and extended loss history
     Logger().write(f"checkpoint previous epoch was: {from_epoch}\n")
-    Logger().write("checkpoint loading was successful\n")
-    return trainer
+
+    # decide start epoch
+    reset_epoch = continue_dct[KEY.RESET_EPOCH]
+    if reset_epoch:
+        start_epoch = 1
+        Logger().write("epoch reset to 1\n")
+    else:
+        start_epoch = from_epoch + 1
+        Logger().write(f"epoch start from {start_epoch}\n")
+
+    # decide csv file to continue
+    init_csv = True
+    csv_fname = config[KEY.CSV_LOG]
+    if os.path.isfile(csv_fname):
+        # I hope python compare dict well
+        if config_cp[KEY.ERROR_RECORD] == config[KEY.ERROR_RECORD]:
+            Logger().writeline("Same metric, csv file will be appended")
+            init_csv = False
+        else:
+            raise ValueError(
+                "Continue found old csv file with different metric. "
+                + "Please backup your csv file or restore old metric"
+            )
+    else:
+        Logger().writeline(
+            f"{csv_fname} file not found, new csv file will be created"
+        )
+
+    Logger().writeline("checkpoint loading was successful")
+    return trainer, start_epoch, init_csv

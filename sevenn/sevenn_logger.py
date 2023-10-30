@@ -1,6 +1,7 @@
 import os
 import sys
 import traceback
+import csv
 from datetime import datetime
 
 from ase.data import atomic_numbers
@@ -31,6 +32,7 @@ class Logger(metaclass=Singleton):
         self.rank = rank
         if rank == 0:
             self.logfile = open(filename, 'w', buffering=1)
+            self.files = {}
             self.screen = screen
         else:
             self.logfile = None
@@ -42,6 +44,8 @@ class Logger(metaclass=Singleton):
 
     def __del__(self):
         self.logfile.close()
+        for f in self.files.values():
+            f.close()
 
     def write(self, content: str):
         # no newline!
@@ -55,6 +59,27 @@ class Logger(metaclass=Singleton):
     def writeline(self, content: str):
         content = content + '\n'
         self.write(content)
+
+    def init_csv(self, filename: str, header: list):
+        if self.rank == 0:
+            self.files[filename] = open(filename, 'w', buffering=1)
+            self.files[filename].write(','.join(header) + '\n')
+        else:
+            pass
+
+    def append_csv(self, filename: str, content: list, decimal: int = 6):
+        if self.rank == 0:
+            if filename not in self.files:
+                self.files[filename] = open(filename, 'a', buffering=1)
+            str_content = []
+            for c in content:
+                if isinstance(c, float):
+                    str_content.append(f"{c:.{decimal}f}")
+                else:
+                    str_content.append(str(c))
+            self.files[filename].write(','.join(str_content) + '\n')
+        else:
+            pass
 
     def natoms_write(self, natoms):
         content = ""
@@ -174,22 +199,20 @@ class Logger(metaclass=Singleton):
 
     @staticmethod
     def write_full_table(dict_list, row_labels, decimal_places=6, pad=2):
-        data_dict = {k: [] for k in dict_list[0].keys()}
-        for dct in dict_list:
-            for k, v in dct.items():
-                data_dict[k].append(v)
+        """
+        Assume data_list is list of dict with same keys
+        """
+        assert len(dict_list) == len(row_labels)
         label_len = max(map(len, row_labels))
         # Extract the column names and create a 2D array of values
-        col_names = list(data_dict.keys())
-        values_2d = [data_dict[col_name] for col_name in col_names]
+        col_names = list(dict_list[0].keys())
 
-        # Transpose the 2D array of values for easier row-wise iteration
-        transposed_values = list(zip(*values_2d))
+        values = [list(d.values()) for d in dict_list]
 
         # Format the numbers with the given decimal places
         formatted_values = [
             [f"{value:.{decimal_places}f}" for value in row]
-            for row in transposed_values
+            for row in values
         ]
 
         # Calculate padding lengths for each column (with extra padding)

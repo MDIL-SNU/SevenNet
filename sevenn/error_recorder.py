@@ -228,55 +228,6 @@ class ErrorRecorder():
         self.history = []
         self.metrics = metrics
 
-
-    @staticmethod
-    def init_total_loss_metric(config, criteria):
-        is_stress = config[KEY.IS_TRAIN_STRESS]
-        metrics = []
-        energy_metric = CustomError(criteria, **ERROR_TYPES["Energy"])
-        metrics.append((energy_metric, 1))
-        force_metric = CustomError(criteria, **ERROR_TYPES["Force"])
-        metrics.append((force_metric, config[KEY.FORCE_WEIGHT]))
-        if is_stress:
-            stress_metric = CustomError(criteria, **ERROR_TYPES["Stress"])
-            metrics.append((stress_metric, config[KEY.STRESS_WEIGHT]))
-        total_loss_metric = CombinedError(metrics, name="TotalLoss", unit=None,
-                                          ref_key=None, pred_key=None)
-        return total_loss_metric
-
-
-    @staticmethod
-    def from_config(config: dict):
-        loss_cls = loss_dict[config[KEY.LOSS].lower()]
-        try:
-            loss_param = config[KEY.LOSS_PARAM]
-        except KeyError:
-            loss_param = {}
-        criteria = loss_cls(**loss_param)
-
-        err_config = config[KEY.ERROR_RECORD]
-        err_config_n = []
-        if not config[KEY.IS_TRAIN_STRESS]:
-            for err_type, metric_name in err_config:
-                if "Stress" in err_type:
-                    continue
-                err_config_n.append((err_type, metric_name))
-            err_config = err_config_n
-
-        err_metrics = []
-        for err_type, metric_name in err_config:
-            metric_kwargs = ERROR_TYPES[err_type].copy()
-            if err_type == "TotalLoss":  # special case
-                err_metrics.append(ErrorRecorder.init_total_loss_metric(config, criteria))
-                continue
-            metric_cls = ErrorRecorder.METRIC_DICT[metric_name]
-            metric_kwargs["name"] += f"_{metric_name}"
-            if metric_name == "Loss":
-                metric_kwargs['func'] = criteria
-                metric_kwargs['unit'] = None
-            err_metrics.append(metric_cls(**metric_kwargs))
-        return ErrorRecorder(err_metrics)
-
     def _update(self, output: AtomGraphData):
         for metric in self.metrics:
             metric.update(output)
@@ -300,10 +251,51 @@ class ErrorRecorder():
     def get_history(self):
         return self.history
 
-    """
-    def get_history_df(self):
-        return pd.DataFrame(self.history)
-    """
+    @staticmethod
+    def init_total_loss_metric(config, criteria):
+        is_stress = config[KEY.IS_TRAIN_STRESS]
+        metrics = []
+        energy_metric = CustomError(criteria, **ERROR_TYPES["Energy"])
+        metrics.append((energy_metric, 1))
+        force_metric = CustomError(criteria, **ERROR_TYPES["Force"])
+        metrics.append((force_metric, config[KEY.FORCE_WEIGHT]))
+        if is_stress:
+            stress_metric = CustomError(criteria, **ERROR_TYPES["Stress"])
+            metrics.append((stress_metric, config[KEY.STRESS_WEIGHT]))
+        total_loss_metric = CombinedError(metrics, name="TotalLoss", unit=None,
+                                          ref_key=None, pred_key=None)
+        return total_loss_metric
 
+    @staticmethod
+    def from_config(config: dict):
+        loss_cls = loss_dict[config[KEY.LOSS].lower()]
+        try:
+            loss_param = config[KEY.LOSS_PARAM]
+        except KeyError:
+            loss_param = {}
+        criteria = loss_cls(**loss_param)
 
+        err_config = config[KEY.ERROR_RECORD]
+        err_config_n = []
+        if not config[KEY.IS_TRAIN_STRESS]:
+            for err_type, metric_name in err_config:
+                if "Stress" in err_type:
+                    continue
+                err_config_n.append((err_type, metric_name))
+            err_config = err_config_n
 
+        err_metrics = []
+        for err_type, metric_name in err_config:
+            metric_kwargs = ERROR_TYPES[err_type].copy()
+            if err_type == "TotalLoss":  # special case
+                err_metrics.append(
+                    ErrorRecorder.init_total_loss_metric(config, criteria)
+                )
+                continue
+            metric_cls = ErrorRecorder.METRIC_DICT[metric_name]
+            metric_kwargs["name"] += f"_{metric_name}"
+            if metric_name == "Loss":
+                metric_kwargs['func'] = criteria
+                metric_kwargs['unit'] = None
+            err_metrics.append(metric_cls(**metric_kwargs))
+        return ErrorRecorder(err_metrics)
