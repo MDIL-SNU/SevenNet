@@ -13,6 +13,14 @@ class AverageNumber:
         self._sum += values.sum().item()
         self._count += values.numel()
 
+    def ddp_reduce(self, device):
+        _sum = torch.tensor(self._sum, device=device)
+        _count = torch.tensor(self._count, device=device)
+        torch.distributed.all_reduce(_sum, op=torch.distributed.ReduceOp.SUM)
+        torch.distributed.all_reduce(_count, op=torch.distributed.ReduceOp.SUM)
+        self._sum = _sum.item()
+        self._count = _count.item()
+
     def get(self):
         return self._sum / self._count
 

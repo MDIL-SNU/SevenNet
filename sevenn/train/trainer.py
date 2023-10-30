@@ -66,7 +66,6 @@ class Trainer():
         else:
             self.model.eval()
 
-        l2_err = {k: AverageNumber() for k in self.loss_types}
         for step, batch in enumerate(loader):
             batch = batch.to(self.device, non_blocking=True)
             output = self.model(batch)
@@ -82,7 +81,7 @@ class Trainer():
 
     def loss_calculator(self, output):
         unit_converted = postprocess_output(output, self.loss_types)
-        total_loss = torch.Tensor([0.0], device=self.device)
+        total_loss = torch.tensor([0.0], device=self.device)
         for loss_type in self.loss_types:
             pred, ref, _ = unit_converted[loss_type]
             total_loss +=\
@@ -102,8 +101,7 @@ class Trainer():
 
     def recorder_all_reduce(self, recorder: ErrorRecorder):
         for metric in recorder.metrics:
-            dist.all_reduce(metric.value._count, op=dist.ReduceOp.SUM)
-            dist.all_reduce(metric.value._sum, op=dist.ReduceOp.SUM)
+            metric.value.ddp_reduce(self.device)
 
     def _recursive_all_reduce(self, dct):
         for k, v in dct.items():
