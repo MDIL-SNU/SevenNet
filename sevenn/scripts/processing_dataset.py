@@ -151,9 +151,9 @@ def processing_dataset(config, working_dir):
         valid_set.save(prefix + "valid")
         Logger().format_k_v("Dataset saved by train, valid", prefix, write=True)
 
-    # TODO: Why it was needed..?
-    #_, _ = train_set.seperate_info()
-    #_, _ = valid_set.seperate_info()
+    # inconsistent .info dict give error when collate
+    _, _ = train_set.seperate_info()
+    _, _ = valid_set.seperate_info()
 
     # make sure x is one hot index
     if train_set.x_is_one_hot_idx is False:
