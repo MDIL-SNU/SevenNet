@@ -37,9 +37,9 @@ class EdgePreprocess(nn.Module):
         cell_shift = data[KEY.CELL_SHIFT]
         pos = data[KEY.POS]
 
+        batch = data[KEY.BATCH]  # for deploy, must be defined first (before if branch)
         if self.is_stress:
             if self._is_batch_data:  # Only for training mode
-                batch = data[KEY.BATCH]
                 num_batch = int(batch.max().cpu().item()) + 1
                 strain = torch.zeros((num_batch, 3, 3),
                                      dtype=pos.dtype,

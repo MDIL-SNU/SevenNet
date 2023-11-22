@@ -66,20 +66,22 @@ def deploy(model_state_dct, config, fname):
     # some postprocess for md mode of model
 
     # TODO: stress inference
-    config[KEY.IS_TRACE_STRESS] = False
-    config[KEY.IS_TRAIN_STRESS] = False
+    config[KEY.IS_TRACE_STRESS] = True
+    config[KEY.IS_TRAIN_STRESS] = True
     model = build_E3_equivariant_model(config)
     #TODO: remove strict later
     model.load_state_dict(model_state_dct, strict=False)  # copy model
 
     num_species = config[KEY.NUM_SPECIES]
     #model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
+    """
     model.replace_module("force output",
                          ForceOutputFromEdge(
                              data_key_energy=KEY.PRED_TOTAL_ENERGY,
                              data_key_force=KEY.PRED_FORCE)
                          )
-    model.delete_module_by_key("EdgePreprocess")
+    """
+    #model.delete_module_by_key("EdgePreprocess")
     model.set_is_batch_data(False)
     model.eval()
     #print(config)

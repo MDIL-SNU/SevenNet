@@ -227,7 +227,13 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                 """
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
-                it_atoms = islice(gen_all, index.start, index.stop, index.step)
+                try:
+                    it_atoms = islice(gen_all, index.start, index.stop, index.step)
+                except ValueError:
+                    # TODO: support
+                    # negative index
+                    raise ValueError("Negative index is not supported yet")
+
                 info_dct_f = {**info_dct, "file": os.path.abspath(expanded_filename)}
                 for idx, o in enumerate(it_atoms):
                     try:
