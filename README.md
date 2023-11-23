@@ -17,7 +17,7 @@ The installation and usage of SEVENNet are split into two parts: training (handl
 
 ## Known issues
 
-* The stress of parallel version lammps is not supported yet.
+* The pressure of parallel version in lammps is not supported yet. (The pressure on lammps log is wrong)
 * When using parallel MD, if the simulation cell is too small (one of cell dimension < cutoff radius), the calculated force is incorrect.
 
 ## Requirements for Training
@@ -27,7 +27,7 @@ The installation and usage of SEVENNet are split into two parts: training (handl
 * [`TorchGeometric`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
 * [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter)
 
-You can find the installation guides for these packages from the [`PyTorch official`](https://pytorch.org/get-started/locally/), [`TorchGeometric docs`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html`) and [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter). Remember that these packages have dependencies on your CUDA version.
+You can find the installation guides for these packages from the [`PyTorch official`](https://pytorch.org/get-started/locally/), [`TorchGeometric docs`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) and [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter). Remember that these packages have dependencies on your CUDA version.
 
 ## Installation for Training
 
