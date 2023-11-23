@@ -27,8 +27,7 @@ End to end test for the whole package.
 
 OUTCAR = sys.argv[1]
 INPUT_YAML = sys.argv[2]
-#LMP_BIN = "lmp"
-LMP_BIN = "/scratch/x2703a18/lammps_2022/build_mpi/lmp"
+LMP_BIN = "lmp"
 
 # These code are strongly dependent with below two files
 LMP_SCRIPT = os.path.abspath("./LMP_SCRIPT/oneshot.lmp") # pre-defined
