@@ -7,7 +7,7 @@ import torch
 from sevenn.nn.activation import ShiftedSoftPlus
 import sevenn._keys as KEY
 
-SEVENN_VERSION = "0.8.6"
+SEVENN_VERSION = "0.9.0"
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut']
 SUPPORTING_METRICS = ['RMSE', 'ComponentRMSE', 'MAE', 'Loss']
