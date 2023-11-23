@@ -562,7 +562,7 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
         map[i-2-n_model] = j; //store from 1, (not 0)
         found_flag=true;
         if (lmp->logfile) {
-          fprintf(lmp->logfile, "Chemical specie '%s' is assigned to type %d\n", arg[i], i-2);
+          fprintf(lmp->logfile, "Chemical specie '%s' is assigned to type %d\n", arg[i], i-2-n_model);
           break;
         }
       }
