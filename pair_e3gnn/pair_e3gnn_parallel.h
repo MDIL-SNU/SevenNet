@@ -60,6 +60,7 @@ namespace LAMMPS_NS{
       // to use tag_to_graph_idx inside comm methods
       int* tag_to_graph_idx_ptr=nullptr;
 
+      void warning_pressure();
     public:
       PairE3GNNParallel(class LAMMPS *);
       ~PairE3GNNParallel();

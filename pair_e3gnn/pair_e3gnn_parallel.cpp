@@ -120,13 +120,13 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
     device_name = "CPU";
   }
 
-  if (lmp->logfile) {
+  if (lmp->screen) {
     if(use_gpu && !use_cuda_mpi) {
       //GPU device + cuda-'NOT'aware mpi combination. is not supported yet
-      fprintf(lmp->logfile, "GPU device is found but not activated since cuda_mpi(openMPI) is not found\n");
+      fprintf(lmp->screen, "GPU device is found but not activated since cuda_mpi(openMPI) is not found\n");
     } else {
-      fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n", device_name.c_str());
-      fprintf(lmp->logfile, "PairE3GNNParallel cuda-aware mpi: %s\n", use_cuda_mpi? "True" : "False");
+      fprintf(lmp->screen, "PairE3GNNParallel using device : %s\n", device_name.c_str());
+      fprintf(lmp->screen, "PairE3GNNParallel cuda-aware mpi: %s\n", use_cuda_mpi? "True" : "False");
     }
   }
 }
@@ -140,7 +140,7 @@ torch::Device PairE3GNNParallel::get_cuda_device() {
   idx = rank % num_gpus;
   if(print_info)
     std::cout << world_rank << " Available # of GPUs found: " << num_gpus << std::endl;
-  if(cuda_visible == nullptr){
+  if(cuda_visible == nullptr) {
     // assume every gpu in node is avail
     //believe user did right thing...
     //idx = rank % num_gpus;
@@ -185,6 +185,18 @@ bool PairE3GNNParallel::is_comm_preprocess_done() {
   return comm_preprocess_done;
 }
 
+void PairE3GNNParallel::warning_pressure() {
+  static bool already_did = false;
+  if(!already_did && comm->me == 0) {
+    if (lmp->screen) fprintf(lmp->screen, \
+        "WARNING: PairE3GNNParallel does not support pressure calculation. Pressure on log is WRONG. Use serial version if you needed\n");
+    if (lmp->logfile) fprintf(lmp->logfile, \
+        "WARNING: PairE3GNNParallel does not support pressure calculation. Pressure on log is WRONG. Use serial version if you needed\n");
+    already_did = true;
+  }
+}
+
+
 void PairE3GNNParallel::compute(int eflag, int vflag) {
   /*
      Graph build on cpu
@@ -194,6 +206,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   if(vflag_atom) {
     error->all(FLERR,"atomic stress related feature is not supported\n");
   }
+  if (vflag) warning_pressure();
 
   double **x = atom->x;
   double **f = atom->f;
@@ -206,7 +219,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
   CommBrick* comm_brick = dynamic_cast<CommBrick*>(comm);
   if(comm_brick == nullptr) {
-    error->all(FLERR,"e3gnn/parallel: comm style should be brick & modified codes");
+    error->all(FLERR,"e3gnn/parallel: comm style should be brick & from modified code of comm_brick");
   }
 
   bigint natoms = atom->natoms;
@@ -500,8 +513,12 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
 
   // model loading from input
   int n_model = std::stoi(arg[2]);
-  for (int i=3; i<n_model+3; i++){
-    model_list.push_back(torch::jit::load(std::string(arg[i]), device, meta_dict));
+  try {
+    for (int i=3; i<n_model+3; i++){
+      model_list.push_back(torch::jit::load(std::string(arg[i]), device, meta_dict));
+    }
+  } catch (const c10::Error& e) {
+    error->all(FLERR, "error loading the model, check the path of the model");
   }
 
   torch::jit::setGraphExecutorOptimize(false);
@@ -537,11 +554,21 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   }
 
   // what if unkown chemical specie is in arg? should I abort? is there any use case for that?
+  bool found_flag=false;
   for (int i=3+n_model; i<narg; i++) {
+    found_flag=false;
     for (int j=0; j<chem_vec.size(); j++) {
       if (chem_vec[j].compare(arg[i]) == 0) {
         map[i-2-n_model] = j; //store from 1, (not 0)
+        found_flag=true;
+        if (lmp->logfile) {
+          fprintf(lmp->logfile, "Chemical specie '%s' is assigned to type %d\n", arg[i], i-2);
+          break;
+        }
       }
+    }
+    if(!found_flag){
+      error->all(FLERR, "Unknown chemical specie is given");
     }
   }
 
@@ -555,7 +582,7 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   }
 
   if (lmp->logfile) {
-    fprintf(lmp->logfile, "from simple_gnn version '%s' ", meta_dict["version"].c_str());
+    fprintf(lmp->logfile, "from sevenn version '%s' ", meta_dict["version"].c_str());
     fprintf(lmp->logfile, "%s precision model trained at %s is loaded\n", meta_dict["dtype"].c_str(), meta_dict["time"].c_str());
   }
 }
