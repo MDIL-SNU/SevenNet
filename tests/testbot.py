@@ -124,13 +124,11 @@ def sevenn_train_test():
     with open("./log.sevenn", 'r') as f:
         lines = f.readlines()
 
-    metrics = None
+    metrics = ["EnergyRMSE", "ForceRMSE"]
     rmse = None
     for ln in lines:
-        if ln.startswith("Label") and metrics == None:
-            metrics = ln.split()[1:]
-        if ln.startswith("total") and rmse == None:
-            rmse = ln.split()[1:]
+        if ln.startswith("Valid"):
+            rmse = ln.split()[1:3]
     rmse_dct = {k: float(v) for k, v in zip(metrics, rmse)}
     cp_path = os.path.abspath("./checkpoint_best.pth")
 
@@ -391,12 +389,12 @@ def train_infer_rmse_test(train_rmse_dct, infer_rmse_dct):
     print("Since we used validation set of training to inference, we expect")
     print("validation rmse of sevenn_train and rmse of sevenn_infer to be same")
 
-    if np.isclose(train_rmse_dct['E_RMSE(V)'], infer_rmse_dct['Energy'], atol=1e-6):
+    if np.isclose(train_rmse_dct['EnergyRMSE'], infer_rmse_dct['Energy'], atol=1e-6):
         print("Energy RMSE test passed")
     else:
         raise ValueError(f"Energy RMSE test failed: {train_rmse_dct['E_RMSE(V)']} != {infer_rmse_dct['Energy']}")
 
-    if np.isclose(train_rmse_dct['F_RMSE(V)'], infer_rmse_dct['Force'], atol=1e-6):
+    if np.isclose(train_rmse_dct['ForceRMSE'], infer_rmse_dct['Force'], atol=1e-6):
         print("Force RMSE test passed")
     else:
         raise ValueError(f"Force RMSE test failed: {train_rmse_dct['F_RMSE(V)']} != {infer_rmse_dct['Force']}")
