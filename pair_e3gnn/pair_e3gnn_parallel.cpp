@@ -120,13 +120,13 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
     device_name = "CPU";
   }
 
-  if (lmp->logfile) {
+  if (lmp->screen) {
     if(use_gpu && !use_cuda_mpi) {
       //GPU device + cuda-'NOT'aware mpi combination. is not supported yet
-      fprintf(lmp->logfile, "GPU device is found but not activated since cuda_mpi(openMPI) is not found\n");
+      fprintf(lmp->screen, "GPU device is found but not activated since cuda_mpi(openMPI) is not found\n");
     } else {
-      fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n", device_name.c_str());
-      fprintf(lmp->logfile, "PairE3GNNParallel cuda-aware mpi: %s\n", use_cuda_mpi? "True" : "False");
+      fprintf(lmp->screen, "PairE3GNNParallel using device : %s\n", device_name.c_str());
+      fprintf(lmp->screen, "PairE3GNNParallel cuda-aware mpi: %s\n", use_cuda_mpi? "True" : "False");
     }
   }
 }
@@ -140,7 +140,7 @@ torch::Device PairE3GNNParallel::get_cuda_device() {
   idx = rank % num_gpus;
   if(print_info)
     std::cout << world_rank << " Available # of GPUs found: " << num_gpus << std::endl;
-  if(cuda_visible == nullptr){
+  if(cuda_visible == nullptr) {
     // assume every gpu in node is avail
     //believe user did right thing...
     //idx = rank % num_gpus;
@@ -185,16 +185,28 @@ bool PairE3GNNParallel::is_comm_preprocess_done() {
   return comm_preprocess_done;
 }
 
+void PairE3GNNParallel::warning_pressure() {
+  static bool already_did = false;
+  if(!already_did && comm->me == 0) {
+    if (lmp->screen) fprintf(lmp->screen, \
+        "WARNING: PairE3GNNParallel does not support pressure calculation. Pressure on log is WRONG. Use serial version if you needed\n");
+    if (lmp->logfile) fprintf(lmp->logfile, \
+        "WARNING: PairE3GNNParallel does not support pressure calculation. Pressure on log is WRONG. Use serial version if you needed\n");
+    already_did = true;
+  }
+}
+
+
 void PairE3GNNParallel::compute(int eflag, int vflag) {
   /*
      Graph build on cpu
   */
-//nvtxRangePushA("compute");
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
   if(vflag_atom) {
     error->all(FLERR,"atomic stress related feature is not supported\n");
   }
+  if (vflag) warning_pressure();
 
   double **x = atom->x;
   double **f = atom->f;
@@ -207,7 +219,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
   CommBrick* comm_brick = dynamic_cast<CommBrick*>(comm);
   if(comm_brick == nullptr) {
-    error->all(FLERR,"e3gnn/parallel: comm style should be brick & modified codes");
+    error->all(FLERR,"e3gnn/parallel: comm style should be brick & from modified code of comm_brick");
   }
 
   bigint natoms = atom->natoms;
@@ -322,15 +334,10 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   wrt_tensors.push_back({input_dict.at("edge_vec")});
 
   auto model_part = model_list.front();
-//nvtxRangePushA("forward_whole");
 
-//nvtxRangePushA("forward_0");
   auto output = model_part.forward({input_dict}).toGenericDict();
-//nvtxRangePop();
 
-//nvtxRangePushA("comm_preprocess_forward");
   comm_preprocess();
-//nvtxRangePop();
 
   // extra_graph_idx_map is set from comm_preprocess();
   // last one is for trash values. See pack_forward_init
@@ -340,7 +347,6 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
   for(auto it = model_list.begin(); it != model_list.end(); ++it) {
     if(it == model_list.begin()) continue;
-//nvtxRangePushA("comm_forward_x_&_process");
     model_part = *it;
 
     x_local = output.at("x").toTensor().detach().to(device);
@@ -349,9 +355,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     auto ghost_and_extra_x = torch::zeros({ghost_node_num + extra_size, x_dim}, FLOAT_TYPE.device(device));
     x_comm = torch::cat({x_local, ghost_and_extra_x}, 0).to(device);
 
-//nvtxRangePushA("comm_forward");
     comm_brick->forward_comm(this); //populate x_ghost by communication
-//nvtxRangePop();
 
     //What we got from forward_comm (node feature of ghosts)
     x_ghost = torch::split_with_sizes(x_comm, {nlocal, ghost_node_num, extra_size}, 0)[1];
@@ -367,16 +371,11 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
                            output.at("x").toTensor(), \
                            output.at("self_cont_tmp").toTensor(), \
                            output.at("x_ghost").toTensor()});
-//nvtxRangePop();
 
-//nvtxRangePushA("forward_x");
     output = model_part.forward({output}).toGenericDict();
-//nvtxRangePop();
   }
-  torch::Tensor scaled_energy_tensor = output.at("scaled_total_energy").toTensor().squeeze();
-//nvtxRangePop();
+  torch::Tensor energy_tensor = output.at("inferred_total_energy").toTensor().squeeze();
 
-//nvtxRangePushA("backprop_whole");
   torch::Tensor dE_dr = torch::zeros({nedges, 3}, FLOAT_TYPE.device(device)); //create on device
   torch::Tensor x_local_save; //holds grad info of x_local (it loses its grad when sends to CPU)
   torch::Tensor self_conn_grads;
@@ -388,20 +387,15 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     // edge_vec, x, x_ghost order
     auto wrt_tensor = *rit;
     if(rit == wrt_tensors.rbegin()) {
-//nvtxRangePushA("backprop_first");
-      grads = torch::autograd::grad({scaled_energy_tensor}, wrt_tensor);
-//nvtxRangePop();
+      grads = torch::autograd::grad({energy_tensor}, wrt_tensor);
     } else {
-//nvtxRangePushA("backprop_mid");
       x_local_save.copy_(x_local);
       //                            of         wrt         grads_output
       grads = torch::autograd::grad(of_tensor, wrt_tensor, {x_local_save, self_conn_grads});
-//nvtxRangePop();
     }
 
     dE_dr = dE_dr + grads.at(0); //accumulate force
     if(std::distance(rit, wrt_tensors.rend()) == 1) continue;  // if last iteration
-//nvtxRangePushA("reverse_comm_&_process");
 
     of_tensor.clear();
     of_tensor.push_back(wrt_tensor[1]); // x
@@ -418,16 +412,12 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     auto extra_x = torch::zeros({extra_size, x_dim}, FLOAT_TYPE.device(device));
     x_comm = torch::cat({x_local, x_ghost, extra_x}, 0).to(device);
 
-//nvtxRangePushA("reverse_comm");
     comm_brick->reverse_comm(this);  // completes x_local
-//nvtxRangePop();
 
     // now x_local is complete (dE_dx), become next grads_output(with self_conn_grads)
     x_local = torch::split_with_sizes(x_comm, {nlocal, ghost_node_num, extra_size}, 0)[0];
 
-//nvtxRangePop();
   }
-//nvtxRangePop();
 
   //postprocessing
   if(print_info) {
@@ -445,7 +435,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     std::cout << world_rank << " Used/GraphSize: " << Mused/graph_size << "\n" << std::endl;
   }
   // TODO: atomic energy things?
-  eng_vdwl += scaled_energy_tensor.item<float>()*scale + shift*nlocal; // accumulate energy
+  eng_vdwl += energy_tensor.item<float>(); // accumulate energy
 
   dE_dr = dE_dr.to(torch::kCPU);
   torch::Tensor force_tensor = torch::zeros({graph_indexer, 3});
@@ -454,7 +444,6 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   force_tensor.scatter_(0, edge_idx_src_tensor.repeat_interleave(3).view({nedges,3}), dE_dr, "add");
   force_tensor.scatter_(0, edge_idx_dst_tensor.repeat_interleave(3).view({nedges,3}), torch::neg(dE_dr), "add");
 
-  force_tensor = force_tensor.mul(scale);
   auto forces = force_tensor.accessor<float, 2>();
 
   for (int graph_idx=0; graph_idx < graph_indexer; graph_idx++){
@@ -481,7 +470,6 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   }
   
   extra_graph_idx_map.clear();
-//nvtxRangePop();
 }
 
 // allocate arrays (called from coeff)
@@ -520,15 +508,17 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
     {"version", ""},
     {"dtype", ""},
     {"time", ""},
-    {"shift", ""},
-    {"scale", ""},
     {"comm_size", ""}
   };
 
   // model loading from input
   int n_model = std::stoi(arg[2]);
-  for (int i=3; i<n_model+3; i++){
-    model_list.push_back(torch::jit::load(std::string(arg[i]), device, meta_dict));
+  try {
+    for (int i=3; i<n_model+3; i++){
+      model_list.push_back(torch::jit::load(std::string(arg[i]), device, meta_dict));
+    }
+  } catch (const c10::Error& e) {
+    error->all(FLERR, "error loading the model, check the path of the model");
   }
 
   torch::jit::setGraphExecutorOptimize(false);
@@ -538,8 +528,6 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   torch::jit::setFusionStrategy(strategy);
 
   cutoff = std::stod(meta_dict["cutoff"]);
-  shift = std::stod(meta_dict["shift"]);
-  scale = std::stod(meta_dict["scale"]);
 
   // maximum possible size of per atom x before last convolution
   int comm_size = std::stod(meta_dict["comm_size"]);
@@ -566,11 +554,21 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   }
 
   // what if unkown chemical specie is in arg? should I abort? is there any use case for that?
+  bool found_flag=false;
   for (int i=3+n_model; i<narg; i++) {
+    found_flag=false;
     for (int j=0; j<chem_vec.size(); j++) {
       if (chem_vec[j].compare(arg[i]) == 0) {
         map[i-2-n_model] = j; //store from 1, (not 0)
+        found_flag=true;
+        if (lmp->logfile) {
+          fprintf(lmp->logfile, "Chemical specie '%s' is assigned to type %d\n", arg[i], i-2-n_model);
+          break;
+        }
       }
+    }
+    if(!found_flag){
+      error->all(FLERR, "Unknown chemical specie is given");
     }
   }
 
@@ -584,7 +582,7 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   }
 
   if (lmp->logfile) {
-    fprintf(lmp->logfile, "from simple_gnn version '%s' ", meta_dict["version"].c_str());
+    fprintf(lmp->logfile, "from sevenn version '%s' ", meta_dict["version"].c_str());
     fprintf(lmp->logfile, "%s precision model trained at %s is loaded\n", meta_dict["dtype"].c_str(), meta_dict["time"].c_str());
   }
 }
@@ -653,7 +651,6 @@ void PairE3GNNParallel::comm_preprocess() {
 void PairE3GNNParallel::pack_forward_init(int n, int *list_send, int comm_phase) {
   std::vector<long>& idx_map = comm_index_pack_forward[comm_phase];
 
-//nvtxRangePush("pack_forward_init");
   idx_map.reserve(n);
 
   int i,j;
@@ -681,14 +678,12 @@ void PairE3GNNParallel::pack_forward_init(int n, int *list_send, int comm_phase)
     }
   }
   
-//nvtxRangePop();
 }
 
 // called from comm_brick if comm_preprocess_done is false
 void PairE3GNNParallel::unpack_forward_init(int n, int first, int comm_phase) {
   std::vector<long>& idx_map = comm_index_unpack_forward[comm_phase];
 
-//nvtxRangePush("unpack_forward_init");
   idx_map.reserve(n);
 
   int i,j,last;
@@ -705,14 +700,12 @@ void PairE3GNNParallel::unpack_forward_init(int n, int first, int comm_phase) {
       idx_map.push_back(extra_graph_idx_map[i]); //same as list_i in pack
     }
   }
-//nvtxRangePop();
 }
 
 int PairE3GNNParallel::pack_forward_comm_gnn(float* buf, int comm_phase) {
   std::vector<long>& idx_map = comm_index_pack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-//nvtxRangePush("pack_forward");
   if(use_cuda_mpi) {
     torch::Tensor& idx_map_tensor = comm_index_pack_forward_tensor[comm_phase];
     auto selected = x_comm.index_select(0, idx_map_tensor); //its size is x_dim * n
@@ -737,7 +730,6 @@ int PairE3GNNParallel::pack_forward_comm_gnn(float* buf, int comm_phase) {
       }
     }
   }
-//nvtxRangePop();
   if(print_info) {
     std::cout << world_rank << " comm_phase: " << comm_phase << std::endl;
     std::cout << world_rank << " pack_forward x_dim: " << x_dim << std::endl;
@@ -753,7 +745,6 @@ void PairE3GNNParallel::unpack_forward_comm_gnn(float* buf, int comm_phase) {
   std::vector<long>& idx_map = comm_index_unpack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-//nvtxRangePush("unpack_forward");
   if(use_cuda_mpi) {
     torch::Tensor& idx_map_tensor = comm_index_unpack_forward_tensor[comm_phase];
     // share same memory space with exisitng device buffer just wrapping to troch::Tensor
@@ -770,14 +761,12 @@ void PairE3GNNParallel::unpack_forward_comm_gnn(float* buf, int comm_phase) {
       }
     }
   }
-//nvtxRangePop();
 }
 
 int PairE3GNNParallel::pack_reverse_comm_gnn(float* buf, int comm_phase) {
   std::vector<long>& idx_map = comm_index_unpack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-//nvtxRangePush("pack_reverse");
   if(use_cuda_mpi) {
     torch::Tensor& idx_map_tensor = comm_index_unpack_forward_tensor[comm_phase];
     auto selected = x_comm.index_select(0, idx_map_tensor);
@@ -793,7 +782,6 @@ int PairE3GNNParallel::pack_reverse_comm_gnn(float* buf, int comm_phase) {
       }
     }
   }
-//nvtxRangePop();
   if(print_info) {
     std::cout << world_rank << " comm_phase: " << comm_phase << std::endl;
     std::cout << world_rank << " pack_reverse x_dim: " << x_dim << std::endl;
@@ -809,7 +797,6 @@ void PairE3GNNParallel::unpack_reverse_comm_gnn(float *buf, int comm_phase) {
   std::vector<long>& idx_map = comm_index_unpack_reverse[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-//nvtxRangePush("unpack_reverse");
   if(use_cuda_mpi) {
     torch::Tensor& idx_map_tensor = comm_index_unpack_reverse_tensor[comm_phase];
     auto buf_tensor = torch::from_blob(buf, {n, x_dim}, FLOAT_TYPE.device(device));
@@ -829,5 +816,4 @@ void PairE3GNNParallel::unpack_reverse_comm_gnn(float *buf, int comm_phase) {
       }
     }
   }
-//nvtxRangePop();
 }

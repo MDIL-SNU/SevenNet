@@ -6,7 +6,6 @@ import torch
 import e3nn.util.jit
 from ase.data import chemical_symbols
 
-from sevenn.atom_graph_data import AtomGraphData
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.sequential import AtomGraphSequential
@@ -67,20 +66,22 @@ def deploy(model_state_dct, config, fname):
     # some postprocess for md mode of model
 
     # TODO: stress inference
-    config[KEY.IS_TRACE_STRESS] = False
-    config[KEY.IS_TRAIN_STRESS] = False
+    config[KEY.IS_TRACE_STRESS] = True
+    config[KEY.IS_TRAIN_STRESS] = True
     model = build_E3_equivariant_model(config)
     #TODO: remove strict later
     model.load_state_dict(model_state_dct, strict=False)  # copy model
 
     num_species = config[KEY.NUM_SPECIES]
     #model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
+    """
     model.replace_module("force output",
                          ForceOutputFromEdge(
-                             data_key_energy=KEY.SCALED_ENERGY,
-                             data_key_force=KEY.SCALED_FORCE)
+                             data_key_energy=KEY.PRED_TOTAL_ENERGY,
+                             data_key_force=KEY.PRED_FORCE)
                          )
-    model.delete_module_by_key("EdgePreprocess")
+    """
+    #model.delete_module_by_key("EdgePreprocess")
     model.set_is_batch_data(False)
     model.eval()
     #print(config)
@@ -133,10 +134,10 @@ def deploy_parallel(model_state_dct, config, fname):
     num_species = config[KEY.NUM_SPECIES]
     #model_list[0].prepand_module('one_hot', OnehotEmbedding(
     #    data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
-    model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
-        data_key_in=KEY.NODE_FEATURE_GHOST,
-        num_classes=num_species,
-        data_key_additional=None))
+    #model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
+    #    data_key_in=KEY.NODE_FEATURE_GHOST,
+    #    num_classes=num_species,
+    #    data_key_additional=None))
 
     #print(config)
     # prepare some extra information for MD
@@ -153,11 +154,14 @@ def deploy_parallel(model_state_dct, config, fname):
     # TODO: this code is error prone
     comm_size = model_list[-1][1].convolution.irreps_in1.dim
 
+    #shift = model_state_dct["rescale.shift"].item()
+    #scale = model_state_dct["rescale.scale"].item()
+
     md_configs.update({"chemical_symbols_to_index": chem_list})
     md_configs.update({"cutoff": str(config[KEY.CUTOFF])})
     md_configs.update({"num_species": str(config[KEY.NUM_SPECIES])})
-    md_configs.update({"shift": str(config[KEY.SHIFT])})
-    md_configs.update({"scale": str(config[KEY.SCALE])})
+    #md_configs.update({"shift": str(shift)})
+    #md_configs.update({"scale": str(scale)})
     md_configs.update({"comm_size": str(comm_size)})
     md_configs.update({"model_type": config[KEY.MODEL_TYPE]})
     md_configs.update({"version": _const.SEVENN_VERSION})

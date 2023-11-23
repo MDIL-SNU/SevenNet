@@ -1,5 +1,6 @@
 import torch.optim as optim
 import torch.optim.lr_scheduler as scheduler
+import torch.nn as nn
 
 optim_dict = {
     'sgd': optim.SGD,
@@ -60,7 +61,8 @@ scheduler_dict = {
     'steplr': scheduler.StepLR,
     'multisteplr': scheduler.MultiStepLR,
     'exponentiallr': scheduler.ExponentialLR,
-    'cosineannealinglr': scheduler.CosineAnnealingLR
+    'cosineannealinglr': scheduler.CosineAnnealingLR,
+    'reducelronplateau': scheduler.ReduceLROnPlateau
 }
 
 scheduler_param_name_type_dict = {
@@ -82,5 +84,24 @@ scheduler_param_name_type_dict = {
     'cosineannealinglr': {
         'T_max': int,
         'eta_min': float
+    },
+    'reducelronplateau': {
+        'mode': str,
+        'factor': float,
+        'patience': int,
+        'threshold': float,
+        'threshold_mode': str,
+        'cooldown': int,
+        'min_lr': float,
+        'eps': float,
     }
 }
+
+loss_dict = {"mse": nn.MSELoss, "huber": nn.HuberLoss}
+loss_param_name_type_dict = {
+    'universial': {},
+    "mse": {},
+    "huber": {"delta": float}  # default = 1.0
+}
+
+

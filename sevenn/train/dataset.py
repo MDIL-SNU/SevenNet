@@ -5,22 +5,22 @@ from collections import Counter
 from typing import List, Dict, Callable, Optional, Union
 
 import torch
-from ase.data import chemical_symbols
+from torch_scatter import scatter
 import numpy as np
+from sklearn.linear_model import LinearRegression
+from ase.data import chemical_symbols
 
-import sevenn.util
+import sevenn.util as util
 import sevenn._keys as KEY
 
 
-# TODO: inherit torch_geometry dataset?
-# TODO: url things?
-# TODO: label specific or atom specie wise statistic?
 class AtomGraphDataset:
     """
     class representing dataset of AtomGraphData
     the dataset is handled as dict, {label: data}
     if given data is List, it stores data as {KEY_DEFAULT: data}
 
+    cutoff is for metadata of the graphs not used for some calc
     Every data expected to have one unique cutoff
     No validity or check of the condition is done inside the object
 
@@ -29,12 +29,12 @@ class AtomGraphDataset:
         user_labels (List[str]): list of user labels same as dataset.keys()
         meta (Dict, Optional): metadata of dataset
     for now, metadata 'might' have following keys:
-        KEY.CUTFF (float), KEY.CHEMICAL_SPECIES (Dict)
+        KEY.CUTOFF (float), KEY.CHEMICAL_SPECIES (Dict)
     """
-    DATA_KEY_X = KEY.NODE_FEATURE
+    DATA_KEY_X = KEY.NODE_FEATURE  # atomic_number > one_hot_idx > one_hot_vector
     DATA_KEY_ENERGY = KEY.ENERGY
     DATA_KEY_FORCE = KEY.FORCE
-    KEY_DEFAULT = 'No_label'
+    KEY_DEFAULT = KEY.LABEL_NONE
 
     def __init__(self,
                  dataset: Union[Dict[str, List], List],
@@ -58,12 +58,26 @@ class AtomGraphDataset:
         """
         self.cutoff = cutoff
         self.x_is_one_hot_idx = x_is_one_hot_idx
+        if metadata is None:
+            metadata = {KEY.CUTOFF: cutoff}
         self.meta = metadata
         if type(dataset) is list:
             self.dataset = {self.KEY_DEFAULT: dataset}
         else:
             self.dataset = dataset
         self.user_labels = list(self.dataset.keys())
+        # group_by_key here? or not?
+
+    def rewrite_labels_to_data(self):
+        """
+        Based on self.dataset dict's keys
+        write data[KEY.USER_LABEL] to correspond to dict's keys
+        Most of times, it is already correctly written
+        But required to rewrite if someone rearrange dataset by their own way
+        """
+        for label, data_list in self.dataset.items():
+            for data in data_list:
+                data[KEY.USER_LABEL] = label
 
     def group_by_key(self, data_key=KEY.USER_LABEL):
         """
@@ -87,24 +101,24 @@ class AtomGraphDataset:
     def seperate_info(self, data_key=KEY.INFO):
         """
         seperate info from data and save it as list of dict
-        to make it compatible with torch_geometric
+        to make it compatible with torch_geometric and later training
         """
         data_list = self.to_list()
         info_list = []
         for datum in data_list:
             info_list.append(datum[data_key])
-            del datum[data_key]  # It really changes the self.dataset
+            del datum[data_key]  # It does change the self.dataset
             datum[data_key] = len(info_list) - 1
         self.info_list = info_list
 
-        return data_list, info_list
+        return (data_list, info_list)
 
     def get_species(self):
         """
         You can also use get_natoms and extract keys from there istead of this
         (And it is more efficient)
         get chemical species of dataset
-        return list of chemical species (as str)
+        return list of SORTED chemical species (as str)
         """
         if hasattr(self, "type_map"):
             natoms = self.get_natoms(self.type_map)
@@ -131,7 +145,7 @@ class AtomGraphDataset:
     def items(self):
         return self.dataset.items()
 
-    def to_dct(self):
+    def to_dict(self):
         dct_dataset = {}
         for label, data_list in self.dataset.items():
             dct_dataset[label] = [datum.to_dict() for datum in data_list]
@@ -199,8 +213,10 @@ class AtomGraphDataset:
         else:
             lists = divide(ratio, self.to_list())
 
-        return tuple(AtomGraphDataset(data, self.cutoff,
-                                      metadata=self.meta) for data in lists)
+        dbs = tuple(AtomGraphDataset(data, self.cutoff, self.meta) for data in lists)
+        for db in dbs:
+            db.group_by_key()
+        return dbs
 
     def to_list(self):
         return list(itertools.chain(*self.dataset.values()))
@@ -218,10 +234,11 @@ class AtomGraphDataset:
         for label, data in self.dataset.items():
             natoms[label] = Counter()
             for datum in data:
-                # list of atomic number
-                Zs = [chemical_symbols[z] for z in datum[self.DATA_KEY_X].tolist()]
                 if self.x_is_one_hot_idx:
-                    Zs = [type_map_rev[z] for z in Zs]
+                    Zs = util.onehot_to_chem(datum[self.DATA_KEY_X], type_map)
+                else:
+                    Zs = [chemical_symbols[z]
+                          for z in datum[self.DATA_KEY_X].tolist()]
                 cnt = Counter(Zs)
                 natoms[label] += cnt
             natoms[label] = dict(natoms[label])
@@ -238,14 +255,56 @@ class AtomGraphDataset:
         """
         alias for get_per_atom_mean(KEY.ENERGY)
         """
-        return self.get_per_atom_mean(KEY.ENERGY)
+        return self.get_per_atom_mean(self.DATA_KEY_ENERGY)
 
-    def get_force_rmse(self, force_key=KEY.FORCE):
+    def get_species_ref_energy_by_linear_comb(self, num_chem_species=0):
+        """
+        Total energy as y, composition as c_i,
+        solve linear regression of y = c_i*X
+        sklearn LinearRegression as solver
+
+        x should be one-hot-indexed
+        give num_chem_species if possible
+        """
+        assert self.x_is_one_hot_idx is True
+        data_list = self.to_list()
+
+        if num_chem_species == 0:
+            tmp = torch.concat([x[self.DATA_KEY_X] for x in data_list])
+            num_chem_species = int(tmp.max() + 1)
+
+        c = torch.zeros((len(data_list), num_chem_species))
+        for idx, datum in enumerate(data_list):
+            c[idx] = torch.bincount(datum[self.DATA_KEY_X],
+                                    minlength=num_chem_species)
+        y = torch.Tensor([x[self.DATA_KEY_ENERGY] for x in data_list])
+        c = c.numpy()
+        y = y.numpy()
+        reg = LinearRegression(fit_intercept=False).fit(c, y)
+
+        return torch.Tensor(reg.coef_)
+
+    def get_force_rms(self):
         force_list = []
         for x in self.to_list():
-            force_list.extend(x[force_key].reshape(-1,).tolist())
+            force_list.extend(x[self.DATA_KEY_FORCE].reshape(-1,).tolist())
         force_list = torch.Tensor(force_list)
         return float(torch.sqrt(torch.mean(torch.pow(force_list, 2))))
+
+    def get_species_wise_force_rms(self):
+        """
+        Return force rms for each species
+        Averaged by each components (x, y, z)
+        """
+        assert self.x_is_one_hot_idx is True
+        data_list = self.to_list()
+
+        atomx = torch.concat([d[self.DATA_KEY_X] for d in data_list])
+        force = torch.concat([d[self.DATA_KEY_FORCE] for d in data_list])
+
+        return torch.sqrt(
+            scatter(force.square(), atomx, dim=0, reduce='mean').mean(dim=1)
+        )
 
     def get_avg_num_neigh(self):
         n_neigh = []
@@ -294,27 +353,16 @@ class AtomGraphDataset:
         """
         assert type(dataset) == AtomGraphDataset
 
-        def default_validator(dataset1, dataset2):
-            meta1 = dataset1.meta
-            meta2 = dataset2.meta
-            cutoff1 = dataset1.cutoff
-            cutoff2 = dataset2.cutoff
-            cut_consis = cutoff1 == cutoff2
+        def default_validator(db1, db2):
+            cut_consis = db1.cutoff == db2.cutoff
             # compare unordered lists
-            try:
-                chem_1 = Counter(meta1[KEY.CHEMICAL_SPECIES])
-                chem_2 = Counter(meta2[KEY.CHEMICAL_SPECIES])
-                chem_consis = chem_1 == chem_2
-            except KeyError:
-                chem_consis = dataset1.x_is_one_hot_idx is False \
-                    and dataset2.x_is_one_hot_idx is False
-
-            return cut_consis and chem_consis
+            x_is_not_onehot =\
+                (not db1.x_is_one_hot_idx) and (not db2.x_is_one_hot_idx)
+            return cut_consis and x_is_not_onehot
         if validator is None:
             validator = default_validator
-        is_valid = validator(self, dataset)
-        if not is_valid:
-            raise ValueError('given datasets are not compatible')
+        if not validator(self, dataset):
+            raise ValueError('given datasets are not compatible check cutoffs')
         for key, val in dataset.items():
             if key in self.dataset:
                 self.dataset[key].extend(val)
@@ -326,12 +374,13 @@ class AtomGraphDataset:
         data_list = self.to_list()
         for datum in data_list:
             for k, v in list(datum.items()):
-                datum[k] = sevenn.util.dtype_correct(v, float_dtype, int_dtype)
+                datum[k] = util.dtype_correct(v, float_dtype, int_dtype)
 
     def delete_data_key(self, key):
         for data in self.to_list():
             del data[key]
 
+    # TODO: this by_label is not straightforward
     def save(self, path, by_label=False):
         """
         with open(path, 'wb') as f:
@@ -341,6 +390,9 @@ class AtomGraphDataset:
             for label, data in self.dataset.items():
                 to = f"{path}/{label}.sevenn_data"
                 #torch.save(AtomGraphDataset({label: data}, metadata=self.meta), to)
-                torch.save(AtomGraphDataset({label: data}, self.cutoff, metadata=self.meta), to)
+                torch.save(AtomGraphDataset({label: data}, self.cutoff,
+                                            metadata=self.meta), to)
         else:
+            if path.endswith('.sevenn_data') is False:
+                path += '.sevenn_data'
             torch.save(self, path)

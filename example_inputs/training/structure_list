@@ -1,3 +1,6 @@
 [label_1]
 ../data/label_1/OUTCAR_{1..5} :
+../data/label_1/OUTCAR_{1..5} :
+[label_2]
+../data/label_2/OUTCAR_{6..10} :
 ../data/label_2/OUTCAR_{6..10} :

@@ -1,7 +1,4 @@
-#
 #--------------------------- Simulation variables -----------------------------#
-  # Initalizes the random number generator.
-#  variable         rnd equal 7777 # round(random(0,999,${RANDOM}))
   
   # Simulation control parameters.
   variable          T equal 500
@@ -16,7 +13,6 @@
 
 #---------------------------- Atomic setup ------------------------------------#
   units            metal
-  #boundary         f f f
   boundary         p p p
   # Create atoms.
   box tilt large
@@ -24,29 +20,25 @@
   replicate 2 2 2
 
   # Define interatomic potential.
-  pair_style       e3gnn/parallel
-  pair_coeff       * * 3 ./deployed_parallel_0.pt ./deployed_parallel_1.pt ./deployed_parallel_2.pt Hf O
+  pair_style       e3gnn/parallel  # Note that calculated pressure is wrong (it does not include virial part)
+  # The order of element should be the same as the order of elements in the data file (type)
+  # * * {number of deployed parallel models} {path to deployed parallel models} {elements}
+  pair_coeff       * * 4 ./deployed_parallel_0.pt ./deployed_parallel_1.pt ./deployed_parallel_2.pt ./deployed_parallel_3.pt Hf O
 
   timestep         0.002
 
 #----------------------------- Run simulation ---------------------------------#
 
     # Setup output
-    thermo          ${output} 			#because it is realaxation
-    compute         atompe all pe/atom					#compute atomic energy which is correspond to NNP atomic energy
-    thermo_style    custom step tpcpu pe ke vol press temp #recod these value (custom setting)
+    thermo          ${output}
+    thermo_style    custom step tpcpu pe ke vol temp
     dump            mydump all custom 1 dump.traj id type x y z fx fy fz
+    dump_modify     mydump sort id
 
-    fix f1 all nph tri 0.0 0.0 1.0
+    fix f1 all nve
     fix               comfix all momentum 1 linear 1 1 1
     velocity        all create ${T} 1 dist gaussian mom yes
 
-    #fix f1 all nph aniso 0.0 0.0 1.0 
-    #dump            newd all custom 1 ff.traj id type x y z f_f3[*]
-
-    fix f2 all langevin ${T} ${T} 0.1 999
-
     run 5
 
-  write_data after.dat
 #------------------------------------------------------------------------------#

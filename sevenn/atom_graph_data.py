@@ -1,6 +1,3 @@
-from typing import List, Dict
-
-import numpy as np
 import torch
 import torch_geometric
 
@@ -8,6 +5,7 @@ import sevenn.util
 import sevenn._keys as KEY
 
 
+# TODO: Now, I'm not sure why this class is required
 class AtomGraphData(torch_geometric.data.Data):
     """
     Args:
@@ -28,9 +26,9 @@ class AtomGraphData(torch_geometric.data.Data):
     """
     def __init__(
         self,
-        x,
-        edge_index,
-        pos,
+        x=None,
+        edge_index=None,
+        pos=None,
         edge_attr=None,
         **kwargs
     ):
@@ -40,24 +38,29 @@ class AtomGraphData(torch_geometric.data.Data):
             edge_attr,
             pos=pos
         )
-
-        # This is very strange... but I couldn't find a better way yet
         self[KEY.NODE_ATTR] = x
-
         for k, v in kwargs.items():
             self[k] = v
 
-    def to_dict(self):
-        """
-        'maybe' Dict[str, Tensor]
-        """
-        return {k: v for k, v in self.items()}
 
     def to_numpy_dict(self):
         # This is not debuged yet!
         dct = {k: v.detach().cpu().numpy() if type(v) is torch.Tensor else v
                for k, v in self.items()}
         return dct
+
+    def fit_dimension(self):
+        per_atom_keys = [KEY.ATOMIC_NUMBERS, KEY.ATOMIC_ENERGY, KEY.POS,
+                         KEY.FORCE, KEY.PRED_FORCE]
+        natoms = self.num_atoms.item()
+        for k, v in self.items():
+            if not isinstance(v, torch.Tensor):
+                continue
+            if natoms == 1 and k in per_atom_keys:
+                self[k] = v.squeeze().unsqueeze(0)
+            else:
+                self[k] = v.squeeze()
+        return self
 
     @staticmethod
     def from_numpy_dict(dct):

@@ -30,11 +30,15 @@
 #include "neighbor.h" 
 #include "neigh_list.h"
 #include "neigh_request.h"
+#include "domain.h"
 
 #include <cuda_runtime.h>
 #include "pair_e3gnn.h"
 
 using namespace LAMMPS_NS;
+
+#define INTEGER_TYPE torch::TensorOptions().dtype(torch::kInt64)
+#define FLOAT_TYPE torch::TensorOptions().dtype(torch::kFloat)
 
 PairE3GNN::PairE3GNN(LAMMPS *lmp) : Pair(lmp) {
   // constructor
@@ -68,17 +72,15 @@ PairE3GNN::~PairE3GNN() {
 void PairE3GNN::compute(int eflag, int vflag) {
   //compute
   /*
-     read 
-     https://pytorch.org/cppdocs/notes/tensor_basics.html
-     problems :
-     edge_length is already calculated here. (what about model?)
-     using tag -> what happen in mpi mode?
-     calculation in cpu side (using accessor) is it good?
+     This compute function is ispired/modified from stress branch of pair-nequip
+     https://github.com/mir-group/pair_nequip
   */
+
+
   if (eflag || vflag) ev_setup(eflag,vflag);
   else evflag = vflag_fdotr = 0;
   if(vflag_atom) {
-    error->all(FLERR,"atomic stress related feature is not supported\n");
+    error->all(FLERR,"atomic stress is not supported\n");
   }
 
   double **x = atom->x;
@@ -93,17 +95,41 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   int* numneigh = list->numneigh;  // j loop cond
   int** firstneigh = list->firstneigh;  // j list
-  const int nedges_upper_bound = std::accumulate(numneigh, numneigh+nlocal, 0);
 
-  //int nedges = std::accumulate(numneigh, numneigh+ntotal, 0);
+  int bound;
+  if(this->nedges_bound == -1) {
+      bound = std::accumulate(numneigh, numneigh+nlocal, 0);
+  } else {
+    bound = this->nedges_bound;
+  }
+  const int nedges_upper_bound = bound;
 
-  torch::Tensor inp_node_type = torch::zeros({nlocal}, torch::TensorOptions().dtype(torch::kInt64));
-  auto inp_num_atoms = torch::from_blob(num_atoms, {1},torch::TensorOptions().dtype(torch::kInt64));
+  float cell[3][3];
+  cell[0][0] = domain->boxhi[0] - domain->boxlo[0];
+  cell[0][1] = 0.0;    
+  cell[0][2] = 0.0;
 
-  // use global index given by ilist (or jlist) -> is it right way to do?
-  // it will cause almost random access pattern 
+  cell[1][0] = domain->xy;
+  cell[1][1] = domain->boxhi[1] - domain->boxlo[1];
+  cell[1][2] = 0.0;
+
+  cell[2][0] = domain->xz;
+  cell[2][1] = domain->yz;
+  cell[2][2] = domain->boxhi[2] - domain->boxlo[2];
+
+  torch::Tensor inp_cell = torch::from_blob(cell, {3,3}, FLOAT_TYPE);
+  torch::Tensor inp_num_atoms = torch::from_blob(num_atoms, {1}, INTEGER_TYPE);
+
+  torch::Tensor inp_node_type = torch::zeros({nlocal}, INTEGER_TYPE);
+  torch::Tensor inp_pos = torch::zeros({nlocal, 3});
+
+  torch::Tensor inp_cell_volume = torch::dot(inp_cell[0], torch::cross(inp_cell[1], inp_cell[2]));
+
+  float pbc_shift_tmp[nedges_upper_bound][3];
+
   auto node_type = inp_node_type.accessor<long, 1>();
-  float edge_vec_tmp[nedges_upper_bound][3];
+  auto pos = inp_pos.accessor<float, 2>();
+
   long edge_idx_src[nedges_upper_bound];
   long edge_idx_dst[nedges_upper_bound];
 
@@ -114,59 +140,59 @@ void PairE3GNN::compute(int eflag, int vflag) {
     int itag = tag[i];
     tag2i[itag-1] = i;
     const int itype = type[i];
+    node_type[itag-1] = map[itype];
+    pos[itag-1][0] = x[i][0];
+    pos[itag-1][1] = x[i][1];
+    pos[itag-1][2] = x[i][2];
+  }
+
+  for (int ii = 0; ii < nlocal; ii++) {
+    const int i = ilist[ii];
+    int itag = tag[i];
     const int* jlist = firstneigh[i];
     const int jnum = numneigh[i];
-    node_type[itag-1] = map[itype];
+
     for (int jj = 0; jj < jnum; jj++) {
-      int j = jlist[jj];
-      int jtag = tag[j];
+      int j = jlist[jj];  // atom over pbc is different atom
+      int jtag = tag[j];  // atom over pbs is same atom (it starts from 1)
       j &= NEIGHMASK;
       const int jtype = type[j];
 
-      // we have to calculate Rij to check cutoff in lammps side
       const double delij[3] = {x[j][0] - x[i][0], x[j][1] - x[i][1], x[j][2] - x[i][2]};
       const double Rij = delij[0]*delij[0] + delij[1]*delij[1] + delij[2]*delij[2];
       if(Rij < cutoff_square) {
         edge_idx_src[nedges] = itag-1;
         edge_idx_dst[nedges] = jtag-1;
-        edge_vec_tmp[nedges][0] = delij[0];
-        edge_vec_tmp[nedges][1] = delij[1];
-        edge_vec_tmp[nedges][2] = delij[2];
-        // add edge_length?
-        //edge_len[nedges] = Rij;
+
+        pbc_shift_tmp[nedges][0] = x[j][0] - pos[jtag-1][0];
+        pbc_shift_tmp[nedges][1] = x[j][1] - pos[jtag-1][1];
+        pbc_shift_tmp[nedges][2] = x[j][2] - pos[jtag-1][2];
+
         nedges++;
       }
     } // j loop end
   } // i loop end
 
-  // way to init 2, nedges from double array? (without src, dst)
-  auto edge_idx_src_tensor = torch::from_blob(edge_idx_src, {nedges},torch::TensorOptions().dtype(torch::kInt64));
-  auto edge_idx_dst_tensor = torch::from_blob(edge_idx_dst, {nedges},torch::TensorOptions().dtype(torch::kInt64));
+  auto edge_idx_src_tensor = torch::from_blob(edge_idx_src, {nedges}, INTEGER_TYPE);
+  auto edge_idx_dst_tensor = torch::from_blob(edge_idx_dst, {nedges}, INTEGER_TYPE);
   auto inp_edge_index = torch::stack({edge_idx_src_tensor, edge_idx_dst_tensor});
 
-  auto inp_edge_vec = torch::from_blob(edge_vec_tmp, {nedges, 3});
-  //torch::Tensor inp_edge_len = torch::zeros({nedges});
+  // r' = r + {shift_tensor(integer vector of len 3)} @ cell_tensor
+  // shift_tensor = (cell_tensor)^-1^T @ (r' - r)
+  torch::Tensor cell_inv_tensor = inp_cell.inverse().transpose(0, 1).unsqueeze(0).to(device);
+  torch::Tensor pbc_shift_tmp_tensor = torch::from_blob(pbc_shift_tmp, {nedges, 3}, FLOAT_TYPE).view({nedges, 3, 1}).to(device);
+  torch::Tensor inp_cell_shift = torch::bmm(cell_inv_tensor.expand({nedges, 3, 3}), pbc_shift_tmp_tensor).view({nedges, 3});
 
-  //auto edge_len = inp_edge_len.accessor<float, 1>();
-
-  if(print_info) {
-    std::cout << "Nlocal: " << nlocal << std::endl;
-    std::cout << "Nedges: " << nedges << "\n" << std::endl;
-  }
-
-  inp_edge_vec.set_requires_grad(true);
+  inp_pos.set_requires_grad(true);
 
   c10::Dict<std::string, torch::Tensor> input_dict;
   input_dict.insert("x", inp_node_type.to(device));
+  input_dict.insert("pos", inp_pos.to(device));
   input_dict.insert("edge_index", inp_edge_index.to(device));
-  input_dict.insert("edge_vec", inp_edge_vec.to(device));
   input_dict.insert("num_atoms", inp_num_atoms.to(device));
-
-  /*
-  std::cout << inp_node_type << "\n";
-  std::cout << inp_edge_index << "\n";
-  std::cout << inp_edge_vec << "\n";
-  */
+  input_dict.insert("cell_lattice_vectors", inp_cell.to(device));
+  input_dict.insert("cell_volume", inp_cell_volume.to(device));
+  input_dict.insert("pbc_shift", inp_cell_shift);
 
   std::vector<torch::IValue> input(1, input_dict);
   auto output = model.forward(input).toGenericDict();
@@ -185,12 +211,9 @@ void PairE3GNN::compute(int eflag, int vflag) {
     std::cout << "Used/Nlocal: " << Mused/nlocal << std::endl;
   }
 
-  // atomic energy things?
   torch::Tensor total_energy_tensor = output.at("inferred_total_energy").toTensor().cpu();
   torch::Tensor force_tensor = output.at("inferred_force").toTensor().cpu();
   auto forces = force_tensor.accessor<float, 2>();
-  //std::cout << total_energy_tensor << '\n';
-  //std::cout << force_tensor << '\n';
   eng_vdwl += total_energy_tensor.item<float>();
 
   for(int itag = 0; itag < nlocal; itag++){
@@ -200,7 +223,37 @@ void PairE3GNN::compute(int eflag, int vflag) {
     f[i][2] = forces[itag][2];
   }
 
-  //if (vflag_fdotr) virial_fdotr_compute(); // is it safe to use? pressure calc
+  if (vflag) {
+      // more accurately, it is virial part of stress
+      torch::Tensor stress_tensor = output.at("inferred_stress").toTensor().cpu();
+      auto virial_stress_tensor = stress_tensor * inp_cell_volume;
+      // xy yz zx order in vasp (voigt is xx yy zz yz xz xy)
+      auto virial_stress = virial_stress_tensor.accessor<float, 1>();
+      virial[0] = virial_stress[0];
+      virial[1] = virial_stress[1];
+      virial[2] = virial_stress[2];
+      virial[3] = virial_stress[3];
+      virial[4] = virial_stress[5];  
+      virial[5] = virial_stress[4];
+  }
+
+  if (eflag_atom) {
+    torch::Tensor atomic_energy_tensor = output.at("atomic_energy").toTensor().cpu().squeeze();
+    auto atomic_energy = atomic_energy_tensor.accessor<float, 1>();
+    for(int itag = 0; itag < nlocal; itag++){
+      int i = tag2i[itag];
+      eatom[i] += atomic_energy[itag];
+    }
+  }
+
+  // if it was the first MD step
+  if (this->nedges_bound == -1) {
+    this->nedges_bound = nedges * 1.2;
+  }  // else if the nedges is too small, increase the bound
+  else if (nedges > this->nedges_bound / 1.2) {
+    this->nedges_bound = nedges * 1.2;
+  }
+
 }
 
 // allocate arrays (called from coeff)
@@ -220,20 +273,8 @@ void PairE3GNN::settings(int narg, char **arg) {
   }
 }
 
-// set coeff of types from pair_coeff
-// TODO: this function is temporary!, initiaize torch performance things, type_map, etc
 void PairE3GNN::coeff(int narg, char **arg) {
-  ///////////////////////////////////////////
-  /*
-     here, from user input like 'Hf O' and lammps interface the type number
-     is given. and using the metadata of model we have to make function
-     that type number -> one hot atom ebedding index
-     note that lammps type number start from 1
-     no matter what sevenn python does, here all we need is function that
-     'Hf O' -> one hot atom ebedding index
-     the original pair_nn scheme is make map : type_number -> element
-     than from compute, atom_index -> type (atom -> type) to get element
- */
+  
   if(allocated) {
     error->all(FLERR,"pair_e3gnn coeff called twice");
   }
@@ -255,7 +296,11 @@ void PairE3GNN::coeff(int narg, char **arg) {
   };
 
   // model loading from input
-  model = torch::jit::load(std::string(arg[2]), device, meta_dict);
+  try {
+    model = torch::jit::load(std::string(arg[2]), device, meta_dict);
+  } catch (const c10::Error& e) {
+    error->all(FLERR, "error loading the model, check the path of the model");
+  }
   //model = torch::jit::freeze(model); model is already freezed
 
   torch::jit::setGraphExecutorOptimize(false);
@@ -283,13 +328,24 @@ void PairE3GNN::coeff(int narg, char **arg) {
     tok = std::strtok(nullptr, delim);
   }
 
-  // what if unkown chemical specie is in arg? should I abort? is there any use case for that?
+  bool found_flag = false;
   for (int i=3; i<narg; i++) {
+    found_flag = false;
     for (int j=0; j<chem_vec.size(); j++) {
       if (chem_vec[j].compare(arg[i]) == 0) {
         map[i-2] = j;
+        found_flag = true;
+        fprintf(lmp->logfile, "Chemical specie '%s' is assigned to type %d\n", arg[i], i-2);
+        break;
       }
     }
+    if (!found_flag) {
+      error->all(FLERR, "Unknown chemical specie is given"); 
+    }
+  }
+
+  if (ntypes > narg - 3) {
+    error->all(FLERR, "Not enough chemical specie is given. Check pair_coeff and types in your data/script");
   }
 
   for (int i = 1; i <= ntypes; i++) {
@@ -310,14 +366,14 @@ void PairE3GNN::coeff(int narg, char **arg) {
 
 // init specific to this pair
 void PairE3GNN::init_style() {
-  // parallel version ?
+  // Newton flag is irrelevant if use only one processor for simulation
   /*
   if (force->newton_pair == 0) {
     error->all(FLERR, "Pair style nn requires newton pair on");    
   }
   */
 
-  // full neighbor list of course (this is many-body potential)
+  // full neighbor list (this is many-body potential)
   neighbor->add_request(this, NeighConst::REQ_FULL);
 }
 

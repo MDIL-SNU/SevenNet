@@ -1,4 +1,5 @@
 import os
+import glob
 from typing import List, Callable
 
 import yaml
@@ -6,13 +7,15 @@ import torch
 
 from sevenn.train.optim import (optim_dict, scheduler_dict,
                                 optim_param_name_type_dict,
-                                scheduler_param_name_type_dict)
+                                scheduler_param_name_type_dict,
+                                loss_dict, loss_param_name_type_dict)
 
 from sevenn.util import chemical_species_preprocess
 import sevenn._keys as KEY
 import sevenn._const as _const
 
-#TODO: fix for ex)data key on train key and some auto spell check
+# TODO: This file do too many things at once
+#       And roles are overlaped with _const conditions
 
 
 def config_initialize(key: str, config: dict, default_dct: dict,
@@ -156,6 +159,13 @@ def init_model_config(config: dict):
     if len(unknown_keys) != 0:
         raise ValueError(f"unknown keys : {unknown_keys} is given")
 
+    # remove unnecessary keys for briefness in log
+    if model_meta[KEY.READOUT_AS_FCN] is False:
+        model_meta[KEY.READOUT_FCN_ACTIVATION] = None
+        model_meta[KEY.READOUT_FCN_HIDDEN_NEURONS] = None
+        #model_meta.pop(KEY.READOUT_FCN_ACTIVATION)
+        #model_meta.pop(KEY.READOUT_FCN_HIDDEN_NEURONS)
+
     return model_meta
 
 
@@ -171,15 +181,15 @@ def init_train_config(config: dict):
         train_meta[KEY.DEVICE] = torch.device("cuda") if torch.cuda.is_available() \
             else torch.device("cpu")
 
-    optim_schedule_dict = [optim_dict, scheduler_dict]
-    optim_schedule_key = [KEY.OPTIMIZER, KEY.SCHEDULER]
-    for idx, type_key in enumerate(optim_schedule_key):
+    name_dicts = [optim_dict, scheduler_dict, loss_dict]
+    name_keys = [KEY.OPTIMIZER, KEY.SCHEDULER, KEY.LOSS]
+    for idx, type_key in enumerate(name_keys):
         if type_key not in config.keys():
             train_meta[type_key] = defaults[type_key]
             continue
 
         user_input = config[type_key].lower()
-        available_keys = optim_schedule_dict[idx].keys()
+        available_keys = name_dicts[idx].keys()
 
         if type(user_input) is not str:
             raise ValueError(f"{type_key} should be type: string.")
@@ -194,21 +204,21 @@ def init_train_config(config: dict):
             raise ValueError(f'{type_key} should be one of {ava_key_to_str}')
         train_meta[type_key] = user_input
 
-    default_optim_schedule_param_dict = [optim_param_name_type_dict,
-                                         scheduler_param_name_type_dict]
-    for idx, param_key in enumerate([KEY.OPTIM_PARAM, KEY.SCHEDULER_PARAM]):
+    param_type_dicts = [optim_param_name_type_dict,
+                        scheduler_param_name_type_dict,
+                        loss_param_name_type_dict]
+    for idx, param_key in enumerate([KEY.OPTIM_PARAM, KEY.SCHEDULER_PARAM, KEY.LOSS_PARAM]):
         if param_key not in config.keys():
             continue
-
         user_input = config[param_key]
-        type_value = train_meta[optim_schedule_key[idx]]
+        type_value = train_meta[name_keys[idx]]
         universal_keys = \
-            list(default_optim_schedule_param_dict[idx]['universial'].keys())
+            list(param_type_dicts[idx]['universial'].keys())
         available_keys = \
-            list(default_optim_schedule_param_dict[idx][type_value].keys())
+            list(param_type_dicts[idx][type_value].keys())
         available_keys.extend(universal_keys)
         for key, value in user_input.items():
-            key = key.lower()
+            #key = key.lower()  # case sensitive detect of param name
             if key not in available_keys:
                 ava_key_to_str = ''
                 for i, k in enumerate(available_keys):
@@ -219,9 +229,9 @@ def init_train_config(config: dict):
                 raise ValueError(
                     f'{param_key}: {key} should be one of {available_keys}')
             if key in universal_keys:
-                type_ = default_optim_schedule_param_dict[idx]['universial'][key]
+                type_ = param_type_dicts[idx]['universial'][key]
             else:
-                type_ = default_optim_schedule_param_dict[idx][type_value][key]
+                type_ = param_type_dicts[idx][type_value][key]
 
             if type(value) is not type_:
                 raise ValueError(f'{param_key}: {key} should be type: {type_}')
@@ -255,36 +265,23 @@ def init_data_config(config: dict):
     data_meta = {}
     defaults = _const.DEFAULT_DATA_CONFIG
 
-    if KEY.STRUCTURE_LIST not in config.keys() \
-            and KEY.LOAD_DATASET not in config.keys():
-        raise ValueError("both structure_list and load_dataset are not given")
+    if KEY.LOAD_DATASET not in config.keys():
+        raise ValueError("load_dataset_path is not given")
 
-    # list of file path of single file path expected
-    if KEY.STRUCTURE_LIST in config.keys():
-        inp = config[KEY.STRUCTURE_LIST]
-        if type(inp) not in [str, list]:
-            raise ValueError(f"unexpected input {inp} for sturcture_list")
-        if type(inp) is str:
-            inp = [inp]
-        if all([os.path.isfile(f) for f in inp]) is False:
-            print(inp)
-            raise ValueError("given structure_list does not exist")
-        data_meta[KEY.STRUCTURE_LIST] = inp
-    else:
-        data_meta[KEY.STRUCTURE_LIST] = False  # this is default
-
-    # same as above
-    if KEY.LOAD_DATASET in config.keys():
-        inp = config[KEY.LOAD_DATASET]
-        if type(inp) not in [str, list]:
-            raise ValueError(f"unexpected input {inp} for sturcture_list")
-        if type(inp) is str:
-            inp = [inp]
-        #if all([os.path.isfile(f) for f in inp]) is False:
-        #    raise ValueError("given load_data does not exist")
-        data_meta[KEY.LOAD_DATASET] = inp
-    else:
-        data_meta[KEY.LOAD_DATASET] = False
+    for load_data_key in [KEY.LOAD_DATASET, KEY.LOAD_VALIDSET]:
+        if load_data_key in config.keys():
+            inp = config[load_data_key]
+            extended = []
+            if type(inp) not in [str, list]:
+                raise ValueError(f"unexpected input {inp} for sturcture_list")
+            if type(inp) is str:
+                extended = glob.glob(inp)
+            elif type(inp) is list:
+                for i in inp:
+                    extended.extend(glob.glob(i))
+            data_meta[load_data_key] = extended
+        else:
+            data_meta[load_data_key] = False
 
     if KEY.SAVE_DATASET in config.keys():
         inp = config[KEY.SAVE_DATASET]
@@ -293,6 +290,20 @@ def init_data_config(config: dict):
         data_meta[KEY.SAVE_DATASET] = inp
     else:
         data_meta[KEY.SAVE_DATASET] = False
+
+    for skey in [KEY.SHIFT, KEY.SCALE]:
+        if skey not in config.keys():
+            data_meta[skey] = defaults[skey]
+            continue
+        inp = config[skey]
+        if type(inp) is int or type(inp) is float:
+            data_meta[skey] = float(inp)
+        elif type(inp) is list and all([type(i) is float for i in inp]):
+            data_meta[skey] = inp
+            config[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = True
+            data_meta[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = True
+        else:
+            raise ValueError(f"shift/scale should be float or list of float")
 
     for key, cond in _const.DATA_CONFIG_CONDITION.items():
         data_meta[key] = config_initialize(key, config, defaults, cond)

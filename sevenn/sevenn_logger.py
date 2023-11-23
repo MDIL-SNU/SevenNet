@@ -1,12 +1,13 @@
 import os
 import sys
 import traceback
+import csv
 from datetime import datetime
 
 from ase.data import atomic_numbers
 
-from sevenn.train.trainer import DataSetType, LossType
-import sevenn._const as _const
+import sevenn._const
+from sevenn._const import LossType
 import sevenn._keys as KEY
 
 CHEM_SYMBOLS = {v: k for k, v in atomic_numbers.items()}
@@ -27,26 +28,58 @@ class Logger(metaclass=Singleton):
     """
     SCREEN_WIDTH = 120  # half size of my screen / changed due to stress output
 
-    def __init__(self, filename: str, screen: bool):
-        self.logfile = open(filename, 'w', buffering=1)
-        self.screen = screen
+    def __init__(self, filename: str, screen: bool, rank: int = 0):
+        self.rank = rank
+        if rank == 0:
+            self.logfile = open(filename, 'w', buffering=1)
+            self.files = {}
+            self.screen = screen
+        else:
+            self.logfile = None
+            self.screen = False
         self.timer_dct = {}
+        #self.logfile = open(filename, 'w', buffering=1)
+        #self.screen = screen
+        #self.timer_dct = {}
 
     def __del__(self):
         self.logfile.close()
+        for f in self.files.values():
+            f.close()
 
     def write(self, content: str):
         # no newline!
-        self.logfile.write(content)
-        if self.screen:
-            print(content, end='')
+        if self.rank == 0:
+            self.logfile.write(content)
+            if self.screen:
+                print(content, end='')
+        else:
+            pass
 
     def writeline(self, content: str):
-        # yes newline!
         content = content + '\n'
-        self.logfile.write(content)
-        if self.screen:
-            print(content, end='')
+        self.write(content)
+
+    def init_csv(self, filename: str, header: list):
+        if self.rank == 0:
+            self.files[filename] = open(filename, 'w', buffering=1)
+            self.files[filename].write(','.join(header) + '\n')
+        else:
+            pass
+
+    def append_csv(self, filename: str, content: list, decimal: int = 6):
+        if self.rank == 0:
+            if filename not in self.files:
+                self.files[filename] = open(filename, 'a', buffering=1)
+            str_content = []
+            for c in content:
+                if isinstance(c, float):
+                    str_content.append(f"{c:.{decimal}f}")
+                else:
+                    str_content.append(str(c))
+            self.files[filename].write(','.join(str_content) + '\n')
+        else:
+            pass
 
     def natoms_write(self, natoms):
         content = ""
@@ -74,7 +107,14 @@ class Logger(metaclass=Singleton):
             content += self.format_k_v(label, dct_new)
         self.write(content)
 
-    # TODO : refactoring!!!
+    def epoch_write_train_loss(self, loss):
+        content = ""
+        for label, val in loss.items():
+            content += self.format_k_v(str(label), f"{val:.6f}")
+        content += self.format_k_v("Total loss", f"{sum(loss.values()):.6f}")
+        self.write(content)
+
+    # TODO : refactoring!!!, this is not loss, rmse
     def epoch_write_specie_wise_loss(self, train_loss, valid_loss):
         lb_pad = 21
         fs = 6
@@ -103,7 +143,7 @@ class Logger(metaclass=Singleton):
             content += "\n"
         self.write(content)
 
-    # TODO : refactoring!!!
+    # TODO : refactoring!!!, this is not loss, rmse
     def epoch_write_loss(self, train_loss, valid_loss):
         lb_pad = 21
         fs = 6
@@ -136,6 +176,67 @@ class Logger(metaclass=Singleton):
             content += "\n"
         self.write(content)
 
+    @staticmethod
+    def write_table(dct):
+        keys = list(dct.keys())
+        values = [f"{dct[key]:.6f}" for key in keys]
+
+        # Calculate padding
+        padding = [max(len(k), len(v)) + 2 for k, v in zip(keys, values)]
+
+        # Create the key and value rows
+        key_row = "|".join(key.center(pad) for key, pad in zip(keys, padding))
+        value_row = "|".join(value.rjust(pad) for value, pad in zip(values, padding))
+
+        # Create separator
+        separator = "-" * sum(padding) + "-" * (len(padding) - 1)
+
+        # Print the table
+        Logger().writeline(key_row)
+        Logger().writeline(separator)
+        Logger().writeline(value_row)
+        Logger().writeline(separator)
+
+    @staticmethod
+    def write_full_table(dict_list, row_labels, decimal_places=6, pad=2):
+        """
+        Assume data_list is list of dict with same keys
+        """
+        assert len(dict_list) == len(row_labels)
+        label_len = max(map(len, row_labels))
+        # Extract the column names and create a 2D array of values
+        col_names = list(dict_list[0].keys())
+
+        values = [list(d.values()) for d in dict_list]
+
+        # Format the numbers with the given decimal places
+        formatted_values = [
+            [f"{value:.{decimal_places}f}" for value in row]
+            for row in values
+        ]
+
+        # Calculate padding lengths for each column (with extra padding)
+        max_col_lengths = [
+            max(len(str(value)) for value in col) + pad
+            for col in zip(col_names, *formatted_values)
+        ]
+
+        # Create header row and separator
+        header = " " * (label_len + pad) + " ".join(
+            col_name.ljust(pad) for col_name, pad in zip(col_names, max_col_lengths)
+        )
+        separator = "-".join("-" * pad for pad in max_col_lengths) + "-" * (label_len + pad)
+
+        # Print header and separator
+        Logger().writeline(header)
+        Logger().writeline(separator)
+
+        # Print the data rows with row labels
+        for row_label, row in zip(row_labels, formatted_values):
+            data_row = " ".join(
+                value.rjust(pad) for value, pad in zip(row, max_col_lengths)
+            )
+            Logger().writeline(f"{row_label.ljust(label_len)}{data_row}")
 
     @staticmethod
     def format_k_v(key, val, write=False):
@@ -173,7 +274,7 @@ class Logger(metaclass=Singleton):
         with open(LOGO_ASCII_FILE, 'r') as logo_f:
             logo_ascii = logo_f.read()
         content = "SEVENN: Scalable EquVariance-Enabled Neural Network\n"
-        content += f"sevenn version {_const.SEVENN_VERSION}\n"
+        content += f"sevenn version {sevenn._const.SEVENN_VERSION}\n"
         content += "reading yaml config..."
         self.write(content)
         self.write(logo_ascii)
@@ -197,6 +298,7 @@ class Logger(metaclass=Singleton):
             content += Logger.format_k_v(k, v)
         self.write(content)
 
+    # TODO: This is not good make own exception
     def error(self, e: Exception):
         content = ""
         if type(e) is ValueError:

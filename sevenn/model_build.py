@@ -8,18 +8,17 @@ from e3nn.o3 import FullTensorProduct
 from torch.nn import Sequential
 
 from sevenn.nn.node_embedding import OnehotEmbedding
-from sevenn.nn.ghost_control import GhostControlCat, GhostControlSplit
 from sevenn.nn.edge_embedding import EdgeEmbedding, EdgePreprocess,\
     PolynomialCutoff, BesselBasis, SphericalEncoding
 from sevenn.nn.force_output import ForceOutput, ForceOutputFromEdge, \
     ForceOutputFromEdgeParallel, ForceStressOutput
 from sevenn.nn.sequential import AtomGraphSequential
-from sevenn.nn.linear import IrrepsLinear, AtomReduce
+from sevenn.nn.linear import IrrepsLinear, AtomReduce, FCN_e3nn
 from sevenn.nn.self_connection import SelfConnectionIntro, SelfConnectionOutro
 from sevenn.nn.convolution import IrrepsConvolution
 from sevenn.nn.equivariant_gate import EquivariantGate
 from sevenn.nn.activation import ShiftedSoftPlus
-from sevenn.nn.scale import Rescale
+from sevenn.nn.scale import Rescale, SpeciesWiseRescale
 
 import sevenn._keys as KEY
 import sevenn._const as _const
@@ -28,13 +27,16 @@ import sevenn._const as _const
 def infer_irreps_out(irreps_x: Irreps,
                      irreps_operand: Irreps,
                      drop_l: Union[bool, int] = False,
-                     fix_multiplicity: Union[bool, int] = False):
+                     fix_multiplicity: Union[bool, int] = False,
+                     only_even_p: bool = False):
     # (mul, (ir, p))
     irreps_out = FullTensorProduct(irreps_x, irreps_operand).irreps_out.simplify()
     new_irreps_elem = []
     for mul, (l, p) in irreps_out:
         elem = (mul, (l, p))
         if drop_l is not False and l > drop_l:
+            continue
+        if only_even_p and p == -1:
             continue
         if fix_multiplicity:
             elem = (fix_multiplicity, (l, p))
@@ -71,12 +73,17 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     """
     feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]
     lmax = model_config[KEY.LMAX]
+    lmax_edge = model_config[KEY.LMAX_EDGE] \
+        if model_config[KEY.LMAX_EDGE] >= 0 else lmax
+    lmax_node = model_config[KEY.LMAX_NODE] \
+        if model_config[KEY.LMAX_NODE] >= 0 else lmax
     num_convolution_layer = model_config[KEY.NUM_CONVOLUTION]
     is_parity = model_config[KEY.IS_PARITY]  # boolean
     is_stress = \
         model_config[KEY.IS_TRACE_STRESS] or model_config[KEY.IS_TRAIN_STRESS]
     num_species = model_config[KEY.NUM_SPECIES]
-    irreps_spherical_harm = Irreps.spherical_harmonics(lmax, -1 if is_parity else 1)
+    irreps_spherical_harm =\
+        Irreps.spherical_harmonics(lmax_edge, -1 if is_parity else 1)
     if parallel:
         layers_list = [OrderedDict() for _ in range(num_convolution_layer)]
         layers_idx = 0
@@ -84,9 +91,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     else:
         layers = OrderedDict()
 
-    shift = model_config[KEY.SHIFT]
-    scale = model_config[KEY.SCALE]
-    train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
+    optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
+    use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
 
     act_gate = {}
     act_scalar = {}
@@ -109,7 +115,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         basis_module=radial_basis_module,
         cutoff_module=cutoff_function_module,
         # operate on r/||r||
-        spherical_module=SphericalEncoding(lmax),
+        spherical_module=SphericalEncoding(lmax_edge),
     )
     if is_stress:
         layers.update(
@@ -141,18 +147,27 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             IrrepsLinear(
                 irreps_in=one_hot_irreps,
                 irreps_out=f_in_irreps,
-                data_key_in=KEY.NODE_FEATURE
+                data_key_in=KEY.NODE_FEATURE,
+                biases=use_bias_in_linear
             )
         }
     )
     if parallel:
         layers.update(
             {
+                "one_hot_ghost":
+                OnehotEmbedding(
+                    data_key_x=KEY.NODE_FEATURE_GHOST,
+                    num_classes=num_species,
+                    data_key_save=None,
+                    data_key_additional=None
+                ),
                 "ghost_onehot_to_feature_x":
                 IrrepsLinear(
                     irreps_in=one_hot_irreps,
                     irreps_out=f_in_irreps,
-                    data_key_in=KEY.NODE_FEATURE_GHOST
+                    data_key_in=KEY.NODE_FEATURE_GHOST,
+                    biases=use_bias_in_linear
                 )
             }
         )
@@ -176,14 +191,24 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         # here, we can infer irreps of x after interaction from lmax and f0_irreps
         interaction_block = {}
 
-        tp_irreps_out = infer_irreps_out(irreps_x,
-                                         irreps_spherical_harm,
-                                         drop_l=lmax)
+        only_even_p = False
+        if optimize_by_reduce:
+            if i == num_convolution_layer - 1:
+                lmax_node = 0
+                only_even_p = True
 
+        # raw irreps out after message(convolution) function
+        tp_irreps_out = infer_irreps_out(irreps_x,  # node feature irreps
+                                         irreps_spherical_harm,  # filter irreps
+                                         drop_l=lmax_node,
+                                         only_even_p=only_even_p)
+
+        # multiplicity maintained irreps after Gate, linear, ..
         true_irreps_out = infer_irreps_out(irreps_x,
                                            irreps_spherical_harm,
-                                           drop_l=lmax,
-                                           fix_multiplicity=feature_multiplicity)
+                                           drop_l=lmax_node,
+                                           fix_multiplicity=feature_multiplicity,
+                                           only_even_p=only_even_p)
 
         # output irreps of linear 2 & self_connection is determined by Gate
         # Gate require extra scalars(or weight) for l>0 features in nequip,
@@ -204,11 +229,17 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                                 irreps_out=irreps_for_gate_in)
 
         interaction_block[f"{i}_self_interaction_1"] = \
-            IrrepsLinear(irreps_x, irreps_x, data_key_in=KEY.NODE_FEATURE)
+            IrrepsLinear(irreps_x,
+                         irreps_x,
+                         data_key_in=KEY.NODE_FEATURE,
+                         biases=use_bias_in_linear)
 
         if parallel and i == 0:
             interaction_block[f"ghost_{i}_self_interaction_1"] = \
-                IrrepsLinear(irreps_x, irreps_x, data_key_in=KEY.NODE_FEATURE_GHOST)
+                IrrepsLinear(irreps_x,
+                             irreps_x,
+                             data_key_in=KEY.NODE_FEATURE_GHOST,
+                             biases=use_bias_in_linear)
         elif parallel and i != 0:
             layers_idx += 1
             layers.update(interaction_block)
@@ -223,7 +254,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                         basis_module=radial_basis_module,
                         cutoff_module=cutoff_function_module,
                         # operate on r/||r||
-                        spherical_module=SphericalEncoding(lmax),
+                        spherical_module=SphericalEncoding(lmax_edge),
                     )
                 }
             )
@@ -239,6 +270,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 irreps_out=tp_irreps_out,
                 weight_layer_input_to_hidden=weight_nn_layers,
                 weight_layer_act=act_scalar["e"],
+                # TODO: BOTNet says no sqrt is better
                 denumerator=avg_num_neigh**0.5,
                 train_denumerator=train_avg_num_neigh,
                 is_parallel=parallel)
@@ -247,7 +279,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         interaction_block[f"{i} self interaction 2"] = \
             IrrepsLinear(tp_irreps_out,
                          irreps_for_gate_in,
-                         data_key_in=KEY.NODE_FEATURE)
+                         data_key_in=KEY.NODE_FEATURE,
+                         biases=use_bias_in_linear)
 
         interaction_block[f"{i} self connection outro"] = \
             SelfConnectionOutro()
@@ -261,79 +294,80 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
         # end of interaction block for-loop
 
-    hidden_irreps = Irreps([(feature_multiplicity // 2, (0, 1))])
-
-    layers.update(
-        {
-            "reducing nn input to hidden":
-            IrrepsLinear(
-                irreps_x,
-                hidden_irreps,
-                data_key_in=KEY.NODE_FEATURE,
-            ),
-            "reducing nn hidden to energy":
-            IrrepsLinear(
-                hidden_irreps,
-                Irreps([(1, (0, 1))]),
-                data_key_in=KEY.NODE_FEATURE,
-                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
-            ),
-            "reduce to total enegy":
-            AtomReduce(
-                data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-                data_key_out=KEY.SCALED_ENERGY,
-                constant=1.0,
-            )
-        }
-    )
-    if not parallel:
-        gradient_module = ForceStressOutput() if is_stress else ForceOutputFromEdge()
+    if model_config[KEY.READOUT_AS_FCN] is False:
+        hidden_irreps = Irreps([(feature_multiplicity // 2, (0, 1))])
         layers.update(
             {
-                "force output": gradient_module,
-                # rescale scaled value to real physical values
-                "rescale": Rescale(
-                    shift=shift,
-                    scale=scale,
-                    train_shift_scale=train_shift_scale,
-                    is_stress=is_stress
+                "reducing nn input to hidden":
+                IrrepsLinear(
+                    irreps_x,
+                    hidden_irreps,
+                    data_key_in=KEY.NODE_FEATURE,
+                    biases=use_bias_in_linear
+                ),
+                "reducing nn hidden to energy":
+                IrrepsLinear(
+                    hidden_irreps,
+                    Irreps([(1, (0, 1))]),
+                    data_key_in=KEY.NODE_FEATURE,
+                    data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                    biases=use_bias_in_linear
+                ),
+            }
+        )
+    else:
+        act =\
+            _const.ACTIVATION[model_config[KEY.READOUT_FCN_ACTIVATION]]
+        hidden_neurons = model_config[KEY.READOUT_FCN_HIDDEN_NEURONS]
+        layers.update(
+            {
+                "readout_FCN":
+                FCN_e3nn(
+                    dim_out=1,
+                    hidden_neurons=hidden_neurons,
+                    activation=act,
+                    data_key_in=KEY.NODE_FEATURE,
+                    data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                    irreps_in=irreps_x,
                 )
             }
         )
+
+    shift = model_config[KEY.SHIFT]
+    scale = model_config[KEY.SCALE]
+    train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
+    rescale_module = SpeciesWiseRescale \
+        if model_config[KEY.USE_SPECIES_WISE_SHIFT_SCALE] \
+        else Rescale
+    layers.update(
+        {
+            "rescale atomic energy":
+            rescale_module(
+                shift=shift,
+                scale=scale,
+                data_key_in=KEY.SCALED_ATOMIC_ENERGY,
+                data_key_out=KEY.ATOMIC_ENERGY,
+                train_shift_scale=train_shift_scale,
+            ),
+            "reduce to total enegy":
+            AtomReduce(
+                data_key_in=KEY.ATOMIC_ENERGY,
+                data_key_out=KEY.PRED_TOTAL_ENERGY,
+                constant=1.0,
+            ),
+        }
+    )
+    if not parallel:
+        fso = ForceStressOutput(data_key_energy=KEY.PRED_TOTAL_ENERGY,
+                                data_key_force=KEY.PRED_FORCE,
+                                data_key_stress=KEY.PRED_STRESS)
+        fof = ForceOutputFromEdge(data_key_energy=KEY.PRED_TOTAL_ENERGY,
+                                  data_key_force=KEY.PRED_FORCE)
+        gradient_module = fso if is_stress else fof
+        layers.update({"force output": gradient_module})
 
     # output extraction part
     if parallel:
         return [AtomGraphSequential(v) for v in layers_list]
     else:
         return AtomGraphSequential(layers)
-
-
-def main():
-    import pickle
-    import torch
-    from atom_graph_data import AtomGraphData
-
-    torch.manual_seed(777)
-    config = _const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG
-    config[KEY.LMAX] = 2
-    config[KEY.NUM_CONVOLUTION] = 3
-    config[KEY.SHIFT] = 1.0
-    config[KEY.SCALE] = 1.0
-    model = build_E3_equivariant_model(config)
-    #deploy_parallel(model, config, "deployed_test")
-
-    #model_list = build_parallel_model(model, config)
-    #print(model_list)
-
-    #model.eval()
-    #model.set_is_batch_data(False)
-    #stct_dct = model.state_dict()
-    #for k in stct_dct.keys():
-    #    print(k)
-
-    #model2.load_state_dict(stct_dct, strict=False)
-
-
-if __name__ == "__main__":
-    main()
-

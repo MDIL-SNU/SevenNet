@@ -1,14 +1,14 @@
 # Example input.yaml for training SEVENNet.
-# The underlying model is identical to nequip (https://github.com/mir-group/nequip), but the names of hyperparameters might differ.3
-# Except channel, lmax and num_convolution_layer, which has minimal values to quickly check the installation, they normally works well with values written here.
-# Defaults that works well of channel, lmax and num_convolution_layer are 32, 3, 3 respectively.
+# The underlying model is identical to nequip (https://github.com/mir-group/nequip), but the names of hyperparameters might different.
+# Except channel, and num_convolution_layer, which has minimal values to quickly check the installation, values written here normally works well.
+# Defaults that works well of channel, lmax and num_convolution_layer are 32, 1, 3 respectively.
 
 model:
-    chemical_species: 'Hf, O'                     # Chemical symbols present in the dataset
+    chemical_species: 'Auto'                      # Chemical symbols present in the dataset, guess from load_dataset data if 'auto'
     cutoff: 4.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
     channel: 4                                    # Equivalent to 'num_features' in nequip. Represents the multiplicity of node features. 32 is recomanded as default.
-    lmax: 2                                       # Maximum order of irreps (rotation order). 3 is recomanded as default
-    num_convolution_layer: 1                      # Equivalent to 'num_layers' in nequip. Represents the number of message passing layers in the model. 3 is recomanded as default
+    lmax: 1                                       # Maximum order of irreps (rotation order). 1 is recomanded as default
+    num_convolution_layer: 4                      # Equivalent to 'num_layers' in nequip. Represents the number of message passing layers in the model. 3 is recomanded as default
 
     weight_nn_hidden_neurons: [64, 64]            # Equivalent to 'invariant_layers' and 'neurons' in nequip. Represents the neural network for the radial basis
     radial_basis:                                 # Function and its parameters to encode radial distance
@@ -22,17 +22,20 @@ model:
     act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
     act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip.
 
+    is_parity: True                               # Pairy False (to SE(3) group) is not supported yet (on working!)
+
     avg_num_neigh       : True                    # Normalize the aggregation of messages by the average number of neighbors calculated from the training set
     train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
     train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
+    optimize_by_reduce: False                     # Speed-up by eliminating non-scalar computations at the last layer
                                                                   
 train:
-    random_seed: 1
+    random_seed: 1                                # Random seed for pytorch
     is_train_stress     : False                   # Includes stress in the loss function
     epoch: 10                                     # Ends training after this number of epochs
 
     # Each optimizer and scheduler have different available parameters. 
-    # As the documentation is still under preparation, you can refer to sevenn/train/optim.py if needed
+    # You can refer to sevenn/train/optim.py for supporting optimizer & schedulers
     optimizer: 'adam'                             # Options available are 'sgd', 'adagrad', 'adam', 'adamw', 'radam'
     optim_param:                                  
         lr: 0.005
@@ -41,27 +44,16 @@ train:
         gamma: 0.99
 
     force_loss_weight   : 0.1                     # Coefficient for force loss
-    stress_loss_weight  : 1e-06                   # Coefficient for stress loss
+    stress_loss_weight  : 1e-06                   # Coefficient for stress loss (It is applied to kbar unit)
 
-    # By default, SEVENNet prints the batch RMSE of validation and training every epoch.
-    # Outputs include learning_curve, serialized model, parity low data, and checkpoint. These outputs are generated every 'best' epoch or 'per_epoch'
-    # It is recommended not to use per_epoch too frequently as it is optional, and the best results are available by default
+    per_epoch:  10                                 # Generate checkpoints every this epoch
 
-    skip_output_until: 3                          # Do not create output files (learning curve, serialized models, etc) until this epoch
-    draw_learning_curve: True
+    error_record:
+        - ['Energy', 'RMSE']
+        - ['Force', 'RMSE']
+        - ['Stress', 'RMSE']
+        - ['TotalLoss', 'None']
 
-    # Note that outputs for the best loss are written by default. These options are for tracking detailed information during learning
-    output_per_epoch: 
-        per_epoch: 5                              # Generate epoch every this number of times
-        save_data_pickle: False                   # Raw data includes every RMSE for each structure
-        # draw_parity: True  # unstable           # Under development
-        deploy_model: True                        # Deploy serialized model every per_epoch
-        model_check_point: False                  # Generate checkpoint every per_epoch
-
-    # Continue training from a checkpoint. If you augment the dataset, recalculated shift, scale, avg_num_neigh will be used
-    # Also, you can enable train_shift_scale or train_avg_num_neigh
-    # input.yaml for original and continued training should have the same model hyperparameters except for avg_num_neigh and shift scale
-    # Note that it will overwrite log and .pt or .pth files if the training continue on the same directory.
     # continue: 
     #    reset_optimizer: False 
     #    reset_scheduler: False 
@@ -71,10 +63,29 @@ data:
     batch_size: 2                                 # Batch size. If training fails due to memory shortage, lower this value
     data_divide_ratio: 0.1                        # Divide the whole dataset into training and validation sets by this ratio
 
-    # Refer to the formatting of the structure list below if the example is not enough. Note that weights for structure types are not yet supported
-    # https://simple-nn-v2.readthedocs.io/en/latest/inputs/structure_list.html
-    structure_list: ['./structure_list']          # Path to structure list. This can be a list 
-    #load_dataset_path: ['./total.sevenn_data']   # Load saved dataset by save_dataset_path. This can be a list
+    #shift: 0.0                                   # User defined global shift
+    #scale: 1.0                                   # User defined global scale
 
-    save_dataset_path: 'total'                    # Save the preprocessed dataset for later use without the structure_list
-    save_by_label: False                          # Save the dataset by labels specified in the structure_list
+    # Use element wise shift, scale (also trainable).
+    # The starting values are linear fitted element reference atomic energy and element wise force rms
+    use_species_wise_shift_scale: False           
+
+    # ase.io.read readable data files or structure_list or .sevenn_data files can be used as dataset.
+    # .sevenn_data is preprocessed data set has edges connected (can be obtained by using sevenn_graph_build or by save_** options below)
+    #data_format: 'ase'                           # Default is 'structure_list'
+    #data_format_args:                            # Paramaters, will be passed to ase.io.read
+        #index: '-10:'
+
+    # ASE tries to infer its type by extension, in this case, extxyz file is loaded by ase.
+    #load_dataset_path: ['../data/test.extxyz']   # Example of using ase as data_format
+
+    # If only load_dataset_path is provided, train/valid set is automatically decided by splitting dataset by divide ratio
+    # If both load_dataset_path & load_validset_path is provided, use load_dataset_path as training set.
+    load_dataset_path: ['structure_list']   
+    #load_validset_path: ['./valid.sevenn_data']
+
+
+    #save_dataset_path: 'total'                   # Save the preprocessed (in load_dataset_path) dataset
+    #save_by_train_valid: True                    # Save the preprocessed train.sevenn_data, valid.sevenn_data
+    #save_by_label: False                         # Save the dataset by labels specified in the structure_list
+

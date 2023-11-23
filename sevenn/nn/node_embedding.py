@@ -13,34 +13,36 @@ from sevenn._const import AtomGraphDataType
 @compile_mode('script')
 class OnehotEmbedding(nn.Module):
     """
-    convenient module for md simulation
-    input : tensor of shape (N, 1)
-    output : tensor of shape (N, num_classes)
+    x : tensor of shape (N, 1)
+    x_after : tensor of shape (N, num_classes)
+    It overwrite data_key_x
+    and saves input to data_key_save and output to data_key_additional
+    I know this is strange but it is for compatibility with previous version
+    and to specie wise shift scale work
     ex) [0 1 1 0] -> [[1, 0] [0, 1] [0, 1] [1, 0]] (num_classes = 2)
     """
     def __init__(
         self,
         num_classes: int,
-        data_key_in: str = KEY.NODE_FEATURE,
-        data_key_out: str = None,
+        data_key_x: str = KEY.NODE_FEATURE,
+        data_key_save: str = KEY.ATOM_TYPE,
         data_key_additional: str = KEY.NODE_ATTR,  # additional output
     ):
         super().__init__()
         self.num_classes = num_classes
-        self.KEY_INPUT = data_key_in
-        if data_key_out is None:
-            self.KEY_OUTPUT = data_key_in
-        else:
-            self.KEY_OUTPUT = data_key_out
+        self.KEY_X = data_key_x
+        self.KEY_SAVE = data_key_save
         self.KEY_ADDITIONAL = data_key_additional
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        inp = data[self.KEY_INPUT]
+        inp = data[self.KEY_X]
         embd = torch.nn.functional.one_hot(inp, self.num_classes)
         embd = embd.float()
-        data[self.KEY_OUTPUT] = embd
+        data[self.KEY_X] = embd
         if self.KEY_ADDITIONAL is not None:
             data[self.KEY_ADDITIONAL] = embd
+        if self.KEY_SAVE is not None:
+            data[self.KEY_SAVE] = inp
         return data
 
 
@@ -61,6 +63,7 @@ def get_type_mapper_from_specie(specie_list: List[str]):
     return type_map
 
 
+# deprecated
 def one_hot_atom_embedding(atomic_numbers: List[int], type_map: Dict[int, int]):
     """
     atomic numbers from ase.get_atomic_numbers

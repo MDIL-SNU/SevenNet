@@ -68,8 +68,6 @@ class ForceOutputFromEdge(nn.Module):
         self.KEY_EDGE_IDX = data_key_edge_idx
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        #TODO: way to avoid tot_num from 'len'
-        #tot_num = len(data[KEY.NODE_FEATURE])
         tot_num = torch.sum(data[KEY.NUM_ATOMS])
         edge_idx = data[self.KEY_EDGE_IDX]
 
@@ -134,24 +132,35 @@ class ForceStressOutput(nn.Module):
         self.KEY_ENERGY = data_key_energy
         self.KEY_FORCE = data_key_force
         self.KEY_STRESS = data_key_stress
+        self._is_batch_data = True
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         pos_tensor = data[self.KEY_POS]
         energy = [(data[self.KEY_ENERGY]).sum()]
 
         grad = torch.autograd.grad(energy, [pos_tensor, data["_strain"]],
-                            create_graph=self.training)
+                                   create_graph=self.training)
 
-        force = torch.neg(grad[0])
+        # make grad is not Optional[Tensor]
+        fgrad = grad[0]
+        if fgrad is not None:
+            data[self.KEY_FORCE] = torch.neg(fgrad)
 
-        data[self.KEY_FORCE] = force
-
+        sgrad = grad[1]
         volume = data[KEY.CELL_VOLUME]
-
-        stress = grad[1] / volume.view(-1, 1, 1)
-        stress = torch.neg(stress)
-
-        voigt_stress = torch.vstack((stress[:,0,0], stress[:,1,1], stress[:,2,2], stress[:,0,1], stress[:,1,2], stress[:,0,2]))
-        data[self.KEY_STRESS] = voigt_stress.transpose(0, 1)
+        if sgrad is not None:
+            if self._is_batch_data:
+                stress = sgrad / volume.view(-1, 1, 1)
+                stress = torch.neg(stress)
+                voigt_stress = \
+                    torch.vstack((stress[:, 0, 0], stress[:, 1, 1], stress[:, 2, 2],
+                                  stress[:, 0, 1], stress[:, 1, 2], stress[:, 0, 2]))
+                data[self.KEY_STRESS] = voigt_stress.transpose(0, 1)
+            else:
+                stress = sgrad / volume
+                stress = torch.neg(stress)
+                voigt_stress = torch.stack((stress[0, 0], stress[1, 1], stress[2, 2],
+                                            stress[0, 1], stress[1, 2], stress[0, 2]))
+                data[self.KEY_STRESS] = voigt_stress
 
         return data
