@@ -84,6 +84,7 @@ data:
     load_dataset_path: ['structure_list']   
     #load_validset_path: ['./valid.sevenn_data']
 
+
     #save_dataset_path: 'total'                   # Save the preprocessed (in load_dataset_path) dataset
     #save_by_train_valid: True                    # Save the preprocessed train.sevenn_data, valid.sevenn_data
     #save_by_label: False                         # Save the dataset by labels specified in the structure_list

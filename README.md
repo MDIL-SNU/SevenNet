@@ -167,4 +167,8 @@ If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3
   ---------------- The above issues are pathced in dev branch -------------------
 
 * The calculated stress on `LAMMPS` is incorrect.
+* When inference with LAMMPS with parallel code, if the cell is too small (one of cell dimension < cutoff radius), the calculated result is incorrect 
+
+
+* The calculated stress on `LAMMPS` is incorrect.
 * When inference with LAMMPS, if the cell is too small (one of cell dimension < cutoff radius), the calculated result is incorrect 
