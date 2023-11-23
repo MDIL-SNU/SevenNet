@@ -8,14 +8,12 @@ from sevenn.sevenn_logger import Logger
 from sevenn._const import SEVENN_VERSION
 import sevenn._keys as KEY
 
-description = f"sevenn version={SEVENN_VERSION}, sevenn_graph_build, "\
-    + "build graph from ase readable or ase atoms or VASP OUTCARs (by structure_list)\n"\
-    + "CAUTION: If the ase.atoms are not from ase read of VASP, you must check units "\
-    + "energy: eV (vasp free energy), force: eV/Angstrom, stress: eV/Angstrom^3 " \
-    + "and stress tensor to be 6x1 vector in order of xx, yy, zz, yz, xz, xy of INTERNAL stress "\
-    + "What you see from VASP(grep 'in kB') is external stress in kB "
+description = f"sevenn version={SEVENN_VERSION}, sevenn_graph_build.\n"\
+    + "Note that this command is optional. You can build graph by writting appropriate input.yaml for training.\n"\
+    + "Create '.sevenn_data' from ase readable or VASP OUTCARs (by structure_list).\n"\
+    + "It expects units read from ase atoms have correct units.\n"
 
-source_help = "primitive data to build graph, assume structure_list if format is not given "\
+source_help = "Primitive data to build graph, assume structure_list if format is not given "\
     + "or assume root dir of pickles of ase.Atoms list if directory"
 label_by_help = "label the given dataset with given string, "\
     + "if the src is dir of .pkl, default is the name of the directory "\

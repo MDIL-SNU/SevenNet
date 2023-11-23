@@ -7,11 +7,11 @@ import sevenn._const as _const
 import sevenn._keys as KEY
 
 description_get_model = \
-    f"sevenn version={_const.SEVENN_VERSION}, sevenn_get_model"\
-    + ": deploy model from checkpoint"
-checkpoint_help = "checkpoint to make model"
-output_name_help = "prefix of deployed model"
-get_parallel_help = "deploy parallel model"
+    f"sevenn version={_const.SEVENN_VERSION}, sevenn_get_model."\
+    + " Deploy model from checkpoint"
+checkpoint_help = "checkpoint path to deploy model"
+output_name_help = "filename prefix of deployed model"
+get_parallel_help = "whether deploy parallel model"
 
 
 def main(args=None):

@@ -3,7 +3,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="sevenn",
-    version="0.8.6",
+    version="0.9.0",
     description="SEVENNet",
     author="Yutack Park, Jaesun Kim",
     python_requires=">=3.8",
