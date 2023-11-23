@@ -21,7 +21,7 @@ target_help = "path to sevenn_data/OUTCAR/POSCAR, infer its data type by "\
 def main(args=None):
     checkpoint, target, device, ncores, output, batch = cmd_parse_data(args)
     if not os.path.exists(checkpoint):
-        Logger().error(f"{checkpoint} does not exist")
+        print(f"{checkpoint} does not exist")
         sys.exit(1)
     if not os.path.exists(output):
         os.makedirs(output)

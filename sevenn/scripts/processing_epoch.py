@@ -78,7 +78,7 @@ def processing_epoch(trainer, config, loaders, start_epoch, init_csv, working_di
         #Logger().epoch_write_loss(train_rmse, valid_rmse)
         Logger().timer_end("epoch", message=f"Epoch {epoch} elapsed")
 
-        if val < current_best and epoch > 10:  # skip first 10 epochs
+        if val < current_best:
             current_best = val
             write_checkpoint(epoch, is_best=True)
             Logger().writeline("Best checkpoint written")
