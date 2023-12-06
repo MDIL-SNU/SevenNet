@@ -65,15 +65,9 @@ def processing_continue(model, config):
     Logger().write("\nContinue found, loading checkpoint\n")
 
     checkpoint = torch.load(continue_dct[KEY.CHECKPOINT])
-    reset_optimizer = continue_dct[KEY.RESET_OPTIMIZER]
-    reset_scheduler = continue_dct[KEY.RESET_SCHEDULER]
 
     from_epoch = checkpoint['epoch']
     model_state_dict_cp = checkpoint['model_state_dict']
-    optimizer_state_dict = \
-        None if reset_optimizer else checkpoint['optimizer_state_dict']
-    scheduler_state_dict = \
-        None if reset_scheduler else checkpoint['scheduler_state_dict']
     config_cp = checkpoint['config']
 
     if avg_num_neigh != config_cp[KEY.AVG_NUM_NEIGHBOR]:
@@ -107,8 +101,11 @@ def processing_continue(model, config):
     model.load_state_dict(model_state_dict_cp, strict=False)
 
     trainer = Trainer(model, config)
-    trainer.optimizer.load_state_dict(optimizer_state_dict)
-    trainer.scheduler.load_state_dict(scheduler_state_dict)
+
+    if not continue_dct[KEY.RESET_OPTIMIZER]:
+        trainer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+    if not continue_dct[KEY.RESET_SCHEDULER]:
+        trainer.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
 
     Logger().write(f"checkpoint previous epoch was: {from_epoch}\n")
 
