@@ -11,10 +11,14 @@ The project provides parallel molecular dynamics simulations using graph neural 
 
 **PLEASE NOTE:** We are currently preparing a paper that provides a detailed description of the algorithms implemented in this project. In addition, SEVENNet is under active development and may not be fully stable.
 
-**PLEASE NOTE:** Backward compatibility (espacially if it you're loading models from old checkpoint files) is not guaranteed. It might raise error (hopefully) or give wrong reusult without error.
+**PLEASE NOTE:** Backward compatibility (espacially if it you're loading models from old checkpoint files) is not guaranteed. It might raise error (hopefully) or give wrong result without error.
 
 The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later used to run molecular dynamics simulations via LAMMPS.
 
+## Known issues
+
+* The pressure of parallel version in lammps is not supported yet. (The pressure on lammps log is wrong)
+* When using parallel MD, if the simulation cell is too small (one of cell dimension < cutoff radius), the calculated force is incorrect.
 
 ## Requirements for Training
 
@@ -23,7 +27,7 @@ The installation and usage of SEVENNet are split into two parts: training (handl
 * [`TorchGeometric`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
 * [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter)
 
-You can find the installation guides for these packages from the [`PyTorch official`](https://pytorch.org/get-started/locally/), [`TorchGeometric docs`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html`) and [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter). Remember that these packages have dependencies on your CUDA version.
+You can find the installation guides for these packages from the [`PyTorch official`](https://pytorch.org/get-started/locally/), [`TorchGeometric docs`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) and [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter). Remember that these packages have dependencies on your CUDA version.
 
 ## Installation for Training
 
@@ -35,38 +39,53 @@ pip install .
 
 ## Usage for Training
 
-### To start training
+### To start training using 'sevenn'
 
 ```
 cd example_inputs/training
-sevenn input.yaml
+sevenn input_full.yaml -s
 ```
 
-**PLEASE NOTE:** See `SEVENN/example_inputs/input_full.yaml` for explanations.
-
-Examples of `input.yaml` can be found under `SEVENN/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training. 
+Examples of `input_full.yaml` can be found under `SEVENN/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training. 
 To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` as the `load_dataset_path:` int the `input.yaml`. Both `structure_list` and `load_dataset_path` can be specified as lists, allowing easy augmentation of training sets.
 
 Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned as their default values. You can refer to the log to check the default inputs.
-Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), as our dedicated documentation is still under preparation.
+Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), or inside input_full.yaml itself.
 
-### To generate parallel models
+### Check model quality using 'sevenn_inference'
 
-After the training, you will find `deployed_model_best.pt`, a serial model for MD simulation. Furthermore, you can generate a parallel model from the checkpoint using the following command:
-
+Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at same directory
 ```
-sevenn_get_parallel checkpoint_best.pt
+sevenn_inference checkpoint_best.pt ../data/label_1/*
 ```
 
-This will generate the segmented parallel models, `deployed_parallel_#.pt`, which will give the same result as the serial one. You need all of them to run a parallel MD.
+This will create dir 'sevenn_infer_result'. It includes .csv files that enumerate prediction/reference results of energy and force on OUTCARs in data/label_1 directory.
+You can try 'sevenn_inference --help' for more information of this command.
+
+### To deploy models from checkpoint using 'sevenn_get_model'
+
+Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at same directory
+```
+sevenn_get_model checkpoint_best.pt
+```
+
+This will create 'deployed_serial.pt', which can be used as lammps potential under `e3gnn` pair_style. Check lammps intallation process below.
+
+Parallel model can be obtained in similar way
+```
+sevenn_get_model checkpoint_best.pt -p
+```
+
+This will create multiple of deployed_paralell_*.pt' files. The number of deployed models are depend on number of message passing layers used in model.
+These models can be used as lammps potential to run paralell MD simulations with GNN potential using multiple GPU cards.
 
 ## Requirements for Molecular Dynamics (MD)
 
 * PyTorch (same version as used for training)
-* Latest stable version of [`LAMMPS`](https://github.com/lammps/lammps)
+* LAMMPS version of '23 June 2022' [`LAMMPS`](https://github.com/lammps/lammps)
 * [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD 
 
-**PLEASE NOTE:** CUDA-aware OpenMPI may not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, it would be advisable to consult with your server administrator rather than attempting to compile it yourself. This approach can save your time.
+**PLEASE NOTE:** CUDA-aware OpenMPI may not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, it would be advisable to consult with your server administrator rather than attempting to compile it yourself.
 
 You can check whether your OpenMPI is CUDA-aware by using `ompi_info` command:
 
@@ -106,6 +125,10 @@ cd build
 cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
 ```
 
+Unfortunatly, I found that cuda-aware MPI is not that popular for now and there is lots of obstacls tuning versions between open MPI, CUDA, torch, etc.
+If you don't need paralell MD simulations, you can use normal MPI distributions or not using MPI at all. Still the serial version works well.
+You can also have seperate virtual environment for lammps run only. You need only proper torch, cuda, mpi for this case. (No need to install torch_geometric)
+
 ## Usage for MD
 
 ### To check installation
@@ -123,7 +146,7 @@ PairE3GNN using device : CUDA
 
 For parallel MD
 ```
-$ cd ../md_parallel_example 
+$ cd ${path_to_SEVENNet}/example_inputs/md_serial_example
 $ mpirun -np {# of GPUs you want to use} {lammps_binary} -in in.lmp
 
 ###lammps outputs for 5 MD steps###
@@ -159,16 +182,3 @@ mpirun -np {# of GPUs you want to use} {path to lammps binary} -in {lammps input
 
 If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
 
-## Known issues
-
-* When parsing VASP `OUTCARs` with `structure_list`, if the folder contains a `POSCAR` with selective dynamics, it does not read the `OUTCAR` correctly.
-* When parsing VASP `OUTCARs` with `structure_list`, spin polarized calculations are not yet supported.
-  
-  ---------------- The above issues are pathced in dev branch -------------------
-
-* The calculated stress on `LAMMPS` is incorrect.
-* When inference with LAMMPS with parallel code, if the cell is too small (one of cell dimension < cutoff radius), the calculated result is incorrect 
-
-
-* The calculated stress on `LAMMPS` is incorrect.
-* When inference with LAMMPS, if the cell is too small (one of cell dimension < cutoff radius), the calculated result is incorrect 
