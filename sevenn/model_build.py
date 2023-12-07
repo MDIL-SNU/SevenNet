@@ -105,12 +105,13 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
     use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
 
-    act_gate = {}
     act_scalar = {}
+    act_gate = {}
     for (k, v) in model_config[KEY.ACTIVATION_SCARLAR].items():
-        act_gate[k] = _const.ACTIVATION_DICT[k][v]
-    for (k, v) in model_config[KEY.ACTIVATION_GATE].items():
         act_scalar[k] = _const.ACTIVATION_DICT[k][v]
+    for (k, v) in model_config[KEY.ACTIVATION_GATE].items():
+        act_gate[k] = _const.ACTIVATION_DICT[k][v]
+    act_radial = _const.ACTIVATION[model_config[KEY.ACTIVATION_RADIAL]]
 
     # ~~ edge embedding ~~ #
     cutoff = model_config[KEY.CUTOFF]
@@ -278,7 +279,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 irreps_filter=irreps_spherical_harm,
                 irreps_out=tp_irreps_out,
                 weight_layer_input_to_hidden=weight_nn_layers,
-                weight_layer_act=act_scalar["e"],
+                weight_layer_act=act_radial,
                 # TODO: BOTNet says no sqrt is better
                 denumerator=avg_num_neigh**0.5,
                 train_denumerator=train_avg_num_neigh,

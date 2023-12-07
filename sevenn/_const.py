@@ -88,7 +88,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
         KEY.CUTOFF_FUNCTION_NAME: 'poly_cut',
         KEY.POLY_CUT_P: 6,
     },
-
+    KEY.ACTIVATION_RADIAL: "silu",
     KEY.CUTOFF: 4.5,
     KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: [64, 64],
     KEY.NUM_CONVOLUTION: 3,
@@ -183,6 +183,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.READOUT_FCN_HIDDEN_NEURONS:
         lambda x: all(val > 0 and isinstance(val, int) for val in x),
     KEY.READOUT_FCN_ACTIVATION: lambda x: x in ACTIVATION.keys(),
+    KEY.ACTIVATION_RADIAL: lambda x: x in ACTIVATION.keys(),
 }
 
 

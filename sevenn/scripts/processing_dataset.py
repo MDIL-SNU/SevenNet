@@ -201,8 +201,9 @@ def processing_dataset(config, working_dir):
         Logger().write(f"average number of neighbor is {avg_num_neigh:.6f}\n")
         config[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
     elif type(config[KEY.AVG_NUM_NEIGHBOR]) == float:
-        Logger().write(f"User defined average number of neighbor found, "
-                       f"use value of {config[KEY.AVG_NUM_NEIGHBOR]}\n")
+        Logger().write(f"User defined average number of neighbor found: "
+                       f"{config[KEY.AVG_NUM_NEIGHBOR]}\n")
+        Logger().write(f"Convolution messages will be divided by {config[KEY.AVG_NUM_NEIGHBOR]**(0.5)}\n")
     else:
         config[KEY.AVG_NUM_NEIGHBOR] = 1
 

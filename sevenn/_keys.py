@@ -165,6 +165,7 @@ CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS = "weight_nn_hidden_neurons"
 NUM_CONVOLUTION = "num_convolution_layer"
 ACTIVATION_SCARLAR = "act_scalar"
 ACTIVATION_GATE = "act_gate"
+ACTIVATION_RADIAL = "act_radial"
 
 RADIAL_BASIS_NAME = "radial_basis_name"
 CUTOFF_FUNCTION_NAME = "cutoff_function_name"
