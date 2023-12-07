@@ -37,7 +37,7 @@ class EdgePreprocess(nn.Module):
         cell_shift = data[KEY.CELL_SHIFT]
         pos = data[KEY.POS]
 
-        batch = data[KEY.BATCH]  # for deploy, must be defined first (before if branch)
+        batch = data[KEY.BATCH]  # for deploy, must be defined first
         if self.is_stress:
             if self._is_batch_data:  # Only for training mode
                 num_batch = int(batch.max().cpu().item()) + 1
@@ -129,6 +129,31 @@ class PolynomialCutoff(nn.Module):
             self.coeff_p2 * torch.pow(r, self.p + 2.0)
 
 
+class XPLORCutoff(nn.Module):
+    """
+    https://hoomd-blue.readthedocs.io/en/latest/module-md-pair.html
+    """
+    def __init__(
+        self,
+        cutoff_on: float,
+        cutoff_length: float,
+    ):
+        super().__init__()
+        self.r_cut = cutoff_length
+        self.r_on = cutoff_on
+
+    def forward(self, r: torch.Tensor) -> torch.Tensor:
+        # r > r_cut switch is not necessary since edges are already based on cutoff
+        r_sq = r * r
+        r_on_sq = self.r_on * self.r_on
+        r_cut_sq = self.r_cut * self.r_cut
+        return torch.where(
+            r < self.r_on,
+            1.0,
+            (r_cut_sq-r_sq)**2*(r_cut_sq+2*r_sq-3*r_on_sq)/(r_cut_sq-r_on_sq)**3
+        )
+
+
 @compile_mode('script')
 class SphericalEncoding(nn.Module):
     """
@@ -151,13 +176,14 @@ class SphericalEncoding(nn.Module):
     def __init__(
         self,
         lmax: int,
+        parity: int = -1,
         normalization: str = 'component'
     ):
         super().__init__()
         self.lmax = lmax
         self.normalization = normalization
-        self.irreps_in = Irreps("1x1o")
-        self.irreps_out = Irreps.spherical_harmonics(lmax)
+        self.irreps_in = Irreps("1x1o") if parity == -1 else Irreps("1x1e")
+        self.irreps_out = Irreps.spherical_harmonics(lmax, parity)
         self.sph = SphericalHarmonics(self.irreps_out,
                                       normalize=False,
                                       normalization=normalization,

@@ -52,7 +52,21 @@ def train(config: Dict, working_dir: str):
 
     Logger().write("\nModel building...\n")
     model = build_E3_equivariant_model(config)
+
     Logger().write("Model building was successful\n")
+
+    Logger().write("Irreps of features\n")
+    Logger().format_k_v("edge_feature",
+                        model.get_irreps_in("EdgeEmbedding", "irreps_out"),
+                        write=True)
+    for i in range(config[KEY.NUM_CONVOLUTION]):
+        Logger().format_k_v(f"{i}th node_feature",
+                            model.get_irreps_in(f"{i}_self_interaction_1"),
+                            write=True)
+    Logger().format_k_v(f"readout irreps",
+                        model.get_irreps_in(f"{i} equivariant gate", "irreps_out"),
+                        write=True)
+
 
     # config updated
     if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
@@ -70,3 +84,4 @@ def train(config: Dict, working_dir: str):
 
     processing_epoch(trainer, config, loaders, start_epoch, init_csv, working_dir)
     Logger().timer_end("total", message="Total wall time")
+

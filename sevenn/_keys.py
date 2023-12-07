@@ -28,7 +28,6 @@ POS: Final[str] = "pos"                        # (N, 3) PyG
 CELL: Final[str] = "cell_lattice_vectors"      # (3, 3)
 CELL_SHIFT: Final[str] = "pbc_shift"           # (N, 3)
 CELL_VOLUME: Final[str] = "cell_volume"
-AVG_NUM_NEIGHBOR: Final[str] = "avg_num_neighbor"  # float
 
 EDGE_VEC: Final[str] = "edge_vec"              # (N_edge, 3)
 EDGE_LENGTH: Final[str] = "edge_length"        # (N_edge, 1)
@@ -149,6 +148,7 @@ TYPE_MAP = "_type_map"
 
 # ~~ E3 equivariant model build configuration keys ~~ #
 # see model_build default_config for type
+IRREPS_MANUAL = "irreps_manual"
 NODE_FEATURE_MULTIPLICITY = "channel"
 
 RADIAL_BASIS = "radial_basis"

@@ -195,11 +195,14 @@ def processing_dataset(config, working_dir):
 
     config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
 
-    if config[KEY.AVG_NUM_NEIGHBOR] is not False:
+    if config[KEY.AVG_NUM_NEIGHBOR] is True:
         Logger().write("Calculating average number of neighbor...\n")
         avg_num_neigh = train_set.get_avg_num_neigh()
         Logger().write(f"average number of neighbor is {avg_num_neigh:.6f}\n")
         config[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
+    elif type(config[KEY.AVG_NUM_NEIGHBOR]) == float:
+        Logger().write(f"User defined average number of neighbor found, "
+                       f"use value of {config[KEY.AVG_NUM_NEIGHBOR]}\n")
     else:
         config[KEY.AVG_NUM_NEIGHBOR] = 1
 

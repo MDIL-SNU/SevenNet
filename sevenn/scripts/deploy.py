@@ -152,7 +152,7 @@ def deploy_parallel(model_state_dct, config, fname):
     # dim of irreps_in of last model convolution is (max)comm_size
     # except first one, first of every model is embedding followed by convolution
     # TODO: this code is error prone
-    comm_size = model_list[-1][1].convolution.irreps_in1.dim
+    comm_size = model_list[-1][1].convolution.irreps_in1.dim if len(model_list) > 1 else 0
 
     #shift = model_state_dct["rescale.shift"].item()
     #scale = model_state_dct["rescale.scale"].item()
