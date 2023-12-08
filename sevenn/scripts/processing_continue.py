@@ -68,26 +68,22 @@ def processing_continue(config):
         if not continue_dct[KEY.RESET_SCHEDULER] else None
 
     # Use checkpoints values if not specified in yaml
-    shift = model_state_dict_cp['rescale atomic energy.shift'].numpy() \
-            if type(config[KEY.SHIFT]) not in [list, float] \
-            else config[KEY.SHIFT]
-    scale = model_state_dict_cp['rescale atomic energy.scale'].numpy() \
-            if type(config[KEY.SCALE]) not in [list, float] \
-            else config[KEY.SCALE]
-    avg_num_neigh = (model_state_dict_cp['1 convolution.denumerator']**2).item() \
-            if type(config[KEY.AVG_NUM_NEIGHBOR]) is not float \
-            else config[KEY.AVG_NUM_NEIGHBOR]
+    if type(config[KEY.SHIFT]) not in [list, float]:
+        shift = model_state_dict_cp['rescale atomic energy.shift'].numpy()
+        Logger().write("Use shift of (defined in checkpoint)\n")
+        Logger().format_k_v("shift", ', '.join([f"{x:.4f}" for x in shift]), write=True)
+        config.update({KEY.SHIFT: shift})
+    if type(config[KEY.SCALE]) not in [list, float]:
+        scale = model_state_dict_cp['rescale atomic energy.scale'].numpy()
+        Logger().write("Use scale of (defined in checkpoint)\n")
+        Logger().format_k_v("scale", ', '.join([f"{x:.4f}" for x in scale]), write=True)
+        config.update({KEY.SCALE: scale})
+    if type(config[KEY.AVG_NUM_NEIGHBOR]) is not float:
+        avg_num_neigh = (model_state_dict_cp['1 convolution.denumerator']**2).item()
+        Logger().write("Use avg_num_neigh of (defined in checkpoint)\n")
+        Logger().format_k_v("avg_num_neigh", f"{avg_num_neigh:.4f}", write=True)
+        config.update({KEY.AVG_NUM_NEIGHBOR: avg_num_neigh})
 
-    # update config
-    config.update({
-        KEY.SHIFT: shift,
-        KEY.SCALE: scale,
-        KEY.AVG_NUM_NEIGHBOR: avg_num_neigh,
-    })
-    Logger().write("Use shift, scale, avg_num_neigh of (defined in yaml or in checkpoint)\n")
-    Logger().format_k_v("shift", ', '.join([f"{x:.4f}" for x in shift]), write=True)
-    Logger().format_k_v("scale", ', '.join([f"{x:.4f}" for x in scale]), write=True)
-    Logger().format_k_v("avg_num_neigh", f"{avg_num_neigh:.4f}", write=True)
     Logger().write("If you don't want to continue with these values, "
                    + "specify values you want to input yaml\n")
     Logger().write("If the values were trainable, it would be changed\n")
