@@ -35,32 +35,39 @@ def dataset_load(file: str, config):
     return dataset
 
 
-# TODO: This is toooooooooooooooooo long
+# TODO: This is too long
 def processing_dataset(config, working_dir):
-    # note that type_map is based on user input(chemical_species)
     prefix = f"{os.path.abspath(working_dir)}/"
     is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
+    checkpoint_given = config[KEY.CONTINUE][KEY.CHECKPOINT] is not False
 
     Logger().write("\nInitializing dataset...\n")
     cutoff = config[KEY.CUTOFF]
-    dataset = AtomGraphDataset({}, cutoff)
 
+    dataset = AtomGraphDataset({}, cutoff)
     load_dataset = config[KEY.LOAD_DATASET]
     if type(load_dataset) is str:
         load_dataset = [load_dataset]
-
     for file in load_dataset:
         dataset.augment(dataset_load(file, config))
+
     dataset.group_by_key()  # apply labels inside original datapoint
     dataset.unify_dtypes()  # unify dtypes of all data points
+
     if is_stress:
         dataset.toggle_requires_grad_of_data(KEY.POS, True)
     else:
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
-    if config[KEY.CHEMICAL_SPECIES] == "auto":
-        chem_known = dataset.get_species()
-        config.update(chemical_species_preprocess(chem_known))
+    chem_in_db = dataset.get_species()
+    if config[KEY.CHEMICAL_SPECIES] == "auto" and not checkpoint_given:
+        config.update(chemical_species_preprocess(chem_in_db))
+
+    # basic dataset compatibility check with previous model
+    if checkpoint_given:
+        chem_from_cp = config[KEY.CHEMICAL_SPECIES]
+        if not all(chem in chem_from_cp for chem in chem_in_db):
+            raise ValueError("Chemical species in checkpoint is not compatible with dataset")
 
     #--------------- save dataset regardless of train/valid--------------#
     save_dataset = config[KEY.SAVE_DATASET]
@@ -164,50 +171,41 @@ def processing_dataset(config, working_dir):
     Logger().write(Logger.format_k_v("training_set size", train_set.len()))
     Logger().write(Logger.format_k_v("validation_set size", valid_set.len()))
 
-    Logger().write("\nCalculating shift and scale from training set...\n")
-    if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-        shift = train_set.get_per_atom_energy_mean()
-        scale = train_set.get_force_rms()
-        Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
-        Logger().write(f"calculated force rms scale is {scale:.6f} eV/Angstrom\n")
-    else:
-        type_map = config[KEY.TYPE_MAP]
-        n_chem = len(type_map)
-        shift = \
-            train_set.get_species_ref_energy_by_linear_comb(n_chem)
-        scale = \
-            train_set.get_species_wise_force_rms()
-        chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
-        Logger().write("Calculated specie wise shift, scale is\n")
-        for k, (sft, scl) in zip(chem_strs, zip(shift, scale)):
-            Logger().write(f"{k:<3} : {sft:.6f} eV, {scl:.6f} eV/Angstrom\n")
-
-    if config[KEY.SHIFT] is not False:
-        shift = config[KEY.SHIFT]
-        if type(shift) != list and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            shift = [shift] * len(type_map)
-        Logger().write(f"User defined shift found: overwrite shift to {shift}\n")
-    if config[KEY.SCALE] is not False:
-        scale = config[KEY.SCALE]
-        if type(scale) != list and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            scale = [scale] * len(type_map)
-        Logger().write(f"User defined scale found: overwrite scale to {scale}\n")
-
-    config.update({KEY.SHIFT: shift, KEY.SCALE: scale})
-
-    if config[KEY.AVG_NUM_NEIGHBOR] is not False:
+    # init shift, scale from trainset
+    if not checkpoint_given:
+        Logger().write("\nCalculating shift and scale from training set...\n")
+        if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            shift = train_set.get_per_atom_energy_mean()
+            scale = train_set.get_force_rms()
+            Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
+            Logger().write(f"calculated force rms scale is {scale:.6f} eV/Angstrom\n")
+        else:
+            type_map = config[KEY.TYPE_MAP]
+            n_chem = len(type_map)
+            shift = \
+                train_set.get_species_ref_energy_by_linear_comb(n_chem)
+            scale = \
+                train_set.get_species_wise_force_rms()
+            chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
+            Logger().write("Calculated specie wise shift, scale is\n")
+            for k, (sft, scl) in zip(chem_strs, zip(shift, scale)):
+                Logger().write(f"{k:<3} : {sft:.6f} eV, {scl:.6f} eV/Angstrom\n")
+        # init avg_num_niegh from trainset
         Logger().write("Calculating average number of neighbor...\n")
         avg_num_neigh = train_set.get_avg_num_neigh()
         Logger().write(f"average number of neighbor is {avg_num_neigh:.6f}\n")
-        config[KEY.AVG_NUM_NEIGHBOR] = avg_num_neigh
-    else:
-        config[KEY.AVG_NUM_NEIGHBOR] = 1
+        config.update({KEY.SHIFT: shift, KEY.SCALE: scale, KEY.AVG_NUM_NEIGHBOR: avg_num_neigh})
 
-    batch_size = config[KEY.BATCH_SIZE]
-    num_workers = config[KEY.NUM_WORKERS]
+    # some hack for convenience
+    if type(config[KEY.SHIFT]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+        config[KEY.SHIFT] = [config[KEY.SHIFT]] * len(config[KEY.TYPE_MAP])
+    if type(config[KEY.SCALE]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+        config[KEY.SCALE] = [config[KEY.SCALE]] * len(config[KEY.TYPE_MAP])
+
+    # If checkpoint is given and no user-defined shift, scale, avg_num_neigh is found,
+    # values will be None. In this case, we will use the value from checkpoint
 
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
-
     if config[KEY.DATA_SHUFFLE]:
         Logger().write("Shuffle the train data\n")
         for data_list in data_lists:

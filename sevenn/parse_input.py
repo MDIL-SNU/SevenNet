@@ -126,14 +126,6 @@ def init_model_config(config: dict):
         else:
             raise ValueError(f'given {KEY.CHEMICAL_SPECIES} input is strange')
         model_meta.update(chemical_species_preprocess(input_chem))
-        """
-        chemical_specie = sorted([x.strip() for x in input_chem])
-        model_meta[KEY.CHEMICAL_SPECIES] = chemical_specie
-        model_meta[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = \
-            [atomic_numbers[x] for x in chemical_specie]
-        model_meta[KEY.NUM_SPECIES] = len(chemical_specie)
-        model_meta[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
-        """
 
     for act_key in [KEY.ACTIVATION_GATE, KEY.ACTIVATION_SCARLAR]:
         if act_key not in config.keys():
@@ -150,6 +142,19 @@ def init_model_config(config: dict):
             else:
                 raise ValueError(f"{act_key} should be dict of 'o' and 'e'")
         model_meta[act_key] = user_input
+
+    if KEY.IRREPS_MANUAL not in config.keys():
+        model_meta[KEY.IRREPS_MANUAL] = defaults[KEY.IRREPS_MANUAL]
+    else:
+        model_meta[KEY.IRREPS_MANUAL] = config[KEY.IRREPS_MANUAL]
+
+    #TODO: implement this behavior in _const.py not here
+    if KEY.AVG_NUM_NEIGHBOR not in config.keys():
+        model_meta[KEY.AVG_NUM_NEIGHBOR] = defaults[KEY.AVG_NUM_NEIGHBOR]
+    else:
+        if type(config[KEY.AVG_NUM_NEIGHBOR]) not in [float, bool]:
+            raise ValueError("avg_num_neighbor should be float or bool")
+        model_meta[KEY.AVG_NUM_NEIGHBOR] = config[KEY.AVG_NUM_NEIGHBOR]
 
     # init simpler ones
     for key, cond in _const.MODEL_CONFIG_CONDITION.items():
@@ -310,7 +315,7 @@ def init_data_config(config: dict):
 
     unknown_keys = [key for key in config.keys() if key not in data_meta.keys()]
     if len(unknown_keys) != 0:
-        raise ValueError(f"unknow keys : {unknown_keys} is given")
+        raise ValueError(f"unknown keys : {unknown_keys} is given")
     return data_meta
 
 

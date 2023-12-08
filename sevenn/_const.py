@@ -9,7 +9,7 @@ import sevenn._keys as KEY
 
 SEVENN_VERSION = "0.9.0"
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
-IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut']
+IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 SUPPORTING_METRICS = ['RMSE', 'ComponentRMSE', 'MAE', 'Loss']
 SUPPORTING_ERROR_TYPES = ['TotalEnergy', 'Energy', 'Force', 'Stress', 'Stress_GPa', 'TotalLoss']
 
@@ -74,6 +74,7 @@ def error_record_condition(x):
     return True
 
 DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
+    KEY.IRREPS_MANUAL: False,
     KEY.NODE_FEATURE_MULTIPLICITY: 32,
     KEY.LMAX: 1,
     KEY.LMAX_EDGE: -1,  # -1 means lmax_edge = lmax
@@ -87,7 +88,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
         KEY.CUTOFF_FUNCTION_NAME: 'poly_cut',
         KEY.POLY_CUT_P: 6,
     },
-
+    KEY.ACTIVATION_RADIAL: "silu",
     KEY.CUTOFF: 4.5,
     KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: [64, 64],
     KEY.NUM_CONVOLUTION: 3,
@@ -155,6 +156,7 @@ DEFAULT_TRAINING_CONFIG = {
 }
 
 
+# TODO: implement 'if provided, use condition' case for inputs
 # condition for each inputs, key omitted here should be initialized by hand
 MODEL_CONFIG_CONDITION = {
     KEY.NODE_FEATURE_MULTIPLICITY: is_positive,
@@ -162,19 +164,17 @@ MODEL_CONFIG_CONDITION = {
     KEY.LMAX_EDGE: lambda x: x >= -1,
     KEY.LMAX_NODE: lambda x: x >= -1,
     KEY.IS_PARITY: None,
+    # TODO: change these param inputs same as optimizer, scheduler, and loss
     KEY.RADIAL_BASIS: {
         KEY.RADIAL_BASIS_NAME: lambda x: x in IMPLEMENTED_RADIAL_BASIS,
-        KEY.BESSEL_BASIS_NUM: is_positive,
     },
     KEY.CUTOFF_FUNCTION: {
         KEY.CUTOFF_FUNCTION_NAME: lambda x: x in IMPLEMENTED_CUTOFF_FUNCTION,
-        KEY.POLY_CUT_P: is_positive,
     },
     KEY.CUTOFF: is_positive,
     KEY.NUM_CONVOLUTION: is_positive,
     KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS:
         lambda x: all(val > 0 and isinstance(val, int) for val in x),
-    KEY.AVG_NUM_NEIGHBOR: None,
     KEY.TRAIN_SHIFT_SCALE: None,
     KEY.TRAIN_AVG_NUM_NEIGH: None,
     KEY.OPTIMIZE_BY_REDUCE: None,
@@ -183,6 +183,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.READOUT_FCN_HIDDEN_NEURONS:
         lambda x: all(val > 0 and isinstance(val, int) for val in x),
     KEY.READOUT_FCN_ACTIVATION: lambda x: x in ACTIVATION.keys(),
+    KEY.ACTIVATION_RADIAL: lambda x: x in ACTIVATION.keys(),
 }
 
 

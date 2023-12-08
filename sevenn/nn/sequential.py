@@ -30,6 +30,15 @@ class AtomGraphSequential(nn.Sequential):
             except AttributeError:
                 pass
 
+    def get_irreps_in(self, modlue_name: str, attr_key: str = "irreps_in"):
+        tg_module = self._modules[modlue_name]
+        for m in tg_module.modules():
+            try:
+                return repr(m.__getattribute__(attr_key))
+            except AttributeError:
+                pass
+        return None
+
     def prepand_module(self, key: str, module: nn.Module):
         self._modules.update({key: module})
         self._modules.move_to_end(key, last=False)

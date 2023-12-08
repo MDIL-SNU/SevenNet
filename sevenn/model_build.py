@@ -9,7 +9,7 @@ from torch.nn import Sequential
 
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.edge_embedding import EdgeEmbedding, EdgePreprocess,\
-    PolynomialCutoff, BesselBasis, SphericalEncoding
+    PolynomialCutoff, XPLORCutoff, BesselBasis, SphericalEncoding
 from sevenn.nn.force_output import ForceOutput, ForceOutputFromEdge, \
     ForceOutputFromEdgeParallel, ForceStressOutput
 from sevenn.nn.sequential import AtomGraphSequential
@@ -55,13 +55,15 @@ def init_radial_basis(config):
     raise RuntimeError('something went very wrong...')
 
 
+# TODO: totally messed up :(
 def init_cutoff_function(config):
     cutoff_function_dct = config[KEY.CUTOFF_FUNCTION]
     cutoff = config[KEY.CUTOFF]
-
     if cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'poly_cut':
         p = cutoff_function_dct[KEY.POLY_CUT_P]
         return PolynomialCutoff(p, cutoff)
+    elif cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
+        return XPLORCutoff(cutoff, cutoff_function_dct["cutoff_on"])
 
     raise RuntimeError('something went very wrong...')
 
@@ -91,15 +93,25 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     else:
         layers = OrderedDict()
 
+    irreps_manual = None
+    if model_config[KEY.IRREPS_MANUAL] is not False:
+        irreps_manual = model_config[KEY.IRREPS_MANUAL]
+        try:
+            irreps_manual = [Irreps(irr) for irr in irreps_manual]
+            assert len(irreps_manual) == num_convolution_layer + 1
+        except Exception:
+            raise RuntimeError('invalid irreps_manual input given')
+
     optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
     use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
 
-    act_gate = {}
     act_scalar = {}
+    act_gate = {}
     for (k, v) in model_config[KEY.ACTIVATION_SCARLAR].items():
-        act_gate[k] = _const.ACTIVATION_DICT[k][v]
-    for (k, v) in model_config[KEY.ACTIVATION_GATE].items():
         act_scalar[k] = _const.ACTIVATION_DICT[k][v]
+    for (k, v) in model_config[KEY.ACTIVATION_GATE].items():
+        act_gate[k] = _const.ACTIVATION_DICT[k][v]
+    act_radial = _const.ACTIVATION[model_config[KEY.ACTIVATION_RADIAL]]
 
     # ~~ edge embedding ~~ #
     cutoff = model_config[KEY.CUTOFF]
@@ -115,7 +127,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         basis_module=radial_basis_module,
         cutoff_module=cutoff_function_module,
         # operate on r/||r||
-        spherical_module=SphericalEncoding(lmax_edge),
+        spherical_module=SphericalEncoding(lmax_edge, -1 if is_parity else 1),
     )
     if is_stress:
         layers.update(
@@ -136,7 +148,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     # see AtomGraphData._data_for_E3_equivariant_model
 
     one_hot_irreps = Irreps(f"{num_species}x0e")
-    f_in_irreps = Irreps(f"{feature_multiplicity}x0e")
+    irreps_x = Irreps(f"{feature_multiplicity}x0e") if irreps_manual is None \
+        else irreps_manual[0]
     layers.update(
         {
             "onehot_idx_to_onehot":
@@ -146,7 +159,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             "onehot_to_feature_x":
             IrrepsLinear(
                 irreps_in=one_hot_irreps,
-                irreps_out=f_in_irreps,
+                irreps_out=irreps_x,
                 data_key_in=KEY.NODE_FEATURE,
                 biases=use_bias_in_linear
             )
@@ -165,7 +178,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 "ghost_onehot_to_feature_x":
                 IrrepsLinear(
                     irreps_in=one_hot_irreps,
-                    irreps_out=f_in_irreps,
+                    irreps_out=irreps_x,
                     data_key_in=KEY.NODE_FEATURE_GHOST,
                     biases=use_bias_in_linear
                 )
@@ -182,11 +195,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     # output layer determined at each IrrepsConvolution layer
     weight_nn_layers = [radial_basis_num] + weight_nn_hidden
 
-    # nonlinearity equivariant gate related
-    # act_gate = model_config[KEY.ACTIVATION_GATE]
-    # act_scalar = model_config[KEY.ACTIVATION_SCARLAR]
-
-    irreps_x = f_in_irreps
     for i in range(num_convolution_layer):
         # here, we can infer irreps of x after interaction from lmax and f0_irreps
         interaction_block = {}
@@ -208,7 +216,9 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                                            irreps_spherical_harm,
                                            drop_l=lmax_node,
                                            fix_multiplicity=feature_multiplicity,
-                                           only_even_p=only_even_p)
+                                           only_even_p=only_even_p) if \
+                          irreps_manual is None else \
+                          irreps_manual[i + 1]
 
         # output irreps of linear 2 & self_connection is determined by Gate
         # Gate require extra scalars(or weight) for l>0 features in nequip,
@@ -269,7 +279,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 irreps_filter=irreps_spherical_harm,
                 irreps_out=tp_irreps_out,
                 weight_layer_input_to_hidden=weight_nn_layers,
-                weight_layer_act=act_scalar["e"],
+                weight_layer_act=act_radial,
                 # TODO: BOTNet says no sqrt is better
                 denumerator=avg_num_neigh**0.5,
                 train_denumerator=train_avg_num_neigh,
@@ -295,7 +305,9 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         # end of interaction block for-loop
 
     if model_config[KEY.READOUT_AS_FCN] is False:
-        hidden_irreps = Irreps([(feature_multiplicity // 2, (0, 1))])
+        mid_dim = feature_multiplicity if irreps_manual is None else \
+            irreps_manual[-1].num_irreps
+        hidden_irreps = Irreps([(mid_dim // 2, (0, 1))])
         layers.update(
             {
                 "reducing nn input to hidden":
