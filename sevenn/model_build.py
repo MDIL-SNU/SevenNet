@@ -14,8 +14,9 @@ from sevenn.nn.force_output import ForceOutput, ForceOutputFromEdge, \
     ForceOutputFromEdgeParallel, ForceStressOutput
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.nn.linear import IrrepsLinear, AtomReduce, FCN_e3nn
-from sevenn.nn.self_connection import SelfConnectionIntro, SelfConnectionOutro
-from sevenn.nn.convolution import IrrepsConvolution
+from sevenn.nn.self_connection import SelfConnectionIntro,\
+    SelfConnectionMACEIntro, SelfConnectionOutro
+from sevenn.nn.convolution import IrrepsConvolution, ElementDependentRadialWeights
 from sevenn.nn.equivariant_gate import EquivariantGate
 from sevenn.nn.activation import ShiftedSoftPlus
 from sevenn.nn.scale import Rescale, SpeciesWiseRescale
@@ -68,22 +69,44 @@ def init_cutoff_function(config):
     raise RuntimeError('something went very wrong...')
 
 
+def init_self_connection(config):
+    self_connection_type = config[KEY.SELF_CONNECTION_TYPE]
+    if self_connection_type == 'none':
+        return None, None
+    elif self_connection_type == 'nequip':
+        return SelfConnectionIntro, SelfConnectionOutro
+    elif self_connection_type == 'MACE':
+        return SelfConnectionMACEIntro, SelfConnectionOutro
+
+
+# TODO: it gets bigger and bigger. refactor it
 def build_E3_equivariant_model(model_config: dict, parallel=False):
     """
     IDENTICAL to nequip model
     atom embedding is not part of model
     """
+    use_elemement_dependent_radial_weights = True
+    data_key_weight_input = KEY.EDGE_EMBEDDING # default
+
+    # parameter initialization
+    is_stress = \
+        model_config[KEY.IS_TRACE_STRESS] or model_config[KEY.IS_TRAIN_STRESS]
+
+    cutoff = model_config[KEY.CUTOFF]
+    num_species = model_config[KEY.NUM_SPECIES]
+
     feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]
+
     lmax = model_config[KEY.LMAX]
     lmax_edge = model_config[KEY.LMAX_EDGE] \
         if model_config[KEY.LMAX_EDGE] >= 0 else lmax
     lmax_node = model_config[KEY.LMAX_NODE] \
         if model_config[KEY.LMAX_NODE] >= 0 else lmax
+
     num_convolution_layer = model_config[KEY.NUM_CONVOLUTION]
+
     is_parity = model_config[KEY.IS_PARITY]  # boolean
-    is_stress = \
-        model_config[KEY.IS_TRACE_STRESS] or model_config[KEY.IS_TRAIN_STRESS]
-    num_species = model_config[KEY.NUM_SPECIES]
+
     irreps_spherical_harm =\
         Irreps.spherical_harmonics(lmax_edge, -1 if is_parity else 1)
     if parallel:
@@ -102,8 +125,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         except Exception:
             raise RuntimeError('invalid irreps_manual input given')
 
-    optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
-    use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
+    sc_intro, sc_outro = init_self_connection(model_config)
 
     act_scalar = {}
     act_gate = {}
@@ -113,15 +135,17 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         act_gate[k] = _const.ACTIVATION_DICT[k][v]
     act_radial = _const.ACTIVATION[model_config[KEY.ACTIVATION_RADIAL]]
 
-    # ~~ edge embedding ~~ #
-    cutoff = model_config[KEY.CUTOFF]
-
     radial_basis_module, radial_basis_num = init_radial_basis(model_config)
     cutoff_function_module = init_cutoff_function(model_config)
 
     avg_num_neigh = model_config[KEY.AVG_NUM_NEIGHBOR]
     train_avg_num_neigh = model_config[KEY.TRAIN_AVG_NUM_NEIGH]
 
+    optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
+    use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
+
+
+    # model definitions
     edge_embedding = EdgeEmbedding(
         # operate on ||r||
         basis_module=radial_basis_module,
@@ -234,9 +258,9 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         # and save its results in somewhere to concatenate to new_x at Outro
 
         interaction_block[f"{i} self connection intro"] = \
-            SelfConnectionIntro(irreps_x=irreps_x,
-                                irreps_operand=irreps_node_attr,
-                                irreps_out=irreps_for_gate_in)
+            sc_intro(irreps_x=irreps_x,
+                     irreps_operand=irreps_node_attr,
+                     irreps_out=irreps_for_gate_in)
 
         interaction_block[f"{i}_self_interaction_1"] = \
             IrrepsLinear(irreps_x,
@@ -272,12 +296,21 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             layers = layers_list[layers_idx]
             # communication from lammps here
 
+        if use_elemement_dependent_radial_weights:
+            edrw = ElementDependentRadialWeights(irreps_x=irreps_x)
+            weight_nn_layers =\
+                [radial_basis_num + edrw.get_additional_weights_dim()]\
+                + weight_nn_hidden
+            interaction_block[f"{i} element_dependent_radial_weights"] = edrw
+            data_key_weight_input = edrw.key_radial_weights_new
+
         # convolution part, l>lmax is droped as defined in irreps_out
         interaction_block[f"{i} convolution"] = \
             IrrepsConvolution(
                 irreps_x=irreps_x,
                 irreps_filter=irreps_spherical_harm,
                 irreps_out=tp_irreps_out,
+                data_key_weight_input = data_key_weight_input,
                 weight_layer_input_to_hidden=weight_nn_layers,
                 weight_layer_act=act_radial,
                 # TODO: BOTNet says no sqrt is better
@@ -292,8 +325,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                          data_key_in=KEY.NODE_FEATURE,
                          biases=use_bias_in_linear)
 
-        interaction_block[f"{i} self connection outro"] = \
-            SelfConnectionOutro()
+        interaction_block[f"{i} self connection outro"] = sc_outro()
 
         # irreps of x change back to 'irreps_out'
         interaction_block[f"{i} equivariant gate"] = gate_layer

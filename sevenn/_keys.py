@@ -167,6 +167,8 @@ ACTIVATION_SCARLAR = "act_scalar"
 ACTIVATION_GATE = "act_gate"
 ACTIVATION_RADIAL = "act_radial"
 
+SELF_CONNECTION_TYPE = "self_connection_type"
+
 RADIAL_BASIS_NAME = "radial_basis_name"
 CUTOFF_FUNCTION_NAME = "cutoff_function_name"
 
