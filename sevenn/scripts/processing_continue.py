@@ -42,6 +42,9 @@ def check_config_compatible(config, config_cp):
        and all(config[k] == config_cp[k] for k in TRAINABLE_CONFIGS) is False:
         raise ValueError("reset optimizer and scheduler if you want to change "
                          + "trainable configs")
+
+    if config_cp[KEY.TRAIN_AVG_NUM_NEIGH] is True and config[KEY.TRAIN_AVG_NUM_NEIGH] is False:
+        raise ValueError("Trainable neigh > not trainable: NOT SUPPORTED YET, contact to the author")
     #TODO add conition for changed optim/scheduler but not reset
 
 
