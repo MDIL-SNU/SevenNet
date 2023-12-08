@@ -196,29 +196,11 @@ def processing_dataset(config, working_dir):
         Logger().write(f"average number of neighbor is {avg_num_neigh:.6f}\n")
         config.update({KEY.SHIFT: shift, KEY.SCALE: scale, KEY.AVG_NUM_NEIGHBOR: avg_num_neigh})
 
-    # Check user-defined shift, scale, avg_num_neigh. If given, overwrite
-    # Can be either list of float (species wise) or float (global)
-    # If it is list of float, we do not check the lenght. Use have to make sure
-    if type(config[KEY.SHIFT]) in [list, float]:
-        shift = config[KEY.SHIFT]
-        # some hack for convenience
-        if checkpoint_given is False and type(shift) is float and \
-                config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            shift = [shift] * len(config[KEY.TYPE_MAP])
-        Logger().write(f"User defined shift found: overwrite shift to {shift}\n")
-        config.update({KEY.SHIFT: shift})
-    if type(config[KEY.SCALE]) in [list, float]:
-        scale = config[KEY.SCALE]
-        if checkpoint_given is False and type(scale) is float and \
-                config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            scale = [scale] * len(config[KEY.TYPE_MAP])
-        Logger().write(f"User defined scale found: overwrite scale to {scale}\n")
-        config.update({KEY.SCALE: scale})
-    if type(config[KEY.AVG_NUM_NEIGHBOR]) is float:
-        avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
-        Logger().write(f"User defined average number of neighbor found: "
-                       f"{avg_num_neigh}\n")
-        config.update({KEY.AVG_NUM_NEIGHBOR: avg_num_neigh})
+    # some hack for convenience
+    if type(config[KEY.SHIFT]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+        config[KEY.SHIFT] = [config[KEY.SHIFT]] * len(config[KEY.TYPE_MAP])
+    if type(config[KEY.SCALE]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+        config[KEY.SCALE] = [config[KEY.SCALE]] * len(config[KEY.TYPE_MAP])
 
     # If checkpoint is given and no user-defined shift, scale, avg_num_neigh is found,
     # values will be None. In this case, we will use the value from checkpoint
