@@ -119,34 +119,18 @@ class Trainer():
                 'optimizer_state_dict': self.optimizer.state_dict(),
                 'scheduler_state_dict': self.scheduler.state_dict()}
 
-    """
-    def _update_epoch_mse(self, epoch_mse, user_label: list,
-                          natoms, mse_dct, epoch_counter):
-        for loss_type in self.loss_types:
-            epoch_mse['total'][loss_type] += torch.sum(mse_dct[loss_type])
-            epoch_counter['total'][loss_type] += len(mse_dct[loss_type])
+    def load_state_dicts(self,
+                         model_state_dict,
+                         optimizer_state_dict,
+                         scheduler_state_dict,
+                         strict=True):
+        if self.distributed:
+            self.model.module.load_state_dict(model_state_dict, strict=strict)
+        else:
+            self.model.load_state_dict(model_state_dict, strict=strict)
 
-        mse_force = mse_dct[LossType.FORCE]
-        for idx, label in enumerate(user_label):
-            mse_labeled = epoch_mse[label]
-            mse_labeled[LossType.ENERGY] += mse_dct[LossType.ENERGY][idx]
-            epoch_counter[label][LossType.ENERGY] += 1
-            if LossType.STRESS in self.loss_types:
-                mse_labeled[LossType.STRESS] += mse_dct[LossType.STRESS][idx]
-                epoch_counter[label][LossType.STRESS] += 1
-            natom = natoms[idx].item()
-            force_mse = torch.sum(mse_force[:natom])
-            mse_force = mse_force[natom:]
-            epoch_counter[label][LossType.FORCE] += natom
-            mse_labeled[LossType.FORCE] += force_mse
+        if optimizer_state_dict is not None:
+            self.optimizer.load_state_dict(optimizer_state_dict)
+        if scheduler_state_dict is not None:
+            self.scheduler.load_state_dict(scheduler_state_dict)
 
-    # Deprecated
-    def _update_force_mse_by_atom_type(self, force_mse_by_atom_type,
-                                       atomic_numbers: list,
-                                       F_loss: torch.Tensor) -> dict:
-        # write force_mse_by_atom_type dict, element wise force loss
-        for key in force_mse_by_atom_type.keys():
-            indices = [i for i, v in enumerate(atomic_numbers) if v == key]
-            F_mse_list = F_loss[indices]
-            force_mse_by_atom_type[key].extend(F_mse_list.tolist())
-    """

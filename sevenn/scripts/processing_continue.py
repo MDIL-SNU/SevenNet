@@ -9,8 +9,8 @@ from sevenn.train.trainer import Trainer
 
 
 def check_config_compatible(config, config_cp):
+    # TODO: check more
     SHOULD_BE_SAME = [
-        KEY.TYPE_MAP,
         KEY.NODE_FEATURE_MULTIPLICITY,
         KEY.LMAX,
         KEY.IS_PARITY,
@@ -22,10 +22,6 @@ def check_config_compatible(config, config_cp):
         KEY.ACTIVATION_GATE,
         KEY.ACTIVATION_SCARLAR,
         KEY.DTYPE,
-        #KEY.OPTIMIZER,
-        #KEY.OPTIM_PARAM,
-        #KEY.SCHEDULER,
-        #KEY.SCHEDULER_PARAM,
         KEY.USE_SPECIES_WISE_SHIFT_SCALE,
         KEY.USE_BIAS_IN_LINEAR,
         KEY.OPTIMIZE_BY_REDUCE,
@@ -36,12 +32,6 @@ def check_config_compatible(config, config_cp):
         raise ValueError(f"Value of {sbs} should be same. \
                 {config[sbs]} != {config_cp[sbs]}")
 
-    #TODO: for old checkpoint files, remove later
-    if KEY.TRAIN_AVG_NUM_NEIGH not in config_cp.keys() \
-            or KEY.TRAIN_SHIFT_SCALE not in config_cp.keys():
-        config_cp[KEY.TRAIN_AVG_NUM_NEIGH] = False
-        config_cp[KEY.TRAIN_SHIFT_SCALE] = False
-
     try:
         cntdct = config[KEY.CONTINUE]
     except KeyError:
@@ -50,62 +40,62 @@ def check_config_compatible(config, config_cp):
     TRAINABLE_CONFIGS = [KEY.TRAIN_AVG_NUM_NEIGH, KEY.TRAIN_SHIFT_SCALE]
     if any((not cntdct[KEY.RESET_SCHEDULER], not cntdct[KEY.RESET_OPTIMIZER])) \
        and all(config[k] == config_cp[k] for k in TRAINABLE_CONFIGS) is False:
-        raise ValueError("trainable shift_scale or avg_num_neigh should match"
-                         + " ,if one of reset optimizer or scheduler")
+        raise ValueError("reset optimizer and scheduler if you want to change "
+                         + "trainable configs")
+    #TODO add conition for changed optim/scheduler but not reset
 
 
-def processing_continue(model, config):
+def processing_continue(config):
     # model is updated here, not returned
-
-    avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]
-    shift = config[KEY.SHIFT]
-    scale = config[KEY.SCALE]
+    device = config[KEY.DEVICE]
 
     continue_dct = config[KEY.CONTINUE]
     Logger().write("\nContinue found, loading checkpoint\n")
 
-    checkpoint = torch.load(continue_dct[KEY.CHECKPOINT])
+    try:
+        checkpoint = torch.load(continue_dct[KEY.CHECKPOINT], map_location=device)
+        config_cp = checkpoint['config']
+    except FileNotFoundError:
+        raise FileNotFoundError(
+            f"checkpoint file {continue_dct[KEY.CHECKPOINT]} not found"
+        )
+    # it will raise error if not compatible
+    check_config_compatible(config, config_cp)
+    Logger().write("Checkpoint config is compatible\n")
 
     from_epoch = checkpoint['epoch']
     model_state_dict_cp = checkpoint['model_state_dict']
-    config_cp = checkpoint['config']
+    optimizer_state_dict_cp = checkpoint['optimizer_state_dict'] \
+        if not continue_dct[KEY.RESET_OPTIMIZER] else None
+    scheduler_state_dict_cp = checkpoint['scheduler_state_dict'] \
+        if not continue_dct[KEY.RESET_SCHEDULER] else None
 
-    if avg_num_neigh != config_cp[KEY.AVG_NUM_NEIGHBOR]:
-        Logger().write("\nWARNING: dataset is updated (prev vs now)\n")
-        Logger().write(f"avg_num_neigh: {config_cp[KEY.AVG_NUM_NEIGHBOR]:.4f}"
-                       + f"!= {avg_num_neigh:.4f}\n")
-        Logger().write("Below comments include shift, scale and avg_num_neigh\n")
-        Logger().write(
-            "If current config states are not trainable, use updated value\n"
-        )
-        Logger().write(
-            "Else, we will ignore updated shfit, scale and avg_num_neigh\n"
-        )
-        Logger().write("The model keep using previous values\n")
+    # These values will be transfered to new config
+    shift_cp = model_state_dict_cp['rescale atomic energy.shift']
+    scale_cp = model_state_dict_cp['rescale atomic energy.scale']
+    avg_num_neigh_cp = model_state_dict_cp['1 convolution.denumerator']**2
 
-    #TODO: Updating shift, scale, avg~~ to updated ones, make it optional?
-    """
-    IGNORE_WIEHGT_KEYS = ["rescale.shift", "rescale.scale"]
-    for i in range(0, config[KEY.NUM_CONVOLUTION]):
-        IGNORE_WIEHGT_KEYS.append(f"{i}_convolution.denumerator")
-    model_state_dict_cp = {k: v for k, v in model_state_dict_cp.items()
-                           if k not in IGNORE_WIEHGT_KEYS}
-    """
+    # update config
+    config.update({
+        KEY.SHIFT: shift_cp,
+        KEY.SCALE: scale_cp,
+        KEY.AVG_NUM_NEIGHBOR: avg_num_neigh_cp,
+    })
+    Logger().write("Copy shift, scale, avg_num_neigh from checkpoint\n")
+    Logger().format_k_v("shift", ', '.join([f"{x:.4f}" for x in shift_cp]), write=True)
+    Logger().format_k_v("scale", ', '.join([f"{x:.4f}" for x in scale_cp]), write=True)
+    Logger().format_k_v("avg_num_neigh", f"{avg_num_neigh_cp.item():.4f}", write=True)
+    Logger().write("If you don't want to continue with these values, "
+                   + "specify values you want to input yaml\n")
+    Logger().write("If the values were trainable, it would be changed\n")
 
-    # it will raise error if not compatible
-    check_config_compatible(config, config_cp)
-
-    # If trainable (optional for shift, scale, avg_num_neigh), model_state_dict_cp
-    # includes thoes value as parameters, which leads to overwritting updated
-    # dataset's shift, scale, avg_num_neigh. So, we need to ignore those values
-    model.load_state_dict(model_state_dict_cp, strict=False)
-
-    trainer = Trainer(model, config)
-
-    if not continue_dct[KEY.RESET_OPTIMIZER]:
-        trainer.optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
-    if not continue_dct[KEY.RESET_SCHEDULER]:
-        trainer.scheduler.load_state_dict(checkpoint['scheduler_state_dict'])
+    chem_speices_related = {
+        KEY.TYPE_MAP: config_cp[KEY.TYPE_MAP],
+        KEY.NUM_SPECIES: config_cp[KEY.NUM_SPECIES],
+        KEY.CHEMICAL_SPECIES: config_cp[KEY.CHEMICAL_SPECIES],
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER: config_cp[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER],
+    }
+    config.update(chem_speices_related)
 
     Logger().write(f"checkpoint previous epoch was: {from_epoch}\n")
 
@@ -137,4 +127,5 @@ def processing_continue(model, config):
         )
 
     Logger().writeline("checkpoint loading was successful")
-    return trainer, start_epoch, init_csv
+    return (model_state_dict_cp, optimizer_state_dict_cp, scheduler_state_dict_cp), \
+            start_epoch, init_csv
