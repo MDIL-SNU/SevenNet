@@ -171,6 +171,7 @@ def processing_dataset(config, working_dir):
     Logger().write(Logger.format_k_v("training_set size", train_set.len()))
     Logger().write(Logger.format_k_v("validation_set size", valid_set.len()))
 
+    shift, scale, avg_num_neigh = config[KEY.SHIFT], config[KEY.SCALE], config[KEY.AVG_NUM_NEIGHBOR]
     # init shift, scale from trainset
     if not checkpoint_given:
         Logger().write("\nCalculating shift and scale from training set...\n")
@@ -194,16 +195,26 @@ def processing_dataset(config, working_dir):
         Logger().write("Calculating average number of neighbor...\n")
         avg_num_neigh = train_set.get_avg_num_neigh()
         Logger().write(f"average number of neighbor is {avg_num_neigh:.6f}\n")
-        config.update({KEY.SHIFT: shift, KEY.SCALE: scale, KEY.AVG_NUM_NEIGHBOR: avg_num_neigh})
 
-    # some hack for convenience
-    if type(config[KEY.SHIFT]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-        config[KEY.SHIFT] = [config[KEY.SHIFT]] * len(config[KEY.TYPE_MAP])
-    if type(config[KEY.SCALE]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-        config[KEY.SCALE] = [config[KEY.SCALE]] * len(config[KEY.TYPE_MAP])
+    # overwrite shift scale if defined in yaml, regardless of checkpoint
+    if config[KEY.SHIFT] is not False:
+        Logger().write(f"Overwrite shift to user defined (or from checkpot) value: {config[KEY.SHIFT]}\n")
+        if type(config[KEY.SHIFT]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            shift = [config[KEY.SHIFT]] * len(config[KEY.TYPE_MAP])
+        else:
+            shift = config[KEY.SHIFT]  # overwrite shift
+    if config[KEY.SCALE] is not False:
+        Logger().write(f"Overwrite scale to user defined (or from checkpot) value: {config[KEY.SCALE]}\n")
+        if type(config[KEY.SCALE]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            scale = [config[KEY.SCALE]] * len(config[KEY.TYPE_MAP])
+        else:
+            scale = config[KEY.SCALE]  # overwrite scale
+    if type(config[KEY.AVG_NUM_NEIGHBOR]) is float:
+        Logger().write(f"Overwrite avg_num_neigh to user defined (or from checkpot) value: {config[KEY.AVG_NUM_NEIGHBOR]}\n")
+        avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]  # overwrite avg_num_neigh
+        Logger().write(f"Convolutions will be normalized by {avg_num_neigh**(0.5):.4f}\n")
 
-    # If checkpoint is given and no user-defined shift, scale, avg_num_neigh is found,
-    # values will be None. In this case, we will use the value from checkpoint
+    config.update({KEY.SHIFT: shift, KEY.SCALE: scale, KEY.AVG_NUM_NEIGHBOR: avg_num_neigh})
 
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
     if config[KEY.DATA_SHUFFLE]:
