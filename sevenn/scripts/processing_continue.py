@@ -43,8 +43,6 @@ def check_config_compatible(config, config_cp):
         raise ValueError("reset optimizer and scheduler if you want to change "
                          + "trainable configs")
 
-    if config_cp[KEY.TRAIN_AVG_NUM_NEIGH] is True and config[KEY.TRAIN_AVG_NUM_NEIGH] is False:
-        raise ValueError("Trainable neigh > not trainable: NOT SUPPORTED YET, contact to the author")
     #TODO add conition for changed optim/scheduler but not reset
 
 
@@ -59,6 +57,7 @@ def processing_continue(config):
         raise FileNotFoundError(
             f"checkpoint file {continue_dct[KEY.CHECKPOINT]} not found"
         )
+
     # it will raise error if not compatible
     check_config_compatible(config, config_cp)
     Logger().write("Checkpoint config is compatible\n")
@@ -70,32 +69,29 @@ def processing_continue(config):
     scheduler_state_dict_cp = checkpoint['scheduler_state_dict'] \
         if not continue_dct[KEY.RESET_SCHEDULER] else None
 
-    # Use checkpoints values if not specified in yaml
-    if type(config[KEY.SHIFT]) not in [list, float]:
-        shift = model_state_dict_cp['rescale atomic energy.shift'].numpy()
-        Logger().write("Use shift of (defined in checkpoint)\n")
-        Logger().format_k_v("shift", ', '.join([f"{x:.4f}" for x in shift]), write=True)
-        config.update({KEY.SHIFT: shift})
-    if type(config[KEY.SCALE]) not in [list, float]:
-        scale = model_state_dict_cp['rescale atomic energy.scale'].numpy()
-        Logger().write("Use scale of (defined in checkpoint)\n")
-        Logger().format_k_v("scale", ', '.join([f"{x:.4f}" for x in scale]), write=True)
-        config.update({KEY.SCALE: scale})
-    if type(config[KEY.AVG_NUM_NEIGHBOR]) is not float:
-        avg_num_neigh = (model_state_dict_cp['1 convolution.denumerator']**2).item()
-        Logger().write("Use avg_num_neigh of (defined in checkpoint)\n")
-        Logger().format_k_v("avg_num_neigh", f"{avg_num_neigh:.4f}", write=True)
-        config.update({KEY.AVG_NUM_NEIGHBOR: avg_num_neigh})
+    shift_cp = model_state_dict_cp['rescale atomic energy.shift'].numpy()
+    del model_state_dict_cp['rescale atomic energy.shift']
 
-    Logger().write("If you don't want to continue with these values, "
-                   + "specify values you want to input yaml\n")
-    Logger().write("If the values were trainable, it would be changed\n")
+    scale_cp = model_state_dict_cp['rescale atomic energy.scale'].numpy()
+    del model_state_dict_cp['rescale atomic energy.scale']
+
+    avg_num_neigh_cp = []
+    for i in range(config_cp[KEY.NUM_CONVOLUTION]):
+        avg_num_neigh_cp.append(
+            (model_state_dict_cp[f'{i} convolution.denumerator']**2).item())
+        del model_state_dict_cp[f'{i} convolution.denumerator']
+
+    # these dataset-dependent values should be later handled by processing_dataset.py
+    config.update({KEY.SHIFT + "_cp": shift_cp,
+                   KEY.SCALE + "_cp": scale_cp,
+                   KEY.AVG_NUM_NEIGH + "_cp": avg_num_neigh_cp})
 
     chem_speices_related = {
         KEY.TYPE_MAP: config_cp[KEY.TYPE_MAP],
         KEY.NUM_SPECIES: config_cp[KEY.NUM_SPECIES],
         KEY.CHEMICAL_SPECIES: config_cp[KEY.CHEMICAL_SPECIES],
-        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER: config_cp[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER],
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER:
+        config_cp[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER],
     }
     config.update(chem_speices_related)
 
@@ -127,7 +123,8 @@ def processing_continue(config):
         Logger().writeline(
             f"{csv_fname} file not found, new csv file will be created"
         )
-
     Logger().writeline("checkpoint loading was successful")
-    return (model_state_dict_cp, optimizer_state_dict_cp, scheduler_state_dict_cp), \
-            start_epoch, init_csv
+
+    state_dicts =\
+        (model_state_dict_cp, optimizer_state_dict_cp, scheduler_state_dict_cp)
+    return state_dicts, start_epoch, init_csv
