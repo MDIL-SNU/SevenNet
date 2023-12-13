@@ -8,6 +8,8 @@ import torch
 from torch_scatter import scatter
 import numpy as np
 from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import Lasso
+from sklearn.linear_model import Ridge
 from ase.data import chemical_symbols
 
 import sevenn.util as util
@@ -276,9 +278,15 @@ class AtomGraphDataset:
         y = torch.Tensor([x[self.DATA_KEY_ENERGY] for x in data_list])
         c = c.numpy()
         y = y.numpy()
-        reg = LinearRegression(fit_intercept=False).fit(c, y)
 
-        return torch.Tensor(reg.coef_)
+        # tweak to fine tune training from many-element to small element
+        zero_indicies = np.all(c == 0, axis=0)
+        c_reduced = c[:, ~zero_indicies]
+        full_coeff = np.zeros(num_chem_species)
+        coef_reduced = Ridge(alpha=0.1, fit_intercept=False).fit(c_reduced, y).coef_
+        full_coeff[~zero_indicies] = coef_reduced
+
+        return full_coeff
 
     def get_force_rms(self):
         force_list = []
