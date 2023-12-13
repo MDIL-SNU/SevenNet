@@ -49,7 +49,7 @@ def handle_shift_scale(config, train_set, checkpoint_given):
         shift = \
             train_set.get_species_ref_energy_by_linear_comb(n_chem)
         scale = \
-            train_set.get_species_wise_force_rms()
+            train_set.get_species_wise_force_rms(n_chem)
         chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
         Logger().write("calculated specie wise shift, scale is\n")
         for cstr, sh, sc in zip(chem_strs, shift, scale):

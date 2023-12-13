@@ -257,7 +257,7 @@ class AtomGraphDataset:
         """
         return self.get_per_atom_mean(self.DATA_KEY_ENERGY)
 
-    def get_species_ref_energy_by_linear_comb(self, num_chem_species=0):
+    def get_species_ref_energy_by_linear_comb(self, num_chem_species):
         """
         Total energy as y, composition as c_i,
         solve linear regression of y = c_i*X
@@ -268,10 +268,6 @@ class AtomGraphDataset:
         """
         assert self.x_is_one_hot_idx is True
         data_list = self.to_list()
-
-        if num_chem_species == 0:
-            tmp = torch.concat([x[self.DATA_KEY_X] for x in data_list])
-            num_chem_species = int(tmp.max() + 1)
 
         c = torch.zeros((len(data_list), num_chem_species))
         for idx, datum in enumerate(data_list):
@@ -291,7 +287,7 @@ class AtomGraphDataset:
         force_list = torch.Tensor(force_list)
         return float(torch.sqrt(torch.mean(torch.pow(force_list, 2))))
 
-    def get_species_wise_force_rms(self):
+    def get_species_wise_force_rms(self, num_chem_species):
         """
         Return force rms for each species
         Averaged by each components (x, y, z)
@@ -302,9 +298,10 @@ class AtomGraphDataset:
         atomx = torch.concat([d[self.DATA_KEY_X] for d in data_list])
         force = torch.concat([d[self.DATA_KEY_FORCE] for d in data_list])
 
-        return torch.sqrt(
-            scatter(force.square(), atomx, dim=0, reduce='mean').mean(dim=1)
-        )
+        rms = torch.sqrt(scatter(force.square(), atomx, dim=0, reduce='mean').mean(dim=1))
+        if len(rms) < num_chem_species:
+            rms = torch.cat([rms, torch.zeros(num_chem_species - len(rms))])
+        return rms
 
     def get_avg_num_neigh(self):
         n_neigh = []

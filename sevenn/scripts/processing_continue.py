@@ -108,7 +108,7 @@ def processing_continue(config):
 
     # decide csv file to continue
     init_csv = True
-    csv_fname = config[KEY.CSV_LOG]
+    csv_fname = config_cp[KEY.CSV_LOG]
     if os.path.isfile(csv_fname):
         # I hope python compare dict well
         if config_cp[KEY.ERROR_RECORD] == config[KEY.ERROR_RECORD]:
