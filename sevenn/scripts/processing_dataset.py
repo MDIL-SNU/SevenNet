@@ -20,7 +20,7 @@ def dataset_load(file: str, config):
     Logger().timer_start("loading dataset")
 
     if file.endswith(".sevenn_data"):
-        dataset = torch.load(file)
+        dataset = torch.load(file, map_location="cpu")
     else:
         reader, _ = match_reader(config[KEY.DATA_FORMAT],
                                  **config[KEY.DATA_FORMAT_ARGS])
@@ -114,9 +114,18 @@ def processing_dataset(config, working_dir):
     else:
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
+    # TODO: I think manual chemical species input is redundant
     chem_in_db = dataset.get_species()
     if config[KEY.CHEMICAL_SPECIES] == "auto" and not checkpoint_given:
+        Logger().writeline("Auto detect chemical species from dataset")
         config.update(chemical_species_preprocess(chem_in_db))
+    elif config[KEY.CHEMICAL_SPECIES] == "auto" and checkpoint_given:
+        pass # copied from checkpoint in processing_continue.py
+    elif config[KEY.CHEMICAL_SPECIES] != "auto" and not checkpoint_given:
+        pass # processed in parse_input.py
+    else:  # config[KEY.CHEMICAL_SPECIES] != "auto" and checkpoint_given
+        Logger().writeline("Ignore chemical species in yaml, use checkpoint")
+        # already processed in processing_continue.py
 
     # basic dataset compatibility check with previous model
     if checkpoint_given:
