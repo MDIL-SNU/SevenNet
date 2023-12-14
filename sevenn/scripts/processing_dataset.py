@@ -3,7 +3,6 @@ import glob
 import random
 
 import torch
-from torch_geometric.loader import DataLoader
 
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.train.dataload import match_reader, file_to_dataset
@@ -21,7 +20,7 @@ def dataset_load(file: str, config):
     Logger().timer_start("loading dataset")
 
     if file.endswith(".sevenn_data"):
-        dataset = torch.load(file)
+        dataset = torch.load(file, map_location="cpu")
     else:
         reader, _ = match_reader(config[KEY.DATA_FORMAT],
                                  **config[KEY.DATA_FORMAT_ARGS])
@@ -35,14 +34,70 @@ def dataset_load(file: str, config):
     return dataset
 
 
+def handle_shift_scale(config, train_set, checkpoint_given):
+    shift, scale, avg_num_neigh = None, None, None
+
+    Logger().writeline("\nCalculating statistic values from dataset")
+    if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+        shift = train_set.get_per_atom_energy_mean()
+        scale = train_set.get_force_rms()
+        Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
+        Logger().write(f"calculated force rms scale is {scale:.6f} eV/Angstrom\n")
+    else:
+        type_map = config[KEY.TYPE_MAP]
+        n_chem = len(type_map)
+        shift = \
+            train_set.get_species_ref_energy_by_linear_comb(n_chem)
+        scale = \
+            train_set.get_species_wise_force_rms(n_chem)
+        chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
+        Logger().write("calculated specie wise shift, scale is\n")
+        for cstr, sh, sc in zip(chem_strs, shift, scale):
+            Logger().format_k_v(f"{cstr}", f"{sh:.6f}, {sc:.6f}", write=True)
+    avg_num_neigh = train_set.get_avg_num_neigh()
+    Logger().format_k_v("avg_num_neigh", f"{avg_num_neigh:.6f}", write=True)
+
+    if checkpoint_given \
+            and config[KEY.CONTINUE][KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT]:
+        Logger().writeline("Overwrite shift, scale, avg_num_neigh from checkpoint")
+        # Values extracted from checkpoint in processing_continue.py
+        shift = config[KEY.SHIFT + "_cp"]
+        scale = config[KEY.SCALE + "_cp"]
+        avg_num_neigh = config[KEY.AVG_NUM_NEIGH + "_cp"]
+
+    # overwrite shift scale anyway if defined in yaml.
+    if config[KEY.SHIFT] is not False:
+        Logger().writeline("Overwrite shift to value given in yaml")
+        if type(config[KEY.SHIFT]) is float \
+                and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            shift = [config[KEY.SHIFT]] * len(config[KEY.TYPE_MAP])
+        else:
+            shift = config[KEY.SHIFT]
+    if config[KEY.SCALE] is not False:
+        Logger().writeline("Overwrite scale to value given in yaml")
+        if type(config[KEY.SCALE]) is float \
+                and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            scale = [config[KEY.SCALE]] * len(config[KEY.TYPE_MAP])
+        else:
+            scale = config[KEY.SCALE]
+    if type(config[KEY.AVG_NUM_NEIGH]) in [float, list]:
+        Logger().writeline("Overwrite avg_num_neigh to value given in yaml")
+        avg_num_neigh = config[KEY.AVG_NUM_NEIGH]
+
+    if type(avg_num_neigh) is float:
+        avg_num_neigh = [avg_num_neigh] * config[KEY.NUM_CONVOLUTION]
+
+    return shift, scale, avg_num_neigh
+
+
 # TODO: This is too long
 def processing_dataset(config, working_dir):
     prefix = f"{os.path.abspath(working_dir)}/"
     is_stress = (config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS])
     checkpoint_given = config[KEY.CONTINUE][KEY.CHECKPOINT] is not False
+    cutoff = config[KEY.CUTOFF]
 
     Logger().write("\nInitializing dataset...\n")
-    cutoff = config[KEY.CUTOFF]
 
     dataset = AtomGraphDataset({}, cutoff)
     load_dataset = config[KEY.LOAD_DATASET]
@@ -59,15 +114,24 @@ def processing_dataset(config, working_dir):
     else:
         dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
+    # TODO: I think manual chemical species input is redundant
     chem_in_db = dataset.get_species()
     if config[KEY.CHEMICAL_SPECIES] == "auto" and not checkpoint_given:
+        Logger().writeline("Auto detect chemical species from dataset")
         config.update(chemical_species_preprocess(chem_in_db))
+    elif config[KEY.CHEMICAL_SPECIES] == "auto" and checkpoint_given:
+        pass # copied from checkpoint in processing_continue.py
+    elif config[KEY.CHEMICAL_SPECIES] != "auto" and not checkpoint_given:
+        pass # processed in parse_input.py
+    else:  # config[KEY.CHEMICAL_SPECIES] != "auto" and checkpoint_given
+        Logger().writeline("Ignore chemical species in yaml, use checkpoint")
+        # already processed in processing_continue.py
 
     # basic dataset compatibility check with previous model
     if checkpoint_given:
         chem_from_cp = config[KEY.CHEMICAL_SPECIES]
         if not all(chem in chem_from_cp for chem in chem_in_db):
-            raise ValueError("Chemical species in checkpoint is not compatible with dataset")
+            raise ValueError("Chemical species in checkpoint is not compatible")
 
     #--------------- save dataset regardless of train/valid--------------#
     save_dataset = config[KEY.SAVE_DATASET]
@@ -171,50 +235,11 @@ def processing_dataset(config, working_dir):
     Logger().write(Logger.format_k_v("training_set size", train_set.len()))
     Logger().write(Logger.format_k_v("validation_set size", valid_set.len()))
 
-    shift, scale, avg_num_neigh = config[KEY.SHIFT], config[KEY.SCALE], config[KEY.AVG_NUM_NEIGHBOR]
-    # init shift, scale from trainset
-    if not checkpoint_given:
-        Logger().write("\nCalculating shift and scale from training set...\n")
-        if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            shift = train_set.get_per_atom_energy_mean()
-            scale = train_set.get_force_rms()
-            Logger().write(f"calculated per_atom_energy mean shift is {shift:.6f} eV\n")
-            Logger().write(f"calculated force rms scale is {scale:.6f} eV/Angstrom\n")
-        else:
-            type_map = config[KEY.TYPE_MAP]
-            n_chem = len(type_map)
-            shift = \
-                train_set.get_species_ref_energy_by_linear_comb(n_chem)
-            scale = \
-                train_set.get_species_wise_force_rms()
-            chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
-            Logger().write("Calculated specie wise shift, scale is\n")
-            for k, (sft, scl) in zip(chem_strs, zip(shift, scale)):
-                Logger().write(f"{k:<3} : {sft:.6f} eV, {scl:.6f} eV/Angstrom\n")
-        # init avg_num_niegh from trainset
-        Logger().write("Calculating average number of neighbor...\n")
-        avg_num_neigh = train_set.get_avg_num_neigh()
-        Logger().write(f"average number of neighbor is {avg_num_neigh:.6f}\n")
-
-    # overwrite shift scale if defined in yaml, regardless of checkpoint
-    if config[KEY.SHIFT] is not False:
-        Logger().write(f"Overwrite shift to user defined (or from checkpot) value: {config[KEY.SHIFT]}\n")
-        if type(config[KEY.SHIFT]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            shift = [config[KEY.SHIFT]] * len(config[KEY.TYPE_MAP])
-        else:
-            shift = config[KEY.SHIFT]  # overwrite shift
-    if config[KEY.SCALE] is not False:
-        Logger().write(f"Overwrite scale to user defined (or from checkpot) value: {config[KEY.SCALE]}\n")
-        if type(config[KEY.SCALE]) is float and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            scale = [config[KEY.SCALE]] * len(config[KEY.TYPE_MAP])
-        else:
-            scale = config[KEY.SCALE]  # overwrite scale
-    if type(config[KEY.AVG_NUM_NEIGHBOR]) is float:
-        Logger().write(f"Overwrite avg_num_neigh to user defined (or from checkpot) value: {config[KEY.AVG_NUM_NEIGHBOR]}\n")
-        avg_num_neigh = config[KEY.AVG_NUM_NEIGHBOR]  # overwrite avg_num_neigh
-        Logger().write(f"Convolutions will be normalized by {avg_num_neigh**(0.5):.4f}\n")
-
-    config.update({KEY.SHIFT: shift, KEY.SCALE: scale, KEY.AVG_NUM_NEIGHBOR: avg_num_neigh})
+    shift, scale, avg_num_neigh =\
+        handle_shift_scale(config, train_set, checkpoint_given)
+    config.update({KEY.SHIFT: shift,
+                   KEY.SCALE: scale,
+                   KEY.AVG_NUM_NEIGH: avg_num_neigh})
 
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
     if config[KEY.DATA_SHUFFLE]:

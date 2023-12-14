@@ -225,7 +225,8 @@ class Logger(metaclass=Singleton):
         header = " " * (label_len + pad) + " ".join(
             col_name.ljust(pad) for col_name, pad in zip(col_names, max_col_lengths)
         )
-        separator = "-".join("-" * pad for pad in max_col_lengths) + "-" * (label_len + pad)
+        separator = "-".join("-" * pad for pad in max_col_lengths) \
+            + "-" * (label_len + pad)
 
         # Print header and separator
         Logger().writeline(header)
@@ -346,3 +347,34 @@ class Logger(metaclass=Singleton):
 
         self.writeline('\n'.join(table_output))
 
+    #TODO: print it without config
+    def print_model_info(self, model, config):
+        from functools import partial
+        kv_write = partial(self.format_k_v, write=True)
+        self.writeline("Irreps of features")
+        kv_write("edge_feature",
+                 model.get_irreps_in("EdgeEmbedding", "irreps_out"))
+        for i in range(config[KEY.NUM_CONVOLUTION]):
+            kv_write(f"{i}th node_feature",
+                     model.get_irreps_in(f"{i}_self_interaction_1"))
+        kv_write("readout irreps",
+                 model.get_irreps_in(f"{i} equivariant gate", "irreps_out"))
+        shift = model._modules["rescale atomic energy"].shift
+        scale = model._modules["rescale atomic energy"].scale
+        if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            kv_write("global shift", f"{shift.item():.6f}")
+            kv_write("global scale", f"{scale.item():.6f}")
+        else:
+            chem_str =\
+                sevenn.util.onehot_to_chem(list(range(config[KEY.NUM_SPECIES])),
+                                           config[KEY.TYPE_MAP])
+            self.writeline("shift, scale tuple for each chemical species")
+            for cstr, sh, sc in zip(chem_str, shift, scale):
+                kv_write(f"{cstr}", f"{sh:.6f}, {sc:.6f}")
+
+        self.writeline("Denumerator (avg_num_neigh**0.5) for each layer")
+        for i in range(config[KEY.NUM_CONVOLUTION]):
+            denumerator = model._modules[f'{i} convolution'].denumerator
+            kv_write(f"{i}th layer denumerator", f"{denumerator.item():.6f}")
+        num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        self.writeline(f"Total number of weight in model is {num_weights}\n")

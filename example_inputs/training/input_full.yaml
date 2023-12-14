@@ -6,9 +6,9 @@
 model:
     chemical_species: 'Auto'                      # Chemical symbols present in the dataset, guess from load_dataset data if 'auto'
     cutoff: 4.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
-    channel: 4                                    # Equivalent to 'num_features' in nequip. Represents the multiplicity of node features. 32 is recomanded as default.
-    lmax: 1                                       # Maximum order of irreps (rotation order). 1 is recomanded as default
-    num_convolution_layer: 4                      # Equivalent to 'num_layers' in nequip. Represents the number of message passing layers in the model. 3 is recomanded as default
+    channel: 4                                    # Equivalent to 'num_features' in nequip. Represents the multiplicity of node features. 32 is recommended as default.
+    lmax: 1                                       # Maximum order of irreps (rotation order). 1 is recommended as default
+    num_convolution_layer: 4                      # Equivalent to 'num_layers' in nequip. Represents the number of message passing layers in the model. 3 is recommended as default
 
     weight_nn_hidden_neurons: [64, 64]            # Equivalent to 'invariant_layers' and 'neurons' in nequip. Represents the neural network for the radial basis
     radial_basis:                                 # Function and its parameters to encode radial distance
@@ -24,7 +24,6 @@ model:
 
     is_parity: True                               # Pairy False (to SE(3) group) is not supported yet (on working!)
 
-    avg_num_neigh       : True                    # Normalize the aggregation of messages by the average number of neighbors calculated from the training set
     train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
     train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
     optimize_by_reduce: False                     # Speed-up by eliminating non-scalar computations at the last layer
@@ -48,16 +47,19 @@ train:
 
     per_epoch:  10                                 # Generate checkpoints every this epoch
 
+    # TotalEnergy, Energy, Force, Stress, Stress_GPa, TotalLoss
+    # RMSE, MAE, Loss available
     error_record:
         - ['Energy', 'RMSE']
         - ['Force', 'RMSE']
         - ['Stress', 'RMSE']
         - ['TotalLoss', 'None']
 
-    # continue: 
-    #    reset_optimizer: False 
-    #    reset_scheduler: False 
-    #    checkpoint: 'path_to_previous_checkpoint/checkpoint_best.pth'
+    #continue: 
+        #reset_optimizer: False 
+        #reset_scheduler: False  
+        #checkpoint: 'path_to_previous_checkpoint/checkpoint_best.pth'
+        #use_statistic_values_of_checkpoint: False # whether use shift, scale, and avg_num_neigh from checkpoint or update from new dataset
 
 data:
     batch_size: 2                                 # Batch size. If training fails due to memory shortage, lower this value

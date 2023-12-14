@@ -149,12 +149,12 @@ def init_model_config(config: dict):
         model_meta[KEY.IRREPS_MANUAL] = config[KEY.IRREPS_MANUAL]
 
     #TODO: implement this behavior in _const.py not here
-    if KEY.AVG_NUM_NEIGHBOR not in config.keys():
-        model_meta[KEY.AVG_NUM_NEIGHBOR] = defaults[KEY.AVG_NUM_NEIGHBOR]
+    if KEY.AVG_NUM_NEIGH not in config.keys():
+        model_meta[KEY.AVG_NUM_NEIGH] = defaults[KEY.AVG_NUM_NEIGH]
     else:
-        if type(config[KEY.AVG_NUM_NEIGHBOR]) not in [float, bool]:
-            raise ValueError("avg_num_neighbor should be float or bool")
-        model_meta[KEY.AVG_NUM_NEIGHBOR] = config[KEY.AVG_NUM_NEIGHBOR]
+        if type(config[KEY.AVG_NUM_NEIGH]) not in [float, bool, list]:
+            raise ValueError("avg_num_neigh should be float or bool")
+        model_meta[KEY.AVG_NUM_NEIGH] = config[KEY.AVG_NUM_NEIGH]
 
     # init simpler ones
     for key, cond in _const.MODEL_CONFIG_CONDITION.items():
@@ -212,7 +212,9 @@ def init_train_config(config: dict):
     param_type_dicts = [optim_param_name_type_dict,
                         scheduler_param_name_type_dict,
                         loss_param_name_type_dict]
-    for idx, param_key in enumerate([KEY.OPTIM_PARAM, KEY.SCHEDULER_PARAM, KEY.LOSS_PARAM]):
+    for idx, param_key in enumerate([KEY.OPTIM_PARAM,
+                                     KEY.SCHEDULER_PARAM,
+                                     KEY.LOSS_PARAM]):
         if param_key not in config.keys():
             continue
         user_input = config[param_key]
@@ -308,7 +310,7 @@ def init_data_config(config: dict):
             config[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = True
             data_meta[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = True
         else:
-            raise ValueError(f"shift/scale should be float or list of float")
+            raise ValueError("shift/scale should be float or list of float")
 
     for key, cond in _const.DATA_CONFIG_CONDITION.items():
         data_meta[key] = config_initialize(key, config, defaults, cond)

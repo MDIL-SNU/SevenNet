@@ -118,6 +118,7 @@ CHECKPOINT = "checkpoint"
 RESET_OPTIMIZER = "reset_optimizer"
 RESET_SCHEDULER = "reset_scheduler"
 RESET_EPOCH = "reset_epoch"
+USE_STATISTIC_VALUES_OF_CHECKPOINT = "use_statistic_values_of_checkpoint"
 
 CSV_LOG = "csv_log"
 
@@ -176,7 +177,8 @@ READOUT_AS_FCN = "readout_as_fcn"
 READOUT_FCN_HIDDEN_NEURONS = "readout_fcn_hidden_neurons"
 READOUT_FCN_ACTIVATION = "readout_fcn_activation"
 
-AVG_NUM_NEIGHBOR = "avg_num_neigh"
+AVG_NUM_NEIGHBOR = "avg_num_neigh"  # deprecated
+AVG_NUM_NEIGH = "avg_num_neigh"
 SHIFT = "shift"
 SCALE = "scale"
 

@@ -119,7 +119,9 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     radial_basis_module, radial_basis_num = init_radial_basis(model_config)
     cutoff_function_module = init_cutoff_function(model_config)
 
-    avg_num_neigh = model_config[KEY.AVG_NUM_NEIGHBOR]
+    avg_num_neigh = model_config[KEY.AVG_NUM_NEIGH]
+    if type(avg_num_neigh) is not list:
+        avg_num_neigh = [avg_num_neigh] * num_convolution_layer
     train_avg_num_neigh = model_config[KEY.TRAIN_AVG_NUM_NEIGH]
 
     edge_embedding = EdgeEmbedding(
@@ -281,7 +283,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                 weight_layer_input_to_hidden=weight_nn_layers,
                 weight_layer_act=act_radial,
                 # TODO: BOTNet says no sqrt is better
-                denumerator=avg_num_neigh**0.5,
+                denumerator=avg_num_neigh[i]**0.5,
                 train_denumerator=train_avg_num_neigh,
                 is_parallel=parallel)
 
