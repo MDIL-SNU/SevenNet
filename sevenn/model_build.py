@@ -16,7 +16,7 @@ from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.nn.linear import IrrepsLinear, AtomReduce, FCN_e3nn
 from sevenn.nn.self_connection import SelfConnectionIntro,\
     SelfConnectionMACEIntro, SelfConnectionOutro
-from sevenn.nn.convolution import IrrepsConvolution, ElementDependentRadialWeights
+from sevenn.nn.convolution import IrrepsConvolution
 from sevenn.nn.equivariant_gate import EquivariantGate
 from sevenn.nn.activation import ShiftedSoftPlus
 from sevenn.nn.scale import Rescale, SpeciesWiseRescale
@@ -297,14 +297,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             #######################################################
             layers = layers_list[layers_idx]
             # communication from lammps here
-
-        if use_elemement_dependent_radial_weights:
-            edrw = ElementDependentRadialWeights(irreps_x=irreps_x)
-            weight_nn_layers =\
-                [radial_basis_num + edrw.get_additional_weights_dim()]\
-                + weight_nn_hidden
-            interaction_block[f"{i} element_dependent_radial_weights"] = edrw
-            data_key_weight_input = edrw.key_radial_weights_new
 
         # convolution part, l>lmax is droped as defined in irreps_out
         interaction_block[f"{i} convolution"] = \
