@@ -10,9 +10,11 @@ import sevenn._keys as KEY
 SEVENN_VERSION = "0.9.0"
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
+# TODO: support None. This became difficult because of paralell model
+IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'MACE']
+
 SUPPORTING_METRICS = ['RMSE', 'ComponentRMSE', 'MAE', 'Loss']
 SUPPORTING_ERROR_TYPES = ['TotalEnergy', 'Energy', 'Force', 'Stress', 'Stress_GPa', 'TotalLoss']
-
 
 IMPLEMENTED_MODEL = ['E3_equivariant_model']
 
@@ -103,6 +105,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     # Applied af readout as fcn is True
     KEY.READOUT_FCN_HIDDEN_NEURONS: [30, 30],
     KEY.READOUT_FCN_ACTIVATION: "relu",
+    KEY.SELF_CONNECTION_TYPE: "nequip",
 }
 
 
@@ -185,6 +188,7 @@ MODEL_CONFIG_CONDITION = {
         lambda x: all(val > 0 and isinstance(val, int) for val in x),
     KEY.READOUT_FCN_ACTIVATION: lambda x: x in ACTIVATION.keys(),
     KEY.ACTIVATION_RADIAL: lambda x: x in ACTIVATION.keys(),
+    KEY.SELF_CONNECTION_TYPE: lambda x: x in IMPLEMENTED_SELF_CONNECTION_TYPE,
 }
 
 
