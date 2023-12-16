@@ -88,7 +88,7 @@ class IrrepsConvolution(nn.Module):
         )
 
         x = scatter(message, edge_dst, dim=0, dim_size=len(x))
-        x = x.div(self.denumerator**2)
+        x = x.div(self.denumerator)
         if self.is_parallel:
             # NLOCAL is # of atoms in system at 'CPU'
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
