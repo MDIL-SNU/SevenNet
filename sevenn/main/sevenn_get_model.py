@@ -38,8 +38,8 @@ def main(args=None):
     if get_serial:
         deploy(stct_dct, config, output_prefix)
     else:
-        if config[KEY.NUM_CONVOLUTION] == 1:
-            raise ValueError("parallel model of NUM_CONVOLUTION == 1 is meaningless")
+        #if config[KEY.NUM_CONVOLUTION] == 1:
+        #    raise ValueError("parallel model of NUM_CONVOLUTION == 1 is meaningless")
         deploy_parallel(stct_dct, config, output_prefix)
 
 
