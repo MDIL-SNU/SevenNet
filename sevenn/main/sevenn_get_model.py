@@ -14,6 +14,7 @@ output_name_help = "filename prefix of deployed model"
 get_parallel_help = "whether deploy parallel model"
 
 
+
 def main(args=None):
     checkpoint, output_prefix, get_parallel = cmd_parse_get_model(args)
     get_serial = not get_parallel

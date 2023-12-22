@@ -7,7 +7,6 @@ from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.optim import loss_dict
 import sevenn._keys as KEY
 
-
 ERROR_TYPES = {
     "TotalEnergy": {
         "name": "Energy",
