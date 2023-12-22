@@ -7,7 +7,6 @@ from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.optim import loss_dict
 import sevenn._keys as KEY
 
-
 ERROR_TYPES = {
     "TotalEnergy": {
         "name": "Energy",
@@ -86,6 +85,9 @@ class ErrorMetric():
             y_ref = y_ref / natoms
             y_pred = y_pred / natoms
         return y_ref, y_pred
+
+    def ddp_reduce(self, device):
+        self.value._ddp_reduce(device)
 
     def reset(self):
         self.value = AverageNumber()
@@ -207,6 +209,10 @@ class CombinedError(ErrorMetric):
     def reset(self):
         for metric, _ in self.metrics:
             metric.reset()
+
+    def ddp_reduce(self, device):  # override
+        for metric, _ in self.metrics:
+            metric.value._ddp_reduce(device)
 
     def get(self):
         val = 0.0

@@ -20,6 +20,7 @@ class Trainer():
             dist.barrier()
             self.model = DDP(model.to(device), device_ids=[device])
             self.model.module.set_is_batch_data(True)
+            self.rank = config[KEY.LOCAL_RANK]
         else:
             device = config[KEY.DEVICE]
             self.model = model.to(device)
@@ -41,10 +42,10 @@ class Trainer():
         if self.is_stress:
             self.loss_types.append(LossType.STRESS)
 
-        self.param = [p for p in model.parameters() if p.requires_grad]
+        param = [p for p in self.model.parameters() if p.requires_grad]
         optimizer = optim_dict[config[KEY.OPTIMIZER].lower()]
         optim_param = config[KEY.OPTIM_PARAM]
-        self.optimizer = optimizer(self.param, **optim_param)
+        self.optimizer = optimizer(param, **optim_param)
 
         scheduler = scheduler_dict[config[KEY.SCHEDULER].lower()]
         scheduler_param = config[KEY.SCHEDULER_PARAM]
@@ -67,6 +68,8 @@ class Trainer():
             self.model.eval()
 
         for step, batch in enumerate(loader):
+            if is_train:
+                self.optimizer.zero_grad()
             batch = batch.to(self.device, non_blocking=True)
             output = self.model(batch)
             error_recorder.update(output)
@@ -74,7 +77,6 @@ class Trainer():
                 total_loss = self.loss_calculator(output)
                 total_loss.backward()
                 self.optimizer.step()
-                self.optimizer.zero_grad(set_to_none=True)
 
         if self.distributed:
             self.recorder_all_reduce(error_recorder)
@@ -101,7 +103,8 @@ class Trainer():
 
     def recorder_all_reduce(self, recorder: ErrorRecorder):
         for metric in recorder.metrics:
-            metric.value._ddp_reduce(self.device)
+            #metric.value._ddp_reduce(self.device)
+            metric.ddp_reduce(self.device)
 
     # Not used, ddp automatically averages gradients
     def average_gradient(self):

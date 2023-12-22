@@ -14,6 +14,7 @@ output_name_help = "filename prefix of deployed model"
 get_parallel_help = "whether deploy parallel model"
 
 
+
 def main(args=None):
     checkpoint, output_prefix, get_parallel = cmd_parse_get_model(args)
     get_serial = not get_parallel
@@ -38,8 +39,8 @@ def main(args=None):
     if get_serial:
         deploy(stct_dct, config, output_prefix)
     else:
-        if config[KEY.NUM_CONVOLUTION] == 1:
-            raise ValueError("parallel model of NUM_CONVOLUTION == 1 is meaningless")
+        #if config[KEY.NUM_CONVOLUTION] == 1:
+        #    raise ValueError("parallel model of NUM_CONVOLUTION == 1 is meaningless")
         deploy_parallel(stct_dct, config, output_prefix)
 
 
