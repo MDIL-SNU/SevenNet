@@ -76,8 +76,8 @@ Parallel model can be obtained in similar way
 sevenn_get_model checkpoint_best.pt -p
 ```
 
-This will create multiple of deployed_paralell_*.pt' files. The number of deployed models are depend on number of message passing layers used in model.
-These models can be used as lammps potential to run paralell MD simulations with GNN potential using multiple GPU cards.
+This will create multiple of deployed_parallel_*.pt' files. The number of deployed models are depend on number of message passing layers used in model.
+These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
 ## Requirements for Molecular Dynamics (MD)
 
@@ -126,7 +126,7 @@ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cm
 ```
 
 Unfortunatly, I found that cuda-aware MPI is not that popular for now and there is lots of obstacls tuning versions between open MPI, CUDA, torch, etc.
-If you don't need paralell MD simulations, you can use normal MPI distributions or not using MPI at all. Still the serial version works well.
+If you don't need parallel MD simulations, you can use normal MPI distributions or not using MPI at all. Still the serial version works well.
 You can also have seperate virtual environment for lammps run only. You need only proper torch, cuda, mpi for this case. (No need to install torch_geometric)
 
 ## Usage for MD
