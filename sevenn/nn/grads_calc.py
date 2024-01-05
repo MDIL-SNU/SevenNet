@@ -31,6 +31,5 @@ class GradsCalc(nn.Module):
         grads = torch.autograd.grad(data[self.KEY_OF], tensors)
         for tensor, grad, out_key in zip(tensors, grads, self.KEY_OUT_LIST):
             data[out_key] = grad
-            #tensor.grad = None
+            # tensor.grad = None
             tensor.requires_grad_(False)
-

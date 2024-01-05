@@ -1,0 +1,29 @@
+# Type: subject
+##### Subject 50 characters ################# -> |
+
+# (optional) Body Message
+###### Body 72 characters ######################################### -> |
+
+# (optional) Footer - Issue Tracker Number or URL
+
+# --- COMMIT END ---
+# Type can be
+#   feat    : new feature
+#   fix     : bug fix
+#   build   : modify build-related files
+#   refactor: refactor production code
+#   perf    : change that improves performance
+#   style   : code formatting, add semi colons, etc; no code change
+#   docs    : add, edit, delete of documents or comments
+#   test    : add, edit, delete of test code; no production code change
+#   chore   : updating grunt tasks etc; no production code change
+# ------------------
+# Commit rules:
+#   Include a commit type in the subject line
+#   Capitalize the subject line
+#   Use the imperative mood and present tense in the subject line
+#   Do not end the subject line with a period
+#   Separate subject from body with a blank line
+#   Use the body to explain what and why vs. how
+#   Use multiple lines with "-" for bullet points in body
+# ------------------

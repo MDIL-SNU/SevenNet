@@ -11,9 +11,8 @@ the GNU General Public License.
 See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
-
 #ifdef PAIR_CLASS
-PairStyle(e3gnn,PairE3GNN)
+PairStyle(e3gnn, PairE3GNN)
 
 #else
 
@@ -24,31 +23,32 @@ PairStyle(e3gnn,PairE3GNN)
 
 #include <torch/torch.h>
 
-namespace LAMMPS_NS{
-  class PairE3GNN : public Pair{
-    private:
-      double cutoff;
-      double cutoff_square;
-      torch::jit::Module model;
-      torch::Device device = torch::kCPU;
-      int nelements;
-      bool print_info = false;
+namespace LAMMPS_NS {
+class PairE3GNN : public Pair {
+private:
+  double cutoff;
+  double cutoff_square;
+  torch::jit::Module model;
+  torch::Device device = torch::kCPU;
+  int nelements;
+  bool print_info = false;
 
-      int nedges_bound = -1;
-    public:
-      PairE3GNN(class LAMMPS *);
-      ~PairE3GNN();
-      void compute(int, int);
+  int nedges_bound = -1;
 
-      void settings(int, char **);
-      //read Atom type string from input script & related coeff
-      void coeff(int, char **);
-      void allocate();
+public:
+  PairE3GNN(class LAMMPS *);
+  ~PairE3GNN();
+  void compute(int, int);
 
-      void init_style();
-      double init_one(int, int);
-  };
-}
+  void settings(int, char **);
+  // read Atom type string from input script & related coeff
+  void coeff(int, char **);
+  void allocate();
+
+  void init_style();
+  double init_one(int, int);
+};
+} // namespace LAMMPS_NS
 
 #endif
 #endif

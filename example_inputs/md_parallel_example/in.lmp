@@ -1,5 +1,5 @@
 #--------------------------- Simulation variables -----------------------------#
-  
+
   # Simulation control parameters.
   variable          T equal 500
 

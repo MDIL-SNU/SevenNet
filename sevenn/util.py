@@ -39,16 +39,18 @@ def to_atom_graph_list(atom_graph_batch):
 
     indices = atom_graph_batch[KEY.NUM_ATOMS].tolist()
 
-    atomic_energy_list =\
-        torch.split(atom_graph_batch[KEY.ATOMIC_ENERGY], indices)
-    inferred_total_energy_list =\
-        torch.unbind(atom_graph_batch[KEY.PRED_TOTAL_ENERGY])
-    inferred_force_list =\
-        torch.split(atom_graph_batch[KEY.PRED_FORCE], indices)
+    atomic_energy_list = torch.split(
+        atom_graph_batch[KEY.ATOMIC_ENERGY], indices
+    )
+    inferred_total_energy_list = torch.unbind(
+        atom_graph_batch[KEY.PRED_TOTAL_ENERGY]
+    )
+    inferred_force_list = torch.split(
+        atom_graph_batch[KEY.PRED_FORCE], indices
+    )
 
     if is_stress:
-        inferred_stress_list =\
-            torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
+        inferred_stress_list = torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
 
     for i, data in enumerate(data_list):
         data[KEY.ATOMIC_ENERGY] = atomic_energy_list[i]
@@ -62,6 +64,7 @@ def to_atom_graph_list(atom_graph_batch):
 
 def postprocess_output_with_label(output, loss_types):
     from sevenn._const import LossType
+
     results = postprocess_output(output, loss_types)
     batched_label = output[KEY.USER_LABEL]
     label_set = set(batched_label)
@@ -69,7 +72,7 @@ def postprocess_output_with_label(output, loss_types):
     for loss_type, (pred, ref, vdim) in results.items():
         i_from = 0
         i_to = None
-        #if loss_type in [LossType.ENERGY, LossType.STRESS]:
+        # if loss_type in [LossType.ENERGY, LossType.STRESS]:
         #    i_to = vdim
         for idx, label in enumerate(batched_label):
             if loss_type is LossType.FORCE:
@@ -83,6 +86,7 @@ def postprocess_output_with_label(output, loss_types):
 
 def postprocess_output(output, loss_types):
     from sevenn._const import LossType
+
     """
     Postprocess output from model to be used for loss calculation
     Flatten all the output & unit converting and store them as (pred, ref, vdim)
@@ -105,14 +109,14 @@ def postprocess_output(output, loss_types):
             vdim = 1
         elif loss_type is LossType.FORCE:
             # dim: (total_number_of_atoms_over_batch, 3)
-            pred = torch.reshape(output[KEY.PRED_FORCE], (-1, ))
-            ref = torch.reshape(output[KEY.FORCE], (-1, ))
+            pred = torch.reshape(output[KEY.PRED_FORCE], (-1,))
+            ref = torch.reshape(output[KEY.FORCE], (-1,))
             vdim = 3
         elif loss_type is LossType.STRESS:
             # dim: (num_batch, 6)
             # calculate stress loss based on kB unit (was eV/A^3)
-            pred = torch.reshape(output[KEY.PRED_STRESS] * TO_KB, (-1, ))
-            ref = torch.reshape(output[KEY.STRESS] * TO_KB, (-1, ))
+            pred = torch.reshape(output[KEY.PRED_STRESS] * TO_KB, (-1,))
+            ref = torch.reshape(output[KEY.STRESS] * TO_KB, (-1,))
             vdim = 6
         else:
             raise ValueError(f'Unknown loss type: {loss_type}')
@@ -127,31 +131,38 @@ def squared_error(pred, ref, vdim):
 
 def onehot_to_chem(one_hot_indicies, type_map):
     from ase.data import chemical_symbols
+
     type_map_rev = {v: k for k, v in type_map.items()}
     return [chemical_symbols[type_map_rev[x]] for x in one_hot_indicies]
 
 
 def load_model_from_checkpoint(checkpoint):
+    from sevenn._const import (
+        DEFAULT_DATA_CONFIG,
+        DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
+        DEFAULT_TRAINING_CONFIG,
+    )
     from sevenn.model_build import build_E3_equivariant_model
-    from sevenn._const import DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,\
-            DEFAULT_DATA_CONFIG, DEFAULT_TRAINING_CONFIG
+
     if isinstance(checkpoint, str):
         checkpoint = torch.load(checkpoint)
     elif isinstance(checkpoint, dict):
         pass
     else:
-        raise ValueError("checkpoint must be either str or dict")
+        raise ValueError('checkpoint must be either str or dict')
 
-    defaults = {**DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
-                **DEFAULT_DATA_CONFIG,
-                **DEFAULT_TRAINING_CONFIG}
+    defaults = {
+        **DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
+        **DEFAULT_DATA_CONFIG,
+        **DEFAULT_TRAINING_CONFIG,
+    }
 
-    model_state_dict = checkpoint["model_state_dict"]
-    config = checkpoint["config"]
+    model_state_dict = checkpoint['model_state_dict']
+    config = checkpoint['config']
 
     for k, v in defaults.items():
         if k not in config:
-            print(f"Warning: {k} not in config, using default value {v}")
+            print(f'Warning: {k} not in config, using default value {v}')
             config[k] = v
 
     # expect only non-tensor values in config, if exists, move to cpu
@@ -170,18 +181,21 @@ def load_model_from_checkpoint(checkpoint):
 
 def chemical_species_preprocess(input_chem):
     from ase.data import atomic_numbers
+
     from sevenn.nn.node_embedding import get_type_mapper_from_specie
+
     config = {}
     chemical_specie = sorted([x.strip() for x in input_chem])
     config[KEY.CHEMICAL_SPECIES] = chemical_specie
-    config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = \
-        [atomic_numbers[x] for x in chemical_specie]
+    config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
+        atomic_numbers[x] for x in chemical_specie
+    ]
     config[KEY.NUM_SPECIES] = len(chemical_specie)
     config[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
-    #print(config[KEY.TYPE_MAP])
-    #print(config[KEY.NUM_SPECIES])  # why
-    #print(config[KEY.CHEMICAL_SPECIES])  # we need
-    #print(config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER])  # all of this?
+    # print(config[KEY.TYPE_MAP])
+    # print(config[KEY.NUM_SPECIES])  # why
+    # print(config[KEY.CHEMICAL_SPECIES])  # we need
+    # print(config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER])  # all of this?
     return config
 
 

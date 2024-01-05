@@ -1,5 +1,5 @@
-from typing import Dict
 from collections import OrderedDict
+from typing import Dict
 
 import torch.nn as nn
 from e3nn.util.jit import compile_mode
@@ -15,6 +15,7 @@ class AtomGraphSequential(nn.Sequential):
     see
     https://github.com/pytorch/pytorch/issues/52588
     """
+
     def __init__(self, modules: Dict[str, nn.Module]):
         if type(modules) != OrderedDict:
             modules = OrderedDict(modules)
@@ -30,7 +31,7 @@ class AtomGraphSequential(nn.Sequential):
             except AttributeError:
                 pass
 
-    def get_irreps_in(self, modlue_name: str, attr_key: str = "irreps_in"):
+    def get_irreps_in(self, modlue_name: str, attr_key: str = 'irreps_in'):
         tg_module = self._modules[modlue_name]
         for m in tg_module.modules():
             try:

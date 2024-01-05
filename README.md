@@ -5,7 +5,7 @@
 
 # SEVENNet
 
-SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations on [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is the same as that found in [`nequip`](https://github.com/mir-group/nequip). 
+SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations on [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is the same as that found in [`nequip`](https://github.com/mir-group/nequip).
 
 The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which was not possible despite their superior performance.
 
@@ -34,7 +34,7 @@ You can find the installation guides for these packages from the [`PyTorch offic
 ```
 git clone https://github.com/MDIL-SNU/SEVENNet.git
 cd SEVENNet
-pip install . 
+pip install .
 ```
 
 ## Usage for Training
@@ -46,7 +46,7 @@ cd example_inputs/training
 sevenn input_full.yaml -s
 ```
 
-Examples of `input_full.yaml` can be found under `SEVENN/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training. 
+Examples of `input_full.yaml` can be found under `SEVENN/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training.
 To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` as the `load_dataset_path:` int the `input.yaml`. Both `structure_list` and `load_dataset_path` can be specified as lists, allowing easy augmentation of training sets.
 
 Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned as their default values. You can refer to the log to check the default inputs.
@@ -83,7 +83,7 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 * PyTorch (same version as used for training)
 * LAMMPS version of '23 June 2022' [`LAMMPS`](https://github.com/lammps/lammps)
-* [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD 
+* [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 
 **PLEASE NOTE:** CUDA-aware OpenMPI may not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, it would be advisable to consult with your server administrator rather than attempting to compile it yourself.
 
@@ -181,4 +181,3 @@ mpirun -np {# of GPUs you want to use} {path to lammps binary} -in {lammps input
 ```
 
 If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
-

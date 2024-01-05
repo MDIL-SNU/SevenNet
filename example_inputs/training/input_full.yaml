@@ -16,7 +16,7 @@ model:
         bessel_basis_num: 8                       # Equivalent to 'num_basis' in nequip. Represents the number of Bessel functions as the radial basis
     cutoff_function:                              # Differentiable, decaying function to encode radial distance
         cutoff_function_name: 'poly_cut'          # Only 'poly_cut' is currently supported
-        poly_cut_p_value: 6                       # Equivalent to 'PolynomialCutoff_p' in nequip. Smaller p values correspond to a stronger decay with distance 
+        poly_cut_p_value: 6                       # Equivalent to 'PolynomialCutoff_p' in nequip. Smaller p values correspond to a stronger decay with distance
 
     # For even nonlinearities, 'silu', 'abs' (absolute), and 'ssp' (shifted softmax) are supported. Defaults generally work well
     act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
@@ -27,16 +27,16 @@ model:
     train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
     train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
     optimize_by_reduce: False                     # Speed-up by eliminating non-scalar computations at the last layer
-                                                                  
+
 train:
     random_seed: 1                                # Random seed for pytorch
     is_train_stress     : False                   # Includes stress in the loss function
     epoch: 10                                     # Ends training after this number of epochs
 
-    # Each optimizer and scheduler have different available parameters. 
+    # Each optimizer and scheduler have different available parameters.
     # You can refer to sevenn/train/optim.py for supporting optimizer & schedulers
     optimizer: 'adam'                             # Options available are 'sgd', 'adagrad', 'adam', 'adamw', 'radam'
-    optim_param:                                  
+    optim_param:
         lr: 0.005
     scheduler: 'exponentiallr'                    # Options available are 'steplr', 'multisteplr', 'exponentiallr', 'cosineannealinglr'
     scheduler_param:
@@ -55,9 +55,9 @@ train:
         - ['Stress', 'RMSE']
         - ['TotalLoss', 'None']
 
-    #continue: 
-        #reset_optimizer: False 
-        #reset_scheduler: False  
+    #continue:
+        #reset_optimizer: False
+        #reset_scheduler: False
         #checkpoint: 'path_to_previous_checkpoint/checkpoint_best.pth'
         #use_statistic_values_of_checkpoint: False # whether use shift, scale, and avg_num_neigh from checkpoint or update from new dataset
 
@@ -70,7 +70,7 @@ data:
 
     # Use element wise shift, scale (also trainable).
     # The starting values are linear fitted element reference atomic energy and element wise force rms
-    use_species_wise_shift_scale: False           
+    use_species_wise_shift_scale: False
 
     # ase.io.read readable data files or structure_list or .sevenn_data files can be used as dataset.
     # .sevenn_data is preprocessed data set has edges connected (can be obtained by using sevenn_graph_build or by save_** options below)
@@ -83,11 +83,10 @@ data:
 
     # If only load_dataset_path is provided, train/valid set is automatically decided by splitting dataset by divide ratio
     # If both load_dataset_path & load_validset_path is provided, use load_dataset_path as training set.
-    load_dataset_path: ['structure_list']   
+    load_dataset_path: ['structure_list']
     #load_validset_path: ['./valid.sevenn_data']
 
 
     #save_dataset_path: 'total'                   # Save the preprocessed (in load_dataset_path) dataset
     #save_by_train_valid: True                    # Save the preprocessed train.sevenn_data, valid.sevenn_data
     #save_by_label: False                         # Save the dataset by labels specified in the structure_list
-

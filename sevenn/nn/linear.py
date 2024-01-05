@@ -1,10 +1,9 @@
 import torch
 import torch.nn as nn
-from torch_scatter import scatter
-from e3nn.o3 import Irreps
-from e3nn.o3 import Linear
 from e3nn.nn import FullyConnectedNet
+from e3nn.o3 import Irreps, Linear
 from e3nn.util.jit import compile_mode
+from torch_scatter import scatter
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
@@ -15,6 +14,7 @@ class IrrepsLinear(nn.Module):
     """
     wrapper class of e3nn Linear to operate on AtomGraphData
     """
+
     def __init__(
         self,
         irreps_in: Irreps,
@@ -43,12 +43,13 @@ class AtomReduce(nn.Module):
     atomic energy -> total energy
     constant is multiplied to data
     """
+
     def __init__(
         self,
         data_key_in: str,
         data_key_out: str,
-        reduce="sum",
-        constant: float = 1.0
+        reduce='sum',
+        constant: float = 1.0,
     ):
         super().__init__()
 
@@ -62,12 +63,20 @@ class AtomReduce(nn.Module):
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self._is_batch_data:
-            data[self.KEY_OUTPUT] = scatter(
-                data[self.KEY_INPUT], data[KEY.BATCH], dim=0, reduce=self.reduce
-            ) * self.constant
+            data[self.KEY_OUTPUT] = (
+                scatter(
+                    data[self.KEY_INPUT],
+                    data[KEY.BATCH],
+                    dim=0,
+                    reduce=self.reduce,
+                )
+                * self.constant
+            )
             data[self.KEY_OUTPUT] = data[self.KEY_OUTPUT].squeeze(1)
         else:
-            data[self.KEY_OUTPUT] = torch.sum(data[self.KEY_INPUT]) * self.constant
+            data[self.KEY_OUTPUT] = (
+                torch.sum(data[self.KEY_INPUT]) * self.constant
+            )
 
         return data
 
@@ -79,6 +88,7 @@ class FCN_e3nn(nn.Module):
     doesn't necessarily have irrpes since it is only
     applicable scalar but for consistency(?_?)
     """
+
     def __init__(
         self,
         irreps_in: Irreps,  # confirm it is scalar & input size
@@ -98,7 +108,7 @@ class FCN_e3nn(nn.Module):
             self.KEY_OUTPUT = data_key_out
 
         for mul, irrep in irreps_in:
-            assert(irrep.is_scalar())
+            assert irrep.is_scalar()
         inp_dim = irreps_in.dim
 
         self.fcn = FullyConnectedNet(
