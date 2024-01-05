@@ -4,14 +4,14 @@ import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
-from sevenn._const import LossType
 import sevenn._keys as KEY
-from sevenn.util import postprocess_output, squared_error, AverageNumber
-from sevenn.train.optim import optim_dict, scheduler_dict, loss_dict
+from sevenn._const import LossType
 from sevenn.error_recorder import ErrorRecorder
+from sevenn.train.optim import loss_dict, optim_dict, scheduler_dict
+from sevenn.util import AverageNumber, postprocess_output, squared_error
 
-class Trainer():
 
+class Trainer:
     def __init__(self, model, config: dict):
         self.distributed = config[KEY.IS_DDP]
 
@@ -33,7 +33,7 @@ class Trainer():
         # where trace stress is used for?
         self.is_trace_stress = config[KEY.IS_TRACE_STRESS]
         self.is_train_stress = config[KEY.IS_TRAIN_STRESS]
-        self.is_stress = (self.is_trace_stress or self.is_train_stress)
+        self.is_stress = self.is_trace_stress or self.is_train_stress
         if self.is_train_stress:
             self.loss_weights[LossType.STRESS] = config[KEY.STRESS_WEIGHT]
 
@@ -59,9 +59,9 @@ class Trainer():
             loss_param = {}
         self.criterion = loss(**loss_param)
 
-
-    def run_one_epoch(self, loader, is_train=False,
-                      error_recorder: ErrorRecorder = None):
+    def run_one_epoch(
+        self, loader, is_train=False, error_recorder: ErrorRecorder = None
+    ):
         if is_train:
             self.model.train()
         else:
@@ -86,14 +86,17 @@ class Trainer():
         total_loss = torch.tensor([0.0], device=self.device)
         for loss_type in self.loss_types:
             pred, ref, _ = unit_converted[loss_type]
-            total_loss +=\
+            total_loss += (
                 self.criterion(pred, ref) * self.loss_weights[loss_type]
+            )
         return total_loss
 
     def scheduler_step(self, metric=None):
         if self.scheduler is None:
             return
-        if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
+        if isinstance(
+            self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
+        ):
             self.scheduler.step(metric)
         else:
             self.scheduler.step()
@@ -103,7 +106,7 @@ class Trainer():
 
     def recorder_all_reduce(self, recorder: ErrorRecorder):
         for metric in recorder.metrics:
-            #metric.value._ddp_reduce(self.device)
+            # metric.value._ddp_reduce(self.device)
             metric.ddp_reduce(self.device)
 
     # Not used, ddp automatically averages gradients
@@ -118,15 +121,19 @@ class Trainer():
             model_state_dct = self.model.module.state_dict()
         else:
             model_state_dct = self.model.state_dict()
-        return {'model_state_dict': model_state_dct,
-                'optimizer_state_dict': self.optimizer.state_dict(),
-                'scheduler_state_dict': self.scheduler.state_dict()}
+        return {
+            'model_state_dict': model_state_dct,
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'scheduler_state_dict': self.scheduler.state_dict(),
+        }
 
-    def load_state_dicts(self,
-                         model_state_dict,
-                         optimizer_state_dict,
-                         scheduler_state_dict,
-                         strict=True):
+    def load_state_dicts(
+        self,
+        model_state_dict,
+        optimizer_state_dict,
+        scheduler_state_dict,
+        strict=True,
+    ):
         if self.distributed:
             self.model.module.load_state_dict(model_state_dict, strict=strict)
         else:
@@ -136,4 +143,3 @@ class Trainer():
             self.optimizer.load_state_dict(optimizer_state_dict)
         if scheduler_state_dict is not None:
             self.scheduler.load_state_dict(scheduler_state_dict)
-

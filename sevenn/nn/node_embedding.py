@@ -1,4 +1,5 @@
-from typing import List, Dict
+from typing import Dict, List
+
 import torch
 import torch.nn as nn
 import torch.nn.functional
@@ -9,7 +10,7 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 
-#TODO: put this to model_build and do not preprocess data by onehot
+# TODO: put this to model_build and do not preprocess data by onehot
 @compile_mode('script')
 class OnehotEmbedding(nn.Module):
     """
@@ -21,6 +22,7 @@ class OnehotEmbedding(nn.Module):
     and to specie wise shift scale work
     ex) [0 1 1 0] -> [[1, 0] [0, 1] [0, 1] [1, 0]] (num_classes = 2)
     """
+
     def __init__(
         self,
         num_classes: int,
@@ -64,16 +66,20 @@ def get_type_mapper_from_specie(specie_list: List[str]):
 
 
 # deprecated
-def one_hot_atom_embedding(atomic_numbers: List[int], type_map: Dict[int, int]):
+def one_hot_atom_embedding(
+    atomic_numbers: List[int], type_map: Dict[int, int]
+):
     """
     atomic numbers from ase.get_atomic_numbers
     type_map from get_type_mapper_from_specie()
     """
     num_classes = len(type_map)
     try:
-        type_numbers = torch.LongTensor([type_map[num] for num in atomic_numbers])
+        type_numbers = torch.LongTensor(
+            [type_map[num] for num in atomic_numbers]
+        )
     except KeyError as e:
-        raise ValueError(f"Atomic number {e.args[0]} is not expected")
+        raise ValueError(f'Atomic number {e.args[0]} is not expected')
     embd = torch.nn.functional.one_hot(type_numbers, num_classes)
     embd = embd.to(torch.get_default_dtype())
 
@@ -84,6 +90,5 @@ def main():
     _ = 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
-

@@ -1,41 +1,41 @@
-import pickle
 import copy
+import pickle
 from datetime import datetime
 
-import torch
 import e3nn.util.jit
+import torch
 from ase.data import chemical_symbols
 
+import sevenn._const as _const
+import sevenn._keys as KEY
 from sevenn.model_build import build_E3_equivariant_model
+from sevenn.nn.force_output import ForceOutputFromEdge
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.sequential import AtomGraphSequential
-from sevenn.nn.force_output import ForceOutputFromEdge
-import sevenn._keys as KEY
-import sevenn._const as _const
 
 
 def print_tensor_info(tensor):
-    print("Tensor Value: \n", tensor)
-    print("Shape: ", tensor.shape)
-    print("Size: ", tensor.size())
-    print("Number of Dimensions: ", tensor.dim())
-    print("Data Type: ", tensor.dtype)
-    print("Device: ", tensor.device)
-    print("Layout: ", tensor.layout)
-    print("Is it a CUDA tensor?: ", tensor.is_cuda)
-    print("Is it a sparse tensor?: ", tensor.is_sparse)
-    print("Is it a quantized tensor?: ", tensor.is_quantized)
-    print("Number of Elements: ", tensor.numel())
-    print("Requires Gradient: ", tensor.requires_grad)
-    print("Grad Function: ", tensor.grad_fn)
-    print("Gradient: ", tensor.grad)
+    print('Tensor Value: \n', tensor)
+    print('Shape: ', tensor.shape)
+    print('Size: ', tensor.size())
+    print('Number of Dimensions: ', tensor.dim())
+    print('Data Type: ', tensor.dtype)
+    print('Device: ', tensor.device)
+    print('Layout: ', tensor.layout)
+    print('Is it a CUDA tensor?: ', tensor.is_cuda)
+    print('Is it a sparse tensor?: ', tensor.is_sparse)
+    print('Is it a quantized tensor?: ', tensor.is_quantized)
+    print('Number of Elements: ', tensor.numel())
+    print('Requires Gradient: ', tensor.requires_grad)
+    print('Grad Function: ', tensor.grad_fn)
+    print('Gradient: ', tensor.grad)
 
 
 def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
     model_new = build_E3_equivariant_model(config)
 
     num_species = config[KEY.NUM_SPECIES]
-    #model_new.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
+    # model_new.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
     model_new.set_is_batch_data(False)
     model_new.eval()
 
@@ -46,22 +46,22 @@ def deploy_from_compiled(model_ori: AtomGraphSequential, config, fname):
     # make some config need for md
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
-    chem_list = ""
+    chem_list = ''
     for Z in type_map.keys():
-        chem_list += chemical_symbols[Z] + " "
+        chem_list += chemical_symbols[Z] + ' '
     chem_list.strip()
-    md_configs.update({"chemical_symbols_to_index": chem_list})
-    md_configs.update({"cutoff": str(config[KEY.CUTOFF])})
-    md_configs.update({"num_species": str(config[KEY.NUM_SPECIES])})
-    md_configs.update({"model_type": config[KEY.MODEL_TYPE]})
-    md_configs.update({"version": _const.SEVENN_VERSION})
-    md_configs.update({"dtype": config[KEY.DTYPE]})
-    md_configs.update({"time": datetime.now().strftime('%Y-%m-%d')})
+    md_configs.update({'chemical_symbols_to_index': chem_list})
+    md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
+    md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
+    md_configs.update({'model_type': config[KEY.MODEL_TYPE]})
+    md_configs.update({'version': _const.SEVENN_VERSION})
+    md_configs.update({'dtype': config[KEY.DTYPE]})
+    md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     torch.jit.save(model, fname, _extra_files=md_configs)
 
 
-#TODO: this is E3_equivariant specific
+# TODO: this is E3_equivariant specific
 def deploy(model_state_dct, config, fname):
     # some postprocess for md mode of model
 
@@ -69,11 +69,11 @@ def deploy(model_state_dct, config, fname):
     config[KEY.IS_TRACE_STRESS] = True
     config[KEY.IS_TRAIN_STRESS] = True
     model = build_E3_equivariant_model(config)
-    #TODO: remove strict later
+    # TODO: remove strict later
     model.load_state_dict(model_state_dct, strict=False)  # copy model
 
     num_species = config[KEY.NUM_SPECIES]
-    #model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
+    # model.prepand_module('one_hot', OnehotEmbedding(num_classes=num_species))
     """
     model.replace_module("force output",
                          ForceOutputFromEdge(
@@ -81,10 +81,10 @@ def deploy(model_state_dct, config, fname):
                              data_key_force=KEY.PRED_FORCE)
                          )
     """
-    #model.delete_module_by_key("EdgePreprocess")
+    # model.delete_module_by_key("EdgePreprocess")
     model.set_is_batch_data(False)
     model.eval()
-    #print(config)
+    # print(config)
 
     model = e3nn.util.jit.script(model)
     model = torch.jit.freeze(model)
@@ -92,27 +92,27 @@ def deploy(model_state_dct, config, fname):
     # make some config need for md
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
-    chem_list = ""
+    chem_list = ''
     for Z in type_map.keys():
-        chem_list += chemical_symbols[Z] + " "
+        chem_list += chemical_symbols[Z] + ' '
     chem_list.strip()
-    md_configs.update({"chemical_symbols_to_index": chem_list})
-    md_configs.update({"cutoff": str(config[KEY.CUTOFF])})
-    md_configs.update({"num_species": str(config[KEY.NUM_SPECIES])})
-    md_configs.update({"model_type": config[KEY.MODEL_TYPE]})
-    md_configs.update({"version": _const.SEVENN_VERSION})
-    md_configs.update({"dtype": config[KEY.DTYPE]})
-    md_configs.update({"time": datetime.now().strftime('%Y-%m-%d')})
+    md_configs.update({'chemical_symbols_to_index': chem_list})
+    md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
+    md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
+    md_configs.update({'model_type': config[KEY.MODEL_TYPE]})
+    md_configs.update({'version': _const.SEVENN_VERSION})
+    md_configs.update({'dtype': config[KEY.DTYPE]})
+    md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
-    if fname.endswith(".pt") is False:
-        fname += ".pt"
+    if fname.endswith('.pt') is False:
+        fname += '.pt'
     torch.jit.save(model, fname, _extra_files=md_configs)
 
 
-#TODO: this is E3_equivariant specific
+# TODO: this is E3_equivariant specific
 def deploy_parallel(model_state_dct, config, fname):
     # Additional layer for ghost atom (and copy parameters from original)
-    GHOST_LAYERS_KEYS = ["onehot_to_feature_x", "0_self_interaction_1"]
+    GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
     # TODO: stress inference
     config[KEY.IS_TRACE_STRESS] = False
@@ -122,7 +122,7 @@ def deploy_parallel(model_state_dct, config, fname):
     for ghost_layer_key in GHOST_LAYERS_KEYS:
         for key, val in model_state_dct.items():
             if key.startswith(ghost_layer_key):
-                dct_temp.update({f"ghost_{key}": val})
+                dct_temp.update({f'ghost_{key}': val})
             else:
                 continue
     model_state_dct.update(dct_temp)
@@ -132,44 +132,48 @@ def deploy_parallel(model_state_dct, config, fname):
 
     # one_hot prepand & one_hot ghost prepand
     num_species = config[KEY.NUM_SPECIES]
-    #model_list[0].prepand_module('one_hot', OnehotEmbedding(
+    # model_list[0].prepand_module('one_hot', OnehotEmbedding(
     #    data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
-    #model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
+    # model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
     #    data_key_in=KEY.NODE_FEATURE_GHOST,
     #    num_classes=num_species,
     #    data_key_additional=None))
 
-    #print(config)
+    # print(config)
     # prepare some extra information for MD
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
 
-    chem_list = ""
+    chem_list = ''
     for Z in type_map.keys():
-        chem_list += chemical_symbols[Z] + " "
+        chem_list += chemical_symbols[Z] + ' '
     chem_list.strip()
 
     # dim of irreps_in of last model convolution is (max)comm_size
     # except first one, first of every model is embedding followed by convolution
     # TODO: this code is error prone
-    comm_size = model_list[-1][1].convolution.irreps_in1.dim if len(model_list) > 1 else 0
+    comm_size = (
+        model_list[-1][1].convolution.irreps_in1.dim
+        if len(model_list) > 1
+        else 0
+    )
 
-    #shift = model_state_dct["rescale.shift"].item()
-    #scale = model_state_dct["rescale.scale"].item()
+    # shift = model_state_dct["rescale.shift"].item()
+    # scale = model_state_dct["rescale.scale"].item()
 
-    md_configs.update({"chemical_symbols_to_index": chem_list})
-    md_configs.update({"cutoff": str(config[KEY.CUTOFF])})
-    md_configs.update({"num_species": str(config[KEY.NUM_SPECIES])})
-    #md_configs.update({"shift": str(shift)})
-    #md_configs.update({"scale": str(scale)})
-    md_configs.update({"comm_size": str(comm_size)})
-    md_configs.update({"model_type": config[KEY.MODEL_TYPE]})
-    md_configs.update({"version": _const.SEVENN_VERSION})
-    md_configs.update({"dtype": config[KEY.DTYPE]})
-    md_configs.update({"time": datetime.now().strftime('%Y-%m-%d')})
+    md_configs.update({'chemical_symbols_to_index': chem_list})
+    md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
+    md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
+    # md_configs.update({"shift": str(shift)})
+    # md_configs.update({"scale": str(scale)})
+    md_configs.update({'comm_size': str(comm_size)})
+    md_configs.update({'model_type': config[KEY.MODEL_TYPE]})
+    md_configs.update({'version': _const.SEVENN_VERSION})
+    md_configs.update({'dtype': config[KEY.DTYPE]})
+    md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     for idx, model in enumerate(model_list):
-        fname_full = f"{fname}_{idx}.pt"
+        fname_full = f'{fname}_{idx}.pt'
         model.set_is_batch_data(False)
         model.eval()
 
@@ -190,5 +194,5 @@ def get_parallel_from_checkpoint(fname):
             break
     stct_cp = copy.deepcopy(stct_dct)
 
-    deploy_parallel(stct_dct, config, "deployed_parallel")
-    deploy(stct_cp, config, "deployed_serial.pt")
+    deploy_parallel(stct_dct, config, 'deployed_parallel')
+    deploy(stct_cp, config, 'deployed_serial.pt')

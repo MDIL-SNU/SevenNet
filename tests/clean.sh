@@ -9,5 +9,3 @@ rm -rf ./training
 
 rm ./graph_build_log
 rm ./data.sevenn_data
-
-

@@ -1,8 +1,8 @@
 import torch
 import torch_geometric
 
-import sevenn.util
 import sevenn._keys as KEY
+import sevenn.util
 
 
 # TODO: Now, I'm not sure why this class is required
@@ -24,34 +24,31 @@ class AtomGraphData(torch_geometric.data.Data):
 
     x, y_force, pos should be aligned with each other.
     """
+
     def __init__(
-        self,
-        x=None,
-        edge_index=None,
-        pos=None,
-        edge_attr=None,
-        **kwargs
+        self, x=None, edge_index=None, pos=None, edge_attr=None, **kwargs
     ):
-        super(AtomGraphData, self).__init__(
-            x,
-            edge_index,
-            edge_attr,
-            pos=pos
-        )
+        super(AtomGraphData, self).__init__(x, edge_index, edge_attr, pos=pos)
         self[KEY.NODE_ATTR] = x
         for k, v in kwargs.items():
             self[k] = v
 
-
     def to_numpy_dict(self):
         # This is not debuged yet!
-        dct = {k: v.detach().cpu().numpy() if type(v) is torch.Tensor else v
-               for k, v in self.items()}
+        dct = {
+            k: v.detach().cpu().numpy() if type(v) is torch.Tensor else v
+            for k, v in self.items()
+        }
         return dct
 
     def fit_dimension(self):
-        per_atom_keys = [KEY.ATOMIC_NUMBERS, KEY.ATOMIC_ENERGY, KEY.POS,
-                         KEY.FORCE, KEY.PRED_FORCE]
+        per_atom_keys = [
+            KEY.ATOMIC_NUMBERS,
+            KEY.ATOMIC_ENERGY,
+            KEY.POS,
+            KEY.FORCE,
+            KEY.PRED_FORCE,
+        ]
         natoms = self.num_atoms.item()
         for k, v in self.items():
             if not isinstance(v, torch.Tensor):

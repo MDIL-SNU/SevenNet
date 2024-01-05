@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
-from torch_scatter import scatter
 from e3nn.util.jit import compile_mode
+from torch_scatter import scatter
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
@@ -12,6 +12,7 @@ class ForceOutputFromEdgeParallel(nn.Module):
     """
     works when edge_vec.requires_grad_ is True
     """
+
     def __init__(
         self,
         data_key_edge_vec: str = KEY.EDGE_VEC,
@@ -30,14 +31,17 @@ class ForceOutputFromEdgeParallel(nn.Module):
         self.KEY_NUM_GHOSTS = data_key_num_ghosts
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        tot_num = len(data[KEY.NODE_FEATURE]) + len(data[KEY.NODE_FEATURE_GHOST])
+        tot_num = len(data[KEY.NODE_FEATURE]) + len(
+            data[KEY.NODE_FEATURE_GHOST]
+        )
         edge_idx = data[self.KEY_EDGE_IDX]
 
         edge_vec_tensor = [data[self.KEY_EDGE_VEC]]
         energy = [(data[self.KEY_ENERGY]).sum()]
 
-        dE_dr = torch.autograd.grad(energy, edge_vec_tensor,
-                                    create_graph=self.training)[0]
+        dE_dr = torch.autograd.grad(
+            energy, edge_vec_tensor, create_graph=self.training
+        )[0]
 
         if dE_dr is not None:
             force = torch.zeros(tot_num, 3)
@@ -54,6 +58,7 @@ class ForceOutputFromEdge(nn.Module):
     """
     works when edge_vec.requires_grad_ is True
     """
+
     def __init__(
         self,
         data_key_edge_vec: str = KEY.EDGE_VEC,
@@ -74,8 +79,9 @@ class ForceOutputFromEdge(nn.Module):
         edge_vec_tensor = [data[self.KEY_EDGE_VEC]]
         energy = [(data[self.KEY_ENERGY]).sum()]
 
-        dE_dr = torch.autograd.grad(energy, edge_vec_tensor,
-                                    create_graph=self.training)[0]
+        dE_dr = torch.autograd.grad(
+            energy, edge_vec_tensor, create_graph=self.training
+        )[0]
 
         if dE_dr is not None:
             force = torch.zeros(tot_num, 3)
@@ -92,6 +98,7 @@ class ForceOutput(nn.Module):
     """
     works when pos.requires_grad_ is True
     """
+
     def __init__(
         self,
         data_key_pos: str = KEY.POS,
@@ -107,8 +114,9 @@ class ForceOutput(nn.Module):
         pos_tensor = [data[self.KEY_POS]]
         energy = [(data[self.KEY_ENERGY]).sum()]
 
-        grad = torch.autograd.grad(energy, pos_tensor,
-                                   create_graph=self.training)[0]
+        grad = torch.autograd.grad(
+            energy, pos_tensor, create_graph=self.training
+        )[0]
 
         # without this 'if', type(grad) is 'Optional[Tensor]' which result in error
         if grad is not None:
@@ -118,13 +126,12 @@ class ForceOutput(nn.Module):
 
 @compile_mode('script')
 class ForceStressOutput(nn.Module):
-
     def __init__(
         self,
         data_key_pos: str = KEY.POS,
         data_key_energy: str = KEY.SCALED_ENERGY,
         data_key_force: str = KEY.SCALED_FORCE,
-        data_key_stress: str = KEY.SCALED_STRESS
+        data_key_stress: str = KEY.SCALED_STRESS,
     ):
 
         super().__init__()
@@ -138,8 +145,9 @@ class ForceStressOutput(nn.Module):
         pos_tensor = data[self.KEY_POS]
         energy = [(data[self.KEY_ENERGY]).sum()]
 
-        grad = torch.autograd.grad(energy, [pos_tensor, data["_strain"]],
-                                   create_graph=self.training)
+        grad = torch.autograd.grad(
+            energy, [pos_tensor, data['_strain']], create_graph=self.training
+        )
 
         # make grad is not Optional[Tensor]
         fgrad = grad[0]
@@ -152,15 +160,26 @@ class ForceStressOutput(nn.Module):
             if self._is_batch_data:
                 stress = sgrad / volume.view(-1, 1, 1)
                 stress = torch.neg(stress)
-                voigt_stress = \
-                    torch.vstack((stress[:, 0, 0], stress[:, 1, 1], stress[:, 2, 2],
-                                  stress[:, 0, 1], stress[:, 1, 2], stress[:, 0, 2]))
+                voigt_stress = torch.vstack((
+                    stress[:, 0, 0],
+                    stress[:, 1, 1],
+                    stress[:, 2, 2],
+                    stress[:, 0, 1],
+                    stress[:, 1, 2],
+                    stress[:, 0, 2],
+                ))
                 data[self.KEY_STRESS] = voigt_stress.transpose(0, 1)
             else:
                 stress = sgrad / volume
                 stress = torch.neg(stress)
-                voigt_stress = torch.stack((stress[0, 0], stress[1, 1], stress[2, 2],
-                                            stress[0, 1], stress[1, 2], stress[0, 2]))
+                voigt_stress = torch.stack((
+                    stress[0, 0],
+                    stress[1, 1],
+                    stress[2, 2],
+                    stress[0, 1],
+                    stress[1, 2],
+                    stress[0, 2],
+                ))
                 data[self.KEY_STRESS] = voigt_stress
 
         return data

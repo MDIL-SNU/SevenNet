@@ -22,8 +22,9 @@ class GhostControlSplit(nn.Module):
         self.KEY_NUM_GHOST = data_key_num_ghost
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        x, ghost = \
-            torch.tensor_split(data[self.KEY_X], data[self.KEY_NUM_ATOMS])
+        x, ghost = torch.tensor_split(
+            data[self.KEY_X], data[self.KEY_NUM_ATOMS]
+        )
         print(len(x))
         print(len(ghost))
         data[self.KEY_X] = x

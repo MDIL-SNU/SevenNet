@@ -1,8 +1,8 @@
-from typing import List, Dict, Callable
+from typing import Callable, Dict, List
 
 import torch.nn as nn
-from e3nn.o3 import Irreps
 from e3nn.nn import Gate
+from e3nn.o3 import Irreps
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
@@ -31,6 +31,7 @@ class EquivariantGate(nn.Module):
     act_scalar/gate_dict: dictionary of parity and activation function
         depends on parity, the activation function is regulated (odd or even function)
     """
+
     def __init__(
         self,
         irreps_x: Irreps,
@@ -41,8 +42,10 @@ class EquivariantGate(nn.Module):
         super().__init__()
         self.KEY_X = data_key_x
 
-        parity_mapper = {"e": 1, "o": -1}
-        act_scalar_dict = {parity_mapper[k]: v for k, v in act_scalar_dict.items()}
+        parity_mapper = {'e': 1, 'o': -1}
+        act_scalar_dict = {
+            parity_mapper[k]: v for k, v in act_scalar_dict.items()
+        }
         act_gate_dict = {parity_mapper[k]: v for k, v in act_gate_dict.items()}
 
         irreps_gated_elem = []
@@ -59,15 +62,17 @@ class EquivariantGate(nn.Module):
         # determine whether this scalar is odd or even
         # in gates, whether scalar is odd or even is not important but it should be
         # found in irreps_x to operate
-        irreps_gates_parity = 1 if "0e" in irreps_scalars else -1
-        irreps_gates = \
-            Irreps([(mul, (0, irreps_gates_parity)) for mul, _ in irreps_gated])
+        irreps_gates_parity = 1 if '0e' in irreps_scalars else -1
+        irreps_gates = Irreps(
+            [(mul, (0, irreps_gates_parity)) for mul, _ in irreps_gated]
+        )
 
         act_scalars = [act_scalar_dict[p] for mul, (l, p) in irreps_scalars]
         act_gates = [act_gate_dict[p] for mul, (l, p) in irreps_gates]
 
-        self.gate = \
-            Gate(irreps_scalars, act_scalars, irreps_gates, act_gates, irreps_gated)
+        self.gate = Gate(
+            irreps_scalars, act_scalars, irreps_gates, act_gates, irreps_gated
+        )
 
     def get_gate_irreps_in(self):
         """
@@ -84,6 +89,5 @@ def main():
     _ = 1
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     main()
-

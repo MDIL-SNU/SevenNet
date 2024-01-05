@@ -1,19 +1,17 @@
-import warnings
-import random
 import itertools
+import random
+import warnings
 from collections import Counter
-from typing import List, Dict, Callable, Optional, Union
+from typing import Callable, Dict, List, Optional, Union
 
-import torch
-from torch_scatter import scatter
 import numpy as np
-from sklearn.linear_model import LinearRegression
-from sklearn.linear_model import Lasso
-from sklearn.linear_model import Ridge
+import torch
 from ase.data import chemical_symbols
+from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from torch_scatter import scatter
 
-import sevenn.util as util
 import sevenn._keys as KEY
+import sevenn.util as util
 
 
 class AtomGraphDataset:
@@ -33,16 +31,21 @@ class AtomGraphDataset:
     for now, metadata 'might' have following keys:
         KEY.CUTOFF (float), KEY.CHEMICAL_SPECIES (Dict)
     """
-    DATA_KEY_X = KEY.NODE_FEATURE  # atomic_number > one_hot_idx > one_hot_vector
+
+    DATA_KEY_X = (
+        KEY.NODE_FEATURE
+    )  # atomic_number > one_hot_idx > one_hot_vector
     DATA_KEY_ENERGY = KEY.ENERGY
     DATA_KEY_FORCE = KEY.FORCE
     KEY_DEFAULT = KEY.LABEL_NONE
 
-    def __init__(self,
-                 dataset: Union[Dict[str, List], List],
-                 cutoff: float,
-                 metadata: Optional[Dict] = None,
-                 x_is_one_hot_idx: Optional[bool] = False):
+    def __init__(
+        self,
+        dataset: Union[Dict[str, List], List],
+        cutoff: float,
+        metadata: Optional[Dict] = None,
+        x_is_one_hot_idx: Optional[bool] = False,
+    ):
         """
         Default constructor of AtomGraphDataset
         Args:
@@ -122,7 +125,7 @@ class AtomGraphDataset:
         get chemical species of dataset
         return list of SORTED chemical species (as str)
         """
-        if hasattr(self, "type_map"):
+        if hasattr(self, 'type_map'):
             natoms = self.get_natoms(self.type_map)
         else:
             natoms = self.get_natoms()
@@ -133,8 +136,10 @@ class AtomGraphDataset:
         return species
 
     def len(self):
-        if len(self.dataset.keys()) == 1 and \
-           list(self.dataset.keys())[0] == AtomGraphDataset.KEY_DEFAULT:
+        if (
+            len(self.dataset.keys()) == 1
+            and list(self.dataset.keys())[0] == AtomGraphDataset.KEY_DEFAULT
+        ):
             return len(self.dataset[AtomGraphDataset.KEY_DEFAULT])
         else:
             return {k: len(v) for k, v in self.dataset.items()}
@@ -163,13 +168,15 @@ class AtomGraphDataset:
         assert self.x_is_one_hot_idx is False
         for data_list in self.dataset.values():
             for datum in data_list:
-                datum[self.DATA_KEY_X] = \
-                    torch.LongTensor([type_map[z.item()]
-                                      for z in datum[self.DATA_KEY_X]])
+                datum[self.DATA_KEY_X] = torch.LongTensor(
+                    [type_map[z.item()] for z in datum[self.DATA_KEY_X]]
+                )
         self.type_map = type_map
         self.x_is_one_hot_idx = True
 
-    def toggle_requires_grad_of_data(self, key: str, requires_grad_value: bool):
+    def toggle_requires_grad_of_data(
+        self, key: str, requires_grad_value: bool
+    ):
         """
         set requires_grad of specific key of data(pos, edge_vec, ...)
         """
@@ -177,14 +184,16 @@ class AtomGraphDataset:
             for datum in data_list:
                 datum[key].requires_grad_(requires_grad_value)
 
-    def divide_dataset(self, ratio: float, constant_ratio_btw_labels=True,
-                       ignore_test=True):
+    def divide_dataset(
+        self, ratio: float, constant_ratio_btw_labels=True, ignore_test=True
+    ):
         """
         divide dataset into 1-2*ratio : ratio : ratio
         return divided AtomGraphDataset
         returned value lost its dict key and became {KEY_DEFAULT: datalist}
         but KEY.USER_LABEL of each data is preserved
         """
+
         def divide(ratio: float, data_list: List, ignore_test=True):
             # Get list as input and return list divided by 1-2*ratio : ratio : ratio
             if ratio > 0.5:
@@ -193,7 +202,9 @@ class AtomGraphDataset:
             random.shuffle(data_list)
             n_validation = int(data_len * ratio)
             if n_validation == 0:
-                raise ValueError('# of validation set is 0, increase your dataset')
+                raise ValueError(
+                    '# of validation set is 0, increase your dataset'
+                )
 
             if ignore_test:
                 test_list = []
@@ -203,8 +214,8 @@ class AtomGraphDataset:
             else:
                 n_train = data_len - 2 * n_validation
                 train_list = data_list[0:n_train]
-                valid_list = data_list[n_train:n_train + n_validation]
-                test_list = data_list[n_train + n_validation:data_len]
+                valid_list = data_list[n_train : n_train + n_validation]
+                test_list = data_list[n_train + n_validation : data_len]
             return train_list, valid_list, test_list
 
         lists = ([], [], [])  # train, valid, test
@@ -215,7 +226,9 @@ class AtomGraphDataset:
         else:
             lists = divide(ratio, self.to_list())
 
-        dbs = tuple(AtomGraphDataset(data, self.cutoff, self.meta) for data in lists)
+        dbs = tuple(
+            AtomGraphDataset(data, self.cutoff, self.meta) for data in lists
+        )
         for db in dbs:
             db.group_by_key()
         return dbs
@@ -229,7 +242,7 @@ class AtomGraphDataset:
         type_map: Z->one_hot_index(node_feature)
         return Dict{label: {symbol, natom}]}
         """
-        assert not(self.x_is_one_hot_idx is True and type_map is None)
+        assert not (self.x_is_one_hot_idx is True and type_map is None)
         natoms = {}
         if type_map is not None:
             type_map_rev = {v: k for k, v in type_map.items()}
@@ -239,8 +252,10 @@ class AtomGraphDataset:
                 if self.x_is_one_hot_idx:
                     Zs = util.onehot_to_chem(datum[self.DATA_KEY_X], type_map)
                 else:
-                    Zs = [chemical_symbols[z]
-                          for z in datum[self.DATA_KEY_X].tolist()]
+                    Zs = [
+                        chemical_symbols[z]
+                        for z in datum[self.DATA_KEY_X].tolist()
+                    ]
                 cnt = Counter(Zs)
                 natoms[label] += cnt
             natoms[label] = dict(natoms[label])
@@ -250,7 +265,9 @@ class AtomGraphDataset:
         """
         return per_atom mean of given data key
         """
-        eng_list = torch.Tensor([x[key] / x[key_num_atoms] for x in self.to_list()])
+        eng_list = torch.Tensor(
+            [x[key] / x[key_num_atoms] for x in self.to_list()]
+        )
         return float(torch.mean(eng_list))
 
     def get_per_atom_energy_mean(self):
@@ -273,8 +290,9 @@ class AtomGraphDataset:
 
         c = torch.zeros((len(data_list), num_chem_species))
         for idx, datum in enumerate(data_list):
-            c[idx] = torch.bincount(datum[self.DATA_KEY_X],
-                                    minlength=num_chem_species)
+            c[idx] = torch.bincount(
+                datum[self.DATA_KEY_X], minlength=num_chem_species
+            )
         y = torch.Tensor([x[self.DATA_KEY_ENERGY] for x in data_list])
         c = c.numpy()
         y = y.numpy()
@@ -283,7 +301,9 @@ class AtomGraphDataset:
         zero_indicies = np.all(c == 0, axis=0)
         c_reduced = c[:, ~zero_indicies]
         full_coeff = np.zeros(num_chem_species)
-        coef_reduced = Ridge(alpha=0.1, fit_intercept=False).fit(c_reduced, y).coef_
+        coef_reduced = (
+            Ridge(alpha=0.1, fit_intercept=False).fit(c_reduced, y).coef_
+        )
         full_coeff[~zero_indicies] = coef_reduced
 
         return full_coeff
@@ -291,7 +311,13 @@ class AtomGraphDataset:
     def get_force_rms(self):
         force_list = []
         for x in self.to_list():
-            force_list.extend(x[self.DATA_KEY_FORCE].reshape(-1,).tolist())
+            force_list.extend(
+                x[self.DATA_KEY_FORCE]
+                .reshape(
+                    -1,
+                )
+                .tolist()
+            )
         force_list = torch.Tensor(force_list)
         return float(torch.sqrt(torch.mean(torch.pow(force_list, 2))))
 
@@ -306,7 +332,9 @@ class AtomGraphDataset:
         atomx = torch.concat([d[self.DATA_KEY_X] for d in data_list])
         force = torch.concat([d[self.DATA_KEY_FORCE] for d in data_list])
 
-        rms = torch.sqrt(scatter(force.square(), atomx, dim=0, reduce='mean').mean(dim=1))
+        rms = torch.sqrt(
+            scatter(force.square(), atomx, dim=0, reduce='mean').mean(dim=1)
+        )
         if len(rms) < num_chem_species:
             rms = torch.cat([rms, torch.zeros(num_chem_species - len(rms))])
         return rms
@@ -328,15 +356,24 @@ class AtomGraphDataset:
         key of dict is its label and _total for total statistics
         value of dict is dict of statistics (mean, std, median, max, min)
         """
+
         def _get_statistic_dict(tensor_list):
-            data_list = torch.cat([tensor.reshape(-1,) for tensor in tensor_list])
+            data_list = torch.cat(
+                [
+                    tensor.reshape(
+                        -1,
+                    )
+                    for tensor in tensor_list
+                ]
+            )
             return {
                 'mean': float(torch.mean(data_list)),
                 'std': float(torch.std(data_list)),
                 'median': float(torch.median(data_list)),
                 'max': float(torch.max(data_list)),
-                'min': float(torch.min(data_list))
+                'min': float(torch.min(data_list)),
             }
+
         res = {}
         for label, values in self.dataset.items():
             # flatten list of torch.Tensor (values)
@@ -361,9 +398,11 @@ class AtomGraphDataset:
         def default_validator(db1, db2):
             cut_consis = db1.cutoff == db2.cutoff
             # compare unordered lists
-            x_is_not_onehot =\
-                (not db1.x_is_one_hot_idx) and (not db2.x_is_one_hot_idx)
+            x_is_not_onehot = (not db1.x_is_one_hot_idx) and (
+                not db2.x_is_one_hot_idx
+            )
             return cut_consis and x_is_not_onehot
+
         if validator is None:
             validator = default_validator
         if not validator(self, dataset):
@@ -393,10 +432,14 @@ class AtomGraphDataset:
         """
         if by_label:
             for label, data in self.dataset.items():
-                to = f"{path}/{label}.sevenn_data"
-                #torch.save(AtomGraphDataset({label: data}, metadata=self.meta), to)
-                torch.save(AtomGraphDataset({label: data}, self.cutoff,
-                                            metadata=self.meta), to)
+                to = f'{path}/{label}.sevenn_data'
+                # torch.save(AtomGraphDataset({label: data}, metadata=self.meta), to)
+                torch.save(
+                    AtomGraphDataset(
+                        {label: data}, self.cutoff, metadata=self.meta
+                    ),
+                    to,
+                )
         else:
             if path.endswith('.sevenn_data') is False:
                 path += '.sevenn_data'

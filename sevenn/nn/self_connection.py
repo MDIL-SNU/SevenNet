@@ -1,6 +1,5 @@
 import torch.nn as nn
-from e3nn.o3 import Irreps, Linear
-from e3nn.o3 import FullyConnectedTensorProduct
+from e3nn.o3 import FullyConnectedTensorProduct, Irreps, Linear
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
@@ -13,6 +12,7 @@ class SelfConnectionIntro(nn.Module):
     do TensorProduct of x and some data(here attribute of x)
     and save it (to concatenate updated x at SelfConnectionOutro)
     """
+
     def __init__(
         self,
         irreps_x: Irreps,
@@ -24,14 +24,16 @@ class SelfConnectionIntro(nn.Module):
     ):
         super().__init__()
 
-        self.fc_tensor_product =\
-            FullyConnectedTensorProduct(irreps_x, irreps_operand, irreps_out)
+        self.fc_tensor_product = FullyConnectedTensorProduct(
+            irreps_x, irreps_operand, irreps_out
+        )
         self.KEY_X = data_key_x
         self.KEY_OPERAND = data_key_operand
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[KEY.SELF_CONNECTION_TEMP] =\
-            self.fc_tensor_product(data[self.KEY_X], data[self.KEY_OPERAND])
+        data[KEY.SELF_CONNECTION_TEMP] = self.fc_tensor_product(
+            data[self.KEY_X], data[self.KEY_OPERAND]
+        )
         return data
 
 
@@ -40,6 +42,7 @@ class SelfConnectionMACEIntro(nn.Module):
     """
     MACE style self connection update
     """
+
     def __init__(
         self,
         irreps_x: Irreps,
@@ -62,6 +65,7 @@ class SelfConnectionOutro(nn.Module):
     do TensorProduct of x and some data(here attribute of x)
     and save it (to concatenate updated x at SelfConnectionOutro)
     """
+
     def __init__(
         self,
         data_key_x: str = KEY.NODE_FEATURE,
@@ -74,4 +78,3 @@ class SelfConnectionOutro(nn.Module):
         data[self.KEY_X] = data[self.KEY_X] + data[KEY.SELF_CONNECTION_TEMP]
         del data[KEY.SELF_CONNECTION_TEMP]
         return data
-

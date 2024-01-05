@@ -3,8 +3,7 @@ from typing import Dict
 
 import torch
 import torch.nn as nn
-from e3nn.o3 import Irreps
-from e3nn.o3 import SphericalHarmonics
+from e3nn.o3 import Irreps, SphericalHarmonics
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
@@ -23,6 +22,7 @@ class EdgePreprocess(nn.Module):
 
     Only used for stress training and deleted in deploy.
     """
+
     def __init__(self, is_stress):
         super().__init__()
         # controlled by the upper most wrapper 'AtomGraphSequential'
@@ -41,23 +41,28 @@ class EdgePreprocess(nn.Module):
         if self.is_stress:
             if self._is_batch_data:  # Only for training mode
                 num_batch = int(batch.max().cpu().item()) + 1
-                strain = torch.zeros((num_batch, 3, 3),
-                                     dtype=pos.dtype,
-                                     device=pos.device,)
+                strain = torch.zeros(
+                    (num_batch, 3, 3),
+                    dtype=pos.dtype,
+                    device=pos.device,
+                )
                 strain.requires_grad_(True)
-                data["_strain"] = strain
+                data['_strain'] = strain
 
                 sym_strain = 0.5 * (strain + strain.transpose(-1, -2))
                 # Do not modify it to pos += or cell += !!!!!
-                pos = pos + \
-                    torch.bmm(pos.unsqueeze(-2), sym_strain[batch]).squeeze(-2)
+                pos = pos + torch.bmm(
+                    pos.unsqueeze(-2), sym_strain[batch]
+                ).squeeze(-2)
                 cell = cell + torch.bmm(cell, sym_strain)
             else:
-                strain = torch.zeros((3, 3),
-                                     dtype=pos.dtype,
-                                     device=pos.device,)
+                strain = torch.zeros(
+                    (3, 3),
+                    dtype=pos.dtype,
+                    device=pos.device,
+                )
                 strain.requires_grad_(True)
-                data["_strain"] = strain
+                data['_strain'] = strain
 
                 sym_strain = 0.5 * (strain + strain.transpose(-1, -2))
                 pos = pos + torch.mm(pos, sym_strain)
@@ -70,11 +75,11 @@ class EdgePreprocess(nn.Module):
 
         if self._is_batch_data:
             edge_vec = edge_vec + torch.einsum(
-                "ni,nij->nj", cell_shift, cell[batch[idx_src]]
+                'ni,nij->nj', cell_shift, cell[batch[idx_src]]
             )
         else:
             edge_vec = edge_vec + torch.einsum(
-                "ni,ij->nj", cell_shift, cell.squeeze(0)
+                'ni,ij->nj', cell_shift, cell.squeeze(0)
             )
         data[KEY.EDGE_VEC] = edge_vec
         data[KEY.EDGE_LENGTH] = torch.linalg.norm(edge_vec, dim=-1)
@@ -86,6 +91,7 @@ class BesselBasis(nn.Module):
     f : (*, 1) -> (*, num_basis)
     ? make coeffs to be trainable ?
     """
+
     def __init__(
         self,
         num_basis: int,
@@ -96,7 +102,8 @@ class BesselBasis(nn.Module):
         self.num_basis = num_basis
         self.prefactor = 2.0 / cutoff_length
         self.coeffs = torch.FloatTensor(
-            [n * math.pi / cutoff_length for n in range(1, num_basis + 1)])
+            [n * math.pi / cutoff_length for n in range(1, num_basis + 1)]
+        )
         if trainable_coeff:
             self.coeffs = nn.Parameter(self.coeffs)
 
@@ -110,6 +117,7 @@ class PolynomialCutoff(nn.Module):
     f : (*, 1) -> (*, 1)
     https://arxiv.org/pdf/2003.03123.pdf
     """
+
     def __init__(
         self,
         p: int,
@@ -124,15 +132,19 @@ class PolynomialCutoff(nn.Module):
 
     def forward(self, r: torch.Tensor) -> torch.Tensor:
         r = r / self.cutoff_length
-        return 1 - self.coeff_p0 * torch.pow(r, self.p) + \
-            self.coeff_p1 * torch.pow(r, self.p + 1.0) - \
-            self.coeff_p2 * torch.pow(r, self.p + 2.0)
+        return (
+            1
+            - self.coeff_p0 * torch.pow(r, self.p)
+            + self.coeff_p1 * torch.pow(r, self.p + 1.0)
+            - self.coeff_p2 * torch.pow(r, self.p + 2.0)
+        )
 
 
 class XPLORCutoff(nn.Module):
     """
     https://hoomd-blue.readthedocs.io/en/latest/module-md-pair.html
     """
+
     def __init__(
         self,
         cutoff_on: float,
@@ -150,7 +162,9 @@ class XPLORCutoff(nn.Module):
         return torch.where(
             r < self.r_on,
             1.0,
-            (r_cut_sq-r_sq)**2*(r_cut_sq+2*r_sq-3*r_on_sq)/(r_cut_sq-r_on_sq)**3
+            (r_cut_sq - r_sq) ** 2
+            * (r_cut_sq + 2 * r_sq - 3 * r_on_sq)
+            / (r_cut_sq - r_on_sq) ** 3,
         )
 
 
@@ -173,21 +187,21 @@ class SphericalEncoding(nn.Module):
     `torch.Tensor`
         a tensor of shape ``(..., (lmax+1)^2)``
     """
+
     def __init__(
-        self,
-        lmax: int,
-        parity: int = -1,
-        normalization: str = 'component'
+        self, lmax: int, parity: int = -1, normalization: str = 'component'
     ):
         super().__init__()
         self.lmax = lmax
         self.normalization = normalization
-        self.irreps_in = Irreps("1x1o") if parity == -1 else Irreps("1x1e")
+        self.irreps_in = Irreps('1x1o') if parity == -1 else Irreps('1x1e')
         self.irreps_out = Irreps.spherical_harmonics(lmax, parity)
-        self.sph = SphericalHarmonics(self.irreps_out,
-                                      normalize=False,
-                                      normalization=normalization,
-                                      irreps_in=self.irreps_in)
+        self.sph = SphericalHarmonics(
+            self.irreps_out,
+            normalize=False,
+            normalization=normalization,
+            irreps_in=self.irreps_in,
+        )
 
     def forward(self, r: torch.Tensor) -> torch.Tensor:
         return self.sph(r)
@@ -203,11 +217,12 @@ class EdgeEmbedding(nn.Module):
     since this result in weights of tensor product in e3nn,
     it is nothing to do with irreps of SO(3) or something
     """
+
     def __init__(
         self,
         basis_module: nn.Module,
         cutoff_module: nn.Module,
-        spherical_module: nn.Module
+        spherical_module: nn.Module,
     ):
         super().__init__()
         self.basis_function = basis_module
@@ -215,15 +230,16 @@ class EdgeEmbedding(nn.Module):
         self.spherical = spherical_module
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        #r = data[KEY.EDGE_LENGTH
+        # r = data[KEY.EDGE_LENGTH
         # TODO: consider compatibility with edge preprocess for stress
         # TODO: how about removing force from edge_vec?
         rvec = data[KEY.EDGE_VEC]
         r = torch.linalg.norm(data[KEY.EDGE_VEC], dim=-1)
         data[KEY.EDGE_LENGTH] = r
 
-        data[KEY.EDGE_EMBEDDING] = \
-            self.basis_function(r) * self.cutoff_function(r).unsqueeze(-1)
+        data[KEY.EDGE_EMBEDDING] = self.basis_function(
+            r
+        ) * self.cutoff_function(r).unsqueeze(-1)
         data[KEY.EDGE_ATTR] = self.spherical(rvec)
 
         return data

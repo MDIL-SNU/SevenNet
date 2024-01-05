@@ -2,9 +2,8 @@ from typing import List
 
 import torch
 import torch.nn as nn
-from e3nn.o3 import Irreps, Linear
-from e3nn.o3 import TensorProduct
 from e3nn.nn import FullyConnectedNet
+from e3nn.o3 import Irreps, Linear, TensorProduct
 from e3nn.util.jit import compile_mode
 from torch_scatter import scatter
 
@@ -18,6 +17,7 @@ class IrrepsConvolution(nn.Module):
     """
     same as nequips convolution part (fig 1.d)
     """
+
     def __init__(
         self,
         irreps_x: Irreps,
@@ -34,9 +34,9 @@ class IrrepsConvolution(nn.Module):
         is_parallel: bool = False,
     ):
         super().__init__()
-        self.denumerator = \
-            nn.Parameter(torch.FloatTensor([denumerator]),
-                         requires_grad=train_denumerator)
+        self.denumerator = nn.Parameter(
+            torch.FloatTensor([denumerator]), requires_grad=train_denumerator
+        )
         self.KEY_X = data_key_x
         self.KEY_FILTER = data_key_filter
         self.KEY_WEIGHT_INPUT = data_key_weight_input
@@ -51,7 +51,7 @@ class IrrepsConvolution(nn.Module):
                     if ir_out in irreps_out:  # here we drop l > lmax
                         k = len(irreps_mid)
                         irreps_mid.append((mul_x, ir_out))
-                        instructions.append((i, j, k, "uvu", True))
+                        instructions.append((i, j, k, 'uvu', True))
 
         irreps_mid = Irreps(irreps_mid)
         irreps_mid, p, _ = irreps_mid.sort()
@@ -70,7 +70,7 @@ class IrrepsConvolution(nn.Module):
 
         self.weight_nn = FullyConnectedNet(
             weight_layer_input_to_hidden + [self.convolution.weight_numel],
-            weight_layer_act
+            weight_layer_act,
         )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
@@ -83,9 +83,7 @@ class IrrepsConvolution(nn.Module):
         edge_src = data[self.KEY_EDGE_IDX][1]
         edge_dst = data[self.KEY_EDGE_IDX][0]
 
-        message = self.convolution(
-            x[edge_src], data[self.KEY_FILTER], weight
-        )
+        message = self.convolution(x[edge_src], data[self.KEY_FILTER], weight)
 
         x = scatter(message, edge_dst, dim=0, dim_size=len(x))
         x = x.div(self.denumerator)
@@ -102,13 +100,14 @@ class ElementDependentRadialWeights(nn.Module):
     Implement of elem dependent raidal weight of MACE on M3GNet
     J. Chem. Phys. 159, 044118 (2023)
     """
+
     def __init__(
         self,
         irreps_x: Irreps,
-        scalar_dim = None,
+        scalar_dim=None,
         data_key_x: str = KEY.NODE_FEATURE,
         data_key_radial_weights_prev: str = KEY.EDGE_EMBEDDING,
-        data_key_radial_weights_new: str = "radial_weights",
+        data_key_radial_weights_new: str = 'radial_weights',
         data_key_edge_idx: str = KEY.EDGE_IDX,
     ):
         super().__init__()
@@ -119,7 +118,7 @@ class ElementDependentRadialWeights(nn.Module):
 
         if scalar_dim is None:
             scalar_dim = irreps_x.sort().irreps.simplify()[0].mul
-        irreps_scalar = Irreps(f"{scalar_dim}x0e")
+        irreps_scalar = Irreps(f'{scalar_dim}x0e')
         self.linear = Linear(irreps_x, irreps_scalar)
         self.additional_weights_dim = scalar_dim * 2
 

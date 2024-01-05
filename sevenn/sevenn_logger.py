@@ -1,14 +1,14 @@
+import csv
 import os
 import sys
 import traceback
-import csv
 from datetime import datetime
 
 from ase.data import atomic_numbers
 
 import sevenn._const
-from sevenn._const import LossType
 import sevenn._keys as KEY
+from sevenn._const import LossType
 
 CHEM_SYMBOLS = {v: k for k, v in atomic_numbers.items()}
 
@@ -18,7 +18,9 @@ class Singleton(type):
 
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
+            cls._instances[cls] = super(Singleton, cls).__call__(
+                *args, **kwargs
+            )
         return cls._instances[cls]
 
 
@@ -26,6 +28,7 @@ class Logger(metaclass=Singleton):
     """
     logger for simple gnn
     """
+
     SCREEN_WIDTH = 120  # half size of my screen / changed due to stress output
 
     def __init__(self, filename: str, screen: bool, rank: int = 0):
@@ -38,9 +41,9 @@ class Logger(metaclass=Singleton):
             self.logfile = None
             self.screen = False
         self.timer_dct = {}
-        #self.logfile = open(filename, 'w', buffering=1)
-        #self.screen = screen
-        #self.timer_dct = {}
+        # self.logfile = open(filename, 'w', buffering=1)
+        # self.screen = screen
+        # self.timer_dct = {}
 
     def __del__(self):
         self.logfile.close()
@@ -74,7 +77,7 @@ class Logger(metaclass=Singleton):
             str_content = []
             for c in content:
                 if isinstance(c, float):
-                    str_content.append(f"{c:.{decimal}f}")
+                    str_content.append(f'{c:.{decimal}f}')
                 else:
                     str_content.append(str(c))
             self.files[filename].write(','.join(str_content) + '\n')
@@ -82,7 +85,7 @@ class Logger(metaclass=Singleton):
             pass
 
     def natoms_write(self, natoms):
-        content = ""
+        content = ''
         total_natom = {}
         for label, natom in natoms.items():
             content += self.format_k_v(label, natom)
@@ -91,27 +94,27 @@ class Logger(metaclass=Singleton):
                     total_natom[specie] += num
                 except KeyError:
                     total_natom[specie] = num
-        content += self.format_k_v("Total, label wise", total_natom)
-        content += self.format_k_v("Total", sum(total_natom.values()))
+        content += self.format_k_v('Total, label wise', total_natom)
+        content += self.format_k_v('Total', sum(total_natom.values()))
         self.write(content)
 
     def statistic_write(self, statistic):
         """
         expect statistic is dict(key as label) of dict(key of mean, std, and so on)
         """
-        content = ""
+        content = ''
         for label, dct in statistic.items():
             dct_new = {}
             for k, v in dct.items():
-                dct_new[k] = f"{v:.3f}"
+                dct_new[k] = f'{v:.3f}'
             content += self.format_k_v(label, dct_new)
         self.write(content)
 
     def epoch_write_train_loss(self, loss):
-        content = ""
+        content = ''
         for label, val in loss.items():
-            content += self.format_k_v(str(label), f"{val:.6f}")
-        content += self.format_k_v("Total loss", f"{sum(loss.values()):.6f}")
+            content += self.format_k_v(str(label), f'{val:.6f}')
+        content += self.format_k_v('Total loss', f'{sum(loss.values()):.6f}')
         self.write(content)
 
     # TODO : refactoring!!!, this is not loss, rmse
@@ -121,7 +124,7 @@ class Logger(metaclass=Singleton):
         pad = 21 - fs
         ln = '-' * fs
         total_atom_type = train_loss.keys()
-        content = ""
+        content = ''
         """
         content = \
             f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}".\
@@ -134,13 +137,18 @@ class Logger(metaclass=Singleton):
             t_F = train_loss[at]
             v_F = valid_loss[at]
             at_sym = CHEM_SYMBOLS[at]
-            content += "{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}".\
-                format(label=at_sym, t_E=ln, v_E=ln, lb_pad=lb_pad, pad=pad, fs=fs)\
-                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}".\
-                format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
-            content += "{t_S:<{pad}.{fs}s}{v_S:<{pad}.{fs}s}".\
-                format(t_S=ln, v_S=ln, pad=pad, fs=fs)
-            content += "\n"
+            content += (
+                '{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}'.format(
+                    label=at_sym, t_E=ln, v_E=ln, lb_pad=lb_pad, pad=pad, fs=fs
+                )
+                + '{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}'.format(
+                    t_F=t_F, v_F=v_F, pad=pad, fs=fs
+                )
+            )
+            content += '{t_S:<{pad}.{fs}s}{v_S:<{pad}.{fs}s}'.format(
+                t_S=ln, v_S=ln, pad=pad, fs=fs
+            )
+            content += '\n'
         self.write(content)
 
     # TODO : refactoring!!!, this is not loss, rmse
@@ -149,47 +157,62 @@ class Logger(metaclass=Singleton):
         fs = 6
         pad = 21 - fs
         is_stress = LossType.STRESS in train_loss['total']
-        content = \
-            f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}".\
-            format(lb_pad=lb_pad, pad=pad)\
+        content = (
+            f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}"
+            .format(lb_pad=lb_pad, pad=pad)
             + f"{'F_RMSE(T)':<{pad}}{'F_RMSE(V)':<{pad}}".format(pad=pad)
+        )
         if is_stress:
-            content += f"{'S_RMSE(T)':<{pad}}{'S_RMSE(V)':<{pad}}".format(pad=pad)
+            content += f"{'S_RMSE(T)':<{pad}}{'S_RMSE(V)':<{pad}}".format(
+                pad=pad
+            )
 
-        content += "\n"
+        content += '\n'
         label_keys = train_loss.keys()
         for label in label_keys:
             t_E = train_loss[label][LossType.ENERGY]
             v_E = valid_loss[label][LossType.ENERGY]
             t_F = train_loss[label][LossType.FORCE]
             v_F = valid_loss[label][LossType.FORCE]
-            content += "{label:{lb_pad}}{t_E:<{pad}.{fs}f}{v_E:<{pad}.{fs}f}".\
-                format(label=label, t_E=t_E, v_E=v_E, lb_pad=lb_pad, pad=pad, fs=fs)\
-                + "{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}".\
-                format(t_F=t_F, v_F=v_F, pad=pad, fs=fs)
+            content += (
+                '{label:{lb_pad}}{t_E:<{pad}.{fs}f}{v_E:<{pad}.{fs}f}'.format(
+                    label=label,
+                    t_E=t_E,
+                    v_E=v_E,
+                    lb_pad=lb_pad,
+                    pad=pad,
+                    fs=fs,
+                )
+                + '{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}'.format(
+                    t_F=t_F, v_F=v_F, pad=pad, fs=fs
+                )
+            )
             if is_stress:
                 t_S = train_loss[label][LossType.STRESS]
                 v_S = valid_loss[label][LossType.STRESS]
-                content += "{t_S:<{pad}.{fs}f}{v_S:<{pad}.{fs}f}".\
-                    format(t_S=t_S, v_S=v_S, pad=pad, fs=fs)
+                content += '{t_S:<{pad}.{fs}f}{v_S:<{pad}.{fs}f}'.format(
+                    t_S=t_S, v_S=v_S, pad=pad, fs=fs
+                )
 
-            content += "\n"
+            content += '\n'
         self.write(content)
 
     @staticmethod
     def write_table(dct):
         keys = list(dct.keys())
-        values = [f"{dct[key]:.6f}" for key in keys]
+        values = [f'{dct[key]:.6f}' for key in keys]
 
         # Calculate padding
         padding = [max(len(k), len(v)) + 2 for k, v in zip(keys, values)]
 
         # Create the key and value rows
-        key_row = "|".join(key.center(pad) for key, pad in zip(keys, padding))
-        value_row = "|".join(value.rjust(pad) for value, pad in zip(values, padding))
+        key_row = '|'.join(key.center(pad) for key, pad in zip(keys, padding))
+        value_row = '|'.join(
+            value.rjust(pad) for value, pad in zip(values, padding)
+        )
 
         # Create separator
-        separator = "-" * sum(padding) + "-" * (len(padding) - 1)
+        separator = '-' * sum(padding) + '-' * (len(padding) - 1)
 
         # Print the table
         Logger().writeline(key_row)
@@ -211,8 +234,7 @@ class Logger(metaclass=Singleton):
 
         # Format the numbers with the given decimal places
         formatted_values = [
-            [f"{value:.{decimal_places}f}" for value in row]
-            for row in values
+            [f'{value:.{decimal_places}f}' for value in row] for row in values
         ]
 
         # Calculate padding lengths for each column (with extra padding)
@@ -222,11 +244,13 @@ class Logger(metaclass=Singleton):
         ]
 
         # Create header row and separator
-        header = " " * (label_len + pad) + " ".join(
-            col_name.ljust(pad) for col_name, pad in zip(col_names, max_col_lengths)
+        header = ' ' * (label_len + pad) + ' '.join(
+            col_name.ljust(pad)
+            for col_name, pad in zip(col_names, max_col_lengths)
         )
-        separator = "-".join("-" * pad for pad in max_col_lengths) \
-            + "-" * (label_len + pad)
+        separator = '-'.join('-' * pad for pad in max_col_lengths) + '-' * (
+            label_len + pad
+        )
 
         # Print header and separator
         Logger().writeline(header)
@@ -234,10 +258,10 @@ class Logger(metaclass=Singleton):
 
         # Print the data rows with row labels
         for row_label, row in zip(row_labels, formatted_values):
-            data_row = " ".join(
+            data_row = ' '.join(
                 value.rjust(pad) for value, pad in zip(row, max_col_lengths)
             )
-            Logger().writeline(f"{row_label.ljust(label_len)}{data_row}")
+            Logger().writeline(f'{row_label.ljust(label_len)}{data_row}')
 
     @staticmethod
     def format_k_v(key, val, write=False):
@@ -246,23 +270,23 @@ class Logger(metaclass=Singleton):
         EMPTY_PADDING = ' ' * (MAX_KEY_SIZE + 3)
         NEW_LINE_LEN = Logger.SCREEN_WIDTH - 5
         val = str(val)
-        content = f"{key:<{MAX_KEY_SIZE}}: {val}"
+        content = f'{key:<{MAX_KEY_SIZE}}: {val}'
         if len(content) > NEW_LINE_LEN:
-            content = f"{key:<{MAX_KEY_SIZE}}: "
+            content = f'{key:<{MAX_KEY_SIZE}}: '
             # sperate val by sperator
             val_list = val.split(SPERATOR)
             current_len = len(content)
             for val_compo in val_list:
                 current_len += len(val_compo)
                 if current_len > NEW_LINE_LEN:
-                    newline_content = f"{EMPTY_PADDING}{val_compo}{SPERATOR}"
-                    content += f"\\\n{newline_content}"
+                    newline_content = f'{EMPTY_PADDING}{val_compo}{SPERATOR}'
+                    content += f'\\\n{newline_content}'
                     current_len = len(newline_content)
                 else:
-                    content += f"{val_compo}{SPERATOR}"
+                    content += f'{val_compo}{SPERATOR}'
 
-        if content.endswith(f"{SPERATOR}"):
-            content = content[:-len(SPERATOR)]
+        if content.endswith(f'{SPERATOR}'):
+            content = content[: -len(SPERATOR)]
         content += '\n'
 
         if write is False:
@@ -271,42 +295,44 @@ class Logger(metaclass=Singleton):
             Logger().write(content)
 
     def greeting(self):
-        LOGO_ASCII_FILE = f"{os.path.dirname(__file__)}/logo_ascii"
+        LOGO_ASCII_FILE = f'{os.path.dirname(__file__)}/logo_ascii'
         with open(LOGO_ASCII_FILE, 'r') as logo_f:
             logo_ascii = logo_f.read()
-        content = "SEVENN: Scalable EquVariance-Enabled Neural Network\n"
-        content += f"sevenn version {sevenn._const.SEVENN_VERSION}\n"
-        content += "reading yaml config..."
+        content = 'SEVENN: Scalable EquVariance-Enabled Neural Network\n'
+        content += f'sevenn version {sevenn._const.SEVENN_VERSION}\n'
+        content += 'reading yaml config...'
         self.write(content)
         self.write(logo_ascii)
 
     def bar(self):
-        content = "-" * Logger.SCREEN_WIDTH + "\n"
+        content = '-' * Logger.SCREEN_WIDTH + '\n'
         self.write(content)
 
     def print_config(self, model_config, data_config, train_config):
         """
         print some important information from config
         """
-        content = "succesfully read yaml config!\n\n" + "from model configuration\n"
+        content = (
+            'succesfully read yaml config!\n\n' + 'from model configuration\n'
+        )
         for k, v in model_config.items():
             content += Logger.format_k_v(k, v)
-        content += "\nfrom train configuration\n"
+        content += '\nfrom train configuration\n'
         for k, v in train_config.items():
             content += Logger.format_k_v(k, v)
-        content += "\nfrom data configuration\n"
+        content += '\nfrom data configuration\n'
         for k, v in data_config.items():
             content += Logger.format_k_v(k, v)
         self.write(content)
 
     # TODO: This is not good make own exception
     def error(self, e: Exception):
-        content = ""
+        content = ''
         if type(e) is ValueError:
-            content += "Error occured!\n"
-            content += str(e) + "\n"
+            content += 'Error occured!\n'
+            content += str(e) + '\n'
         else:
-            content += "Unknown error occured!\n"
+            content += 'Unknown error occured!\n'
             content += traceback.format_exc()
         self.write(content)
 
@@ -320,7 +346,7 @@ class Logger(metaclass=Singleton):
         elapsed = str(datetime.now() - self.timer_dct[name])
         # elapsed = elapsed.strftime('%H-%M-%S')
         del self.timer_dct[name]
-        self.write(f"{message}: {elapsed[:-4]}\n")
+        self.write(f'{message}: {elapsed[:-4]}\n')
 
     def dict_of_counter(self, counter_dict):
         # Find the Counter with the most keys and use it as a reference
@@ -328,53 +354,65 @@ class Logger(metaclass=Singleton):
 
         # Find the longest name and value length for formatting
         max_name_length = max(len(name) for name in counter_dict.keys())
-        max_value_length = max(len(str(value))
-                               for counter in counter_dict.values()
-                               for value in counter.values())
+        max_value_length = max(
+            len(str(value))
+            for counter in counter_dict.values()
+            for value in counter.values()
+        )
 
         # Create the header
-        header_parts = ["Name".ljust(max_name_length)] \
-            + [key.rjust(max_value_length) for key in ref_counter.keys()]
-        header = " ".join(header_parts)
+        header_parts = ['Name'.ljust(max_name_length)] + [
+            key.rjust(max_value_length) for key in ref_counter.keys()
+        ]
+        header = ' '.join(header_parts)
         table_output = [header, '-' * len(header)]
 
         # Create each row
         for name, counter in counter_dict.items():
-            row_parts = [name.ljust(max_name_length)] \
-                + [str(counter.get(key, '')).rjust(max_value_length)
-                    for key in ref_counter.keys()]
-            table_output.append(" ".join(row_parts))
+            row_parts = [name.ljust(max_name_length)] + [
+                str(counter.get(key, '')).rjust(max_value_length)
+                for key in ref_counter.keys()
+            ]
+            table_output.append(' '.join(row_parts))
 
         self.writeline('\n'.join(table_output))
 
-    #TODO: print it without config
+    # TODO: print it without config
     def print_model_info(self, model, config):
         from functools import partial
-        kv_write = partial(self.format_k_v, write=True)
-        self.writeline("Irreps of features")
-        kv_write("edge_feature",
-                 model.get_irreps_in("EdgeEmbedding", "irreps_out"))
-        for i in range(config[KEY.NUM_CONVOLUTION]):
-            kv_write(f"{i}th node_feature",
-                     model.get_irreps_in(f"{i}_self_interaction_1"))
-        kv_write("readout irreps",
-                 model.get_irreps_in(f"{i} equivariant gate", "irreps_out"))
-        shift = model._modules["rescale atomic energy"].shift
-        scale = model._modules["rescale atomic energy"].scale
-        if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            kv_write("global shift", f"{shift.item():.6f}")
-            kv_write("global scale", f"{scale.item():.6f}")
-        else:
-            chem_str =\
-                sevenn.util.onehot_to_chem(list(range(config[KEY.NUM_SPECIES])),
-                                           config[KEY.TYPE_MAP])
-            self.writeline("shift, scale tuple for each chemical species")
-            for cstr, sh, sc in zip(chem_str, shift, scale):
-                kv_write(f"{cstr}", f"{sh:.6f}, {sc:.6f}")
 
-        self.writeline("Denumerator (avg_num_neigh**0.5) for each layer")
+        kv_write = partial(self.format_k_v, write=True)
+        self.writeline('Irreps of features')
+        kv_write(
+            'edge_feature', model.get_irreps_in('EdgeEmbedding', 'irreps_out')
+        )
+        for i in range(config[KEY.NUM_CONVOLUTION]):
+            kv_write(
+                f'{i}th node_feature',
+                model.get_irreps_in(f'{i}_self_interaction_1'),
+            )
+        kv_write(
+            'readout irreps',
+            model.get_irreps_in(f'{i} equivariant gate', 'irreps_out'),
+        )
+        shift = model._modules['rescale atomic energy'].shift
+        scale = model._modules['rescale atomic energy'].scale
+        if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+            kv_write('global shift', f'{shift.item():.6f}')
+            kv_write('global scale', f'{scale.item():.6f}')
+        else:
+            chem_str = sevenn.util.onehot_to_chem(
+                list(range(config[KEY.NUM_SPECIES])), config[KEY.TYPE_MAP]
+            )
+            self.writeline('shift, scale tuple for each chemical species')
+            for cstr, sh, sc in zip(chem_str, shift, scale):
+                kv_write(f'{cstr}', f'{sh:.6f}, {sc:.6f}')
+
+        self.writeline('Denumerator (avg_num_neigh**0.5) for each layer')
         for i in range(config[KEY.NUM_CONVOLUTION]):
             denumerator = model._modules[f'{i} convolution'].denumerator
-            kv_write(f"{i}th layer denumerator", f"{denumerator.item():.6f}")
-        num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
-        self.writeline(f"Total number of weight in model is {num_weights}\n")
+            kv_write(f'{i}th layer denumerator', f'{denumerator.item():.6f}')
+        num_weights = sum(
+            p.numel() for p in model.parameters() if p.requires_grad
+        )
+        self.writeline(f'Total number of weight in model is {num_weights}\n')

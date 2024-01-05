@@ -1,26 +1,35 @@
-from typing import List, Optional, Dict
-from itertools import islice
-from functools import partial
 import os.path
 import pickle
+from functools import partial
+from itertools import islice
+from typing import Dict, List, Optional
 
-import numpy as np
-import torch.multiprocessing as mp
 import ase
 import ase.io
-from ase.neighborlist import primitive_neighbor_list
-from ase.io.vasp_parsers.vasp_outcar_parsers import DefaultParsersContainer,\
-    OutcarChunkParser, Cell, PositionsAndForces, Stress, Energy, outcarchunks
-from ase.io.utils import string2index
-from braceexpand import braceexpand
+import numpy as np
+import torch.multiprocessing as mp
 import tqdm
+from ase.io.utils import string2index
+from ase.io.vasp_parsers.vasp_outcar_parsers import (
+    Cell,
+    DefaultParsersContainer,
+    Energy,
+    OutcarChunkParser,
+    PositionsAndForces,
+    Stress,
+    outcarchunks,
+)
+from ase.neighborlist import primitive_neighbor_list
+from braceexpand import braceexpand
 
+import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
-import sevenn._keys as KEY
 
 
-def atoms_to_graph(atoms: ase.Atoms, cutoff: float, transfer_info: bool = True):
+def atoms_to_graph(
+    atoms: ase.Atoms, cutoff: float, transfer_info: bool = True
+):
     """
     From ase atoms, return AtomGraphData as graph based on cutoff radius
     Args:
@@ -61,7 +70,7 @@ def atoms_to_graph(atoms: ase.Atoms, cutoff: float, transfer_info: bool = True):
 
     # building neighbor list
     edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
-        "ijDS", atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
+        'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
     )
 
     # remove redundant edges (self interaction) but saves self interaction cross PBC
@@ -91,9 +100,7 @@ def atoms_to_graph(atoms: ase.Atoms, cutoff: float, transfer_info: bool = True):
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
         KEY.CELL_VOLUME: np.einsum(
-            "i,i",
-            cell[0, :],
-            np.cross(cell[1, :], cell[2, :])
+            'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
         ),
         KEY.NUM_ATOMS: len(atomic_numbers),
         KEY.PER_ATOM_ENERGY: y_energy / len(pos),
@@ -107,10 +114,12 @@ def atoms_to_graph(atoms: ase.Atoms, cutoff: float, transfer_info: bool = True):
     return data
 
 
-def graph_build(atoms_list: List,
-                cutoff: float,
-                num_cores: int = 1,
-                transfer_info: Optional[bool] = True) -> List[AtomGraphData]:
+def graph_build(
+    atoms_list: List,
+    cutoff: float,
+    num_cores: int = 1,
+    transfer_info: Optional[bool] = True,
+) -> List[AtomGraphData]:
     """
     parallel version of graph_build
     build graph from atoms_list and return list of AtomGraphData
@@ -128,8 +137,9 @@ def graph_build(atoms_list: List,
     if not serial:
         pool = mp.Pool(num_cores)
         # this is not strictly correct because it updates for every input not output
-        graph_list = pool.starmap(atoms_to_graph,
-                                  tqdm.tqdm(inputs, total=len(atoms_list)))
+        graph_list = pool.starmap(
+            atoms_to_graph, tqdm.tqdm(inputs, total=len(atoms_list))
+        )
         pool.close()
         pool.join()
     else:
@@ -154,16 +164,17 @@ def pkl_atoms_reader(fname):
     with open(fname, 'rb') as f:
         atoms_list = pickle.load(f)
     if type(atoms_list) != list:
-        raise TypeError("The content of the pkl is not list")
+        raise TypeError('The content of the pkl is not list')
     if type(atoms_list[0]) != ase.Atoms:
-        raise TypeError("The content of the pkl is not list of ase.Atoms")
+        raise TypeError('The content of the pkl is not list of ase.Atoms')
     return atoms_list
 
 
 # Reader
 def structure_list_reader(filename: str, format_outputs='vasp-out'):
-    parsers = DefaultParsersContainer(PositionsAndForces,
-                                      Stress, Energy, Cell).make_parsers()
+    parsers = DefaultParsersContainer(
+        PositionsAndForces, Stress, Energy, Cell
+    ).make_parsers()
     ocp = OutcarChunkParser(parsers=parsers)
     """
     Read from structure_list using braceexpand and ASE
@@ -213,14 +224,14 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
     structure_list_file.close()
 
     structures_dict = {}
-    info_dct = {"data_from": "user_OUTCAR"}
+    info_dct = {'data_from': 'user_OUTCAR'}
     for title, file_lines in raw_str_dict.items():
         stct_lists = []
         for file_line in file_lines:
             files_expr, index_expr = file_line
             index = string2index(index_expr)
             for expanded_filename in list(braceexpand(files_expr)):
-                f_stream = open(expanded_filename, "r")
+                f_stream = open(expanded_filename, 'r')
                 """
                 stct_lists += io.read(expanded_filename, index=index_expr,
                                       format=format_outputs, parallel=False)
@@ -228,18 +239,23 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
                 try:
-                    it_atoms = islice(gen_all, index.start, index.stop, index.step)
+                    it_atoms = islice(
+                        gen_all, index.start, index.stop, index.step
+                    )
                 except ValueError:
                     # TODO: support
                     # negative index
-                    raise ValueError("Negative index is not supported yet")
+                    raise ValueError('Negative index is not supported yet')
 
-                info_dct_f = {**info_dct, "file": os.path.abspath(expanded_filename)}
+                info_dct_f = {
+                    **info_dct,
+                    'file': os.path.abspath(expanded_filename),
+                }
                 for idx, o in enumerate(it_atoms):
                     try:
                         istep = index.start + idx * index.step
                         atoms = o.build()
-                        atoms.info = {**info_dct_f, "ionic_step": istep}
+                        atoms.info = {**info_dct_f, 'ionic_step': istep}
                     except TypeError:  # it is not slice of ionic steps
                         atoms = o.build()
                         atoms.info = info_dct_f
@@ -252,25 +268,26 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
 def match_reader(reader_name: str, **kwargs):
     reader = None
     metadata = {}
-    if reader_name == "pkl" or reader_name == "pickle":
+    if reader_name == 'pkl' or reader_name == 'pickle':
         reader = partial(pkl_atoms_reader, **kwargs)
-        metadata.update({"origin": "atoms_pkl"})
-    elif reader_name == "structure_list":
+        metadata.update({'origin': 'atoms_pkl'})
+    elif reader_name == 'structure_list':
         reader = partial(structure_list_reader, **kwargs)
-        metadata.update({"origin": "structure_list"})
+        metadata.update({'origin': 'structure_list'})
     else:
         reader = partial(ase_reader, **kwargs)
-        metadata.update({"origin": f"ase_reader"})
+        metadata.update({'origin': f'ase_reader'})
     return reader, metadata
 
 
-def file_to_dataset(file: str,
-                    cutoff: float,
-                    cores=1,
-                    reader=None,
-                    label: str = None,
-                    transfer_info: bool =True,
-                    ):
+def file_to_dataset(
+    file: str,
+    cutoff: float,
+    cores=1,
+    reader=None,
+    label: str = None,
+    transfer_info: bool = True,
+):
     """
     Read file by reader > get list of atoms or dict of atoms
     """
@@ -289,16 +306,15 @@ def file_to_dataset(file: str,
     elif type(atoms) == dict:
         atoms_dct = atoms
     else:
-        raise TypeError("The return of reader is not list or dict")
+        raise TypeError('The return of reader is not list or dict')
 
     graph_dct = {}
     for label, atoms_list in atoms_dct.items():
-        graph_list = graph_build(atoms_list, cutoff, cores,
-                                 transfer_info=transfer_info)
+        graph_list = graph_build(
+            atoms_list, cutoff, cores, transfer_info=transfer_info
+        )
         for graph in graph_list:
             graph[KEY.USER_LABEL] = label
         graph_dct[label] = graph_list
     db = AtomGraphDataset(graph_dct, cutoff)
     return db
-
-
