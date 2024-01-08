@@ -1,30 +1,46 @@
-from typing import Dict, Any
 import os.path
 from enum import Enum
+from typing import Any, Dict
 
 import torch
 
-from sevenn.nn.activation import ShiftedSoftPlus
 import sevenn._keys as KEY
+from sevenn.nn.activation import ShiftedSoftPlus
 
-SEVENN_VERSION = "0.9.0"
+SEVENN_VERSION = '0.9.0'
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of paralell model
 IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'MACE']
 
 SUPPORTING_METRICS = ['RMSE', 'ComponentRMSE', 'MAE', 'Loss']
-SUPPORTING_ERROR_TYPES = ['TotalEnergy', 'Energy', 'Force', 'Stress', 'Stress_GPa', 'TotalLoss']
+SUPPORTING_ERROR_TYPES = [
+    'TotalEnergy',
+    'Energy',
+    'Force',
+    'Stress',
+    'Stress_GPa',
+    'TotalLoss',
+]
 
 IMPLEMENTED_MODEL = ['E3_equivariant_model']
 
 # string input to real torch function
-ACTIVATION = {"relu": torch.nn.functional.relu, "silu": torch.nn.functional.silu,
-              "tanh": torch.tanh, "abs": torch.abs, "ssp": ShiftedSoftPlus,
-              "sigmoid": torch.sigmoid, "elu": torch.nn.functional.elu,}
-ACTIVATION_FOR_EVEN = {"ssp": ShiftedSoftPlus, "silu": torch.nn.functional.silu}
-ACTIVATION_FOR_ODD = {"tanh": torch.tanh, "abs": torch.abs}
-ACTIVATION_DICT = {"e": ACTIVATION_FOR_EVEN, "o": ACTIVATION_FOR_ODD}
+ACTIVATION = {
+    'relu': torch.nn.functional.relu,
+    'silu': torch.nn.functional.silu,
+    'tanh': torch.tanh,
+    'abs': torch.abs,
+    'ssp': ShiftedSoftPlus,
+    'sigmoid': torch.sigmoid,
+    'elu': torch.nn.functional.elu,
+}
+ACTIVATION_FOR_EVEN = {
+    'ssp': ShiftedSoftPlus,
+    'silu': torch.nn.functional.silu,
+}
+ACTIVATION_FOR_ODD = {'tanh': torch.tanh, 'abs': torch.abs}
+ACTIVATION_DICT = {'e': ACTIVATION_FOR_EVEN, 'o': ACTIVATION_FOR_ODD}
 
 
 # to avoid torch script to compile torch_geometry.data
@@ -33,8 +49,9 @@ AtomGraphDataType = Dict[str, torch.Tensor]
 
 class LossType(Enum):
     ENERGY = 'energy'  # eV or eV/atom
-    FORCE = 'force'    # eV/A
+    FORCE = 'force'  # eV/A
     STRESS = 'stress'  # kB
+
 
 # deprecated
 class DataSetType(Enum):
@@ -48,7 +65,7 @@ def is_dir_avail(x):
 
 
 def is_file(x):
-    return type(x) == str and os.path.isfile(x)
+    return isinstance(x, str) and os.path.isfile(x)
 
 
 def is_positive(x):
@@ -59,6 +76,7 @@ def is_list_of_file_or_file(x):
     if type(x) is str:
         x = [x]
     return all([os.path.isfile(v) for v in x])
+
 
 def error_record_condition(x):
     if type(x) is not list:
@@ -75,6 +93,7 @@ def error_record_condition(x):
             return False
     return True
 
+
 DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.IRREPS_MANUAL: False,
     KEY.NODE_FEATURE_MULTIPLICITY: 32,
@@ -90,31 +109,35 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
         KEY.CUTOFF_FUNCTION_NAME: 'poly_cut',
         KEY.POLY_CUT_P: 6,
     },
-    KEY.ACTIVATION_RADIAL: "silu",
+    KEY.ACTIVATION_RADIAL: 'silu',
     KEY.CUTOFF: 4.5,
     KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: [64, 64],
     KEY.NUM_CONVOLUTION: 3,
-    KEY.ACTIVATION_SCARLAR: {"e": "silu", "o": "tanh"},
-    KEY.ACTIVATION_GATE: {"e": "silu", "o": "tanh"},
+    KEY.ACTIVATION_SCARLAR: {'e': 'silu', 'o': 'tanh'},
+    KEY.ACTIVATION_GATE: {'e': 'silu', 'o': 'tanh'},
     KEY.AVG_NUM_NEIGH: True,
     KEY.TRAIN_AVG_NUM_NEIGH: False,
     KEY.TRAIN_SHIFT_SCALE: False,
     KEY.OPTIMIZE_BY_REDUCE: False,
     KEY.USE_BIAS_IN_LINEAR: False,
+    KEY.USE_MODAL_NODE_EMBEDDING: False,
+    KEY.USE_MODAL_SELF_INTER_INTRO: False,
+    KEY.USE_MODAL_SELF_INTER_OUTRO: False,
+    KEY.USE_MODAL_OUTPUT_BLOCK: False,
     KEY.READOUT_AS_FCN: False,
     # Applied af readout as fcn is True
     KEY.READOUT_FCN_HIDDEN_NEURONS: [30, 30],
-    KEY.READOUT_FCN_ACTIVATION: "relu",
-    KEY.SELF_CONNECTION_TYPE: "nequip",
+    KEY.READOUT_FCN_ACTIVATION: 'relu',
+    KEY.SELF_CONNECTION_TYPE: 'nequip',
 }
 
 
 DEFAULT_DATA_CONFIG = {
-    KEY.DTYPE: "single",
-    KEY.DATA_FORMAT: "structure_list",
+    KEY.DTYPE: 'single',
+    KEY.DATA_FORMAT: 'structure_list',
     KEY.DATA_FORMAT_ARGS: {},
     KEY.FORMAT_OUTPUTS: 'vasp-out',
-    #KEY.STRUCTURE_LIST: False,  # deprecated
+    # KEY.STRUCTURE_LIST: False,  # deprecated
     KEY.SAVE_DATASET: False,
     KEY.SAVE_BY_LABEL: False,
     KEY.SAVE_BY_TRAIN_VALID: False,
@@ -125,6 +148,8 @@ DEFAULT_DATA_CONFIG = {
     KEY.SHIFT: False,
     KEY.SCALE: False,
     KEY.DATA_SHUFFLE: True,
+    KEY.DATA_WEIGHT: False,
+    KEY.DATA_MODALITY: False,
 }
 
 
@@ -144,19 +169,22 @@ DEFAULT_TRAINING_CONFIG = {
         KEY.RESET_SCHEDULER: False,
         KEY.RESET_EPOCH: False,
         KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT: True,
+        KEY.DEFAULT_MODAL: 'common',
     },
-    KEY.CSV_LOG: "log.csv",
+    KEY.CSV_LOG: 'log.csv',
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRACE_STRESS: False,
     KEY.IS_TRAIN_STRESS: True,
     KEY.TRAIN_SHUFFLE: True,
     KEY.ERROR_RECORD: [
-        ["Energy", "RMSE"],
-        ["Force", "RMSE"],
-        ["Stress", "RMSE"],
-        ["TotalLoss", "None"],
+        ['Energy', 'RMSE'],
+        ['Force', 'RMSE'],
+        ['Stress', 'RMSE'],
+        ['TotalLoss', 'None'],
     ],
-    KEY.BEST_METRIC: "TotalLoss",
+    KEY.BEST_METRIC: 'TotalLoss',
+    KEY.USE_WEIGHT: False,
+    KEY.USE_MODALITY: False,
 }
 
 
@@ -177,15 +205,21 @@ MODEL_CONFIG_CONDITION = {
     },
     KEY.CUTOFF: is_positive,
     KEY.NUM_CONVOLUTION: is_positive,
-    KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS:
-        lambda x: all(val > 0 and isinstance(val, int) for val in x),
+    KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: lambda x: all(
+        val > 0 and isinstance(val, int) for val in x
+    ),
     KEY.TRAIN_SHIFT_SCALE: None,
     KEY.TRAIN_AVG_NUM_NEIGH: None,
     KEY.OPTIMIZE_BY_REDUCE: None,
     KEY.USE_BIAS_IN_LINEAR: None,
+    KEY.USE_MODAL_NODE_EMBEDDING: None,
+    KEY.USE_MODAL_SELF_INTER_INTRO: None,
+    KEY.USE_MODAL_SELF_INTER_OUTRO: None,
+    KEY.USE_MODAL_OUTPUT_BLOCK: None,
     KEY.READOUT_AS_FCN: None,
-    KEY.READOUT_FCN_HIDDEN_NEURONS:
-        lambda x: all(val > 0 and isinstance(val, int) for val in x),
+    KEY.READOUT_FCN_HIDDEN_NEURONS: lambda x: all(
+        val > 0 and isinstance(val, int) for val in x
+    ),
     KEY.READOUT_FCN_ACTIVATION: lambda x: x in ACTIVATION.keys(),
     KEY.ACTIVATION_RADIAL: lambda x: x in ACTIVATION.keys(),
     KEY.SELF_CONNECTION_TYPE: lambda x: x in IMPLEMENTED_SELF_CONNECTION_TYPE,
@@ -193,10 +227,10 @@ MODEL_CONFIG_CONDITION = {
 
 
 DATA_CONFIG_CONDITION = {
-    KEY.DTYPE: lambda x: x.lower() in ["single", "double"],
-    KEY.DATA_FORMAT: lambda x: x in ["structure_list", "ase", "pkl", "pickle"],
+    KEY.DTYPE: lambda x: x.lower() in ['single', 'double'],
+    KEY.DATA_FORMAT: lambda x: x in ['structure_list', 'ase', 'pkl', 'pickle'],
     KEY.DATA_FORMAT_ARGS: lambda x: type(x) is dict,
-    KEY.FORMAT_OUTPUTS: lambda x: x in ["vasp-out", "vasp", "vasp-xdatcar"],
+    KEY.FORMAT_OUTPUTS: lambda x: x in ['vasp-out', 'vasp', 'vasp-xdatcar'],
     KEY.SAVE_DATASET: None,
     KEY.SAVE_BY_LABEL: None,
     KEY.SAVE_BY_TRAIN_VALID: None,
@@ -205,6 +239,8 @@ DATA_CONFIG_CONDITION = {
     KEY.PREPROCESS_NUM_CORES: is_positive,
     KEY.USE_SPECIES_WISE_SHIFT_SCALE: None,
     KEY.DATA_SHUFFLE: None,
+    KEY.DATA_WEIGHT: None,
+    KEY.DATA_MODALITY: None,
 }
 
 TRAINING_CONFIG_CONDITION = {
@@ -221,11 +257,19 @@ TRAINING_CONFIG_CONDITION = {
         KEY.RESET_SCHEDULER: None,
         KEY.RESET_EPOCH: None,
         KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT: None,
+        KEY.DEFAULT_MODAL: None,
     },
     KEY.IS_TRACE_STRESS: None,
     KEY.IS_TRAIN_STRESS: None,
     KEY.TRAIN_SHUFFLE: None,
     KEY.ERROR_RECORD: error_record_condition,
-    KEY.BEST_METRIC: lambda x: type(x) is str and x in ["Energy", "Force", "Stress", "TotalLoss"],
+    KEY.BEST_METRIC: lambda x: type(x) is str and x in [
+        'Energy',
+        'Force',
+        'Stress',
+        'TotalLoss',
+    ],
     KEY.CSV_LOG: lambda x: type(x) is str,
+    KEY.USE_MODALITY: None,
+    KEY.USE_WEIGHT: None,
 }
