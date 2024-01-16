@@ -119,6 +119,10 @@ RESET_OPTIMIZER = 'reset_optimizer'
 RESET_SCHEDULER = 'reset_scheduler'
 RESET_EPOCH = 'reset_epoch'
 USE_STATISTIC_VALUES_OF_CHECKPOINT = 'use_statistic_values_of_checkpoint'
+CALC_FISHER = "calc_fisher"
+OPT_PARAMS = "opt_params"
+FISHER = "fisher_information"
+EWC_LAMBDA = "ewc_lambda"
 
 CSV_LOG = 'csv_log'
 

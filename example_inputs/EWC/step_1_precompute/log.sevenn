@@ -1,0 +1,369 @@
+SEVENN: Scalable EquVariance-Enabled Neural Network
+sevenn version 0.9.0
+reading yaml config...
+                ****
+              ********                                   .
+              *//////,  ..                               .            ,*.
+               ,,***.         ..                        ,          ********.                                  ./,
+             .      .                ..   /////.       .,       . */////////                               /////////.
+        .&@&/        .                  .(((((((..     /           *//////*.  ...                         *((((((((((.
+     @@@@@@@@@@*    @@@@@@@@@@  @@@@@    *((@@@@@     (     %@@@@@@@@@@  .@@@@@@     ..@@@@.   @@@@@@*    .(@@@@@(((*
+    @@@@@.          @@@@         @@@@@ .   @@@@@      #     %@@@@         @@@@@@@@     @@@@(,  @@@@@@@@.    @@@@@(*.
+    %@@@@@@@&       @@@@@@@@@@    @@@@@   @@@@@      #  ., .%@@@@@@@@@    @@@@@@@@@@   @@@@,   @@@@@@@@@@   @@@@@
+    ,(%@@@@@@@@@    @@@@@@@@@@     @@@@@ @@@@&       (//////%@@@@@@@@@    @@@@  @@@@@@ @@@@  . @@@@@  @@@@@.@@@@@
+        .   @@@@@   @@@@ .       .  @@@@@@@@%   . . ( .////,%@@@@         @@@@    @@@@@@@@@    @@@@@    @@@@@@@@@
+    (@@@@@@@@@@@    @@@@@@@@@@**.    @@@@@@*       *.      .%@@@@@@@@@@   @@@@    . @@@@@@@    @@@@@     .@@@@@@@
+     @@@@@@@@@.     @@@@@@@@@@///,    @@@@.      . /        %@@@@@@@@@@   @@@@***,    @@@@@    @@@@@        @@@@@
+           .           //////////*.               /           .            .*******...             . ,.
+          .&&&&&...     ,//////*.       ...////.  /            ,*/.     .   ,////,               .,/////
+          &@@@@@@                         ,(/((, *           ,((((((.                              .***.
+           ,/@(,                            ..   *            ,((((*
+                                                ,
+                                               .
+
+succesfully read yaml config!
+
+from model configuration
+chemical_species    : auto
+_number_of_species  : auto
+_type_map           : auto
+act_gate            : {'e': 'silu', 'o': 'tanh'}
+act_scalar          : {'e': 'silu', 'o': 'tanh'}
+irreps_manual       : False
+avg_num_neigh       : True
+channel             : 64
+lmax                : 2
+lmax_edge           : -1
+lmax_node           : -1
+is_parity           : True
+radial_basis        : {'radial_basis_name': 'bessel', 'bessel_basis_num': 8}
+cutoff_function     : {'cutoff_function_name': 'poly_cut', 'poly_cut_p_value': 6}
+cutoff              : 5.0
+num_convolution_layer: 3
+weight_nn_hidden_neurons: [64, 64]
+train_shift_scale   : False
+train_avg_num_neigh : False
+optimize_by_reduce  : True
+use_bias_in_linear  : False
+readout_as_fcn      : False
+readout_fcn_hidden_neurons: None
+readout_fcn_activation: None
+act_radial          : silu
+self_connection_type: nequip
+
+from train configuration
+device              : cuda
+optimizer           : adam
+scheduler           : cosineannealinglr
+loss                : mse
+optim_param         : {'lr': 0.0001}
+scheduler_param     : {'T_max': 300, 'eta_min': 0.0}
+continue            : {'use_statistic_values_of_checkpoint': True, \
+                       'checkpoint': '/data/tmp/univ_checkpoints/checkpoint_1275.pth', 'reset_optimizer': True, \
+                       'reset_scheduler': True, 'calc_fisher': True, 'reset_epoch': False, 'fisher_information': False, \
+                       'opt_params': False, 'ewc_lambda': 0.0}
+random_seed         : 1
+epoch               : 300
+force_loss_weight   : 1.0
+stress_loss_weight  : 0.01
+use_testset         : False
+_num_workers        : 0
+per_epoch           : 25
+_is_trace_stress    : False
+is_train_stress     : True
+train_shuffle       : True
+error_record        : [['Energy', 'RMSE'], ['Force', 'RMSE'], ['Stress', 'RMSE'], ['Energy', 'MAE'], ['Force', 'MAE'], ['Stress', 'MAE'], \
+                       ['Energy', 'Loss'], ['Force', 'Loss'], ['Stress', 'Loss'], ['TotalLoss', 'None']]
+best_metric         : TotalLoss
+csv_log             : log.csv
+is_ddp              : False
+local_rank          : 0
+rank                : 0
+world_size          : 1
+
+from data configuration
+load_dataset_path   : ['/data/tmp/GNN_pretrained/EWC/M3GNet_0.01.sevenn_data']
+load_validset_path  : ['/data/tmp/GNN_pretrained/EWC/M3GNet_0.01.sevenn_data']
+save_dataset_path   : False
+shift               : False
+scale               : False
+dtype               : single
+data_format         : structure_list
+data_format_args    : {}
+format_outputs_for_ase: vasp-out
+save_by_label       : False
+save_by_train_valid : False
+data_divide_ratio   : 0.1
+batch_size          : 4
+preprocess_num_cores: 1
+use_species_wise_shift_scale: True
+data_shuffle        : True
+
+Continue found, loading checkpoint
+Checkpoint config is compatible
+checkpoint previous epoch was: 1275
+epoch start from 1276
+log.csv file not found, new csv file will be created
+checkpoint loading was successful
+
+Initializing dataset...
+Loading /data/tmp/GNN_pretrained/EWC/M3GNet_0.01.sevenn_data
+loaded dataset size is: {'/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train': 1689}
+data set loading time: 0:00:01.93
+Ignore chemical species in yaml, use checkpoint
+Loading validset from load_validset
+Loading /data/tmp/GNN_pretrained/EWC/M3GNet_0.01.sevenn_data
+loaded dataset size is: {'/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train': 1689}
+data set loading time: 0:00:00.70
+the validset loaded, load_dataset is now train_set
+the ratio will be ignored
+
+loaded trainset size is: {'/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train': 1689}
+
+loaded validset size is: {'/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train': 1689}
+Dataset initialization was successful
+
+Number of atoms in the train_set:
+/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train: {'Li': 1758, 'Bi': 314, 'O': 19500, 'Zn': 478, 'W': 285, \
+                       'Na': 579, 'Mn': 655, 'P': 1769, 'C': 734, 'Hf': 63, 'Cr': 359, 'Fe': 826, 'F': 2389, 'Ba': 422, 'Y': 177, \
+                       'Cu': 553, 'Sn': 364, 'Ca': 515, 'Co': 376, 'Se': 908, 'S': 1624, 'Ti': 406, 'Sb': 281, 'Au': 79, 'H': 2234, \
+                       'N': 931, 'V': 651, 'Ni': 506, 'B': 807, 'Pr': 127, 'Pt': 117, 'Mg': 348, 'Ga': 172, 'Al': 413, 'La': 287, \
+                       'Sr': 341, 'Mo': 490, 'Ag': 214, 'Si': 1023, 'K': 456, 'Zr': 145, 'I': 523, 'Be': 58, 'Nb': 222, 'Te': 388, \
+                       'Ir': 100, 'Gd': 86, 'Hg': 108, 'Pm': 7, 'Er': 81, 'Yb': 146, 'Sm': 109, 'Ge': 356, 'As': 319, 'Ru': 127, \
+                       'Br': 273, 'Pd': 187, 'Cl': 713, 'Rh': 165, 'Rb': 238, 'Cs': 134, 'Sc': 80, 'Nd': 113, 'Pb': 196, 'Tm': 30, \
+                       'In': 204, 'Np': 6, 'Ho': 139, 'Cd': 94, 'Tl': 140, 'Pu': 53, 'Dy': 33, 'U': 53, 'Tb': 45, 'Eu': 41, 'Ce': 145, \
+                       'Re': 49, 'Th': 26, 'Ta': 124, 'Os': 23, 'Tc': 32, 'Lu': 19, 'Ac': 3, 'Pa': 8, 'Xe': 24}
+Total, label wise   : {'Li': 1758, 'Bi': 314, 'O': 19500, 'Zn': 478, 'W': 285, 'Na': 579, 'Mn': 655, 'P': 1769, 'C': 734, 'Hf': 63, \
+                       'Cr': 359, 'Fe': 826, 'F': 2389, 'Ba': 422, 'Y': 177, 'Cu': 553, 'Sn': 364, 'Ca': 515, 'Co': 376, 'Se': 908, \
+                       'S': 1624, 'Ti': 406, 'Sb': 281, 'Au': 79, 'H': 2234, 'N': 931, 'V': 651, 'Ni': 506, 'B': 807, 'Pr': 127, \
+                       'Pt': 117, 'Mg': 348, 'Ga': 172, 'Al': 413, 'La': 287, 'Sr': 341, 'Mo': 490, 'Ag': 214, 'Si': 1023, 'K': 456, \
+                       'Zr': 145, 'I': 523, 'Be': 58, 'Nb': 222, 'Te': 388, 'Ir': 100, 'Gd': 86, 'Hg': 108, 'Pm': 7, 'Er': 81, \
+                       'Yb': 146, 'Sm': 109, 'Ge': 356, 'As': 319, 'Ru': 127, 'Br': 273, 'Pd': 187, 'Cl': 713, 'Rh': 165, 'Rb': 238, \
+                       'Cs': 134, 'Sc': 80, 'Nd': 113, 'Pb': 196, 'Tm': 30, 'In': 204, 'Np': 6, 'Ho': 139, 'Cd': 94, 'Tl': 140, \
+                       'Pu': 53, 'Dy': 33, 'U': 53, 'Tb': 45, 'Eu': 41, 'Ce': 145, 'Re': 49, 'Th': 26, 'Ta': 124, 'Os': 23, 'Tc': 32, \
+                       'Lu': 19, 'Ac': 3, 'Pa': 8, 'Xe': 24}
+Total               : 50696
+------------------------------------------------------------------------------------------------------------------------
+Per atom energy(eV/atom) distribution:
+/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train: {'mean': '-5.993', 'std': '1.943', 'median': '-6.189', \
+                       'max': '34.784', 'min': '-12.433'}
+Total               : {'mean': '-5.993', 'std': '1.943', 'median': '-6.189', 'max': '34.784', 'min': '-12.433'}
+------------------------------------------------------------------------------------------------------------------------
+Force(eV/Angstrom) distribution:
+/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train: {'mean': '0.000', 'std': '2.158', 'median': '0.000', \
+                       'max': '105.429', 'min': '-105.430'}
+Total               : {'mean': '0.000', 'std': '2.158', 'median': '0.000', 'max': '105.429', 'min': '-105.430'}
+------------------------------------------------------------------------------------------------------------------------
+Stress(eV/Angstrom^3) distribution:
+/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train: {'mean': '0.010', 'std': '0.225', 'median': '0.000', \
+                       'max': '14.048', 'min': '-2.017'}
+Total               : {'mean': '0.010', 'std': '0.225', 'median': '0.000', 'max': '14.048', 'min': '-2.017'}
+------------------------------------------------------------------------------------------------------------------------
+training_set size   : {'/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train': 1689}
+validation_set size : {'/user/hansw/parkyutack/datasets/M3GNet/extxyz/M3GNet_train': 1689}
+
+Calculating statistic values from dataset
+calculated specie wise shift, scale is
+Ac                  : -3.297925, 0.000025
+Ag                  : 0.277831, 0.513478
+Al                  : -3.332629, 1.502175
+Ar                  : 0.000000, 0.000000
+As                  : -3.866302, 0.526560
+Au                  : -2.400313, 0.047528
+B                   : -7.507434, 0.843081
+Ba                  : -4.570364, 0.708754
+Be                  : -5.849979, 0.314968
+Bi                  : -7.685741, 0.408579
+Br                  : -1.966390, 0.079935
+C                   : -8.086298, 1.744175
+Ca                  : -4.615408, 0.477739
+Cd                  : -1.472919, 0.060167
+Ce                  : -8.011436, 0.070717
+Cl                  : -3.591860, 1.102933
+Co                  : -4.713649, 0.111071
+Cr                  : -7.790597, 0.258537
+Cs                  : -1.840144, 0.088568
+Cu                  : -3.597644, 0.090254
+Dy                  : -9.582391, 0.111833
+Er                  : -10.354755, 0.079124
+Eu                  : -14.333391, 0.050853
+F                   : -5.400038, 0.671081
+Fe                  : -6.943578, 0.201989
+Ga                  : -3.912331, 0.088835
+Gd                  : -17.080877, 0.138154
+Ge                  : -3.397989, 0.303251
+H                   : -3.492313, 2.989326
+He                  : 0.000000, 0.000000
+Hf                  : -14.248298, 0.093657
+Hg                  : -0.156971, 0.076564
+Ho                  : -7.027290, 0.146286
+I                   : -1.984190, 0.288991
+In                  : -3.438069, 0.174706
+Ir                  : -6.931646, 0.057524
+K                   : -3.138529, 0.079881
+Kr                  : 0.000000, 0.000000
+La                  : -9.802033, 0.108191
+Li                  : -4.105360, 0.067810
+Lu                  : -8.866966, 0.024048
+Mg                  : -2.620631, 0.114424
+Mn                  : -7.414261, 0.138879
+Mo                  : -8.910858, 4.706268
+N                   : -7.575578, 3.649086
+Na                  : -4.656452, 0.057290
+Nb                  : -11.573396, 0.453768
+Nd                  : -11.021529, 0.512932
+Ne                  : 0.000000, 0.000000
+Ni                  : -4.457916, 0.061078
+Np                  : -9.624847, 0.000000
+O                   : -7.485455, 0.873674
+Os                  : -9.364892, 0.078906
+P                   : -6.224628, 0.773876
+Pa                  : -9.393141, 0.002261
+Pb                  : -3.296125, 0.499952
+Pd                  : -5.167061, 0.056127
+Pm                  : -6.311270, 0.000095
+Pr                  : -8.518957, 0.192539
+Pt                  : -4.315329, 0.200330
+Pu                  : -15.571350, 0.052921
+Rb                  : -2.113391, 0.188531
+Re                  : -10.531780, 0.366631
+Rh                  : 23.349066, 21.998901
+Ru                  : -7.763176, 0.254678
+S                   : -4.673587, 0.720773
+Sb                  : -3.096198, 0.106169
+Sc                  : -13.548100, 0.459033
+Se                  : -4.142526, 1.535453
+Si                  : -7.692251, 2.229929
+Sm                  : -9.557063, 0.036126
+Sn                  : -4.106207, 0.506682
+Sr                  : -2.607569, 0.312825
+Ta                  : -14.818242, 0.601033
+Tb                  : -6.491473, 0.153210
+Tc                  : -10.215449, 0.113920
+Te                  : 13.204376, 14.451984
+Th                  : -12.360177, 0.072347
+Ti                  : -11.714878, 0.669053
+Tl                  : -1.838841, 0.144868
+Tm                  : -11.183265, 0.056245
+U                   : -1.161908, 4.119761
+V                   : -8.605827, 0.320353
+W                   : -9.749187, 0.345295
+Xe                  : 16.775604, 0.219808
+Y                   : -11.721879, 0.165101
+Yb                  : -0.634631, 0.560513
+Zn                  : -1.257208, 0.069468
+Zr                  : -10.505815, 0.510323
+avg_num_neigh       : 36.931750
+Overwrite shift, scale, avg_num_neigh from checkpoint
+Shuffle the train data
+
+Model building...
+Model building was successful
+Irreps of features
+edge_feature        : 1x0e+1x1o+1x2e
+0th node_feature    : 64x0e
+1th node_feature    : 64x0e+64x1o+64x2e
+2th node_feature    : 64x0e+64x1o+64x1e+64x2o+64x2e
+readout irreps      : 64x0e
+shift, scale tuple for each chemical species
+Ac                  : -5.593919, 0.098517
+Ag                  : -1.925609, 5.774630
+Al                  : -5.098553, 2.975068
+Ar                  : -0.060062, 0.000000
+As                  : -4.117507, 9.677754
+Au                  : -2.660424, 0.382001
+B                   : -7.996814, 1.786197
+Ba                  : -4.897088, 1.072660
+Be                  : -4.820439, 2.264110
+Bi                  : -3.196876, 2.324889
+Br                  : -2.865488, 0.735859
+C                   : -8.362924, 2.353472
+Ca                  : -4.718464, 4.003904
+Cd                  : -0.715483, 1.067377
+Ce                  : -9.062087, 3.061974
+Cl                  : -3.033707, 11.321674
+Co                  : -5.201429, 0.831354
+Cr                  : -8.533879, 0.563308
+Cs                  : -2.548302, 0.472968
+Cu                  : -3.294459, 2.415100
+Dy                  : -8.099891, 0.657028
+Er                  : -7.156144, 0.786906
+Eu                  : -12.286863, 0.321500
+F                   : -4.941244, 3.299649
+Fe                  : -6.592923, 0.411470
+Ga                  : -3.643737, 2.675751
+Gd                  : -17.375675, 0.333155
+Ge                  : -4.593419, 3.537368
+H                   : -3.471724, 4.045827
+He                  : -0.748123, 0.032478
+Hf                  : -12.388372, 0.954469
+Hg                  : 0.317086, 3.246034
+Ho                  : -8.352197, 0.347998
+I                   : -1.926027, 0.940753
+In                  : -2.659060, 0.720635
+Ir                  : -7.687948, 0.956403
+K                   : -2.303389, 2.229160
+Kr                  : 6.430214, 0.305321
+La                  : -8.870982, 2.175108
+Li                  : -3.465285, 0.975313
+Lu                  : -7.776539, 0.381028
+Mg                  : -1.940291, 0.816351
+Mn                  : -8.166725, 0.170676
+Mo                  : -8.601377, 6.300088
+N                   : -7.713791, 3.997939
+Na                  : -2.478283, 8.813841
+Nb                  : -11.857704, 3.376117
+Nd                  : -8.092406, 2.350722
+Ne                  : -0.028902, 0.000000
+Ni                  : -4.481494, 0.325128
+Np                  : -14.661784, 0.247844
+O                   : -7.388055, 2.479255
+Os                  : -9.839724, 0.657432
+P                   : -6.935534, 2.820689
+Pa                  : -11.344497, 0.103438
+Pb                  : -3.452168, 0.935704
+Pd                  : -4.959339, 0.517926
+Pm                  : -6.447090, 0.052913
+Pr                  : -7.908373, 1.267263
+Pt                  : -5.487162, 0.670959
+Pu                  : -15.449389, 0.253010
+Rb                  : -2.238864, 1.467355
+Re                  : -12.045678, 1.060100
+Rh                  : -5.638919, 2.896909
+Ru                  : -7.670543, 2.176211
+S                   : -4.611032, 3.845397
+Sb                  : -3.374480, 1.408394
+Sc                  : -8.092908, 1.132145
+Se                  : -3.637677, 6.664929
+Si                  : -7.923057, 4.111841
+Sm                  : -8.155155, 1.698810
+Sn                  : -3.826460, 1.712718
+Sr                  : -4.252141, 5.893055
+Ta                  : -13.573130, 2.859647
+Tb                  : -7.475268, 1.429684
+Tc                  : -9.406656, 0.308705
+Te                  : -2.567604, 3.006003
+Th                  : -10.337564, 0.493468
+Ti                  : -11.451284, 1.306714
+Tl                  : -2.293888, 2.177018
+Tm                  : -8.432777, 0.314770
+U                   : -14.168771, 2.070049
+V                   : -8.931134, 0.370807
+W                   : -9.499922, 0.389238
+Xe                  : 10.078121, 1.357669
+Y                   : -10.202244, 0.933689
+Yb                  : -3.456618, 7.253875
+Zn                  : -1.315308, 2.268997
+Zr                  : -11.691029, 0.990357
+Denumerator (avg_num_neigh**0.5) for each layer
+0th layer denumerator: 6.082458
+1th layer denumerator: 6.082458
+2th layer denumerator: 6.082458
+Total number of weight in model is 4297832
+
+Trainer initialized, ready to training
+------------------------------------------------------------------------------------------------------------------------
+Fisher information and optimzed parameters calculation for EWC...
+Calculation finished. fihser_sevenn.pkl and opt_params_sevenn.pkl are generated.
+------------------------------------------------------------------------------------------------------------------------
+Total wall time: 0:01:00.28

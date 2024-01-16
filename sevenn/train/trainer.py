@@ -59,6 +59,24 @@ class Trainer:
             loss_param = {}
         self.criterion = loss(**loss_param)
 
+        self.fisher_information = config[KEY.CONTINUE][KEY.FISHER]
+        self.optimal_params = config[KEY.CONTINUE][KEY.OPT_PARAMS]
+        self._lambda = config[KEY.CONTINUE][KEY.EWC_LAMBDA]
+
+        if self.fisher_information is not False and self.optimal_params is not False:
+            self.set_ewc_settings(self.fisher_information, self.optimal_params)
+
+    def set_ewc_settings(self, fisher_information, optimal_params):
+        import pickle
+
+        with open(self.fisher_information, 'rb') as fr:
+            fisher_dict = pickle.load(fr)
+        with open(self.optimal_params, 'rb') as fr:
+            opt_params_dict = pickle.load(fr)
+
+        self.fisher_dict = fisher_dict
+        self.opt_params_dict = opt_params_dict
+
     def run_one_epoch(
         self, loader, is_train=False, error_recorder: ErrorRecorder = None
     ):
@@ -81,6 +99,15 @@ class Trainer:
         if self.distributed:
             self.recorder_all_reduce(error_recorder)
 
+    def loss_calculator_fisher(self, output):
+        unit_converted = postprocess_output(output, self.loss_types)
+        total_loss = torch.tensor([0.0], device=self.device)
+        for loss_type in self.loss_types:
+            pred, ref, _ = unit_converted[loss_type]
+            total_loss +=\
+                self.criterion(pred, ref) * self.loss_weights[loss_type]
+        return total_loss
+
     def loss_calculator(self, output):
         unit_converted = postprocess_output(output, self.loss_types)
         total_loss = torch.tensor([0.0], device=self.device)
@@ -89,7 +116,43 @@ class Trainer:
             total_loss += (
                 self.criterion(pred, ref) * self.loss_weights[loss_type]
             )
+
+
+        if self.fisher_information is not False and self.optimal_params is not False:
+            for name, _param in self.model.named_parameters():
+                if name in self.fisher_dict:
+                    fisher = self.fisher_dict[name].to(self.device)
+                    opt_param = self.opt_params_dict[name].to(self.device)
+                    total_loss += (self._lambda / 2) * torch.sum(fisher * (_param - opt_param) ** 2)
+
         return total_loss
+
+    def compute_fisher_matrix(self, loader):
+        fisher_information = {}
+        for name, _param in self.model.named_parameters():
+            fisher_information[name] = torch.zeros_like(_param)
+
+        self.model.train()
+        for i, batch in enumerate(loader):
+            self.model.zero_grad()
+            batch = batch.to(self.device, non_blocking=True)
+            output = self.model(batch)
+            loss = self.loss_calculator_fisher(output)
+            loss.backward()
+
+            # Accumulating the squared gradients (Fisher information)
+            for name, _param in self.model.named_parameters():
+                if _param.grad is not None:
+                    fisher_information[name] += _param.grad.data.clone() ** 2 / len(loader)
+
+        import pickle
+        with open('fisher_sevenn.pkl', 'wb') as f:
+            pickle.dump(fisher_information, f)
+        optimal_params = {name: _param.data.detach().clone() for name, _param in self.model.named_parameters()}
+        with open('opt_params_sevenn.pkl', 'wb') as f:
+            pickle.dump(optimal_params, f)
+
+        return fisher_information
 
     def scheduler_step(self, metric=None):
         if self.scheduler is None:

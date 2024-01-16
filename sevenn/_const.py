@@ -163,7 +163,11 @@ DEFAULT_TRAINING_CONFIG = {
         KEY.RESET_SCHEDULER: False,
         KEY.RESET_EPOCH: False,
         KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT: True,
-    },
+        KEY.CALC_FISHER: False,
+        KEY.FISHER: False,
+        KEY.OPT_PARAMS: False,
+        KEY.EWC_LAMBDA: 0.0
+        },
     KEY.CSV_LOG: 'log.csv',
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRACE_STRESS: False,

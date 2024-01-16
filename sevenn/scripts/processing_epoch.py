@@ -28,6 +28,14 @@ def processing_epoch(
     csv_fname = config[KEY.CSV_LOG]
     current_best = 99999
 
+    calc_fisher = config[KEY.CONTINUE][KEY.CALC_FISHER]
+    if calc_fisher:
+        Logger().write(f"Fisher information and optimzed parameters calculation for EWC...\n")
+        trainer.compute_fisher_matrix(train_loader)
+        Logger().write(f"Calculation finished. fihser_sevenn.pkl and opt_params_sevenn.pkl are generated.\n")
+        Logger().bar()
+        return
+
     if init_csv:
         csv_header = ['Epoch', 'Learning_rate']
         # Assume train valid have the same metrics

@@ -1,0 +1,368 @@
+SEVENN: Scalable EquVariance-Enabled Neural Network
+sevenn version 0.9.0
+reading yaml config...
+                ****
+              ********                                   .
+              *//////,  ..                               .            ,*.
+               ,,***.         ..                        ,          ********.                                  ./,
+             .      .                ..   /////.       .,       . */////////                               /////////.
+        .&@&/        .                  .(((((((..     /           *//////*.  ...                         *((((((((((.
+     @@@@@@@@@@*    @@@@@@@@@@  @@@@@    *((@@@@@     (     %@@@@@@@@@@  .@@@@@@     ..@@@@.   @@@@@@*    .(@@@@@(((*
+    @@@@@.          @@@@         @@@@@ .   @@@@@      #     %@@@@         @@@@@@@@     @@@@(,  @@@@@@@@.    @@@@@(*.
+    %@@@@@@@&       @@@@@@@@@@    @@@@@   @@@@@      #  ., .%@@@@@@@@@    @@@@@@@@@@   @@@@,   @@@@@@@@@@   @@@@@
+    ,(%@@@@@@@@@    @@@@@@@@@@     @@@@@ @@@@&       (//////%@@@@@@@@@    @@@@  @@@@@@ @@@@  . @@@@@  @@@@@.@@@@@
+        .   @@@@@   @@@@ .       .  @@@@@@@@%   . . ( .////,%@@@@         @@@@    @@@@@@@@@    @@@@@    @@@@@@@@@
+    (@@@@@@@@@@@    @@@@@@@@@@**.    @@@@@@*       *.      .%@@@@@@@@@@   @@@@    . @@@@@@@    @@@@@     .@@@@@@@
+     @@@@@@@@@.     @@@@@@@@@@///,    @@@@.      . /        %@@@@@@@@@@   @@@@***,    @@@@@    @@@@@        @@@@@
+           .           //////////*.               /           .            .*******...             . ,.
+          .&&&&&...     ,//////*.       ...////.  /            ,*/.     .   ,////,               .,/////
+          &@@@@@@                         ,(/((, *           ,((((((.                              .***.
+           ,/@(,                            ..   *            ,((((*
+                                                ,
+                                               .
+
+succesfully read yaml config!
+
+from model configuration
+chemical_species    : auto
+_number_of_species  : auto
+_type_map           : auto
+act_gate            : {'e': 'silu', 'o': 'tanh'}
+act_scalar          : {'e': 'silu', 'o': 'tanh'}
+irreps_manual       : False
+avg_num_neigh       : True
+channel             : 64
+lmax                : 2
+lmax_edge           : -1
+lmax_node           : -1
+is_parity           : True
+radial_basis        : {'radial_basis_name': 'bessel', 'bessel_basis_num': 8}
+cutoff_function     : {'cutoff_function_name': 'poly_cut', 'poly_cut_p_value': 6}
+cutoff              : 5.0
+num_convolution_layer: 3
+weight_nn_hidden_neurons: [64, 64]
+train_shift_scale   : False
+train_avg_num_neigh : False
+optimize_by_reduce  : True
+use_bias_in_linear  : False
+readout_as_fcn      : False
+readout_fcn_hidden_neurons: None
+readout_fcn_activation: None
+act_radial          : silu
+self_connection_type: nequip
+
+from train configuration
+device              : cuda
+optimizer           : adam
+scheduler           : cosineannealinglr
+loss                : mse
+optim_param         : {'lr': 0.0001}
+scheduler_param     : {'T_max': 300, 'eta_min': 0.0}
+continue            : {'use_statistic_values_of_checkpoint': True, \
+                       'checkpoint': '/data/tmp/univ_checkpoints/checkpoint_1275.pth', 'reset_optimizer': True, \
+                       'reset_scheduler': True, 'calc_fisher': False, 'opt_params': 'opt_params_sevenn.pkl', \
+                       'fisher_information': 'fisher_sevenn.pkl', 'ewc_lambda': 5.0, 'reset_epoch': False}
+random_seed         : 1
+epoch               : 1
+force_loss_weight   : 1.0
+stress_loss_weight  : 0.01
+use_testset         : False
+_num_workers        : 0
+per_epoch           : 25
+_is_trace_stress    : False
+is_train_stress     : True
+train_shuffle       : True
+error_record        : [['Energy', 'RMSE'], ['Force', 'RMSE'], ['Stress', 'RMSE'], ['Energy', 'MAE'], ['Force', 'MAE'], ['Stress', 'MAE'], \
+                       ['Energy', 'Loss'], ['Force', 'Loss'], ['Stress', 'Loss'], ['TotalLoss', 'None']]
+best_metric         : TotalLoss
+csv_log             : log.csv
+is_ddp              : False
+local_rank          : 0
+rank                : 0
+world_size          : 1
+
+from data configuration
+load_dataset_path   : ['/data/tmp/GNN_pretrained/EWC/train_LiSIC.sevenn_data']
+load_validset_path  : ['/data/tmp/GNN_pretrained/EWC/valid_LiSIC.sevenn_data']
+save_dataset_path   : False
+shift               : False
+scale               : False
+dtype               : single
+data_format         : structure_list
+data_format_args    : {}
+format_outputs_for_ase: vasp-out
+save_by_label       : False
+save_by_train_valid : False
+data_divide_ratio   : 0.1
+batch_size          : 4
+preprocess_num_cores: 1
+use_species_wise_shift_scale: True
+data_shuffle        : True
+
+Continue found, loading checkpoint
+Checkpoint config is compatible
+checkpoint previous epoch was: 1275
+epoch start from 1276
+Same metric, csv file will be appended
+checkpoint loading was successful
+
+Initializing dataset...
+Loading /data/tmp/GNN_pretrained/EWC/train_LiSIC.sevenn_data
+loaded dataset size is: {'600_1': 109, '600_2': 109, '1200_1': 109, '1200_2': 109}
+data set loading time: 0:00:03.97
+Ignore chemical species in yaml, use checkpoint
+Loading validset from load_validset
+Loading /data/tmp/GNN_pretrained/EWC/valid_LiSIC.sevenn_data
+loaded dataset size is: {'600_1': 12, '600_2': 12, '1200_1': 12, '1200_2': 12}
+data set loading time: 0:00:00.32
+the validset loaded, load_dataset is now train_set
+the ratio will be ignored
+
+loaded trainset size is: {'600_1': 109, '600_2': 109, '1200_1': 109, '1200_2': 109}
+
+loaded validset size is: {'600_1': 12, '600_2': 12, '1200_1': 12, '1200_2': 12}
+Dataset initialization was successful
+
+Number of atoms in the train_set:
+600_1               : {'Cl': 3488, 'S': 17440, 'Li': 20928, 'P': 3488}
+600_2               : {'Cl': 3488, 'S': 17440, 'Li': 20928, 'P': 3488}
+1200_1              : {'Cl': 3488, 'S': 17440, 'Li': 20928, 'P': 3488}
+1200_2              : {'Cl': 3488, 'S': 17440, 'Li': 20928, 'P': 3488}
+Total, label wise   : {'Cl': 13952, 'S': 69760, 'Li': 83712, 'P': 13952}
+Total               : 181376
+------------------------------------------------------------------------------------------------------------------------
+Per atom energy(eV/atom) distribution:
+600_1               : {'mean': '-4.096', 'std': '0.003', 'median': '-4.096', 'max': '-4.087', 'min': '-4.103'}
+600_2               : {'mean': '-4.095', 'std': '0.004', 'median': '-4.096', 'max': '-4.086', 'min': '-4.105'}
+1200_1              : {'mean': '-4.012', 'std': '0.007', 'median': '-4.011', 'max': '-3.996', 'min': '-4.027'}
+1200_2              : {'mean': '-4.012', 'std': '0.006', 'median': '-4.013', 'max': '-3.991', 'min': '-4.026'}
+Total               : {'mean': '-4.054', 'std': '0.042', 'median': '-4.086', 'max': '-3.991', 'min': '-4.105'}
+------------------------------------------------------------------------------------------------------------------------
+Force(eV/Angstrom) distribution:
+600_1               : {'mean': '-0.000', 'std': '0.594', 'median': '-0.001', 'max': '4.060', 'min': '-4.836'}
+600_2               : {'mean': '0.000', 'std': '0.572', 'median': '0.000', 'max': '4.389', 'min': '-4.514'}
+1200_1              : {'mean': '0.000', 'std': '0.823', 'median': '-0.001', 'max': '6.635', 'min': '-5.993'}
+1200_2              : {'mean': '0.000', 'std': '0.828', 'median': '0.001', 'max': '5.936', 'min': '-6.886'}
+Total               : {'mean': '0.000', 'std': '0.715', 'median': '-0.000', 'max': '6.635', 'min': '-6.886'}
+------------------------------------------------------------------------------------------------------------------------
+Stress(eV/Angstrom^3) distribution:
+600_1               : {'mean': '0.007', 'std': '0.007', 'median': '0.004', 'max': '0.016', 'min': '-0.003'}
+600_2               : {'mean': '0.006', 'std': '0.006', 'median': '0.003', 'max': '0.017', 'min': '-0.003'}
+1200_1              : {'mean': '0.010', 'std': '0.010', 'median': '0.004', 'max': '0.024', 'min': '-0.004'}
+1200_2              : {'mean': '0.009', 'std': '0.009', 'median': '0.005', 'max': '0.024', 'min': '-0.005'}
+Total               : {'mean': '0.008', 'std': '0.008', 'median': '0.005', 'max': '0.024', 'min': '-0.005'}
+------------------------------------------------------------------------------------------------------------------------
+training_set size   : {'600_1': 109, '600_2': 109, '1200_1': 109, '1200_2': 109}
+validation_set size : {'600_1': 12, '600_2': 12, '1200_1': 12, '1200_2': 12}
+
+Calculating statistic values from dataset
+calculated specie wise shift, scale is
+Ac                  : 0.000000, 0.000000
+Ag                  : 0.000000, 0.000000
+Al                  : 0.000000, 0.000000
+Ar                  : 0.000000, 0.000000
+As                  : 0.000000, 0.000000
+Au                  : 0.000000, 0.000000
+B                   : 0.000000, 0.000000
+Ba                  : 0.000000, 0.000000
+Be                  : 0.000000, 0.000000
+Bi                  : 0.000000, 0.000000
+Br                  : 0.000000, 0.000000
+C                   : 0.000000, 0.000000
+Ca                  : 0.000000, 0.000000
+Cd                  : 0.000000, 0.000000
+Ce                  : 0.000000, 0.000000
+Cl                  : -0.773651, 0.517753
+Co                  : 0.000000, 0.000000
+Cr                  : 0.000000, 0.000000
+Cs                  : 0.000000, 0.000000
+Cu                  : 0.000000, 0.000000
+Dy                  : 0.000000, 0.000000
+Er                  : 0.000000, 0.000000
+Eu                  : 0.000000, 0.000000
+F                   : 0.000000, 0.000000
+Fe                  : 0.000000, 0.000000
+Ga                  : 0.000000, 0.000000
+Gd                  : 0.000000, 0.000000
+Ge                  : 0.000000, 0.000000
+H                   : 0.000000, 0.000000
+He                  : 0.000000, 0.000000
+Hf                  : 0.000000, 0.000000
+Hg                  : 0.000000, 0.000000
+Ho                  : 0.000000, 0.000000
+I                   : 0.000000, 0.000000
+In                  : 0.000000, 0.000000
+Ir                  : 0.000000, 0.000000
+K                   : 0.000000, 0.000000
+Kr                  : 0.000000, 0.000000
+La                  : 0.000000, 0.000000
+Li                  : -5.310337, 0.457732
+Lu                  : 0.000000, 0.000000
+Mg                  : 0.000000, 0.000000
+Mn                  : 0.000000, 0.000000
+Mo                  : 0.000000, 0.000000
+N                   : 0.000000, 0.000000
+Na                  : 0.000000, 0.000000
+Nb                  : 0.000000, 0.000000
+Nd                  : 0.000000, 0.000000
+Ne                  : 0.000000, 0.000000
+Ni                  : 0.000000, 0.000000
+Np                  : 0.000000, 0.000000
+O                   : 0.000000, 0.000000
+Os                  : 0.000000, 0.000000
+P                   : -0.627116, 1.323034
+Pa                  : 0.000000, 0.000000
+Pb                  : 0.000000, 0.000000
+Pd                  : 0.000000, 0.000000
+Pm                  : 0.000000, 0.000000
+Pr                  : 0.000000, 0.000000
+Pt                  : 0.000000, 0.000000
+Pu                  : 0.000000, 0.000000
+Rb                  : 0.000000, 0.000000
+Re                  : 0.000000, 0.000000
+Rh                  : 0.000000, 0.000000
+Ru                  : 0.000000, 0.000000
+S                   : -3.886971, 0.820390
+Sb                  : 0.000000, 0.000000
+Sc                  : 0.000000, 0.000000
+Se                  : 0.000000, 0.000000
+Si                  : 0.000000, 0.000000
+Sm                  : 0.000000, 0.000000
+Sn                  : 0.000000, 0.000000
+Sr                  : 0.000000, 0.000000
+Ta                  : 0.000000, 0.000000
+Tb                  : 0.000000, 0.000000
+Tc                  : 0.000000, 0.000000
+Te                  : 0.000000, 0.000000
+Th                  : 0.000000, 0.000000
+Ti                  : 0.000000, 0.000000
+Tl                  : 0.000000, 0.000000
+Tm                  : 0.000000, 0.000000
+U                   : 0.000000, 0.000000
+V                   : 0.000000, 0.000000
+W                   : 0.000000, 0.000000
+Xe                  : 0.000000, 0.000000
+Y                   : 0.000000, 0.000000
+Yb                  : 0.000000, 0.000000
+Zn                  : 0.000000, 0.000000
+Zr                  : 0.000000, 0.000000
+avg_num_neigh       : 27.885696
+Overwrite shift, scale, avg_num_neigh from checkpoint
+Shuffle the train data
+
+Model building...
+Model building was successful
+Irreps of features
+edge_feature        : 1x0e+1x1o+1x2e
+0th node_feature    : 64x0e
+1th node_feature    : 64x0e+64x1o+64x2e
+2th node_feature    : 64x0e+64x1o+64x1e+64x2o+64x2e
+readout irreps      : 64x0e
+shift, scale tuple for each chemical species
+Ac                  : -5.593919, 0.098517
+Ag                  : -1.925609, 5.774630
+Al                  : -5.098553, 2.975068
+Ar                  : -0.060062, 0.000000
+As                  : -4.117507, 9.677754
+Au                  : -2.660424, 0.382001
+B                   : -7.996814, 1.786197
+Ba                  : -4.897088, 1.072660
+Be                  : -4.820439, 2.264110
+Bi                  : -3.196876, 2.324889
+Br                  : -2.865488, 0.735859
+C                   : -8.362924, 2.353472
+Ca                  : -4.718464, 4.003904
+Cd                  : -0.715483, 1.067377
+Ce                  : -9.062087, 3.061974
+Cl                  : -3.033707, 11.321674
+Co                  : -5.201429, 0.831354
+Cr                  : -8.533879, 0.563308
+Cs                  : -2.548302, 0.472968
+Cu                  : -3.294459, 2.415100
+Dy                  : -8.099891, 0.657028
+Er                  : -7.156144, 0.786906
+Eu                  : -12.286863, 0.321500
+F                   : -4.941244, 3.299649
+Fe                  : -6.592923, 0.411470
+Ga                  : -3.643737, 2.675751
+Gd                  : -17.375675, 0.333155
+Ge                  : -4.593419, 3.537368
+H                   : -3.471724, 4.045827
+He                  : -0.748123, 0.032478
+Hf                  : -12.388372, 0.954469
+Hg                  : 0.317086, 3.246034
+Ho                  : -8.352197, 0.347998
+I                   : -1.926027, 0.940753
+In                  : -2.659060, 0.720635
+Ir                  : -7.687948, 0.956403
+K                   : -2.303389, 2.229160
+Kr                  : 6.430214, 0.305321
+La                  : -8.870982, 2.175108
+Li                  : -3.465285, 0.975313
+Lu                  : -7.776539, 0.381028
+Mg                  : -1.940291, 0.816351
+Mn                  : -8.166725, 0.170676
+Mo                  : -8.601377, 6.300088
+N                   : -7.713791, 3.997939
+Na                  : -2.478283, 8.813841
+Nb                  : -11.857704, 3.376117
+Nd                  : -8.092406, 2.350722
+Ne                  : -0.028902, 0.000000
+Ni                  : -4.481494, 0.325128
+Np                  : -14.661784, 0.247844
+O                   : -7.388055, 2.479255
+Os                  : -9.839724, 0.657432
+P                   : -6.935534, 2.820689
+Pa                  : -11.344497, 0.103438
+Pb                  : -3.452168, 0.935704
+Pd                  : -4.959339, 0.517926
+Pm                  : -6.447090, 0.052913
+Pr                  : -7.908373, 1.267263
+Pt                  : -5.487162, 0.670959
+Pu                  : -15.449389, 0.253010
+Rb                  : -2.238864, 1.467355
+Re                  : -12.045678, 1.060100
+Rh                  : -5.638919, 2.896909
+Ru                  : -7.670543, 2.176211
+S                   : -4.611032, 3.845397
+Sb                  : -3.374480, 1.408394
+Sc                  : -8.092908, 1.132145
+Se                  : -3.637677, 6.664929
+Si                  : -7.923057, 4.111841
+Sm                  : -8.155155, 1.698810
+Sn                  : -3.826460, 1.712718
+Sr                  : -4.252141, 5.893055
+Ta                  : -13.573130, 2.859647
+Tb                  : -7.475268, 1.429684
+Tc                  : -9.406656, 0.308705
+Te                  : -2.567604, 3.006003
+Th                  : -10.337564, 0.493468
+Ti                  : -11.451284, 1.306714
+Tl                  : -2.293888, 2.177018
+Tm                  : -8.432777, 0.314770
+U                   : -14.168771, 2.070049
+V                   : -8.931134, 0.370807
+W                   : -9.499922, 0.389238
+Xe                  : 10.078121, 1.357669
+Y                   : -10.202244, 0.933689
+Yb                  : -3.456618, 7.253875
+Zn                  : -1.315308, 2.268997
+Zr                  : -11.691029, 0.990357
+Denumerator (avg_num_neigh**0.5) for each layer
+0th layer denumerator: 6.082458
+1th layer denumerator: 6.082458
+2th layer denumerator: 6.082458
+Total number of weight in model is 4297832
+
+Trainer initialized, ready to training
+------------------------------------------------------------------------------------------------------------------------
+------------------------------------------------------------------------------------------------------------------------
+Epoch 1276/1276  lr: 0.000100
+------------------------------------------------------------------------------------------------------------------------
+       Energy_RMSE (eV/atom)   Force_RMSE (eV/Å)   Stress_RMSE (kbar)   Energy_MAE (eV/atom)   Force_MAE (eV/Å)   Stress_MAE (kbar)   Energy_Loss   Force_Loss   Stress_Loss   TotalLoss  
+------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+Train               0.023603            0.378366             3.131003               0.020770           0.156337            0.850098      0.000557     0.047720      1.633864    0.064616
+Valid               0.022687            0.371505             2.042626               0.020068           0.153927            0.659086      0.000515     0.046005      0.695387    0.053474
+Epoch 1276 elapsed: 0:00:40.95
+Best checkpoint written
+Total wall time: 0:00:50.29

@@ -1,0 +1,17 @@
+Hyperparameters related to EWC
+
+loss: mse # When calculating the Fisher information, the loss criterion for gradient calculation.
+
+continue:
+  use_statistic_values_of_checkpoint: True # I recommend setting this to True.
+  checkpoint: '/data/tmp/univ_checkpoints/checkpoint_1275.pth' # The potential used in the calculation of EWC
+  calc_fisher: False # Whether to precompute Fisher information
+  opt_params: 'opt_params_sevenn.pkl' # Precomputed optimized parameters file of the Pretrained model
+  fisher_information: 'fisher_sevenn.pkl' # Precomputed Fisher information file of the Pretrained model
+  ewc_lambda: 5.0 # The lambda term of the EWC loss
+
+load_dataset_path: # When calculating the Fisher information, this data will be used for precomputation.
+
+
+In step 1, Fisher information and optimized parameters are calculated for the training set using the checkpoint potential file. The outputs are fisher_sevenn.pkl and opt_params_sevenn.pkl.
+In step 2, training starts by applying EWC from the checkpoint. The loss written in the log.* is the loss without EWC summation. An update is planned for the future. (For those interested in the EWC loss, it is currently necessary to manually log and track it.)

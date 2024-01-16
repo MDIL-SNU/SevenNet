@@ -1,0 +1,83 @@
+# Example input.yaml for training SEVENNet.
+# The underlying model is identical to nequip (https://github.com/mir-group/nequip), but the names of hyperparameters might differ.3
+# Except channel, lmax and num_convolution_layer, which has minimal values to quickly check the installation, they normally works well with values written here.
+# Defaults that works well of channel, lmax and num_convolution_layer are 32, 3, 3 respectively.
+
+model:
+    chemical_species: 'auto'                     # Chemical symbols present in the dataset
+    cutoff: 5.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
+    channel: 64                                    # Equivalent to 'num_features' in nequip. Represents the multiplicity of node features. 32 is recomanded as default.
+    lmax: 2                                        # Maximum order of irreps (rotation order). 3 is recomanded as default
+    num_convolution_layer: 3                      # Equivalent to 'num_layers' in nequip. Represents the number of message passing layers in the model. 3 is recomanded as default
+
+    weight_nn_hidden_neurons: [64, 64]            # Equivalent to 'invariant_layers' and 'neurons' in nequip. Represents the neural network for the radial basis
+    radial_basis:                                 # Function and its parameters to encode radial distance
+        radial_basis_name: 'bessel'               # Only 'bessel' is currently supported
+        bessel_basis_num: 8                       # Equivalent to 'num_basis' in nequip. Represents the number of Bessel functions as the radial basis
+    cutoff_function:                              # Differentiable, decaying function to encode radial distance
+        cutoff_function_name: 'poly_cut'          # Only 'poly_cut' is currently supported
+        poly_cut_p_value: 6                       # Equivalent to 'PolynomialCutoff_p' in nequip. Smaller p values correspond to a stronger decay with distance 
+
+    # For even nonlinearities, 'silu', 'abs' (absolute), and 'ssp' (shifted softmax) are supported. Defaults generally work well
+    act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
+    act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip.
+
+    avg_num_neigh       : True                    # Normalize the aggregation of messages by the average number of neighbors calculated from the training set
+    train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
+    train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
+    optimize_by_reduce: True
+                                                                  
+train:
+    random_seed: 1
+    is_train_stress     : True                   # Includes stress in the loss function
+    epoch: 300                                     # Ends training after this number of epochs
+
+    # Each optimizer and scheduler have different available parameters. 
+    # As the documentation is still under preparation, you can refer to sevenn/train/optim.py if needed
+    optimizer: 'adam'                             # Options available are 'sgd', 'adagrad', 'adam', 'adamw', 'radam'
+    optim_param:                                  
+        lr: 0.0001
+    scheduler: 'cosineannealinglr'                    # Options available are 'steplr', 'multisteplr', 'exponentiallr', 'cosineannealinglr'
+    scheduler_param:
+        T_max: 300
+        eta_min: 0.0
+
+
+    force_loss_weight: 1                     # Coefficient for force loss
+    stress_loss_weight: 0.01                   # Coefficient for stress loss
+
+    error_record:
+        - ['Energy', 'RMSE']
+        - ['Force', 'RMSE']
+        - ['Stress', 'RMSE']
+        - ['Energy', 'MAE']
+        - ['Force', 'MAE']
+        - ['Stress', 'MAE']
+        - ['Energy', 'Loss']
+        - ['Force', 'Loss']
+        - ['Stress', 'Loss']
+        - ['TotalLoss', 'None']
+    # By default, SEVENNet prints the batch RMSE of validation and training every epoch.
+    # Outputs include learning_curve, serialized model, parity low data, and checkpoint. These outputs are generated every 'best' epoch or 'per_epoch'
+    # It is recommended not to use per_epoch too frequently as it is optional, and the best results are available by default
+
+    # Note that outputs for the best loss are written by default. These options are for tracking detailed information during learning
+    per_epoch: 25                              # Generate epoch every this number of times
+
+    # Continue training from a checkpoint. If you augment the dataset, recalculated shift, scale, avg_num_neigh will be used
+    # Also, you can enable train_shift_scale or train_avg_num_neigh
+    # input.yaml for original and continued training should have the same model hyperparameters except for avg_num_neigh and shift scale
+    continue:
+        use_statistic_values_of_checkpoint: True # new
+        checkpoint:  '/data/tmp/univ_checkpoints/checkpoint_1275.pth'
+        reset_optimizer: True
+        reset_scheduler: True
+        calc_fisher: True
+
+data:
+    batch_size: 4                                  # Batch size. If training fails due to memory shortage, lower this value
+    use_species_wise_shift_scale: True
+    
+    save_by_train_valid: False
+    load_dataset_path: '/data/tmp/GNN_pretrained/EWC/M3GNet_0.01.sevenn_data'
+    load_validset_path: '/data/tmp/GNN_pretrained/EWC/M3GNet_0.01.sevenn_data'
