@@ -1,5 +1,8 @@
 Hyperparameters related to EWC
 
+train_shift_scale   :  
+train_avg_num_neigh : # When generating the parameter file for the EWC, you should set it to be the same as the trainable option that you want to set for later fine tuning. For example, if you generate the parameter file with False, the fisher information value will be 0, so if you later train with True, those parameters will be easily changed without penalty.
+
 loss: mse # When calculating the Fisher information, the loss criterion for gradient calculation.
 
 continue:
