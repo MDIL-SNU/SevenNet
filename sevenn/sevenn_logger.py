@@ -369,8 +369,17 @@ class Logger(metaclass=Singleton):
                 sevenn.util.onehot_to_chem(list(range(config[KEY.NUM_SPECIES])),
                                            config[KEY.TYPE_MAP])
             self.writeline("shift, scale tuple for each chemical species")
-            for cstr, sh, sc in zip(chem_str, shift, scale):
-                kv_write(f"{cstr}", f"{sh:.6f}, {sc:.6f}")
+            if config[KEY.USE_MODAL_WISE_SHIFT_SCALE]:
+                modal_map = config[KEY.MODAL_MAP]
+                for modal_key, modal_idx in modal_map.items():
+                    modal_shift = shift[modal_idx]
+                    modal_scale = scale[modal_idx]
+                    self.writeline(f"for modal = {modal_key}")
+                    for cstr, sh, sc in zip(chem_str, modal_shift, modal_scale):
+                        kv_write(f"{cstr}", f"{sh:.6f}, {sc:.6f}")
+            else:
+                for cstr, sh, sc in zip(chem_str, shift, scale):
+                    kv_write(f"{cstr}", f"{sh:.6f}, {sc:.6f}")
 
         self.writeline("Denumerator (avg_num_neigh**0.5) for each layer")
         for i in range(config[KEY.NUM_CONVOLUTION]):

@@ -122,7 +122,7 @@ def processing_continue(config):
         config.update({
             KEY.MODAL_MAP + '_cp': config_cp[KEY.MODAL_MAP],
             KEY.USE_MODALITY + '_cp': True,
-            KEY.NUM_MODALITIES + '_cp': len(config_cp[KEY.MODAL_MAP].keys()),
+            KEY.NUM_MODALITIES + '_cp': len(config_cp[KEY.MODAL_MAP]),
         })
     else:
         config.update({
@@ -180,7 +180,7 @@ def convert_modality_of_checkpoint_state_dct(config, state_dicts):
         append_modal_length = config[KEY.NUM_MODALITIES] - num_modalities_cp
 
         model_state_dict_cp = append_modality_to_model_dct(
-            model_state_dict_cp, config, append_modal_length
+            model_state_dict_cp, config, num_modalities_cp, append_modal_length
         )
 
     else:  # current model is single modal

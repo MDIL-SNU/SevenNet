@@ -27,7 +27,7 @@ from sevenn.nn.force_output import (
 )
 from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
 from sevenn.nn.node_embedding import OnehotEmbedding
-from sevenn.nn.scale import Rescale, SpeciesWiseRescale
+from sevenn.nn.scale import Rescale, SpeciesWiseRescale, ModalWiseRescale
 from sevenn.nn.self_connection import (
     SelfConnectionIntro,
     SelfConnectionMACEIntro,
@@ -417,11 +417,19 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     shift = model_config[KEY.SHIFT]
     scale = model_config[KEY.SCALE]
     train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
+    modal_wise_shift_scale = model_config[KEY.USE_MODALITY] and model_config[KEY.USE_MODAL_WISE_SHIFT_SCALE]
     rescale_module = (
-        SpeciesWiseRescale
-        if model_config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
+        ModalWiseRescale
+        if modal_wise_shift_scale
+        else SpeciesWiseRescale if model_config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
         else Rescale
     )
+
+    if not modal_wise_shift_scale and shift.dim() != 1:
+        # This is only for compatibility when deploying single modal model.
+        shift = shift[0]
+        scale = scale[0]
+
     layers.update({
         'rescale atomic energy': rescale_module(
             shift=shift,

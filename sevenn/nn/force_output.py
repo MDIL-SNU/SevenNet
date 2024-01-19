@@ -148,6 +148,11 @@ class ForceStressOutput(nn.Module):
 
         sgrad = grad[1]
         volume = data[KEY.CELL_VOLUME]
+        vlim = 1e-3  # for cell volume = 0 for non PBC structures
+        if self._is_batch_data:
+            volume[volume < vlim] = vlim
+        else:
+            volume = torch.tensor(max(volume, vlim))
         if sgrad is not None:
             if self._is_batch_data:
                 stress = sgrad / volume.view(-1, 1, 1)

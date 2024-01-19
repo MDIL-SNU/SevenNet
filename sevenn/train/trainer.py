@@ -29,6 +29,7 @@ class Trainer():
 
         self.loss_weights = {LossType.ENERGY: 1.0}
         self.loss_weights[LossType.FORCE] = config[KEY.FORCE_WEIGHT]
+        self.use_weight_by_label = config[KEY.USE_WEIGHT]
 
         # where trace stress is used for?
         self.is_trace_stress = config[KEY.IS_TRACE_STRESS]
@@ -82,12 +83,14 @@ class Trainer():
             self.recorder_all_reduce(error_recorder)
 
     def loss_calculator(self, output):
-        unit_converted = postprocess_output(output, self.loss_types)
+        unit_converted = postprocess_output(output, self.loss_types, self.use_weight_by_label)
         total_loss = torch.tensor([0.0], device=self.device)
         for loss_type in self.loss_types:
-            pred, ref, _ = unit_converted[loss_type]
-            total_loss +=\
-                self.criterion(pred, ref) * self.loss_weights[loss_type]
+            pred, ref, vdim, is_valid = unit_converted[loss_type]
+            if is_valid:
+                #  Add loss for the case with at least one data is labelled.
+                total_loss +=\
+                    self.criterion(pred, ref) * self.loss_weights[loss_type]
         return total_loss
 
     def scheduler_step(self, metric=None):

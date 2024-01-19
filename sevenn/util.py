@@ -81,7 +81,7 @@ def postprocess_output_with_label(output, loss_types):
     return labeled
 
 
-def postprocess_output(output, loss_types):
+def postprocess_output(output, loss_types, multiply_weight=False, delete_unlabled=True):
     from sevenn._const import LossType
     """
     Postprocess output from model to be used for loss calculation
@@ -90,6 +90,8 @@ def postprocess_output(output, loss_types):
     Args:
         output (dict): output from model
         loss_types (list): list of loss types to be calculated
+        multiply_weight (bool): if True, trying to multiply weight to output. Used for training only.
+        delete_unlabled (bool): if True, delete unlabled (i.e. nan) data from reference.
 
     Returns:
         results (dict): dictionary of loss type and its corresponding
@@ -97,6 +99,7 @@ def postprocess_output(output, loss_types):
     TO_KB = 1602.1766208  # eV/A^3 to kbar
     results = {}
     for loss_type in loss_types:
+        is_valid = True
         if loss_type is LossType.ENERGY:
             # dim: (num_batch)
             num_atoms = output[KEY.NUM_ATOMS]
@@ -116,11 +119,28 @@ def postprocess_output(output, loss_types):
             vdim = 6
         else:
             raise ValueError(f'Unknown loss type: {loss_type}')
-        results[loss_type] = (pred, ref, vdim)
+        
+        if multiply_weight:
+            weight_by_label = output[KEY.DATA_WEIGHT][output[KEY.BATCH]] if loss_type is LossType.FORCE else output[KEY.DATA_WEIGHT]
+            weight_by_label = torch.repeat_interleave(weight_by_label, vdim)  # repeat for vector dimension
+            pred *= weight_by_label
+            ref *= weight_by_label
+        
+        if delete_unlabled:
+            #  nan in pred might not be deleted, which is natural.
+            #  This must be done after multiplying weight.
+            unlabeld_idx = torch.isnan(ref)
+            pred = pred[~unlabeld_idx]
+            ref = ref[~unlabeld_idx]
+
+            if len(pred) == 0:
+                is_valid = False  # not a valid error, erase for loss.backward
+
+        results[loss_type] = (pred, ref, vdim, is_valid)
     return results
 
 
-def squared_error(pred, ref, vdim):
+def squared_error(pred, ref, vdim, *args):
     MSE = torch.nn.MSELoss(reduction='none')
     return torch.reshape(MSE(pred, ref), (-1, vdim)).sum(dim=1)
 

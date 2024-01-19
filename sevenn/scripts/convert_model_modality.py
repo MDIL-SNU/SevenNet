@@ -79,7 +79,6 @@ def _get_modal_weight_as_bias(
     ref_index: int,
     irreps_in: Irreps,
     irreps_out: Irreps,
-    num_modalities: int,
 ):
     input_dim = irreps_in.count('0e')
     output_dim = irreps_out.count('0e')
@@ -104,7 +103,8 @@ def _append_modal_weight(
     irreps_out: Irreps,
     append_number: int,
 ):
-    # This works for normalization = `element`, default in SEVENNet. (normalization = `path` is curruently deprecated.)
+    # This works for normalization = `element`, default in SEVENNet.
+    # (normalization = `path` is curruently deprecated in SEVENNet.)
     input_dim = irreps_in.count('0e')
     output_dim = irreps_out.count('0e')
     new_input_dim = input_dim + append_number
@@ -121,23 +121,18 @@ def _append_modal_weight(
     for idx, l_p_weight in enumerate(linear_weight_list):
         new_weight = torch.reshape(l_p_weight, (1, -1)).squeeze()
         if idx in scalar_idx:
-            # append_weight = torch.zeros((append_number, output_dim), dtype=l_p_weight.dtype)
-            # new_weight = torch.cat([l_p_weight, append_weight])
             new_weight = new_weight * math.sqrt(new_input_dim / input_dim)
-        else:
-            # new_weight = torch.reshape(l_p_weight, (1, -1)).squeeze()
-            pass
 
         new_weight_list.append(new_weight)
 
-    for l_p_weight in linear_weight_list:
-        new_weight_list.append(torch.reshape(l_p_weight, (1, -1)).squeeze())
-    flattened_weight = torch.cat(new_weight_list)
+    flattened_weight_list = []
+    for l_p_weight in new_weight_list:
+        flattened_weight_list.append(torch.reshape(l_p_weight, (1, -1)).squeeze())
+    flattened_weight = torch.cat(flattened_weight_list)
 
     append_weight = torch.cat(
-        flattened_weight,
-        torch.zeros(append_number * output_dim, dtype=flattened_weight.dtype),
-    )  # starting from common model
+        [flattened_weight, torch.zeros(append_number * output_dim, dtype=flattened_weight.dtype)]
+    )  # zeros: starting from common model
 
     return append_weight
 
@@ -209,7 +204,6 @@ def get_single_modal_model_dct(
                         ref_modal_index,
                         irreps_in,
                         irreps_out,
-                        num_modalities,
                     )
                 )
                 erased_modal_weight = _erase_linear_modal_params(
@@ -231,15 +225,25 @@ def get_single_modal_model_dct(
         [0], dtype=model_state_dct[final_block_key + '.linear.weight'].dtype
     )
 
+    if config[KEY.USE_MODAL_WISE_SHIFT_SCALE]:
+        config[KEY.USE_MODAL_WISE_SHIFT_SCALE] = False
+        for rescaler_name in ['shift', 'scale']:
+            rescaler_key = 'rescale atomic energy.'+rescaler_name
+            rescaler = model_state_dct[rescaler_key][ref_modal_index]
+            model_state_dct.update({rescaler_key: rescaler})
+
     config[KEY.USE_MODALITY] = False
 
     return model_state_dct
 
 
 def append_modality_to_model_dct(
-    model_state_dct: dict, config: dict, append_modal_length: int
+    model_state_dct: dict, config: dict, orig_num_modal: int, append_modal_length: int
 ):
-    config[KEY.USE_MODALITY] = True
+    config_num_modal = config[KEY.NUM_MODALITIES]
+    config.update({KEY.NUM_MODALITIES: orig_num_modal,
+                   KEY.USE_MODALITY: True})
+    
     model = build_E3_equivariant_model(config)
 
     for module_key in model._modules.keys():
@@ -265,5 +269,6 @@ def append_modality_to_model_dct(
                     append_modal_length,
                 )
                 model_state_dct[module_key + '.linear.weight'] = append_weight
+    config[KEY.NUM_MODALITIES] = config_num_modal
 
     return model_state_dct

@@ -7,6 +7,7 @@ from typing import Dict, List, Optional
 import ase
 import ase.io
 import numpy as np
+import torch
 import torch.multiprocessing as mp
 import tqdm
 from ase.io.utils import string2index
@@ -63,7 +64,7 @@ def atoms_to_graph(
         y_stress = -1 * atoms.get_stress()
         y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
     except RuntimeError as e:
-        y_stress = None
+        y_stress = np.full((1, 6), np.nan)
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -171,7 +172,7 @@ def pkl_atoms_reader(fname):
 
 
 # Reader
-def structure_list_reader(filename: str, format_outputs='vasp-out'):
+def structure_list_reader(filename: str, format_outputs='extxyz'):
     parsers = DefaultParsersContainer(
         PositionsAndForces, Stress, Energy, Cell
     ).make_parsers()
@@ -231,36 +232,42 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
             files_expr, index_expr = file_line
             index = string2index(index_expr)
             for expanded_filename in list(braceexpand(files_expr)):
-                f_stream = open(expanded_filename, 'r')
-                """
-                stct_lists += io.read(expanded_filename, index=index_expr,
-                                      format=format_outputs, parallel=False)
-                """
-                # generator of all outcar ionic steps
-                gen_all = outcarchunks(f_stream, ocp)
-                try:
-                    it_atoms = islice(
-                        gen_all, index.start, index.stop, index.step
-                    )
-                except ValueError:
-                    # TODO: support
-                    # negative index
-                    raise ValueError('Negative index is not supported yet')
-
-                info_dct_f = {
-                    **info_dct,
-                    'file': os.path.abspath(expanded_filename),
-                }
-                for idx, o in enumerate(it_atoms):
+                #  TODO: this is crude way of handling data
+                #  Using .sevenn_data file: use sevenn_get_graph
+                if "OUTCAR" in expanded_filename:
+                    f_stream = open(expanded_filename, 'r')
+                    """
+                    stct_lists += io.read(expanded_filename, index=index_expr,
+                                        format=format_outputs, parallel=False)
+                    """
+                    # generator of all outcar ionic steps
+                    gen_all = outcarchunks(f_stream, ocp)
                     try:
-                        istep = index.start + idx * index.step
-                        atoms = o.build()
-                        atoms.info = {**info_dct_f, 'ionic_step': istep}
-                    except TypeError:  # it is not slice of ionic steps
-                        atoms = o.build()
-                        atoms.info = info_dct_f
-                    stct_lists.append(atoms)
-                f_stream.close()
+                        it_atoms = islice(
+                            gen_all, index.start, index.stop, index.step
+                        )
+                    except ValueError:
+                        # TODO: support
+                        # negative index
+                        raise ValueError('Negative index is not supported yet')
+
+                    info_dct_f = {
+                        **info_dct,
+                        'file': os.path.abspath(expanded_filename),
+                    }
+                    for idx, o in enumerate(it_atoms):
+                        try:
+                            istep = index.start + idx * index.step
+                            atoms = o.build()
+                            atoms.info = {**info_dct_f, 'ionic_step': istep}
+                        except TypeError:  # it is not slice of ionic steps
+                            atoms = o.build()
+                            atoms.info = info_dct_f
+                        stct_lists.append(atoms)
+                    f_stream.close()
+                else:
+                    stct_lists += ase.io.read(expanded_filename, index=index_expr,
+                                              format=format_outputs, parallel=False)
         structures_dict[title] = stct_lists
     return structures_dict
 

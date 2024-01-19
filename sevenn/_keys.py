@@ -41,6 +41,7 @@ NODE_ATTR: Final[str] = 'node_attr'  # (N, N_species) from one_hot
 MODAL_ATTR: Final[str] = (
     'modal_attr'  # (1, N_modalities) for handling multi-modal
 )
+MODAL_TYPE: Final[str] = 'modal_type'  # (1) one-hot index of modal
 EDGE_ATTR: Final[str] = 'edge_attr'  # (from spherical harmonics)
 EDGE_EMBEDDING: Final[str] = 'edge_embedding'  # (from edge embedding)
 
@@ -126,6 +127,7 @@ RESET_OPTIMIZER = 'reset_optimizer'
 RESET_SCHEDULER = 'reset_scheduler'
 RESET_EPOCH = 'reset_epoch'
 USE_STATISTIC_VALUES_OF_CHECKPOINT = 'use_statistic_values_of_checkpoint'
+USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY = 'use_statistic_values_for_cp_modal_only'
 
 CSV_LOG = 'csv_log'
 
@@ -204,6 +206,7 @@ SHIFT = 'shift'
 SCALE = 'scale'
 
 USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
+USE_MODAL_WISE_SHIFT_SCALE = 'use_modal_wise_shift_scale'
 
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'
