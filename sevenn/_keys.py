@@ -127,7 +127,9 @@ RESET_OPTIMIZER = 'reset_optimizer'
 RESET_SCHEDULER = 'reset_scheduler'
 RESET_EPOCH = 'reset_epoch'
 USE_STATISTIC_VALUES_OF_CHECKPOINT = 'use_statistic_values_of_checkpoint'
-USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY = 'use_statistic_values_for_cp_modal_only'
+USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY = (
+    'use_statistic_values_for_cp_modal_only'
+)
 
 CSV_LOG = 'csv_log'
 

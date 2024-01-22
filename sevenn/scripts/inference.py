@@ -40,8 +40,8 @@ def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
     if full_dataset.x_is_one_hot_idx and full_dataset.type_map != type_map:
         raise ValueError(
             "loaded dataset's x is not atomic numbers.                 this is"
-            ' deprecated. Create dataset from structure list                '
-            ' with the newest version of sevenn'
+            " deprecated. Create dataset from structure list                "
+            " with the newest version of sevenn"
         )
     return full_dataset
 
@@ -146,8 +146,8 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
             header = set()
             for output in output_list:
                 header.update(output[KEY.INFO].keys())
-            #header = output_list[0][KEY.INFO].keys()
-            
+            # header = output_list[0][KEY.INFO].keys()
+
             writer = csv.DictWriter(f, fieldnames=header, restval='None')
             writer.writeheader()
             for output in output_list:
@@ -223,7 +223,9 @@ def inference_main(
         for label, data_list in inference_set.dataset.items():
             for data in data_list:
                 data[KEY.DATA_MODALITY] = modal
-        inference_set.write_modal_attr(config[KEY.MODAL_MAP], config[KEY.USE_MODAL_WISE_SHIFT_SCALE])
+        inference_set.write_modal_attr(
+            config[KEY.MODAL_MAP], config[KEY.USE_MODAL_WISE_SHIFT_SCALE]
+        )
 
     inference_set.x_to_one_hot_idx(type_map)
     if config[KEY.IS_TRAIN_STRESS]:

@@ -127,12 +127,15 @@ def _append_modal_weight(
 
     flattened_weight_list = []
     for l_p_weight in new_weight_list:
-        flattened_weight_list.append(torch.reshape(l_p_weight, (1, -1)).squeeze())
+        flattened_weight_list.append(
+            torch.reshape(l_p_weight, (1, -1)).squeeze()
+        )
     flattened_weight = torch.cat(flattened_weight_list)
 
-    append_weight = torch.cat(
-        [flattened_weight, torch.zeros(append_number * output_dim, dtype=flattened_weight.dtype)]
-    )  # zeros: starting from common model
+    append_weight = torch.cat([
+        flattened_weight,
+        torch.zeros(append_number * output_dim, dtype=flattened_weight.dtype),
+    ])  # zeros: starting from common model
 
     return append_weight
 
@@ -228,7 +231,7 @@ def get_single_modal_model_dct(
     if config[KEY.USE_MODAL_WISE_SHIFT_SCALE]:
         config[KEY.USE_MODAL_WISE_SHIFT_SCALE] = False
         for rescaler_name in ['shift', 'scale']:
-            rescaler_key = 'rescale atomic energy.'+rescaler_name
+            rescaler_key = 'rescale atomic energy.' + rescaler_name
             rescaler = model_state_dct[rescaler_key][ref_modal_index]
             model_state_dct.update({rescaler_key: rescaler})
 
@@ -238,12 +241,14 @@ def get_single_modal_model_dct(
 
 
 def append_modality_to_model_dct(
-    model_state_dct: dict, config: dict, orig_num_modal: int, append_modal_length: int
+    model_state_dct: dict,
+    config: dict,
+    orig_num_modal: int,
+    append_modal_length: int,
 ):
     config_num_modal = config[KEY.NUM_MODALITIES]
-    config.update({KEY.NUM_MODALITIES: orig_num_modal,
-                   KEY.USE_MODALITY: True})
-    
+    config.update({KEY.NUM_MODALITIES: orig_num_modal, KEY.USE_MODALITY: True})
+
     model = build_E3_equivariant_model(config)
 
     for module_key in model._modules.keys():

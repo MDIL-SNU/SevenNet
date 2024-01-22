@@ -234,7 +234,7 @@ def structure_list_reader(filename: str, format_outputs='extxyz'):
             for expanded_filename in list(braceexpand(files_expr)):
                 #  TODO: this is crude way of handling data
                 #  Using .sevenn_data file: use sevenn_get_graph
-                if "OUTCAR" in expanded_filename:
+                if 'OUTCAR' in expanded_filename:
                     f_stream = open(expanded_filename, 'r')
                     """
                     stct_lists += io.read(expanded_filename, index=index_expr,
@@ -266,8 +266,12 @@ def structure_list_reader(filename: str, format_outputs='extxyz'):
                         stct_lists.append(atoms)
                     f_stream.close()
                 else:
-                    stct_lists += ase.io.read(expanded_filename, index=index_expr,
-                                              format=format_outputs, parallel=False)
+                    stct_lists += ase.io.read(
+                        expanded_filename,
+                        index=index_expr,
+                        format=format_outputs,
+                        parallel=False,
+                    )
         structures_dict[title] = stct_lists
     return structures_dict
 

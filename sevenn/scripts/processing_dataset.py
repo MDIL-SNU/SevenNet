@@ -76,15 +76,26 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
         cutoff = config[KEY.CUTOFF]
 
         for modal_key, data_list in atomdata_dict_sort_by_modal.items():
-            Logger().write(f'calculated specie wise shift, scale in modal = {modal_key} is\n')
-            modal_set = AtomGraphDataset(data_list, cutoff, x_is_one_hot_idx=True)
-            modal_shift = modal_set.get_species_ref_energy_by_linear_comb(n_chem)
+            Logger().write(
+                'calculated specie wise shift, scale in modal ='
+                f' {modal_key} is\n'
+            )
+            modal_set = AtomGraphDataset(
+                data_list, cutoff, x_is_one_hot_idx=True
+            )
+            modal_shift = modal_set.get_species_ref_energy_by_linear_comb(
+                n_chem
+            )
             modal_scale = modal_set.get_species_wise_force_rms(n_chem)
-            shift[modal_map[modal_key]] = torch.tensor(modal_shift)  # this is np.array
+            shift[modal_map[modal_key]] = torch.tensor(
+                modal_shift
+            )  # this is np.array
             scale[modal_map[modal_key]] = modal_scale
 
             for cstr, sh, sc in zip(chem_strs, modal_shift, modal_scale):
-                Logger().format_k_v(f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True)
+                Logger().format_k_v(
+                    f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True
+                )
 
     else:
         shift, scale = 0, 1  # default setting for not using shift, scale
@@ -117,16 +128,21 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
                     modal_idx = modal_map[modal_key_cp]
                     shift[modal_idx] = shift_cp[modal_idx_cp]
                     scale[modal_idx] = scale_cp[modal_idx_cp]
-            
+
             else:  # cp model is single modal
                 try:
                     modal_idx = modal_map[config[KEY.DEFAULT_MODAL]]
                 except:
-                    raise KeyError(f"{config[KEY.DEFAULT_MODAL]} should be one of {modal_map.keys()}")
+                    raise KeyError(
+                        f'{config[KEY.DEFAULT_MODAL]} should be one of'
+                        f' {modal_map.keys()}'
+                    )
                 shift[modal_idx] = torch.tensor(shift_cp)
                 scale[modal_idx] = torch.tensor(scale_cp)
 
-            if not config[KEY.CONTINUE][KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY]:
+            if not config[KEY.CONTINUE][
+                KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY
+            ]:
                 # Also overwrite values of new modal to reference value
                 # For multimodal, set reference modal with KEY.DEFAULT_MODAL
                 shift_ref = shift_cp
@@ -135,10 +151,13 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
                     try:
                         modal_idx_cp = modal_map_cp[config[KEY.DEFAULT_MODAL]]
                     except:
-                        raise KeyError(f"{config[KEY.DEFAULT_MODAL]} should be one of {modal_map_cp.keys()}")
+                        raise KeyError(
+                            f'{config[KEY.DEFAULT_MODAL]} should be one of'
+                            f' {modal_map_cp.keys()}'
+                        )
                     shift_ref = shift_cp[modal_idx_cp]
                     scale_ref = scale_cp[modal_idx_cp]
-                
+
                 for modal_key, modal_idx in modal_map.items():
                     if modal_key not in modal_map_cp.keys():
                         shift[modal_idx] = shift_ref
@@ -221,7 +240,7 @@ def processing_dataset(config, working_dir):
     # check what modalities are used in dataset
     if config[KEY.USE_MODALITY]:
         modalities = dataset.get_modalities()
-        #print(modalities)
+        # print(modalities)
         num_modalities = len(modalities)
         if num_modalities < 2:
             Logger().writeline('Only one modal is given, ignore modality')
@@ -238,11 +257,15 @@ def processing_dataset(config, working_dir):
                     modal_map[modal_key] = current_idx
                     current_idx += 1
 
-            config.update(
-                {KEY.NUM_MODALITIES: len(modal_map), KEY.MODAL_MAP: modal_map, KEY.MODAL_LIST: list(modal_map.keys())}
-            )
+            config.update({
+                KEY.NUM_MODALITIES: len(modal_map),
+                KEY.MODAL_MAP: modal_map,
+                KEY.MODAL_LIST: list(modal_map.keys()),
+            })
 
-            dataset.write_modal_attr(modal_map, config[KEY.USE_MODAL_WISE_SHIFT_SCALE])
+            dataset.write_modal_attr(
+                modal_map, config[KEY.USE_MODAL_WISE_SHIFT_SCALE]
+            )
 
     # --------------- save dataset regardless of train/valid--------------#
     save_dataset = config[KEY.SAVE_DATASET]
@@ -316,9 +339,11 @@ def processing_dataset(config, working_dir):
             valid_modality = valid_set.get_modalities()
 
             if set(valid_modality).issubset(set(config_modality)) is False:
-                raise ValueError("validset modality is not subset of trainset")
+                raise ValueError('validset modality is not subset of trainset')
 
-            valid_set.write_modal_attr(config[KEY.MODAL_MAP], config[KEY.USE_MODAL_WISE_SHIFT_SCALE])
+            valid_set.write_modal_attr(
+                config[KEY.MODAL_MAP], config[KEY.USE_MODAL_WISE_SHIFT_SCALE]
+            )
 
     else:
         train_set, valid_set, test_set = dataset.divide_dataset(
