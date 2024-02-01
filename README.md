@@ -11,13 +11,13 @@ The project provides parallel molecular dynamics simulations using graph neural 
 
 **PLEASE NOTE:** We are currently preparing a paper that provides a detailed description of the algorithms implemented in this project. In addition, SEVENNet is under active development and may not be fully stable.
 
-**PLEASE NOTE:** Backward compatibility (espacially if it you're loading models from old checkpoint files) is not guaranteed. It might raise error (hopefully) or give wrong result without error.
+**PLEASE NOTE:** Backward compatibility (especially if it you're loading models from old checkpoint files) is not guaranteed. It might raise an error (hopefully) or give the wrong result without error.
 
 The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later used to run molecular dynamics simulations via LAMMPS.
 
 ## Known issues
 
-* The pressure of parallel version in lammps is not supported yet. (The pressure on lammps log is wrong)
+* The pressure of the parallel version in LAMMPS is not supported yet.
 * When using parallel MD, if the simulation cell is too small (one of cell dimension < cutoff radius), the calculated force is incorrect.
 
 ## Requirements for Training
@@ -52,9 +52,17 @@ To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_da
 Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned as their default values. You can refer to the log to check the default inputs.
 Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), or inside input_full.yaml itself.
 
+### Multi-GPU training
+
+We support multi-GPU training feature using PyTorch DDP (distributed data parallel). We use one process per GPU.
+```
+torchrun --standalone --nnodes={# of nodes} --nproc_per_node {# of GPUs} --no_python sevenn input.yaml -d
+```
+Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
+
 ### Check model quality using 'sevenn_inference'
 
-Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at same directory
+Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at the same directory
 ```
 sevenn_inference checkpoint_best.pt ../data/label_1/*
 ```
@@ -64,19 +72,19 @@ You can try 'sevenn_inference --help' for more information of this command.
 
 ### To deploy models from checkpoint using 'sevenn_get_model'
 
-Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at same directory
+Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at the same directory
 ```
 sevenn_get_model checkpoint_best.pt
 ```
 
-This will create 'deployed_serial.pt', which can be used as lammps potential under `e3gnn` pair_style. Check lammps intallation process below.
+This will create 'deployed_serial.pt', which can be used as lammps potential under `e3gnn` pair_style. Check the lammps installation process below.
 
-Parallel model can be obtained in similar way
+The parallel model can be obtained in a similar way
 ```
 sevenn_get_model checkpoint_best.pt -p
 ```
 
-This will create multiple of deployed_parallel_*.pt' files. The number of deployed models are depend on number of message passing layers used in model.
+This will create multiple deployed_parallel_*.pt' files. The number of deployed models depends on a number of message-passing layers used in the model.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
 ## Requirements for Molecular Dynamics (MD)
@@ -96,7 +104,7 @@ mca:mpi:base:param:mpi_built_with_cuda_support:value:true
 
 ## Installation for MD
 
-Please note that the following command will overwrite `comm_brickc.cpp` and `comm_brick.h` in the original `LAMMPS`. While it does not affect the original functionality of `LAMMPS`, you may want to backup these files from the original source if you're unsure.
+Please note that the following command will overwrite `comm_brick.cpp` and `comm_brick.h` in the original `LAMMPS`. While it does not affect the original functionality of `LAMMPS`, you may want to back up these files from the source if you're unsure.
 
 ```
 cp SEVENN/pair_e3gnn/* path_to_lammps/src/
@@ -124,10 +132,6 @@ mkdir build
 cd build
 cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
 ```
-
-Unfortunatly, I found that cuda-aware MPI is not that popular for now and there is lots of obstacls tuning versions between open MPI, CUDA, torch, etc.
-If you don't need parallel MD simulations, you can use normal MPI distributions or not using MPI at all. Still the serial version works well.
-You can also have seperate virtual environment for lammps run only. You need only proper torch, cuda, mpi for this case. (No need to install torch_geometric)
 
 ## Usage for MD
 
