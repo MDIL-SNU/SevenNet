@@ -24,6 +24,7 @@ from ase.neighborlist import primitive_neighbor_list
 from braceexpand import braceexpand
 
 import sevenn._keys as KEY
+from sevenn._const import LossType
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
 
@@ -334,18 +335,28 @@ def file_to_dataset(
                 find_weight = False
                 for info in label_info[1:]:
                     if 'w=' in info.lower():
-                        weight = info.split('=')[1]
+                        weights = info.split('=')[1]
                         try:
-                            graph[KEY.DATA_WEIGHT] = float(weight)
+                            if "," in weights:
+                                weight_list = list(map(float, weights.split(",")))
+                            else:
+                                weight_list = [float(weights)]*3
+                            weight_dict = {}
+                            for idx, loss_type in enumerate(LossType):
+                                weight_dict[loss_type.value] = weight_list[idx] if idx < len(weight_list) else 1
+                            graph[KEY.DATA_WEIGHT] = weight_dict
                             find_weight = True
                             break
                         except:
                             raise ValueError(
                                 'Weight must be a real number, but'
-                                f' {weight} is given for {label}'
+                                f' {weights} is given for {label}'
                             )
                 if not find_weight:
-                    graph[KEY.DATA_WEIGHT] = 1
+                    weight_dict = {}
+                    for loss_type in LossType:
+                        weight_dict[loss_type.value] = 1
+                    graph[KEY.DATA_WEIGHT] = weight_dict
             if use_modality:
                 find_modality = False
                 for info in label_info[1:]:

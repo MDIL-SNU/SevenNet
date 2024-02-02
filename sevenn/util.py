@@ -85,7 +85,7 @@ def postprocess_output_with_label(output, loss_types):
 
 
 def postprocess_output(
-    output, loss_types, multiply_weight=False, delete_unlabled=True
+    output, loss_types, use_weight=False, delete_unlabled=True
 ):
     from sevenn._const import LossType
 
@@ -96,7 +96,7 @@ def postprocess_output(
     Args:
         output (dict): output from model
         loss_types (list): list of loss types to be calculated
-        multiply_weight (bool): if True, trying to multiply weight to output. Used for training only.
+        use_weight (bool): if True, trying to multiply weight to output. Used for training only.
         delete_unlabled (bool): if True, delete unlabled (i.e. nan) data from reference.
 
     Returns:
@@ -104,6 +104,7 @@ def postprocess_output(
     """
     TO_KB = 1602.1766208  # eV/A^3 to kbar
     results = {}
+    weight_tensor = None
     for loss_type in loss_types:
         is_valid = True
         if loss_type is LossType.ENERGY:
@@ -126,17 +127,10 @@ def postprocess_output(
         else:
             raise ValueError(f'Unknown loss type: {loss_type}')
 
-        if multiply_weight:
-            weight_by_label = (
-                output[KEY.DATA_WEIGHT][output[KEY.BATCH]]
-                if loss_type is LossType.FORCE
-                else output[KEY.DATA_WEIGHT]
-            )
-            weight_by_label = torch.repeat_interleave(
-                weight_by_label, vdim
-            )  # repeat for vector dimension
-            pred *= weight_by_label
-            ref *= weight_by_label
+        if use_weight:
+            weight = output[KEY.DATA_WEIGHT][loss_type.value]
+            weight_tensor = weight[output[KEY.BATCH]] if loss_type is LossType.FORCE else weight
+            weight_tensor = torch.repeat_interleave(weight_tensor, vdim)
 
         if delete_unlabled:
             #  nan in pred might not be deleted, which is natural.
@@ -147,8 +141,11 @@ def postprocess_output(
 
             if len(pred) == 0:
                 is_valid = False  # not a valid error, erase for loss.backward
+            
+            if use_weight:
+                weight_tensor = weight_tensor[~unlabeld_idx]
 
-        results[loss_type] = (pred, ref, vdim, is_valid)
+        results[loss_type] = (pred, ref, vdim, is_valid, weight_tensor)
     return results
 
 

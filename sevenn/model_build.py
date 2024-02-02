@@ -4,6 +4,7 @@ from typing import Union
 
 import e3nn.o3
 from e3nn.o3 import FullTensorProduct, Irreps
+import torch
 from torch.nn import Sequential
 
 import sevenn._const as _const
@@ -431,8 +432,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         )
     )
 
-    if not modal_wise_shift_scale and shift.dim() != 1:
-        # This is only for compatibility when deploying single modal model.
+    if not modal_wise_shift_scale and torch.tensor(shift).dim() != 1:
+        # This is only for tensor size compatibility when deploying single modal model.
         shift = shift[0]
         scale = scale[0]
 
