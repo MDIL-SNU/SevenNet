@@ -2,8 +2,8 @@ from setuptools import find_packages, setup
 
 setup(
     name='sevenn',
-    version='0.9.0',
-    description='SEVENNet',
+    version='0.9.1',
+    description='SevenNet',
     author='Yutack Park, Jaesun Kim',
     python_requires='>=3.8',
     packages=find_packages(include=['sevenn', 'sevenn*']),

@@ -1,17 +1,15 @@
 
 
-<img src="SEVENNet_logo.png" alt="Alt text" height="180">
+<img src="SevenNet_logo.png" alt="Alt text" height="180">
 
 
 # SEVENNet
 
-SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations on [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is the same as that found in [`nequip`](https://github.com/mir-group/nequip).
+SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
 
 The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which was not possible despite their superior performance.
 
-**PLEASE NOTE:** We are currently preparing a paper that provides a detailed description of the algorithms implemented in this project. In addition, SEVENNet is under active development and may not be fully stable.
-
-**PLEASE NOTE:** Backward compatibility (especially if it you're loading models from old checkpoint files) is not guaranteed. It might raise an error (hopefully) or give the wrong result without error.
+**PLEASE NOTE:** SevenNet is under active development and may not be fully stable.
 
 The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later used to run molecular dynamics simulations via LAMMPS.
 
@@ -19,6 +17,9 @@ The installation and usage of SEVENNet are split into two parts: training (handl
 
 * The pressure of the parallel version in LAMMPS is not supported yet.
 * When using parallel MD, if the simulation cell is too small (one of cell dimension < cutoff radius), the calculated force is incorrect.
+
+However the second issue rarely matters since you can not fully utilize a GPU in this condition. In this case, using only a single GPU gives almost same speed as multiple GPUs.
+Even though, we're looking for the solution.
 
 ## Requirements for Training
 
@@ -47,14 +48,14 @@ sevenn input_full.yaml -s
 ```
 
 Examples of `input_full.yaml` can be found under `SEVENN/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training.
-To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` as the `load_dataset_path:` int the `input.yaml`. Both `structure_list` and `load_dataset_path` can be specified as lists, allowing easy augmentation of training sets.
+To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
 
 Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned as their default values. You can refer to the log to check the default inputs.
-Currently, explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), or inside input_full.yaml itself.
+Currently, detailed explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), or inside input_full.yaml.
 
 ### Multi-GPU training
 
-We support multi-GPU training feature using PyTorch DDP (distributed data parallel). We use one process per GPU.
+We support multi-GPU training feature using PyTorch DDP (distributed data parallel). We use one process (CPU core) per GPU.
 ```
 torchrun --standalone --nnodes={# of nodes} --nproc_per_node {# of GPUs} --no_python sevenn input.yaml -d
 ```
@@ -84,7 +85,7 @@ The parallel model can be obtained in a similar way
 sevenn_get_model checkpoint_best.pt -p
 ```
 
-This will create multiple deployed_parallel_*.pt' files. The number of deployed models depends on a number of message-passing layers used in the model.
+This will create multiple deployed_parallel_*.pt' files. The number of deployed models equals the number of message-passing layers.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
 ## Requirements for Molecular Dynamics (MD)
@@ -102,9 +103,11 @@ $ ompi_info --parsable --all | grep mpi_built_with_cuda_support:value
 mca:mpi:base:param:mpi_built_with_cuda_support:value:true
 ```
 
+We're currently developing other options (other than CUDA-aware OpenMPI) to leverage parallel MD. Please let us know other inter GPU communication backends you want for the SevenNet.
+
 ## Installation for MD
 
-Please note that the following command will overwrite `comm_brick.cpp` and `comm_brick.h` in the original `LAMMPS`. While it does not affect the original functionality of `LAMMPS`, you may want to back up these files from the source if you're unsure.
+Note that the following commands will overwrite `comm_brick.cpp` and `comm_brick.h` in the original `LAMMPS`. While it does not affect the original functionality of `LAMMPS`, you may want to back up these files from the source if you're unsure.
 
 ```
 cp SEVENN/pair_e3gnn/* path_to_lammps/src/
@@ -178,10 +181,10 @@ pair_style e3gnn/parallel
 pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {chemical species}
 ```
 
-### To execute LAMMPS with MPI
+### To execute parallel MD simulation with LAMMPS
 
 ```
-mpirun -np {# of GPUs you want to use} {path to lammps binary} -in {lammps input scripts}
+mpirun -np {# of MPI rank to use} {path to lammps binary} -in {lammps input script}
 ```
 
 If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
