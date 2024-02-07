@@ -1,51 +1,68 @@
 # Example input.yaml for training SEVENNet.
 # The underlying model is identical to nequip (https://github.com/mir-group/nequip), but the names of hyperparameters might different.
-# Except channel, and num_convolution_layer, which has minimal values to quickly check the installation, values written here normally works well.
-# Defaults that works well of channel, lmax and num_convolution_layer are 32, 1, 3 respectively.
+# Defaults model parameter that works well of channel, lmax, and num_convolution_layer are 32, 1, 3 respectively.
 
 model:
-    chemical_species: 'Auto'                      # Chemical symbols present in the dataset, guess from load_dataset data if 'auto'
+    chemical_species: 'Auto'                      # Chemical elements present in the dataset, guess them from load_dataset data if 'auto'
     cutoff: 4.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
     channel: 4                                    # Equivalent to 'num_features' in nequip. Represents the multiplicity of node features. 32 is recommended as default.
     lmax: 1                                       # Maximum order of irreps (rotation order). 1 is recommended as default
     num_convolution_layer: 4                      # Equivalent to 'num_layers' in nequip. Represents the number of message passing layers in the model. 3 is recommended as default
+
+    #irreps_manual:                               # Manually set irreps of the model in each layer
+        #- "128x0e"
+        #- "128x0e+64x1e+32x2e"
+        #- "128x0e+64x1e+32x2e"
+        #- "128x0e+64x1e+32x2e"
+        #- "128x0e+64x1e+32x2e"
+        #- "128x0e"
 
     weight_nn_hidden_neurons: [64, 64]            # Equivalent to 'invariant_layers' and 'neurons' in nequip. Represents the neural network for the radial basis
     radial_basis:                                 # Function and its parameters to encode radial distance
         radial_basis_name: 'bessel'               # Only 'bessel' is currently supported
         bessel_basis_num: 8                       # Equivalent to 'num_basis' in nequip. Represents the number of Bessel functions as the radial basis
     cutoff_function:                              # Differentiable, decaying function to encode radial distance
-        cutoff_function_name: 'poly_cut'          # Only 'poly_cut' is currently supported
+        cutoff_function_name: 'poly_cut'          # {'poly_cut' and 'poly_cut_p_value'} or {'XPLOR' and 'cutoff_on'}
         poly_cut_p_value: 6                       # Equivalent to 'PolynomialCutoff_p' in nequip. Smaller p values correspond to a stronger decay with distance
 
     # For even nonlinearities, 'silu', 'abs' (absolute), and 'ssp' (shifted softmax) are supported. Defaults generally work well
     act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
     act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip.
 
-    is_parity: True                               # Pairy False (to SE(3) group) is not supported yet (on working!)
+    is_parity: False                              # Pairy True (E(3) group) or False (to SE(3) group)
 
-    train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
-    train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
     optimize_by_reduce: False                     # Speed-up by eliminating non-scalar computations at the last layer
+
+    self_connection_type: 'nequip'                # Default is 'nequip'. 'MACE' is used for SevenNet-0.
+
+    # ~~~~~ Above settings (which defines model) should be maintained to 'continue' training ~~~~~~ #
+
+    #avg_num_neigh: 1368.726                      # Manually set the denominator of convolution layer. Root of the given value will be used
+    train_shift_scale: False                      # Enable training for shift & scale. Useful fine-tuning (model adapts to distribution of fine-tuning dataset).
+    train_avg_num_neigh: False                    # Enable training for avg_num_neigh. Useful fine-tuning (model adapts to distribution of fine-tuning dataset).
 
 train:
     random_seed: 1                                # Random seed for pytorch
-    is_train_stress     : False                   # Includes stress in the loss function
+    is_train_stress: False                        # Includes stress in the loss function
     epoch: 10                                     # Ends training after this number of epochs
+
+    #loss: 'Huber'                                # Default is 'mse'
+    #loss_param:
+        #delta: 0.01
 
     # Each optimizer and scheduler have different available parameters.
     # You can refer to sevenn/train/optim.py for supporting optimizer & schedulers
     optimizer: 'adam'                             # Options available are 'sgd', 'adagrad', 'adam', 'adamw', 'radam'
     optim_param:
         lr: 0.005
-    scheduler: 'exponentiallr'                    # Options available are 'steplr', 'multisteplr', 'exponentiallr', 'cosineannealinglr'
+    scheduler: 'exponentiallr'                    # Options available are 'steplr', 'multisteplr', 'exponentiallr', 'cosineannealinglr', 'reducelronplateau'
     scheduler_param:
         gamma: 0.99
 
     force_loss_weight   : 0.1                     # Coefficient for force loss
     stress_loss_weight  : 1e-06                   # Coefficient for stress loss (It is applied to kbar unit)
 
-    per_epoch:  10                                 # Generate checkpoints every this epoch
+    per_epoch:  10                                # Generate checkpoints every this epoch
 
     # TotalEnergy, Energy, Force, Stress, Stress_GPa, TotalLoss
     # RMSE, MAE, Loss available
@@ -55,18 +72,23 @@ train:
         - ['Stress', 'RMSE']
         - ['TotalLoss', 'None']
 
+    # Continue training model from given checkpoint, or pre-trained model checkpoint for fine-tuning
     #continue:
-        #reset_optimizer: False
-        #reset_scheduler: False
-        #checkpoint: 'path_to_previous_checkpoint/checkpoint_best.pth'
-        #use_statistic_values_of_checkpoint: False # whether use shift, scale, and avg_num_neigh from checkpoint or update from new dataset
+        #reset_optimizer: False                    # Set True for fine-tuning
+        #reset_scheduler: False                    # Set True for fine-tuning
+        #checkpoint: 'checkpoint_best.pth'         # Checkpoint of pre-trained model or a model want to continue training.
+        #use_statistic_values_of_checkpoint: False # Set True to use shift, scale, and avg_num_neigh from checkpoint or not
+
+    # If the dataset changed (for fine-tuning),
+    # setting 'use_statistic_value_of_checkpoint' to True roughly changes model's accuracy in the beginning of training.
+    # We recommand to use it as False, and turn train_shift_scale and train_avg_num_neigh to True. 
 
 data:
-    batch_size: 2                                 # Batch size. If training fails due to memory shortage, lower this value
-    data_divide_ratio: 0.1                        # Divide the whole dataset into training and validation sets by this ratio
+    batch_size: 2                                 # Per GPU batch size. 
+    data_divide_ratio: 0.1                        # Split dataset into training and validation sets by this ratio
 
-    #shift: 0.0                                   # User defined global shift
-    #scale: 1.0                                   # User defined global scale
+    #shift: 0.0                                   # User defined shift
+    #scale: 1.0                                   # User defined scale
 
     # Use element wise shift, scale (also trainable).
     # The starting values are linear fitted element reference atomic energy and element wise force rms

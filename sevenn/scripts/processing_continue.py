@@ -131,11 +131,6 @@ def processing_continue(config):
         if config_cp[KEY.ERROR_RECORD] == config[KEY.ERROR_RECORD]:
             Logger().writeline('Same metric, csv file will be appended')
             init_csv = False
-        else:
-            raise ValueError(
-                'Continue found old csv file with different metric. '
-                + 'Please backup your csv file or restore old metric'
-            )
     else:
         Logger().writeline(
             f'{csv_fname} file not found, new csv file will be created'
