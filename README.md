@@ -3,11 +3,12 @@
 <img src="SevenNet_logo.png" alt="Alt text" height="180">
 
 
-# SEVENNet
+# SevenNet
 
-SEVENNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
+SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
 
 The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which was not possible despite their superior performance.
+
 
 **PLEASE NOTE:** SevenNet is under active development and may not be fully stable.
 
@@ -18,7 +19,7 @@ The installation and usage of SEVENNet are split into two parts: training (handl
 * The pressure of the parallel version in LAMMPS is not supported yet.
 * When using parallel MD, if the simulation cell is too small (one of cell dimension < cutoff radius), the calculated force is incorrect.
 
-However the second issue rarely matters since you can not fully utilize a GPU in this condition. In this case, using only a single GPU gives almost same speed as multiple GPUs.
+However, the second issue rarely matters since you can not fully utilize a GPU in this condition. In this case, using only a single GPU gives almost the same speed as multiple GPUs.
 Even though, we're looking for the solution.
 
 ## Requirements for Training
@@ -55,7 +56,7 @@ Currently, detailed explanations of model hyperparameters can be found at [`nequ
 
 ### Multi-GPU training
 
-We support multi-GPU training feature using PyTorch DDP (distributed data parallel). We use one process (CPU core) per GPU.
+We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use one process (CPU core) per GPU.
 ```
 torchrun --standalone --nnodes={# of nodes} --nproc_per_node {# of GPUs} --no_python sevenn input.yaml -d
 ```
@@ -69,7 +70,7 @@ sevenn_inference checkpoint_best.pt ../data/label_1/*
 ```
 
 This will create dir 'sevenn_infer_result'. It includes .csv files that enumerate prediction/reference results of energy and force on OUTCARs in data/label_1 directory.
-You can try 'sevenn_inference --help' for more information of this command.
+You can try 'sevenn_inference --help' for more information on this command.
 
 ### To deploy models from checkpoint using 'sevenn_get_model'
 
@@ -78,7 +79,7 @@ Assuming that you've done temporal training of 10 epochs by above "To start trai
 sevenn_get_model checkpoint_best.pt
 ```
 
-This will create 'deployed_serial.pt', which can be used as lammps potential under `e3gnn` pair_style. Check the lammps installation process below.
+This will create 'deployed_serial.pt', which can be used as lammps potential under `e3gnn` pair_style. Please take a look at the lammps installation process below.
 
 The parallel model can be obtained in a similar way
 ```
@@ -103,7 +104,7 @@ $ ompi_info --parsable --all | grep mpi_built_with_cuda_support:value
 mca:mpi:base:param:mpi_built_with_cuda_support:value:true
 ```
 
-We're currently developing other options (other than CUDA-aware OpenMPI) to leverage parallel MD. Please let us know other inter GPU communication backends you want for the SevenNet.
+We're currently developing other options (other than CUDA-aware OpenMPI) to leverage parallel MD. Please let us know other inter-GPU communication backends you want for the SevenNet.
 
 ## Installation for MD
 
@@ -188,3 +189,10 @@ mpirun -np {# of MPI rank to use} {path to lammps binary} -in {lammps input scri
 ```
 
 If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
+
+## Citation
+If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet or its pre-trained model SevenNet-0, (2) underlying GNN-IP architecture NequIP 
+
+(1) Y. Park, J. Kim, S. Hwang, and S. Han "Scalable Parallel Algorithm for Graph Neural Network Interatomic Potentials in Molecular Dynamics Simulations" (https://arxiv.org/abs/2402.03789)
+
+(2) Batzner, S., Musaelian, A., Sun, L., Geiger, M., Mailoa, J. P., Kornbluth, M., ... & Kozinsky, B. "E (3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials". Nat. comm., 13, 2453. (2022)
