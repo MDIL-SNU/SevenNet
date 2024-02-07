@@ -9,6 +9,7 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
 
 The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which was not possible despite their superior performance.
 
+
 **PLEASE NOTE:** SevenNet is under active development and may not be fully stable.
 
 The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later used to run molecular dynamics simulations via LAMMPS.
@@ -188,3 +189,10 @@ mpirun -np {# of MPI rank to use} {path to lammps binary} -in {lammps input scri
 ```
 
 If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
+
+## Citation
+If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet or its pre-trained model SevenNet-0, (2) underlying GNN-IP architecture NequIP 
+
+(1) Y. Park, J. Kim, S. Hwang, and S. Han "Scalable Parallel Algorithm for Graph Neural Network Interatomic Potentials in Molecular Dynamics Simulations" (https://arxiv.org/abs/2402.03789)
+
+(2) Batzner, S., Musaelian, A., Sun, L., Geiger, M., Mailoa, J. P., Kornbluth, M., ... & Kozinsky, B. "E (3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials". Nat. comm., 13, 2453. (2022)
