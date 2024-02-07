@@ -193,6 +193,6 @@ If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3
 ## Citation
 If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet or its pre-trained model SevenNet-0, (2) underlying GNN-IP architecture NequIP 
 
-(1) Y. Park, J. Kim, S. Hwang, and S. Han "Scalable Parallel Algorithm for Graph Neural Network Interatomic Potentials in Molecular Dynamics Simulations" (https://arxiv.org/abs/2402.03789)
+(1) Y. Park, J. Kim, S. Hwang, and S. Han, "Scalable Parallel Algorithm for Graph Neural Network Interatomic Potentials in Molecular Dynamics Simulations". arXiv, arXiv:2402.03789. (2024) (https://arxiv.org/abs/2402.03789)
 
-(2) Batzner, S., Musaelian, A., Sun, L., Geiger, M., Mailoa, J. P., Kornbluth, M., ... & Kozinsky, B. "E (3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials". Nat. comm., 13, 2453. (2022)
+(2) S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa, M. Kornbluth, T. E. Smidt, and B. Kozinsky, "E (3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials". Nat. Commun., 13, 2453. (2022) (https://www.nature.com/articles/s41467-022-29939-5)
