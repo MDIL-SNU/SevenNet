@@ -58,7 +58,7 @@ class Trainer:
             loss_param = config[KEY.LOSS_PARAM]
         except KeyError:
             loss_param = {}
-        self.criterion = loss(reduction="none", **loss_param)
+        self.criterion = loss(reduction='none', **loss_param)
 
     def run_one_epoch(
         self, loader, is_train=False, error_recorder: ErrorRecorder = None
@@ -89,15 +89,17 @@ class Trainer:
         )
         total_loss = torch.tensor([0.0], device=self.device)
         for loss_type in self.loss_types:
-            pred, ref, vdim, is_valid, weight_tensor = unit_converted[loss_type]
+            pred, ref, vdim, is_valid, weight_tensor = unit_converted[
+                loss_type
+            ]
             if is_valid:
                 #  Add loss for the case with at least one data is labelled.
-                individual_loss = self.criterion(pred, ref) * self.loss_weights[loss_type]
+                individual_loss = (
+                    self.criterion(pred, ref) * self.loss_weights[loss_type]
+                )
                 if self.use_weight_by_label:
                     individual_loss *= weight_tensor
-                total_loss += (
-                    torch.mean(individual_loss)
-                )
+                total_loss += torch.mean(individual_loss)
         return total_loss
 
     def scheduler_step(self, metric=None):

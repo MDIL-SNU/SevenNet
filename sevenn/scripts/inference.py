@@ -224,7 +224,7 @@ def inference_main(
             for data in data_list:
                 data[KEY.DATA_MODALITY] = modal
         inference_set.write_modal_attr(
-            config[KEY.MODAL_MAP], config[KEY.USE_MODAL_WISE_SHIFT_SCALE]
+            config[KEY.MODAL_MAP], config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE]
         )
 
     inference_set.x_to_one_hot_idx(type_map)

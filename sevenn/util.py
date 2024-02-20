@@ -129,7 +129,11 @@ def postprocess_output(
 
         if use_weight:
             weight = output[KEY.DATA_WEIGHT][loss_type.value]
-            weight_tensor = weight[output[KEY.BATCH]] if loss_type is LossType.FORCE else weight
+            weight_tensor = (
+                weight[output[KEY.BATCH]]
+                if loss_type is LossType.FORCE
+                else weight
+            )
             weight_tensor = torch.repeat_interleave(weight_tensor, vdim)
 
         if delete_unlabled:
@@ -141,7 +145,7 @@ def postprocess_output(
 
             if len(pred) == 0:
                 is_valid = False  # not a valid error, erase for loss.backward
-            
+
             if use_weight:
                 weight_tensor = weight_tensor[~unlabeld_idx]
 

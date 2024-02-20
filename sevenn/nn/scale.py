@@ -21,6 +21,7 @@ class Rescale(nn.Module):
         data_key_in=KEY.SCALED_ATOMIC_ENERGY,
         data_key_out=KEY.ATOMIC_ENERGY,
         train_shift_scale: bool = False,
+        **kwargs
     ):
         super().__init__()
         self.shift = nn.Parameter(
@@ -52,6 +53,7 @@ class SpeciesWiseRescale(nn.Module):
         data_key_out=KEY.ATOMIC_ENERGY,
         data_key_indicies=KEY.ATOM_TYPE,
         train_shift_scale: bool = False,
+        **kwargs
     ):
         super().__init__()
         self.shift = nn.Parameter(
@@ -87,6 +89,8 @@ class ModalWiseRescale(nn.Module):
         data_key_out=KEY.ATOMIC_ENERGY,
         data_key_modal_indices=KEY.MODAL_TYPE,
         data_key_atom_indices=KEY.ATOM_TYPE,
+        use_modal_wise_shift: bool = False,
+        use_modal_wise_scale: bool = False,
         train_shift_scale: bool = False,
     ):
         super().__init__()
@@ -100,13 +104,15 @@ class ModalWiseRescale(nn.Module):
         self.KEY_OUTPUT = data_key_out
         self.KEY_ATOM_INDICES = data_key_atom_indices
         self.KEY_MODAL_INDICES = data_key_modal_indices
+        self.use_modal_wise_shift = use_modal_wise_shift
+        self.use_modal_wise_scale = use_modal_wise_scale
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         batch = data[KEY.BATCH]
         modal_indices = data[self.KEY_MODAL_INDICES][batch]
         atom_indices = data[self.KEY_ATOM_INDICES]
-        data[self.KEY_OUTPUT] = data[self.KEY_INPUT] * self.scale[
-            modal_indices, atom_indices
-        ].view(-1, 1) + self.shift[modal_indices, atom_indices].view(-1, 1)
+        shift = self.shift[modal_indices, atom_indices] if self.use_modal_wise_shift else self.shift[atom_indices]
+        scale = self.scale[modal_indices, atom_indices] if self.use_modal_wise_scale else self.scale[atom_indices]
+        data[self.KEY_OUTPUT] = data[self.KEY_INPUT] * scale.view(-1, 1) + shift.view(-1, 1)
 
         return data

@@ -3,6 +3,7 @@ import os
 import random
 
 import torch
+import torch.distributed as dist
 
 import sevenn._keys as KEY
 from sevenn.sevenn_logger import Logger
@@ -51,54 +52,57 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
         Logger().write(
             f'calculated force rms scale is {scale:.6f} eV/Angstrom\n'
         )
-    elif not config[KEY.USE_MODAL_WISE_SHIFT_SCALE]:
-        # TODO: Modal-wise shift scale when not using species wise case?
+    else:
         type_map = config[KEY.TYPE_MAP]
         n_chem = len(type_map)
+        chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
+
         shift = train_set.get_species_ref_energy_by_linear_comb(n_chem)
         scale = train_set.get_species_wise_force_rms(n_chem)
-        chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
-        Logger().write('calculated specie wise shift, scale is\n')
-        for cstr, sh, sc in zip(chem_strs, shift, scale):
-            Logger().format_k_v(f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True)
 
-    elif config[KEY.USE_MODALITY]:
-        atomdata_dict_sort_by_modal = train_set.get_dict_sort_by_modality()
-        type_map = config[KEY.TYPE_MAP]
-        modal_map = config[KEY.MODAL_MAP]
-        n_chem = len(type_map)
-        n_modal = len(modal_map)
-        chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
+        print_shift, print_scale = shift, scale
 
-        shift = torch.zeros((n_modal, n_chem))
-        scale = torch.zeros((n_modal, n_chem))
+        if config[KEY.USE_MODAL_WISE_SCALE] or config[KEY.USE_MODAL_WISE_SHIFT]:
+            atomdata_dict_sort_by_modal = train_set.get_dict_sort_by_modality()
+            modal_map = config[KEY.MODAL_MAP]
+            n_modal = len(modal_map)
+            cutoff = config[KEY.CUTOFF]
 
-        cutoff = config[KEY.CUTOFF]
+            if config[KEY.USE_MODAL_WISE_SHIFT]:
+                shift = torch.zeros((n_modal, n_chem))
+            if config[KEY.USE_MODAL_WISE_SCALE]:
+                scale = torch.zeros((n_modal, n_chem))
 
-        for modal_key, data_list in atomdata_dict_sort_by_modal.items():
-            Logger().write(
-                'calculated specie wise shift, scale in modal ='
-                f' {modal_key} is\n'
-            )
-            modal_set = AtomGraphDataset(
-                data_list, cutoff, x_is_one_hot_idx=True
-            )
-            modal_shift = modal_set.get_species_ref_energy_by_linear_comb(
-                n_chem
-            )
-            modal_scale = modal_set.get_species_wise_force_rms(n_chem)
-            shift[modal_map[modal_key]] = torch.tensor(
-                modal_shift
-            )  # this is np.array
-            scale[modal_map[modal_key]] = modal_scale
-
-            for cstr, sh, sc in zip(chem_strs, modal_shift, modal_scale):
-                Logger().format_k_v(
-                    f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True
+            for modal_key, data_list in atomdata_dict_sort_by_modal.items():
+                Logger().write(
+                    'calculated specie wise shift, scale in modal ='
+                    f' {modal_key} is\n'
+                )
+                modal_set = AtomGraphDataset(
+                    data_list, cutoff, x_is_one_hot_idx=True
                 )
 
-    else:
-        shift, scale = 0, 1  # default setting for not using shift, scale
+                if config[KEY.USE_MODAL_WISE_SHIFT]:
+                    modal_shift = modal_set.get_species_ref_energy_by_linear_comb(
+                        n_chem
+                    )
+                    shift[modal_map[modal_key]] = torch.tensor(
+                        modal_shift
+                    )  # this is np.array
+                    print_shift = modal_shift
+                if config[KEY.USE_MODAL_WISE_SCALE]:
+                    modal_scale = modal_set.get_species_wise_force_rms(n_chem)
+                    scale[modal_map[modal_key]] = modal_scale
+                    print_scale = modal_scale
+                
+                for cstr, sh, sc in zip(chem_strs, print_shift, print_scale):
+                    Logger().format_k_v(
+                    f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True
+                    )
+        
+        else:
+            for cstr, sh, sc in zip(chem_strs, shift, scale):
+                Logger().format_k_v(f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True)
 
     avg_num_neigh = train_set.get_avg_num_neigh()
     Logger().format_k_v('avg_num_neigh', f'{avg_num_neigh:.6f}', write=True)
@@ -110,8 +114,9 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
         Logger().writeline(
             'Overwrite shift, scale, avg_num_neigh from checkpoint'
         )
+        # TODO: This needs refactoring
         avg_num_neigh = config[KEY.AVG_NUM_NEIGH + '_cp']
-        if not config[KEY.USE_MODAL_WISE_SHIFT_SCALE]:
+        if not (config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE]):
             # Values extracted from checkpoint in processing_continue.py
             shift = config[KEY.SHIFT + '_cp']
             scale = config[KEY.SCALE + '_cp']
@@ -119,6 +124,10 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
             # Case of modal wise shift scale
             shift_cp = config[KEY.SHIFT + '_cp']
             scale_cp = config[KEY.SCALE + '_cp']
+            if not config[KEY.USE_MODAL_WISE_SHIFT]:
+                shift = shift_cp
+            if not config[KEY.USE_MODAL_WISE_SCALE]:
+                scale = scale_cp
             modal_map = config[KEY.MODAL_MAP]
             modal_map_cp = config[KEY.MODAL_MAP + '_cp']
 
@@ -126,8 +135,10 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
             if config[KEY.USE_MODALITY + '_cp']:  # cp model is multimodal
                 for modal_key_cp, modal_idx_cp in modal_map_cp.items():
                     modal_idx = modal_map[modal_key_cp]
-                    shift[modal_idx] = shift_cp[modal_idx_cp]
-                    scale[modal_idx] = scale_cp[modal_idx_cp]
+                    if config[KEY.USE_MODAL_WISE_SHIFT]:
+                        shift[modal_idx] = torch.tensor(shift_cp[modal_idx_cp])
+                    if config[KEY.USE_MODAL_WISE_SCALE]:
+                        scale[modal_idx] = torch.tensor(scale_cp[modal_idx_cp])
 
             else:  # cp model is single modal
                 try:
@@ -137,8 +148,10 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
                         f'{config[KEY.DEFAULT_MODAL]} should be one of'
                         f' {modal_map.keys()}'
                     )
-                shift[modal_idx] = torch.tensor(shift_cp)
-                scale[modal_idx] = torch.tensor(scale_cp)
+                if config[KEY.USE_MODAL_WISE_SHIFT]:
+                    shift[modal_idx] = torch.tensor(shift_cp)
+                if config[KEY.USE_MODAL_WISE_SCALE]:
+                    scale[modal_idx] = torch.tensor(scale_cp)
 
             if not config[KEY.CONTINUE][
                 KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY
@@ -160,8 +173,10 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
 
                 for modal_key, modal_idx in modal_map.items():
                     if modal_key not in modal_map_cp.keys():
-                        shift[modal_idx] = shift_ref
-                        scale[modal_idx] = scale_ref
+                        if config[KEY.USE_MODAL_WISE_SHIFT]:
+                            shift[modal_idx] = shift_ref
+                        if config[KEY.USE_MODAL_WISE_SCALE]:
+                            scale[modal_idx] = scale_ref
 
     # overwrite shift scale anyway if defined in yaml.
     if config[KEY.SHIFT] is not False:
@@ -257,6 +272,13 @@ def processing_dataset(config, working_dir):
                     modal_map[modal_key] = current_idx
                     current_idx += 1
 
+            if config[KEY.IS_DDP]:
+                # Synchronize modal_map
+                torch.cuda.set_device(config[KEY.LOCAL_RANK])
+                modal_map_bcast = [modal_map]
+                dist.broadcast_object_list(modal_map_bcast, src=0)
+                modal_map = modal_map_bcast[0]
+
             config.update({
                 KEY.NUM_MODALITIES: len(modal_map),
                 KEY.MODAL_MAP: modal_map,
@@ -264,7 +286,7 @@ def processing_dataset(config, working_dir):
             })
 
             dataset.write_modal_attr(
-                modal_map, config[KEY.USE_MODAL_WISE_SHIFT_SCALE]
+                modal_map, config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE]
             )
 
     # --------------- save dataset regardless of train/valid--------------#
@@ -342,7 +364,7 @@ def processing_dataset(config, working_dir):
                 raise ValueError('validset modality is not subset of trainset')
 
             valid_set.write_modal_attr(
-                config[KEY.MODAL_MAP], config[KEY.USE_MODAL_WISE_SHIFT_SCALE]
+                config[KEY.MODAL_MAP], config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE]
             )
 
     else:

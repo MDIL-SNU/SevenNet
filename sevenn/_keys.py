@@ -208,7 +208,8 @@ SHIFT = 'shift'
 SCALE = 'scale'
 
 USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
-USE_MODAL_WISE_SHIFT_SCALE = 'use_modal_wise_shift_scale'
+USE_MODAL_WISE_SHIFT = 'use_modal_wise_shift'
+USE_MODAL_WISE_SCALE = 'use_modal_wise_scale'
 
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'

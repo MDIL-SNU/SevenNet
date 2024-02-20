@@ -337,13 +337,19 @@ def file_to_dataset(
                     if 'w=' in info.lower():
                         weights = info.split('=')[1]
                         try:
-                            if "," in weights:
-                                weight_list = list(map(float, weights.split(",")))
+                            if ',' in weights:
+                                weight_list = list(
+                                    map(float, weights.split(','))
+                                )
                             else:
-                                weight_list = [float(weights)]*3
+                                weight_list = [float(weights)] * 3
                             weight_dict = {}
                             for idx, loss_type in enumerate(LossType):
-                                weight_dict[loss_type.value] = weight_list[idx] if idx < len(weight_list) else 1
+                                weight_dict[loss_type.value] = (
+                                    weight_list[idx]
+                                    if idx < len(weight_list)
+                                    else 1
+                                )
                             graph[KEY.DATA_WEIGHT] = weight_dict
                             find_weight = True
                             break

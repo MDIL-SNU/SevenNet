@@ -82,6 +82,10 @@ def train(config, working_dir: str):
     Logger().print_model_info(model, config)
     # log_model_info(model, config)
 
+    ckd = trainer.get_checkpoint_dict()
+    ckd.update({'config': config, 'epoch': 0})
+    torch.save(ckd, "initial_model.pth")
+
     Logger().write('Trainer initialized, ready to training\n')
     Logger().bar()
 

@@ -228,9 +228,15 @@ def get_single_modal_model_dct(
         [0], dtype=model_state_dct[final_block_key + '.linear.weight'].dtype
     )
 
-    if config[KEY.USE_MODAL_WISE_SHIFT_SCALE]:
-        config[KEY.USE_MODAL_WISE_SHIFT_SCALE] = False
-        for rescaler_name in ['shift', 'scale']:
+    if config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SHIFT]:
+        rescaler_names = []
+        if config[KEY.USE_MODAL_WISE_SHIFT]:
+            rescaler_names.append("shift")
+        if config[KEY.USE_MODAL_WISE_SCALE]:
+            rescaler_names.append("scale")
+        config[KEY.USE_MODAL_WISE_SHIFT] = False
+        config[KEY.USE_MODAL_WISE_SCALE] = False
+        for rescaler_name in rescaler_names:
             rescaler_key = 'rescale atomic energy.' + rescaler_name
             rescaler = model_state_dct[rescaler_key][ref_modal_index]
             model_state_dct.update({rescaler_key: rescaler})

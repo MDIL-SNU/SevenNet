@@ -405,14 +405,14 @@ class Logger(metaclass=Singleton):
                 list(range(config[KEY.NUM_SPECIES])), config[KEY.TYPE_MAP]
             )
             self.writeline('shift, scale tuple for each chemical species')
-            if config[KEY.USE_MODAL_WISE_SHIFT_SCALE]:
+            if config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE]:
                 modal_map = config[KEY.MODAL_MAP]
                 for modal_key, modal_idx in modal_map.items():
-                    modal_shift = shift[modal_idx]
-                    modal_scale = scale[modal_idx]
+                    print_shift = shift[modal_idx] if config[KEY.USE_MODAL_WISE_SHIFT] else shift
+                    print_scale = scale[modal_idx] if config[KEY.USE_MODAL_WISE_SCALE] else scale
                     self.writeline(f'for modal = {modal_key}')
                     for cstr, sh, sc in zip(
-                        chem_str, modal_shift, modal_scale
+                        chem_str, print_shift, print_scale
                     ):
                         kv_write(f'{cstr}', f'{sh:.6f}, {sc:.6f}')
             else:

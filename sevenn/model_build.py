@@ -3,8 +3,8 @@ from copy import deepcopy
 from typing import Union
 
 import e3nn.o3
-from e3nn.o3 import FullTensorProduct, Irreps
 import torch
+from e3nn.o3 import FullTensorProduct, Irreps
 from torch.nn import Sequential
 
 import sevenn._const as _const
@@ -420,7 +420,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
     modal_wise_shift_scale = (
         model_config[KEY.USE_MODALITY]
-        and model_config[KEY.USE_MODAL_WISE_SHIFT_SCALE]
+        and (model_config[KEY.USE_MODAL_WISE_SHIFT] or model_config[KEY.USE_MODAL_WISE_SCALE])
     )
     rescale_module = (
         ModalWiseRescale
@@ -432,10 +432,12 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         )
     )
 
-    if not modal_wise_shift_scale and torch.tensor(shift).dim() != 1:
+    if not modal_wise_shift_scale:
         # This is only for tensor size compatibility when deploying single modal model.
-        shift = shift[0]
-        scale = scale[0]
+        if torch.tensor(shift).dim() != 1:
+            shift = shift[0]
+        if torch.tensor(scale).dim() != 1:
+            scale = scale[0]
 
     layers.update({
         'rescale atomic energy': rescale_module(
@@ -444,6 +446,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             data_key_in=KEY.SCALED_ATOMIC_ENERGY,
             data_key_out=KEY.ATOMIC_ENERGY,
             train_shift_scale=train_shift_scale,
+            use_modal_wise_shift=model_config[KEY.USE_MODAL_WISE_SHIFT],
+            use_modal_wise_scale=model_config[KEY.USE_MODAL_WISE_SCALE],
         ),
         'reduce to total enegy': AtomReduce(
             data_key_in=KEY.ATOMIC_ENERGY,
