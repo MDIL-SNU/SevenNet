@@ -66,6 +66,8 @@ class Trainer:
         if self.fisher_information is not False and self.optimal_params is not False:
             self.set_ewc_settings(self.fisher_information, self.optimal_params)
 
+        self.log = open('EWC_debug.log', 'w', buffering=1)
+
     def set_ewc_settings(self, fisher_information, optimal_params):
         import pickle
 
@@ -92,9 +94,11 @@ class Trainer:
             output = self.model(batch)
             error_recorder.update(output)
             if is_train:
-                total_loss = self.loss_calculator(output)
+                total_loss, ewc_loss = self.loss_calculator(output)
                 total_loss.backward()
                 self.optimizer.step()
+
+        self.log.write(f'EWC loss: {ewc_loss}\n')
 
         if self.distributed:
             self.recorder_all_reduce(error_recorder)
@@ -117,15 +121,16 @@ class Trainer:
                 self.criterion(pred, ref) * self.loss_weights[loss_type]
             )
 
-
+        ewc_loss = 0
         if self.fisher_information is not False and self.optimal_params is not False:
             for name, _param in self.model.named_parameters():
                 if name in self.fisher_dict:
                     fisher = self.fisher_dict[name].to(self.device)
                     opt_param = self.opt_params_dict[name].to(self.device)
                     total_loss += (self._lambda / 2) * torch.sum(fisher * (_param - opt_param) ** 2)
+                    ewc_loss += (self._lambda / 2) * torch.sum(fisher * (_param - opt_param) ** 2)
 
-        return total_loss
+        return total_loss, ewc_loss
 
     def compute_fisher_matrix(self, loader):
         fisher_information = {}
@@ -143,7 +148,11 @@ class Trainer:
             # Accumulating the squared gradients (Fisher information)
             for name, _param in self.model.named_parameters():
                 if _param.grad is not None:
-                    fisher_information[name] += _param.grad.data.clone() ** 2 / len(loader)
+                    fisher_information[name] += _param.grad.data.clone() ** 2 
+
+        dataset_size = len(loader.dataset)
+        for name in fisher_information:
+            fisher_information[name] /= dataset_size
 
         import pickle
         with open('fisher_sevenn.pkl', 'wb') as f:

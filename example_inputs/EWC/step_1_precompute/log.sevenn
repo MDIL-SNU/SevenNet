@@ -94,7 +94,7 @@ format_outputs_for_ase: vasp-out
 save_by_label       : False
 save_by_train_valid : False
 data_divide_ratio   : 0.1
-batch_size          : 4
+batch_size          : 1
 preprocess_num_cores: 1
 use_species_wise_shift_scale: True
 data_shuffle        : True

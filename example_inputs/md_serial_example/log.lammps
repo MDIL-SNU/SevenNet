@@ -1,0 +1,114 @@
+LAMMPS (23 Jun 2022 - Update 3)
+OMP_NUM_THREADS environment is not set. Defaulting to 1 thread. (src/comm.cpp:98)
+  using 1 OpenMP thread(s) per MPI task
+#--------------------------- Simulation variables -----------------------------#
+
+  # Simulation control parameters.
+  variable          T equal 500
+
+  # Simulation steps (t_eq)
+  variable          t_eq equal 100
+  variable          output equal 1 #freq to print output
+  variable          dumpstep equal 1
+
+#------------------------------------------------------------------------------#
+
+
+#---------------------------- Atomic setup ------------------------------------#
+  units            metal
+  boundary         p p p
+  # Create atoms.
+  box tilt large
+  read_data        ./res.dat
+Reading data file ...
+  triclinic box = (0 0 0) to (10.129786 10.371119 10.263143) with tilt (1.7303548 0 0)
+  1 by 1 by 1 MPI processor grid
+  reading atoms ...
+  96 atoms
+  read_data CPU = 0.022 seconds
+  replicate 2 2 2
+Replicating atoms ...
+  triclinic box = (0 0 0) to (20.259573 20.742238 20.526287) with tilt (3.4607097 0 0)
+  1 by 1 by 1 MPI processor grid
+  768 atoms
+  replicate CPU = 0.000 seconds
+
+  # Define interatomic potential.
+  pair_style       e3gnn
+PairE3GNN using device : CPU
+  # The order of element should be the same as the order of elements in the data file (type)
+  # * * {path to deployed serial model} {elements}
+  pair_coeff       * * ./deployed_serial.pt Hf O
+Chemical specie 'Hf' is assigned to type 1
+Chemical specie 'O' is assigned to type 2
+from sevenn version '0.8.6' single precision model trained at 2023-11-23 is loaded
+
+  timestep         0.002
+
+#----------------------------- Run simulation ---------------------------------#
+
+    # Setup output
+    thermo          ${output} 			#because it is realaxation
+    thermo          1 			
+    thermo_style    custom step tpcpu pe ke vol press temp #recod these value (custom setting)
+    dump            mydump all custom 1 dump.traj id type x y z fx fy fz
+    dump_modify     mydump sort id
+
+    fix f1 all nve
+    fix               comfix all momentum 1 linear 1 1 1
+    velocity        all create ${T} 1 dist gaussian mom yes
+    velocity        all create 500 1 dist gaussian mom yes
+
+    run 5
+Generated 0 of 1 mixed pair_coeff terms from geometric mixing rule
+Neighbor list info ...
+  update every 1 steps, delay 10 steps, check yes
+  max neighbors/atom: 2000, page size: 100000
+  master list distance cutoff = 6
+  ghost atom cutoff = 6
+  binsize = 3, bins = 8 7 7
+  1 neighbor lists, perpetual/occasional/extra = 1 0 0
+  (1) pair e3gnn, perpetual
+      attributes: full, newton on
+      pair build: full/bin/atomonly
+      stencil: full/bin/3d
+      bin: standard
+Per MPI rank memory allocation (min/avg/max) = 4.497 | 4.497 | 4.497 Mbytes
+   Step         T/CPU          PotEng         KinEng         Volume         Press           Temp     
+         0   0             -22222.715      49.571266      8625.7383      4085.2538      500          
+         1   0.0090448205  -22222.113      48.973063      8625.7383      4088.3956      493.96623    
+         2   0.0092113805  -22220.725      47.595316      8625.7383      4248.8215      480.06961    
+         3   0.0090323607  -22218.756      45.647225      8625.7383      4532.3207      460.42021    
+         4   0.009087387   -22216.527      43.440154      8625.7383      4863.7008      438.15861    
+         5   0.0091914917  -22214.398      41.333109      8625.7383      5139.0424      416.90593    
+Loop time of 1.09736 on 1 procs for 5 steps with 768 atoms
+
+Performance: 0.787 ns/day, 30.482 hours/ns, 4.556 timesteps/s
+97.3% CPU use with 1 MPI tasks x 1 OpenMP threads
+
+MPI task timing breakdown:
+Section |  min time  |  avg time  |  max time  |%varavg| %total
+---------------------------------------------------------------
+Pair    | 1.0905     | 1.0905     | 1.0905     |   0.0 | 99.37
+Neigh   | 0          | 0          | 0          |   0.0 |  0.00
+Comm    | 7.554e-05  | 7.554e-05  | 7.554e-05  |   0.0 |  0.01
+Output  | 0.006722   | 0.006722   | 0.006722   |   0.0 |  0.61
+Modify  | 9.4789e-05 | 9.4789e-05 | 9.4789e-05 |   0.0 |  0.01
+Other   |            | 1.896e-05  |            |       |  0.00
+
+Nlocal:            768 ave         768 max         768 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Nghost:           2196 ave        2196 max        2196 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+Neighs:              0 ave           0 max           0 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+FullNghs:        60672 ave       60672 max       60672 min
+Histogram: 1 0 0 0 0 0 0 0 0 0
+
+Total # of neighbors = 60672
+Ave neighs/atom = 79
+Neighbor list builds = 0
+Dangerous builds = 0
+
+#------------------------------------------------------------------------------#
+Total wall time: 0:00:01

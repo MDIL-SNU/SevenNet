@@ -59,6 +59,8 @@ scheduler_dict = {
     'exponentiallr': scheduler.ExponentialLR,
     'cosineannealinglr': scheduler.CosineAnnealingLR,
     'reducelronplateau': scheduler.ReduceLROnPlateau,
+    'cosineannealingwarmrestartslr': scheduler.CosineAnnealingWarmRestarts,
+    'onecyclelr': scheduler.OneCycleLR,
 }
 
 scheduler_param_name_type_dict = {
@@ -70,6 +72,7 @@ scheduler_param_name_type_dict = {
     },
     'exponentiallr': {'gamma': float},
     'cosineannealinglr': {'T_max': int, 'eta_min': float},
+    'cosineannealingwarmrestartslr': {'T_0': int, 'eta_min': float},
     'reducelronplateau': {
         'mode': str,
         'factor': float,
@@ -80,6 +83,7 @@ scheduler_param_name_type_dict = {
         'min_lr': float,
         'eps': float,
     },
+    'onecyclelr': {'max_lr': float, 'total_steps': int}
 }
 
 loss_dict = {'mse': nn.MSELoss, 'huber': nn.HuberLoss}

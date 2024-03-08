@@ -3,20 +3,21 @@ Hyperparameters related to EWC
 train_shift_scale   :  
 train_avg_num_neigh : # When generating the parameter file for the EWC, you should set it to be the same as the trainable option that you want to set for later fine tuning. For example, if you generate the parameter file with train_avg_num_neigh: False, the fisher information values of avg_num_neigh parameters will be 0. But if you later train with train_avg_num_neigh: True, those parameters will be easily changed without penalty. 
 
-loss: mse # When calculating the Fisher information, the loss criterion for gradient calculation.
+loss:  # When calculating the Fisher information, the loss criterion for gradient calculation.
 
 lr & scheduler: # Just as training results are heavily influenced by LR and the scheduler, so is EWC. There are some LRs and schedulers that learn well on new tasks and don't forget their pretrained memory. In my experience, LRs and schedulers that have a slow decrease of loss on new tasks work well.
 
 continue:
   use_statistic_values_of_checkpoint: True # I recommend setting this to True.
   checkpoint: '/data/tmp/univ_checkpoints/checkpoint_1275.pth' # The potential used in the calculation of EWC
-  calc_fisher: False # Whether to precompute Fisher information
+  calc_fisher: False # Whether to precompute Fisher information. It is only needed when you calculate the fisher information before training.
   opt_params: 'opt_params_sevenn.pkl' # Precomputed optimized parameters file of the Pretrained model
   fisher_information: 'fisher_sevenn.pkl' # Precomputed Fisher information file of the Pretrained model
   ewc_lambda: 5.0 # The lambda term of the EWC loss
 
-load_dataset_path: # When calculating the Fisher information, this data will be used for precomputation.
+batch_size: # 1 is appropriate for fisher information calculation.
 
+load_dataset_path: # When calculating the Fisher information, this data will be used for precomputation. (Training set will be used for precomputation.)
 
 In step 1, Fisher information and optimized parameters are calculated for the training set using the checkpoint potential file. The outputs are fisher_sevenn.pkl and opt_params_sevenn.pkl.
 In step 2, training starts by applying EWC from the checkpoint. The loss written in the log.* is the loss without EWC summation. An update is planned for the future. (For those interested in the EWC loss, it is currently necessary to manually log and track it.)

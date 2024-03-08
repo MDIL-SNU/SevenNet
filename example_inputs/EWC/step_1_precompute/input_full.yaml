@@ -75,7 +75,7 @@ train:
         calc_fisher: True
 
 data:
-    batch_size: 4                                  # Batch size. If training fails due to memory shortage, lower this value
+    batch_size: 1                                 # Batch size. If training fails due to memory shortage, lower this value
     use_species_wise_shift_scale: True
     
     save_by_train_valid: False

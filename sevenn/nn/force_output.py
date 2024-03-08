@@ -145,9 +145,11 @@ class ForceStressOutput(nn.Module):
         pos_tensor = data[self.KEY_POS]
         energy = [(data[self.KEY_ENERGY]).sum()]
 
+
         grad = torch.autograd.grad(
             energy, [pos_tensor, data['_strain']], create_graph=self.training
         )
+
 
         # make grad is not Optional[Tensor]
         fgrad = grad[0]
