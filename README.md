@@ -97,6 +97,14 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 **PLEASE NOTE:** CUDA-aware OpenMPI may not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, it would be advisable to consult with your server administrator rather than attempting to compile it yourself.
 
+Ensure the LAMMPS version (23June2022). You can easily switch the version using git from a shell.
+```
+$ git clone https://github.com/lammps/lammps.git lammps_dir
+$ cd lammps_dir
+$ git checkout stable_23june2022_update4
+```
+We will catch up latest LAMMPS version as soon as possible. Sorry for the inconvenience.
+
 You can check whether your OpenMPI is CUDA-aware by using `ompi_info` command:
 
 ```
