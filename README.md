@@ -14,13 +14,6 @@ The project provides parallel molecular dynamics simulations using graph neural 
 
 The installation and usage of SEVENNet are split into two parts: training (handled by PyTorch) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later used to run molecular dynamics simulations via LAMMPS.
 
-## Known issues
-
-* The pressure of the parallel version in LAMMPS is not supported yet.
-* When using parallel MD, if the simulation cell is too small (one of cell dimension < cutoff radius), the calculated force is incorrect.
-
-However, the second issue rarely matters since you can not fully utilize a GPU in this condition. In this case, using only a single GPU gives almost the same speed as multiple GPUs.
-Even though, we're looking for the solution.
 
 ## Requirements for Training
 
@@ -189,6 +182,11 @@ mpirun -np {# of MPI rank to use} {path to lammps binary} -in {lammps input scri
 ```
 
 If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
+
+## Future Work
+
+* Implementation of pressure output in parallel MD simulations.
+* Development of supprt for a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
 
 ## Citation
 If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet or its pre-trained model SevenNet-0, (2) underlying GNN-IP architecture NequIP 

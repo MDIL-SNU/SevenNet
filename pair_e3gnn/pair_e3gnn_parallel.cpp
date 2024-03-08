@@ -296,6 +296,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
       if (Rij < cutoff_square) {
         // if given j is not local atom and inside cutoff
         if (tag_to_graph_idx[jtag] == -1) {
+          // if j is ghost atom inside cutoff but first seen
           tag_to_graph_idx[jtag] = graph_indexer;
           graph_index_to_i[graph_indexer] = j;
           node_type_ghost.push_back(map[jtype]);
@@ -642,7 +643,9 @@ void PairE3GNNParallel::init_style() {
   neighbor->add_request(this, NeighConst::REQ_FULL);
 }
 
-double PairE3GNNParallel::init_one(int i, int j) { return cutoff; }
+double PairE3GNNParallel::init_one(int i, int j) { 
+  return cutoff; 
+}
 
 void PairE3GNNParallel::comm_preprocess() {
   assert(!comm_preprocess_done);
