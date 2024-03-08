@@ -1071,6 +1071,7 @@ void CommBrick::forward_comm(PairE3GNNParallel *pair)
     buf_send_ = reinterpret_cast<float*>(buf_send);
     buf_recv_ = reinterpret_cast<float*>(buf_recv);
   }
+  if (nswap > 6) error->all(FLERR,"PairE3GNNParallel: Cell size is too small. Please use a single GPU or replicate the cell.");
 
   for (iswap = 0; iswap < nswap; iswap++) {
     if(sendproc[iswap] == me) continue;
