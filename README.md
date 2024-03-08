@@ -101,7 +101,7 @@ Ensure the LAMMPS version (23June2022). You can easily switch the version using 
 ```
 $ git clone https://github.com/lammps/lammps.git lammps_dir
 $ cd lammps_dir
-$ git checkout stable_23june2022_update4
+$ git checkout stable_23Jun2022_update4
 ```
 We will catch up latest LAMMPS version as soon as possible. Sorry for the inconvenience.
 
