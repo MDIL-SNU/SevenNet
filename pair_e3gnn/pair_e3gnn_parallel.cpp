@@ -655,6 +655,7 @@ void PairE3GNNParallel::comm_preprocess() {
   // result in completed comm_index_pack/unpack_forward & extra_graph_idx_map
   comm_brick->forward_comm(this);
 
+  std::set<int> already_met;
   for (int comm_phase = 0; comm_phase < 6; comm_phase++) {
     const int n = comm_index_pack_forward[comm_phase].size();
     if (n == 0) {
@@ -665,7 +666,6 @@ void PairE3GNNParallel::comm_preprocess() {
     // for unpack_reverse, Ignore duplicated index by 'already_met'
     std::vector<long> &idx_map_forward = comm_index_pack_forward[comm_phase];
     std::vector<long> &idx_map_reverse = comm_index_unpack_reverse[comm_phase];
-    std::set<int> already_met;
     // the last index of x_comm is used to trash unnecessary values
     const int trash_index =
         graph_size + static_cast<int>(extra_graph_idx_map.size()); //+ 1;
