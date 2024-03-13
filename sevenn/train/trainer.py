@@ -98,7 +98,7 @@ class Trainer:
                 total_loss.backward()
                 self.optimizer.step()
 
-        self.log.write(f'EWC loss: {ewc_loss}\n')
+                self.log.write(f'EWC loss: {ewc_loss}\n')
 
         if self.distributed:
             self.recorder_all_reduce(error_recorder)
