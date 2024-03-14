@@ -85,10 +85,24 @@ These models can be used as lammps potential to run parallel MD simulations with
 ## Requirements for Molecular Dynamics (MD)
 
 * PyTorch (same version as used for training)
-* LAMMPS version of '23 June 2022' [`LAMMPS`](https://github.com/lammps/lammps)
+* LAMMPS version of 'stable_2Aug2023' [`LAMMPS`](https://github.com/lammps/lammps)
 * [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 
-**PLEASE NOTE:** CUDA-aware OpenMPI may not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, it would be advisable to consult with your server administrator rather than attempting to compile it yourself.
+Incompatibility with other LAMMPS versions usually arises from the modified comm_brick.h/cpp. We will seek a more proper multi-GPU communication implementation without changing the original LAMMPS code. 
+However, if you have to use other versions of LAMMPS, you can patch your LAMMPS version by simply putting
+void forward_comm(class PairE3GNNParallel *);
+void reverse_comm(class PairE3GNNParallel *);
+these function declarations under 'public:' of comm_brick.h and copy-pasting bodies of the above functions from 'our' comm_brick.cpp to yours.
+
+**PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if it is not available.
+
+Ensure the LAMMPS version (stable_2Aug2023). You can easily switch the version using git from a shell.
+```
+$ git clone https://github.com/lammps/lammps.git lammps_dir
+$ cd lammps_dir
+$ git checkout stable_2Aug2023_update3
+```
+We will catch up latest LAMMPS version as soon as possible. Sorry for the inconvenience.
 
 You can check whether your OpenMPI is CUDA-aware by using `ompi_info` command:
 
@@ -193,4 +207,4 @@ If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet o
 
 (1) Y. Park, J. Kim, S. Hwang, and S. Han, "Scalable Parallel Algorithm for Graph Neural Network Interatomic Potentials in Molecular Dynamics Simulations". arXiv, arXiv:2402.03789. (2024) (https://arxiv.org/abs/2402.03789)
 
-(2) S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa, M. Kornbluth, T. E. Smidt, and B. Kozinsky, "E (3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials". Nat. Commun., 13, 2453. (2022) (https://www.nature.com/articles/s41467-022-29939-5)
+(2) S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa, M. Kornbluth, N. Molinari, T. E. Smidt, and B. Kozinsky, "E (3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials". Nat. Commun., 13, 2453. (2022) (https://www.nature.com/articles/s41467-022-29939-5)
