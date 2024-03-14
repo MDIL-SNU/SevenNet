@@ -1,6 +1,9 @@
 import numpy as np
 import torch
+from torch_geometric.loader import DataLoader
 
+from sevenn.atom_graph_data import AtomGraphData
+import sevenn.train.dataload
 import sevenn._keys as KEY
 
 
@@ -136,7 +139,102 @@ def onehot_to_chem(one_hot_indicies, type_map):
     return [chemical_symbols[type_map_rev[x]] for x in one_hot_indicies]
 
 
+def model_from_checkpoint(checkpoint):
+    from sevenn._const import (
+        DEFAULT_DATA_CONFIG,
+        DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
+        DEFAULT_TRAINING_CONFIG,
+    )
+    from sevenn.model_build import build_E3_equivariant_model
+
+    if isinstance(checkpoint, str):
+        checkpoint = torch.load(checkpoint)
+    elif isinstance(checkpoint, dict):
+        pass
+    else:
+        raise ValueError('checkpoint must be either str or dict')
+
+    defaults = {
+        **DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
+        **DEFAULT_DATA_CONFIG,
+        **DEFAULT_TRAINING_CONFIG,
+    }
+
+    model_state_dict = checkpoint['model_state_dict']
+    config = checkpoint['config']
+
+    for k, v in defaults.items():
+        if k not in config:
+            print(f'Warning: {k} not in config, using default value {v}')
+            config[k] = v
+
+    # expect only non-tensor values in config, if exists, move to cpu
+    # This can be happen if config has torch tensor as value (shift, scale)
+    # TODO: putting only non-tensors at first place is better
+    for k, v in config.items():
+        if isinstance(v, torch.Tensor):
+            config[k] = v.cpu()
+
+    model = build_E3_equivariant_model(config)
+    model.load_state_dict(model_state_dict, strict=False)
+
+    return model, config
+
+
+def unlabeled_atoms_to_input(atoms, cutoff):
+    atom_graph = AtomGraphData.from_numpy_dict(
+        sevenn.train.dataload.unlabeled_atoms_to_graph(atoms, cutoff)
+    )
+    atom_graph[KEY.POS].requires_grad_(True)
+    atom_graph[KEY.BATCH] = torch.zeros([0])
+    return atom_graph
+
+
+def chemical_species_preprocess(input_chem):
+    from ase.data import atomic_numbers
+
+    from sevenn.nn.node_embedding import get_type_mapper_from_specie
+
+    config = {}
+    chemical_specie = sorted([x.strip() for x in input_chem])
+    config[KEY.CHEMICAL_SPECIES] = chemical_specie
+    config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
+        atomic_numbers[x] for x in chemical_specie
+    ]
+    config[KEY.NUM_SPECIES] = len(chemical_specie)
+    config[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
+    # print(config[KEY.TYPE_MAP])
+    # print(config[KEY.NUM_SPECIES])  # why
+    # print(config[KEY.CHEMICAL_SPECIES])  # we need
+    # print(config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER])  # all of this?
+    return config
+
+
+def dtype_correct(v, float_dtype=torch.float32, int_dtype=torch.int64):
+    if isinstance(v, np.ndarray):
+        if np.issubdtype(v.dtype, np.floating):
+            return torch.from_numpy(v).to(float_dtype)
+        elif np.issubdtype(v.dtype, np.integer):
+            return torch.from_numpy(v).to(int_dtype)
+    elif isinstance(v, torch.Tensor):
+        if v.dtype.is_floating_point:
+            return v.to(float_dtype)  # convert to specified float dtype
+        else:  # assuming non-floating point tensors are integers
+            return v.to(int_dtype)  # convert to specified int dtype
+    else:  # scalar values
+        if isinstance(v, int):
+            return torch.tensor(v, dtype=int_dtype)
+        elif isinstance(v, float):
+            return torch.tensor(v, dtype=float_dtype)
+        else:
+            # non-number
+            return v
+
+
 def load_model_from_checkpoint(checkpoint):
+    """
+    Deprecated
+    """
     from sevenn._const import (
         DEFAULT_DATA_CONFIG,
         DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
@@ -179,42 +277,4 @@ def load_model_from_checkpoint(checkpoint):
     return model
 
 
-def chemical_species_preprocess(input_chem):
-    from ase.data import atomic_numbers
 
-    from sevenn.nn.node_embedding import get_type_mapper_from_specie
-
-    config = {}
-    chemical_specie = sorted([x.strip() for x in input_chem])
-    config[KEY.CHEMICAL_SPECIES] = chemical_specie
-    config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
-        atomic_numbers[x] for x in chemical_specie
-    ]
-    config[KEY.NUM_SPECIES] = len(chemical_specie)
-    config[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
-    # print(config[KEY.TYPE_MAP])
-    # print(config[KEY.NUM_SPECIES])  # why
-    # print(config[KEY.CHEMICAL_SPECIES])  # we need
-    # print(config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER])  # all of this?
-    return config
-
-
-def dtype_correct(v, float_dtype=torch.float32, int_dtype=torch.int64):
-    if isinstance(v, np.ndarray):
-        if np.issubdtype(v.dtype, np.floating):
-            return torch.from_numpy(v).to(float_dtype)
-        elif np.issubdtype(v.dtype, np.integer):
-            return torch.from_numpy(v).to(int_dtype)
-    elif isinstance(v, torch.Tensor):
-        if v.dtype.is_floating_point:
-            return v.to(float_dtype)  # convert to specified float dtype
-        else:  # assuming non-floating point tensors are integers
-            return v.to(int_dtype)  # convert to specified int dtype
-    else:  # scalar values
-        if isinstance(v, int):
-            return torch.tensor(v, dtype=int_dtype)
-        elif isinstance(v, float):
-            return torch.tensor(v, dtype=float_dtype)
-        else:
-            # non-number
-            return v

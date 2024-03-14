@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from typing import Dict
 
+import torch
 import torch.nn as nn
 from e3nn.util.jit import compile_mode
 
@@ -16,9 +17,16 @@ class AtomGraphSequential(nn.Sequential):
     https://github.com/pytorch/pytorch/issues/52588
     """
 
-    def __init__(self, modules: Dict[str, nn.Module]):
+    def __init__(
+        self,
+        modules: Dict[str, nn.Module],
+        cutoff: float,
+        type_map: Dict[int, int]
+    ):
         if type(modules) != OrderedDict:
             modules = OrderedDict(modules)
+        self.cutoff = cutoff
+        self.type_map = type_map
         super().__init__(modules)
 
     def set_is_batch_data(self, flag: bool):
@@ -51,7 +59,24 @@ class AtomGraphSequential(nn.Sequential):
         if key in self._modules.keys():
             del self._modules[key]
 
+    def to_onehot_idx(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        """
+        User must call this function first before the forward
+        if the data is not one-hot encoded
+        """
+        if self.type_map is None:
+            raise ValueError("type_map is not set")
+        device = data[KEY.NODE_FEATURE].device
+        data[KEY.NODE_FEATURE] = torch.LongTensor(
+            [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
+        ).to(device)
+
+        return data
+
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        """
+        type_map is a dict of {atomic_number: one_hot_idx}
+        """
         for module in self:
             data = module(data)
         return data

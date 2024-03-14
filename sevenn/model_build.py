@@ -421,7 +421,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         layers.update({'force output': gradient_module})
 
     # output extraction part
+    type_map = model_config[KEY.TYPE_MAP]
     if parallel:
-        return [AtomGraphSequential(v) for v in layers_list]
+        return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
     else:
-        return AtomGraphSequential(layers)
+        return AtomGraphSequential(layers, cutoff, type_map)
