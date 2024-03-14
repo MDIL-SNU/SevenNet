@@ -26,6 +26,45 @@ import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
 
+def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
+    pos = atoms.get_positions()
+    cell = np.array(atoms.get_cell())
+
+    # building neighbor list
+    edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
+        'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
+    )
+
+    # remove redundant edges (self interaction) but saves self interaction cross PBC
+    is_zero_idx = np.all(edge_vec == 0, axis=1)
+    is_self_idx = edge_src == edge_dst
+    non_trivials = ~(is_zero_idx & is_self_idx)
+    cell_shift = np.array(shifts[non_trivials])
+
+    edge_vec = edge_vec[non_trivials]
+    edge_src = edge_src[non_trivials]
+    edge_dst = edge_dst[non_trivials]
+    edge_idx = np.array([edge_src, edge_dst])
+
+    atomic_numbers = atoms.get_atomic_numbers()
+
+    cell = np.array(cell)
+
+    data = {
+        KEY.NODE_FEATURE: atomic_numbers,
+        KEY.ATOMIC_NUMBERS: atomic_numbers,
+        KEY.POS: pos,
+        KEY.EDGE_IDX: edge_idx,
+        KEY.EDGE_VEC: edge_vec,
+        KEY.CELL: cell,
+        KEY.CELL_SHIFT: cell_shift,
+        KEY.CELL_VOLUME: np.einsum(
+            'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
+        ),
+        KEY.NUM_ATOMS: len(atomic_numbers),
+    }
+    data[KEY.INFO] = {}
+    return data
 
 def atoms_to_graph(
     atoms: ase.Atoms, cutoff: float, transfer_info: bool = True
