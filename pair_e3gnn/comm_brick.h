@@ -36,27 +36,22 @@ public:
   void reverse_comm(class Pair *) override; // reverse comm from a Pair
   void forward_comm(class Bond *) override; // forward comm from a Bond
   void reverse_comm(class Bond *) override; // reverse comm from a Bond
-  void forward_comm(class Fix *,
-                    int size = 0) override; // forward comm from a Fix
-  void reverse_comm(class Fix *,
-                    int size = 0) override; // reverse comm from a Fix
-  void reverse_comm_variable(
-      class Fix *) override; // variable size reverse comm from a Fix
+  void forward_comm(class Fix *, int size = 0) override; // forward comm from a Fix
+  void reverse_comm(class Fix *, int size = 0) override; // reverse comm from a Fix
+  void reverse_comm_variable(class Fix *) override; // variable size reverse comm from a Fix
   void forward_comm(class Compute *) override; // forward from a Compute
   void reverse_comm(class Compute *) override; // reverse from a Compute
   void forward_comm(class Dump *) override;    // forward comm from a Dump
   void reverse_comm(class Dump *) override;    // reverse comm from a Dump
 
-  ///////////////////////////TODO///////////////////////////
-  void forward_comm(class PairE3GNNParallel *);
-  void reverse_comm(class PairE3GNNParallel *);
-  ///////////////////////////TODO///////////////////////////
-
   void forward_comm_array(int, double **) override; // forward comm of array
-  int exchange_variable(int, double *,
-                        double *&) override; // exchange on neigh stencil
   void *extract(const char *, int &) override;
   double memory_usage() override;
+  
+  // patched from SevenNet //
+  void forward_comm(class PairE3GNNParallel *);
+  void reverse_comm(class PairE3GNNParallel *);
+  // patched from SevenNet //
 
 protected:
   int nswap;                   // # of swaps to perform = sum of maxneed
@@ -87,8 +82,7 @@ protected:
   int maxsend, maxrecv; // current size of send/recv buffer
   int smax, rmax;       // max size in atoms of single borders send/recv
 
-  // NOTE: init_buffers is called from a constructor and must not be made
-  // virtual
+  // NOTE: init_buffers is called from a constructor and must not be made virtual
   void init_buffers();
 
   int updown(int, int, int, double, int, double *);
