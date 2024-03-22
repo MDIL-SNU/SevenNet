@@ -464,7 +464,7 @@ def train_infer_rmse_test(train_rmse_dct, infer_rmse_dct):
         print('Energy RMSE test passed')
     else:
         raise ValueError(
-            f"Energy RMSE test failed: {train_rmse_dct['E_RMSE(V)']} !="
+            f"Energy RMSE test failed: {train_rmse_dct['EnergyRMSE']} !="
             f" {infer_rmse_dct['Energy']}"
         )
 
@@ -474,11 +474,23 @@ def train_infer_rmse_test(train_rmse_dct, infer_rmse_dct):
         print('Force RMSE test passed')
     else:
         raise ValueError(
-            f"Force RMSE test failed: {train_rmse_dct['F_RMSE(V)']} !="
+            f"Force RMSE test failed: {train_rmse_dct['ForceRMSE']} !="
             f" {infer_rmse_dct['Force']}"
         )
 
     return True
+
+
+def sevenn_calculator_test(atoms):
+    from sevenn.sevennet_calculator import SevenNetCalculator
+    if os.getenv("SEVENNET_0_CP") is None:
+        print("SEVENNET_0_CP not set")
+        return
+    cal = SevenNetCalculator(device="cpu")
+    atoms.set_calculator(cal)
+    atoms.get_potential_energy()
+    atoms.get_forces()
+    atoms.get_stress()
 
 
 def main():
@@ -506,6 +518,9 @@ def main():
     print('----------------------------------------------------')
 
     infer_rmse_dct, infer_atoms = sevenn_inferece_test(cp_path)
+    print('----------------------------------------------------')
+
+    sevenn_calculator_test(atoms)
     print('----------------------------------------------------')
 
     train_infer_rmse_test(train_rmse_dct, infer_rmse_dct)
