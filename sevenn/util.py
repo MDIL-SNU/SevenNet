@@ -2,7 +2,6 @@ import numpy as np
 import torch
 from torch_geometric.loader import DataLoader
 
-from sevenn.atom_graph_data import AtomGraphData
 import sevenn.train.dataload
 import sevenn._keys as KEY
 
@@ -148,7 +147,7 @@ def model_from_checkpoint(checkpoint):
     from sevenn.model_build import build_E3_equivariant_model
 
     if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint)
+        checkpoint = torch.load(checkpoint, map_location='cpu')
     elif isinstance(checkpoint, dict):
         pass
     else:
@@ -182,6 +181,7 @@ def model_from_checkpoint(checkpoint):
 
 
 def unlabeled_atoms_to_input(atoms, cutoff):
+    from sevenn.atom_graph_data import AtomGraphData
     atom_graph = AtomGraphData.from_numpy_dict(
         sevenn.train.dataload.unlabeled_atoms_to_graph(atoms, cutoff)
     )
@@ -243,7 +243,7 @@ def load_model_from_checkpoint(checkpoint):
     from sevenn.model_build import build_E3_equivariant_model
 
     if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint)
+        checkpoint = torch.load(checkpoint, map_location='cpu')
     elif isinstance(checkpoint, dict):
         pass
     else:

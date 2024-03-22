@@ -42,10 +42,9 @@ class SevenNetCalculator(Calculator):
         if isinstance(model, str):
             # TODO: Download it from internet
             if model == "SevenNet-0":  # special case loading pre-trained model
-                checkpoint = os.path.join(
-                    os.path.dirname(__file__),
-                    "../SevenNet_0/checkpoint_sevennet_0.pth"
-                )
+                checkpoint = os.getenv("SEVENNET_0_CP")
+                if checkpoint is None:
+                    raise ValueError("Please set env variable SEVENNET_0_CP as checkpoint path.")
             else:
                 checkpoint = model
             model, config = sevenn.util.model_from_checkpoint(checkpoint)
@@ -54,7 +53,11 @@ class SevenNetCalculator(Calculator):
                 raise ValueError("model must have a type_map")
             model.set_use_type_map(True)
         self.sevennet_config = sevennet_config  # metadata which can be None
-        self.cutoff = model.cutoff
+        try:
+            self.cutoff = model.cutoff
+        except AttributeError:
+            self.cutoff = self.sevennet_config[KEY.CUTOFF]
+
         self.model = model
 
         if not isinstance(device, torch.device) and not isinstance(device, str):

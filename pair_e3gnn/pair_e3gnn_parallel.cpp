@@ -218,8 +218,13 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   if (vflag_atom) {
     error->all(FLERR, "atomic stress related feature is not supported\n");
   }
-  if (vflag)
+  if (vflag) {
     warning_pressure();
+  }
+
+  if (atom->tag_consecutive() == 0) {
+    error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
+  }
 
   double **x = atom->x;
   double **f = atom->f;
