@@ -81,10 +81,9 @@ class SevenNetCalculator(Calculator):
         data.to(self.device)
 
         output = self.model(data)
-
         # Store results
         self.results = {
             'energy': output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item(),
             'forces': output[KEY.PRED_FORCE].detach().cpu().numpy(),
-            'stress': output[KEY.PRED_STRESS].detach().cpu().numpy()
+            'stress': (-output[KEY.PRED_STRESS]).detach().cpu().numpy()
         }
