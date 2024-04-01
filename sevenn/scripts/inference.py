@@ -221,18 +221,32 @@ def inference_main(
 
     l2_err = {k: AverageNumber() for k in loss_types}
     infer_list = inference_set.to_list()
-    # infer_list, info_list = inference_set.seperate_info()
-    loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
 
-    output_list = []
-    for batch in tqdm(loader):
-        batch = batch.to(device, non_blocking=True)
-        output = model(batch)
-        output.detach().to('cpu')
-        results = postprocess_output(output, loss_types)
-        for loss_type in loss_types:
-            l2_err[loss_type].update(squared_error(*results[loss_type]))
-        output_list.extend(to_atom_graph_list(output))  # unroll batch data
+    try:
+        loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
+        output_list = []
+        for batch in tqdm(loader):
+            batch = batch.to(device, non_blocking=True)
+            output = model(batch)
+            output.detach().to('cpu')
+            results = postprocess_output(output, loss_types)
+            for loss_type in loss_types:
+                l2_err[loss_type].update(squared_error(*results[loss_type]))
+            output_list.extend(to_atom_graph_list(output))  # unroll batch data
+    except Exception as e:
+        print(e)
+        print("Keeping 'info' failed. Try with separted info")
+        infer_list, info_list = inference_set.seperate_info()
+        loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
+        output_list = []
+        for batch in tqdm(loader):
+            batch = batch.to(device, non_blocking=True)
+            output = model(batch)
+            output.detach().to('cpu')
+            results = postprocess_output(output, loss_types)
+            for loss_type in loss_types:
+                l2_err[loss_type].update(squared_error(*results[loss_type]))
+            output_list.extend(to_atom_graph_list(output))  # unroll batch data
 
     # to more readable format
     rmse_dct = {k.name: np.sqrt(v.get()) for k, v in l2_err.items()}
