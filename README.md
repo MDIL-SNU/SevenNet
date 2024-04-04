@@ -62,8 +62,8 @@ Assuming that you've done temporal training of 10 epochs by above "To start trai
 sevenn_inference checkpoint_best.pt ../data/label_1/*
 ```
 
-This will create dir 'sevenn_infer_result'. It includes .csv files that enumerate prediction/reference results of energy and force on OUTCARs in data/label_1 directory.
-You can try 'sevenn_inference --help' for more information on this command.
+This will create dir 'sevenn_infer_result'. It includes .csv files that enumerate prediction/reference results of energy and force on OUTCARs in `data/label_1` directory.
+You can try `sevenn_inference --help` for more information on this command.
 
 ### To deploy models from checkpoint using 'sevenn_get_model'
 
@@ -72,14 +72,14 @@ Assuming that you've done temporal training of 10 epochs by above "To start trai
 sevenn_get_model checkpoint_best.pt
 ```
 
-This will create 'deployed_serial.pt', which can be used as lammps potential under `e3gnn` pair_style. Please take a look at the lammps installation process below.
+This will create `deployed_serial.pt`, which can be used as lammps potential under `e3gnn` pair_style. Please take a look at the lammps installation process below.
 
 The parallel model can be obtained in a similar way
 ```
 sevenn_get_model checkpoint_best.pt -p
 ```
 
-This will create multiple deployed_parallel_*.pt' files. The number of deployed models equals the number of message-passing layers.
+This will create multiple `deployed_parallel_*.pt` files. The number of deployed models equals the number of message-passing layers.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
 ## Requirements for Molecular Dynamics (MD)
@@ -93,6 +93,7 @@ However, if you have to use other versions of LAMMPS, you can patch your LAMMPS 
 void forward_comm(class PairE3GNNParallel *);
 void reverse_comm(class PairE3GNNParallel *);
 these function declarations under 'public:' of comm_brick.h and copy-pasting bodies of the above functions from 'our' comm_brick.cpp to yours.
+Also, don't forget to `include "pair_e3gnn_parallel.h"` in comm_brick.cpp
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if it is not available.
 
@@ -118,7 +119,7 @@ We're currently developing other options (other than CUDA-aware OpenMPI) to leve
 Note that the following commands will overwrite `comm_brick.cpp` and `comm_brick.h` in the original `LAMMPS`. While it does not affect the original functionality of `LAMMPS`, you may want to back up these files from the source if you're unsure.
 
 ```
-cp SEVENN/pair_e3gnn/* path_to_lammps/src/
+cp {path_to_SevenNet}/pair_e3gnn/* path_to_lammps/src/
 ```
 
 If you have correctly installed CUDA-aware OpenMPI, the remaining process is identical to [`pair-nequip`](https://github.com/mir-group/pair_nequip).
@@ -127,7 +128,7 @@ Please make the following modifications to lammps/cmake/CMakeLists.txt:
 
 Change `set(CMAKE_CXX_STANDARD 11)` to `set(CMAKE_CXX_STANDARD 14)`.
 
-Then append the following lines:
+Then append the following lines in the same file:
 
 ```
 find_package(Torch REQUIRED)
@@ -195,12 +196,12 @@ pair_coeff * * {number of segmented parallel models} {space separated paths of s
 mpirun -np {# of MPI rank to use} {path to lammps binary} -in {lammps input script}
 ```
 
-If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently or fail. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
+If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
 
-## Future Work
+## Future Works
 
 * Implementation of pressure output in parallel MD simulations.
-* Development of supprt for a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
+* Development of support for a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
 
 ## Citation
 If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet or its pre-trained model SevenNet-0, (2) underlying GNN-IP architecture NequIP 
