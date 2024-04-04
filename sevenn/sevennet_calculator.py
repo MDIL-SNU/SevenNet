@@ -85,5 +85,5 @@ class SevenNetCalculator(Calculator):
         self.results = {
             'energy': output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item(),
             'forces': output[KEY.PRED_FORCE].detach().cpu().numpy(),
-            'stress': (-output[KEY.PRED_STRESS]).detach().cpu().numpy()
+            'stress': np.array((-output[KEY.PRED_STRESS]).detach().cpu().numpy()[[0, 1, 2, 4, 5, 3]])
         }

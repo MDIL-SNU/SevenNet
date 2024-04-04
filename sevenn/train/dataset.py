@@ -111,6 +111,8 @@ class AtomGraphDataset:
         data_list = self.to_list()
         info_list = []
         for datum in data_list:
+            if data_key in datum is False:
+                continue
             info_list.append(datum[data_key])
             del datum[data_key]  # It does change the self.dataset
             datum[data_key] = len(info_list) - 1
