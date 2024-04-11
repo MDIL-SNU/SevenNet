@@ -151,8 +151,8 @@ class XPLORCutoff(nn.Module):
         cutoff_length: float,
     ):
         super().__init__()
-        self.r_cut = cutoff_length
         self.r_on = cutoff_on
+        self.r_cut = cutoff_length
 
     def forward(self, r: torch.Tensor) -> torch.Tensor:
         # r > r_cut switch is not necessary since edges are already based on cutoff

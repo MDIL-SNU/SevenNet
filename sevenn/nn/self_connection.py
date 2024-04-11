@@ -38,9 +38,9 @@ class SelfConnectionIntro(nn.Module):
 
 
 @compile_mode('script')
-class SelfConnectionMACEIntro(nn.Module):
+class SelfConnectionLinearIntro(nn.Module):
     """
-    MACE style self connection update
+    Linear style self connection update
     """
 
     def __init__(

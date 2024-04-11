@@ -11,7 +11,7 @@ SEVENN_VERSION = '0.9.1'
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of paralell model
-IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'MACE']
+IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
 
 SUPPORTING_METRICS = ['RMSE', 'ComponentRMSE', 'MAE', 'Loss']
 SUPPORTING_ERROR_TYPES = [

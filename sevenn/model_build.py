@@ -30,7 +30,7 @@ from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.scale import Rescale, SpeciesWiseRescale
 from sevenn.nn.self_connection import (
     SelfConnectionIntro,
-    SelfConnectionMACEIntro,
+    SelfConnectionLinearIntro,
     SelfConnectionOutro,
 )
 from sevenn.nn.sequential import AtomGraphSequential
@@ -79,7 +79,7 @@ def init_cutoff_function(config):
         p = cutoff_function_dct[KEY.POLY_CUT_P]
         return PolynomialCutoff(p, cutoff)
     elif cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
-        return XPLORCutoff(cutoff, cutoff_function_dct['cutoff_on'])
+        return XPLORCutoff(cutoff_function_dct['cutoff_on'], cutoff)
 
     raise RuntimeError('something went very wrong...')
 
@@ -90,8 +90,8 @@ def init_self_connection(config):
         return None, None
     elif self_connection_type == 'nequip':
         return SelfConnectionIntro, SelfConnectionOutro
-    elif self_connection_type == 'MACE':
-        return SelfConnectionMACEIntro, SelfConnectionOutro
+    elif self_connection_type == 'linear':
+        return SelfConnectionLinearIntro, SelfConnectionOutro
 
 
 # TODO: it gets bigger and bigger. refactor it
