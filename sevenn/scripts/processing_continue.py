@@ -34,10 +34,11 @@ def check_config_compatible(config, config_cp):
             warnings.warn(
                 "We do not support this version of checkpoints to continue "
                 "Please use self_connection_type='linear' in input.yaml "
-                "and train from scratch"
+                "and train from scratch",
+                UserWarning,
             )
         raise ValueError(
-            f'Value of {sbs} should be same.                 {config[sbs]} !='
+            f'Value of {sbs} should be same. {config[sbs]} !='
             f' {config_cp[sbs]}'
         )
 

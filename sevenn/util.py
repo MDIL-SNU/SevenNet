@@ -181,8 +181,9 @@ def model_from_checkpoint(checkpoint):
         warnings.warn(
             "Note that the potential you're loading trained on "
             "WRONG cutoff function. We revised them correctly in this version. "
-            "Please 1) re-train with but with self_connection_type='linear' ",
-            "or 2) use correct SevenNet-0 from github."
+            "Please 1) re-train with but with self_connection_type='linear' "
+            "or 2) use correct SevenNet-0 from github.",
+            UserWarning,
         )
         config[KEY.SELF_CONNECTION_TYPE] = "linear"
 

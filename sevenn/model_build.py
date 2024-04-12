@@ -1,6 +1,7 @@
 from collections import OrderedDict
 from copy import deepcopy
 from typing import Union
+import warnings
 
 import e3nn.o3
 from e3nn.o3 import FullTensorProduct, Irreps
@@ -34,6 +35,14 @@ from sevenn.nn.self_connection import (
     SelfConnectionOutro,
 )
 from sevenn.nn.sequential import AtomGraphSequential
+
+
+# warning from PyTorch, about e3nn type annotations
+warnings.filterwarnings(
+    'ignore', 
+    message="The TorchScript type system doesn't "
+            "support instance-level annotations"
+)
 
 
 def infer_irreps_out(
