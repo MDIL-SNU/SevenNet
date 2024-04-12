@@ -1,4 +1,5 @@
 import os
+import warnings
 
 import torch
 
@@ -24,10 +25,17 @@ def check_config_compatible(config, config_cp):
         KEY.USE_SPECIES_WISE_SHIFT_SCALE,
         KEY.USE_BIAS_IN_LINEAR,
         KEY.OPTIMIZE_BY_REDUCE,
+        KEY.SELF_CONNECTION_TYPE,
     ]
     for sbs in SHOULD_BE_SAME:
         if config[sbs] == config_cp[sbs]:
             continue
+        if sbs is KEY.SELF_CONNECTION_TYPE and config_cp[sbs] is "MACE":
+            warnings.warn(
+                "We do not support this version of checkpoints to continue "
+                "Please use self_connection_type='linear' in input.yaml "
+                "and train from scratch"
+            )
         raise ValueError(
             f'Value of {sbs} should be same.                 {config[sbs]} !='
             f' {config_cp[sbs]}'

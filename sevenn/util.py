@@ -1,3 +1,5 @@
+import warnings
+
 import numpy as np
 import torch
 from torch_geometric.loader import DataLoader
@@ -173,6 +175,16 @@ def model_from_checkpoint(checkpoint):
     for k, v in config.items():
         if isinstance(v, torch.Tensor):
             config[k] = v.cpu()
+
+    if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == "XPLOR" and\
+        config[KEY.SELF_CONNECTION_TYPE] == "MACE":
+        warnings.warn(
+            "Note that the potential you're loading trained on "
+            "WRONG cutoff function. We revised them correctly in this version. "
+            "Please 1) re-train with but with self_connection_type='linear' ",
+            "or 2) use correct SevenNet-0 from github."
+        )
+        config[KEY.SELF_CONNECTION_TYPE] = "linear"
 
     model = build_E3_equivariant_model(config)
     model.load_state_dict(model_state_dict, strict=False)
