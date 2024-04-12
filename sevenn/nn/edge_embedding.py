@@ -1,5 +1,4 @@
 import math
-from typing import Dict
 
 import torch
 import torch.nn as nn
@@ -14,18 +13,11 @@ from sevenn._const import AtomGraphDataType
 class EdgePreprocess(nn.Module):
     """
     preprocessing pos to edge vectors and edge lengths
-    actually, this is calculation is redundant.
-    but required for pos.requires_grad to work
-
-    initialize edge_vec and edge_length
-    from pos & edge_index & cell & cell_shift
-
-    Only used for stress training and deleted in deploy.
     """
 
     def __init__(self, is_stress):
         super().__init__()
-        # controlled by the upper most wrapper 'AtomGraphSequential'
+        # controlled by 'AtomGraphSequential'
         self.is_stress = is_stress
         self._is_batch_data = True
 
@@ -39,7 +31,7 @@ class EdgePreprocess(nn.Module):
 
         batch = data[KEY.BATCH]  # for deploy, must be defined first
         if self.is_stress:
-            if self._is_batch_data:  # Only for training mode
+            if self._is_batch_data:
                 num_batch = int(batch.max().cpu().item()) + 1
                 strain = torch.zeros(
                     (num_batch, 3, 3),
@@ -50,7 +42,6 @@ class EdgePreprocess(nn.Module):
                 data['_strain'] = strain
 
                 sym_strain = 0.5 * (strain + strain.transpose(-1, -2))
-                # Do not modify it to pos += or cell += !!!!!
                 pos = pos + torch.bmm(
                     pos.unsqueeze(-2), sym_strain[batch]
                 ).squeeze(-2)
@@ -89,7 +80,6 @@ class EdgePreprocess(nn.Module):
 class BesselBasis(nn.Module):
     """
     f : (*, 1) -> (*, num_basis)
-    ? make coeffs to be trainable ?
     """
 
     def __init__(
@@ -153,6 +143,7 @@ class XPLORCutoff(nn.Module):
         super().__init__()
         self.r_on = cutoff_on
         self.r_cut = cutoff_length
+        assert self.r_on < self.r_cut
 
     def forward(self, r: torch.Tensor) -> torch.Tensor:
         # r > r_cut switch is not necessary since edges are already based on cutoff
@@ -213,9 +204,6 @@ class EdgeEmbedding(nn.Module):
     embedding layer of |r| by
     RadialBasis(|r|)*CutOff(|r|)
     f : (N_edge) -> (N_edge, basis_num)
-
-    since this result in weights of tensor product in e3nn,
-    it is nothing to do with irreps of SO(3) or something
     """
 
     def __init__(
@@ -230,9 +218,6 @@ class EdgeEmbedding(nn.Module):
         self.spherical = spherical_module
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        # r = data[KEY.EDGE_LENGTH
-        # TODO: consider compatibility with edge preprocess for stress
-        # TODO: how about removing force from edge_vec?
         rvec = data[KEY.EDGE_VEC]
         r = torch.linalg.norm(data[KEY.EDGE_VEC], dim=-1)
         data[KEY.EDGE_LENGTH] = r

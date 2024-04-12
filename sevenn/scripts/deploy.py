@@ -119,27 +119,24 @@ def deploy_parallel(model_state_dct, config, fname):
     config[KEY.IS_TRAIN_STRESS] = False
     model_list = build_E3_equivariant_model(config, parallel=True)
     dct_temp = {}
+    copy_counter = {gk: 0 for gk in GHOST_LAYERS_KEYS}
     for ghost_layer_key in GHOST_LAYERS_KEYS:
         for key, val in model_state_dct.items():
-            if key.startswith(ghost_layer_key):
-                dct_temp.update({f'ghost_{key}': val})
-            else:
+            if not key.startswith(ghost_layer_key):
                 continue
+            dct_temp.update({f'ghost_{key}': val})
+            copy_counter[ghost_layer_key] += 1
+    # Ensure reference weights are copied from state dict
+    assert all(x > 0 for x in copy_counter.values())
+
     model_state_dct.update(dct_temp)
 
     for model_part in model_list:
-        model_part.load_state_dict(model_state_dct, strict=False)
+        missing, _ =\
+            model_part.load_state_dict(model_state_dct, strict=False)
+        # Ensure all values are inserted
+        assert len(missing) == 0
 
-    # one_hot prepand & one_hot ghost prepand
-    num_species = config[KEY.NUM_SPECIES]
-    # model_list[0].prepand_module('one_hot', OnehotEmbedding(
-    #    data_key_in=KEY.NODE_FEATURE, num_classes=num_species))
-    # model_list[0].prepand_module('one_hot_ghost', OnehotEmbedding(
-    #    data_key_in=KEY.NODE_FEATURE_GHOST,
-    #    num_classes=num_species,
-    #    data_key_additional=None))
-
-    # print(config)
     # prepare some extra information for MD
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
@@ -158,14 +155,9 @@ def deploy_parallel(model_state_dct, config, fname):
         else 0
     )
 
-    # shift = model_state_dct["rescale.shift"].item()
-    # scale = model_state_dct["rescale.scale"].item()
-
     md_configs.update({'chemical_symbols_to_index': chem_list})
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
-    # md_configs.update({"shift": str(shift)})
-    # md_configs.update({"scale": str(scale)})
     md_configs.update({'comm_size': str(comm_size)})
     md_configs.update({'model_type': config[KEY.MODEL_TYPE]})
     md_configs.update({'version': _const.SEVENN_VERSION})

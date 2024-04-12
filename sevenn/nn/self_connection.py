@@ -20,7 +20,7 @@ class SelfConnectionIntro(nn.Module):
         irreps_out: Irreps,
         data_key_x: str = KEY.NODE_FEATURE,
         data_key_operand: str = KEY.NODE_ATTR,
-        **kwargs,
+        **kwargs,  # for compatibility
     ):
         super().__init__()
 
@@ -48,7 +48,7 @@ class SelfConnectionLinearIntro(nn.Module):
         irreps_x: Irreps,
         irreps_out: Irreps,
         data_key_x: str = KEY.NODE_FEATURE,
-        **kwargs,
+        **kwargs,  # for compatibility
     ):
         super().__init__()
         self.linear = Linear(irreps_x, irreps_out)
@@ -69,7 +69,6 @@ class SelfConnectionOutro(nn.Module):
     def __init__(
         self,
         data_key_x: str = KEY.NODE_FEATURE,
-        **kwargs,
     ):
         super().__init__()
         self.KEY_X = data_key_x

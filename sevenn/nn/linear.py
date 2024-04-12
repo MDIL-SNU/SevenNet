@@ -85,8 +85,6 @@ class AtomReduce(nn.Module):
 class FCN_e3nn(nn.Module):
     """
     wrapper class of e3nn FullyConnectedNet
-    doesn't necessarily have irrpes since it is only
-    applicable scalar but for consistency(?_?)
     """
 
     def __init__(
@@ -107,7 +105,7 @@ class FCN_e3nn(nn.Module):
         else:
             self.KEY_OUTPUT = data_key_out
 
-        for mul, irrep in irreps_in:
+        for _, irrep in irreps_in:
             assert irrep.is_scalar()
         inp_dim = irreps_in.dim
 

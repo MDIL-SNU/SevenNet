@@ -1,4 +1,4 @@
-from typing import Callable, Dict, List
+from typing import Callable, Dict
 
 import torch.nn as nn
 from e3nn.nn import Gate
@@ -12,14 +12,8 @@ from sevenn._const import AtomGraphDataType
 @compile_mode('script')
 class EquivariantGate(nn.Module):
     """
-    To 'gate' specific irreps, it needs additional scalars(irreps_gates).
-    in e3nn, it does not specify which dim is this additional scalar at forward stage
-    it just require 'new' irreps_in which includes this additional
-    scalar dimension in tensor. Nequip prepare this additional scalar by
-    second self-interaction at interaction_block.
-
     wrapper of e3nn.nn Gate (equivariant-nonlinear gate for irreps)
-    required irreps_in for Gate forward is determined after instantiation
+    required irreps_in for Gate forward is computed after instantiation
     of this class
     see
     https://docs.e3nn.org/en/stable/api/nn/nn_gate.html
@@ -83,11 +77,3 @@ class EquivariantGate(nn.Module):
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         data[self.KEY_X] = self.gate(data[self.KEY_X])
         return data
-
-
-def main():
-    _ = 1
-
-
-if __name__ == '__main__':
-    main()

@@ -84,11 +84,3 @@ def one_hot_atom_embedding(
     embd = embd.to(torch.get_default_dtype())
 
     return embd
-
-
-def main():
-    _ = 1
-
-
-if __name__ == '__main__':
-    main()

@@ -384,7 +384,7 @@ class Logger(metaclass=Singleton):
         kv_write = partial(self.format_k_v, write=True)
         self.writeline('Irreps of features')
         kv_write(
-            'edge_feature', model.get_irreps_in('EdgeEmbedding', 'irreps_out')
+            'edge_feature', model.get_irreps_in('edge_embedding', 'irreps_out')
         )
         for i in range(config[KEY.NUM_CONVOLUTION]):
             kv_write(
@@ -393,10 +393,10 @@ class Logger(metaclass=Singleton):
             )
         kv_write(
             'readout irreps',
-            model.get_irreps_in(f'{i} equivariant gate', 'irreps_out'),
+            model.get_irreps_in(f'{i}_equivariant_gate', 'irreps_out'),
         )
-        shift = model._modules['rescale atomic energy'].shift
-        scale = model._modules['rescale atomic energy'].scale
+        shift = model._modules['rescale_atomic_energy'].shift
+        scale = model._modules['rescale_atomic_energy'].scale
         if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
             kv_write('global shift', f'{shift.item():.6f}')
             kv_write('global scale', f'{scale.item():.6f}')
@@ -410,7 +410,7 @@ class Logger(metaclass=Singleton):
 
         self.writeline('Denumerator (avg_num_neigh**0.5) for each layer')
         for i in range(config[KEY.NUM_CONVOLUTION]):
-            denumerator = model._modules[f'{i} convolution'].denumerator
+            denumerator = model._modules[f'{i}_convolution'].denumerator
             kv_write(f'{i}th layer denumerator', f'{denumerator.item():.6f}')
         num_weights = sum(
             p.numel() for p in model.parameters() if p.requires_grad

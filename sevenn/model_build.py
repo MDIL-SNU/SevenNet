@@ -1,15 +1,11 @@
 from collections import OrderedDict
-from copy import deepcopy
 from typing import Union
 import warnings
 
-import e3nn.o3
 from e3nn.o3 import FullTensorProduct, Irreps
-from torch.nn import Sequential
 
 import sevenn._const as _const
 import sevenn._keys as KEY
-from sevenn.nn.activation import ShiftedSoftPlus
 from sevenn.nn.convolution import IrrepsConvolution
 from sevenn.nn.edge_embedding import (
     BesselBasis,
@@ -21,9 +17,7 @@ from sevenn.nn.edge_embedding import (
 )
 from sevenn.nn.equivariant_gate import EquivariantGate
 from sevenn.nn.force_output import (
-    ForceOutput,
     ForceOutputFromEdge,
-    ForceOutputFromEdgeParallel,
     ForceStressOutput,
 )
 from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
@@ -109,7 +103,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     IDENTICAL to nequip model
     atom embedding is not part of model
     """
-    use_elemement_dependent_radial_weights = True
     data_key_weight_input = KEY.EDGE_EMBEDDING  # default
 
     # parameter initialization
@@ -189,12 +182,12 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     if is_stress:
         layers.update({
             # simple edge preprocessor module with no param
-            'EdgePreprocess': EdgePreprocess(is_stress),
+            'edge_preprocess': EdgePreprocess(is_stress),
         })
 
     layers.update({
         # 'Not' simple edge embedding module
-        'EdgeEmbedding': edge_embedding,
+        'edge_embedding': edge_embedding,
     })
     # ~~ node embedding to first irreps feature ~~ #
     # here, one hot embedding is preprocess of data not part of model
@@ -217,12 +210,14 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     })
     if parallel:
         layers.update({
+            # Do not change its name (or see deploy.py before change)
             'one_hot_ghost': OnehotEmbedding(
                 data_key_x=KEY.NODE_FEATURE_GHOST,
                 num_classes=num_species,
                 data_key_save=None,
                 data_key_additional=None,
             ),
+            # Do not change its name (or see deploy.py before change)
             'ghost_onehot_to_feature_x': IrrepsLinear(
                 irreps_in=one_hot_irreps,
                 irreps_out=irreps_x,
@@ -285,7 +280,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         # note that this layer does not overwrite x, it calculates tp of in & operand
         # and save its results in somewhere to concatenate to new_x at Outro
 
-        interaction_block[f'{i} self connection intro'] = sc_intro(
+        interaction_block[f'{i}_self_connection_intro'] = sc_intro(
             irreps_x=irreps_x,
             irreps_operand=irreps_node_attr,
             irreps_out=irreps_for_gate_in,
@@ -299,6 +294,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         )
 
         if parallel and i == 0:
+            # Do not change its name (or see deploy.py before change)
             interaction_block[f'ghost_{i}_self_interaction_1'] = IrrepsLinear(
                 irreps_x,
                 irreps_x,
@@ -313,7 +309,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             radial_basis_module, _ = init_radial_basis(model_config)
             cutoff_function_module = init_cutoff_function(model_config)
             interaction_block.update({
-                'EdgeEmbedding': EdgeEmbedding(
+                'edge_embedding': EdgeEmbedding(
                     # operate on ||r||
                     basis_module=radial_basis_module,
                     cutoff_module=cutoff_function_module,
@@ -326,7 +322,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             # communication from lammps here
 
         # convolution part, l>lmax is droped as defined in irreps_out
-        interaction_block[f'{i} convolution'] = IrrepsConvolution(
+        interaction_block[f'{i}_convolution'] = IrrepsConvolution(
             irreps_x=irreps_x,
             irreps_filter=irreps_spherical_harm,
             irreps_out=tp_irreps_out,
@@ -340,17 +336,17 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         )
 
         # irreps of x increase to gate_irreps_in
-        interaction_block[f'{i} self interaction 2'] = IrrepsLinear(
+        interaction_block[f'{i}_self_interaction_2'] = IrrepsLinear(
             tp_irreps_out,
             irreps_for_gate_in,
             data_key_in=KEY.NODE_FEATURE,
             biases=use_bias_in_linear,
         )
 
-        interaction_block[f'{i} self connection outro'] = sc_outro()
+        interaction_block[f'{i}_self_connection_outro'] = sc_outro()
 
         # irreps of x change back to 'irreps_out'
-        interaction_block[f'{i} equivariant gate'] = gate_layer
+        interaction_block[f'{i}_equivariant_gate'] = gate_layer
         # now we have irreps of x as 'irreps_out' as we wanted
 
         layers.update(interaction_block)
@@ -366,13 +362,13 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         )
         hidden_irreps = Irreps([(mid_dim // 2, (0, 1))])
         layers.update({
-            'reducing nn input to hidden': IrrepsLinear(
+            'reduce_input_to_hidden': IrrepsLinear(
                 irreps_x,
                 hidden_irreps,
                 data_key_in=KEY.NODE_FEATURE,
                 biases=use_bias_in_linear,
             ),
-            'reducing nn hidden to energy': IrrepsLinear(
+            'reduce_hidden_to_energy': IrrepsLinear(
                 hidden_irreps,
                 Irreps([(1, (0, 1))]),
                 data_key_in=KEY.NODE_FEATURE,
@@ -403,14 +399,14 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         else Rescale
     )
     layers.update({
-        'rescale atomic energy': rescale_module(
+        'rescale_atomic_energy': rescale_module(
             shift=shift,
             scale=scale,
             data_key_in=KEY.SCALED_ATOMIC_ENERGY,
             data_key_out=KEY.ATOMIC_ENERGY,
             train_shift_scale=train_shift_scale,
         ),
-        'reduce to total enegy': AtomReduce(
+        'reduce_total_enegy': AtomReduce(
             data_key_in=KEY.ATOMIC_ENERGY,
             data_key_out=KEY.PRED_TOTAL_ENERGY,
             constant=1.0,
@@ -427,7 +423,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             data_key_force=KEY.PRED_FORCE,
         )
         gradient_module = fso if is_stress else fof
-        layers.update({'force output': gradient_module})
+        layers.update({'force_output': gradient_module})
 
     # output extraction part
     type_map = model_config[KEY.TYPE_MAP]

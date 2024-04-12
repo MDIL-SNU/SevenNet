@@ -46,7 +46,7 @@ class IrrepsConvolution(nn.Module):
         instructions = []
         irreps_mid = []
         for i, (mul_x, ir_x) in enumerate(irreps_x):
-            for j, (mul_filter, ir_filter) in enumerate(irreps_filter):
+            for j, (_, ir_filter) in enumerate(irreps_filter):
                 for ir_out in ir_x * ir_filter:
                     if ir_out in irreps_out:  # here we drop l > lmax
                         k = len(irreps_mid)
@@ -91,50 +91,4 @@ class IrrepsConvolution(nn.Module):
             # NLOCAL is # of atoms in system at 'CPU'
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
         data[self.KEY_X] = x
-        return data
-
-
-@compile_mode('script')
-class ElementDependentRadialWeights(nn.Module):
-    """
-    Implement of elem dependent raidal weight of MACE on M3GNet
-    J. Chem. Phys. 159, 044118 (2023)
-    """
-
-    def __init__(
-        self,
-        irreps_x: Irreps,
-        scalar_dim=None,
-        data_key_x: str = KEY.NODE_FEATURE,
-        data_key_radial_weights_prev: str = KEY.EDGE_EMBEDDING,
-        data_key_radial_weights_new: str = 'radial_weights',
-        data_key_edge_idx: str = KEY.EDGE_IDX,
-    ):
-        super().__init__()
-        self.key_x = data_key_x
-        self.key_radial_weights_prev = data_key_radial_weights_prev
-        self.key_radial_weights_new = data_key_radial_weights_new
-        self.key_edge_idx = data_key_edge_idx
-
-        if scalar_dim is None:
-            scalar_dim = irreps_x.sort().irreps.simplify()[0].mul
-        irreps_scalar = Irreps(f'{scalar_dim}x0e')
-        self.linear = Linear(irreps_x, irreps_scalar)
-        self.additional_weights_dim = scalar_dim * 2
-
-    def get_additional_weights_dim(self):
-        return self.additional_weights_dim
-
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        scalar_node_features = self.linear(data[self.key_x])
-        edge_src = data[self.key_edge_idx][1]
-        edge_dst = data[self.key_edge_idx][0]
-        data[self.key_radial_weights_new] = torch.cat(
-            [
-                data[self.key_radial_weights_prev],
-                scalar_node_features[edge_src],
-                scalar_node_features[edge_dst],
-            ],
-            dim=-1,
-        )
         return data
