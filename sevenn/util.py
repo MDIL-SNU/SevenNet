@@ -140,6 +140,39 @@ def onehot_to_chem(one_hot_indicies, type_map):
     return [chemical_symbols[type_map_rev[x]] for x in one_hot_indicies]
 
 
+def _map_old_model(old_model_state_dict):
+    """
+    For compatibility with old namings
+    Map old model's module names to new model's module names
+    """
+    _old_module_name_mapping = {
+        'EdgeEmbedding': 'edge_embedding',
+        'reducing nn input to hidden': 'reduce_input_to_hidden',
+        'reducing nn hidden to energy': 'reduce_hidden_to_energy',
+        'rescale atomic energy': 'rescale_atomic_energy'
+    }
+    for i in range(10):
+        _old_module_name_mapping[f'{i} self connection intro'] =\
+            f'{i}_self_connection_intro'
+        _old_module_name_mapping[f'{i} convolution'] =\
+            f'{i}_convolution'
+        _old_module_name_mapping[f'{i} self interaction 2'] =\
+            f'{i}_self_interaction_2'
+        _old_module_name_mapping[f'{i} equivariant gate'] =\
+            f'{i}_equivariant_gate'
+
+    new_model_state_dict = {}
+    for k, v in old_model_state_dict.items():
+        key_name = k.split('.')[0]
+        follower = '.'.join(k.split('.')[1:])
+        if key_name in _old_module_name_mapping:
+            new_key_name = _old_module_name_mapping[key_name] + '.' + follower
+            new_model_state_dict[new_key_name] = v
+        else:
+            new_model_state_dict[k] = v
+    return new_model_state_dict
+    
+
 def model_from_checkpoint(checkpoint):
     from sevenn._const import (
         DEFAULT_DATA_CONFIG,
@@ -188,7 +221,15 @@ def model_from_checkpoint(checkpoint):
         config[KEY.SELF_CONNECTION_TYPE] = "linear"
 
     model = build_E3_equivariant_model(config)
-    model.load_state_dict(model_state_dict, strict=False)
+    missing, _ = model.load_state_dict(model_state_dict, strict=False)
+    if len(missing) > 0:
+        updated = _map_old_model(model_state_dict)
+        missing, not_used = model.load_state_dict(updated, strict=False)
+        if len(not_used) > 0:
+            warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
+
+    assert len(missing) == 0, f'Missing keys: {missing}'
+
 
     return model, config
 
@@ -290,4 +331,19 @@ def load_model_from_checkpoint(checkpoint):
     return model
 
 
+def print_tensor_info(tensor):
+    print('Tensor Value: \n', tensor)
+    print('Shape: ', tensor.shape)
+    print('Size: ', tensor.size())
+    print('Number of Dimensions: ', tensor.dim())
+    print('Data Type: ', tensor.dtype)
+    print('Device: ', tensor.device)
+    print('Layout: ', tensor.layout)
+    print('Is it a CUDA tensor?: ', tensor.is_cuda)
+    print('Is it a sparse tensor?: ', tensor.is_sparse)
+    print('Is it a quantized tensor?: ', tensor.is_quantized)
+    print('Number of Elements: ', tensor.numel())
+    print('Requires Gradient: ', tensor.requires_grad)
+    print('Grad Function: ', tensor.grad_fn)
+    print('Gradient: ', tensor.grad)
 

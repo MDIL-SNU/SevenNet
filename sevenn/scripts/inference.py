@@ -17,7 +17,7 @@ from sevenn.train.dataload import graph_build
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import (
     AverageNumber,
-    load_model_from_checkpoint,
+    model_from_checkpoint,
     postprocess_output,
     squared_error,
     to_atom_graph_list,
@@ -183,15 +183,13 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
 def inference_main(
     checkpoint, fnames, output_path, num_cores=1, device='cpu', batch_size=5
 ):
-    checkpoint = torch.load(checkpoint, map_location=device)
-    config = checkpoint['config']
-    cutoff = config[KEY.CUTOFF]
-    type_map = config[KEY.TYPE_MAP]
-
-    model = load_model_from_checkpoint(checkpoint)
+    model, config = model_from_checkpoint(checkpoint)
     model.to(device)
     model.set_is_batch_data(True)
     model.eval()
+
+    cutoff = config[KEY.CUTOFF]
+    type_map = config[KEY.TYPE_MAP]
 
     head = os.path.basename(fnames[0])
     atoms_list = None
