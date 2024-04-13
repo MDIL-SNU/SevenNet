@@ -25,7 +25,7 @@ class SevenNetCalculator(Calculator):
     def __init__(
         self,
         model: Union[AtomGraphSequential, str] = "SevenNet-0",
-        device: Union[torch.device, str] = "cuda",
+        device: Union[torch.device, str] = "auto",
         sevennet_config=None,
         **kwargs
     ):
@@ -33,7 +33,7 @@ class SevenNetCalculator(Calculator):
 
         Args:
             model (SevenNet): AtomGraphSequential or path to the checkpoint file.
-            device (str, optional): Torch device to use. Defaults to "cuda".
+            device (str, optional): Torch device to use. Defaults to "auto".
         """
         super().__init__(**kwargs)
 
@@ -63,7 +63,10 @@ class SevenNetCalculator(Calculator):
         if not isinstance(device, torch.device) and not isinstance(device, str):
             raise ValueError("device must be an instance of torch.device or str.")
         if isinstance(device, str):
-            self.device = torch.device(device)
+            if device == "auto":
+                self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            else:
+                self.device = torch.device(device)
         else:
             self.device = device
 
