@@ -1,0 +1,79 @@
+model:
+    chemical_species: 'auto'                     # Chemical symbols present in the dataset
+    cutoff: 5.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
+    channel: 128                                    # Equivalent to 'num_features' in nequip. Represents the multiplicity of node features. 32 is recomanded as default.
+    is_parity: False
+    lmax: 2
+    num_convolution_layer: 5
+    irreps_manual: 
+        - "128x0e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e"
+
+    weight_nn_hidden_neurons: [64, 64]            # Equivalent to 'invariant_layers' and 'neurons' in nequip. Represents the neural network for the radial basis
+    radial_basis:                                 # Function and its parameters to encode radial distance
+        radial_basis_name: 'bessel'               # Only 'bessel' is currently supported
+        bessel_basis_num: 8                       # Equivalent to 'num_basis' in nequip. Represents the number of Bessel functions as the radial basis
+    cutoff_function:                              
+        cutoff_function_name: 'XPLOR'          
+        cutoff_on: 4.5
+
+    act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
+    act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip.
+
+    avg_num_neigh       : 1368.726                # Normalize the aggregation of messages by the average number of neighbors calculated from the training set
+    train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
+    train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
+    optimize_by_reduce: True
+                                                                  
+    self_connection_type: 'linear'
+
+train:
+    random_seed: 1
+    is_train_stress     : True                   # Includes stress in the loss function
+    epoch: 1                                     # Ends training after this number of epochs
+
+    loss: 'Huber'
+    loss_param:
+        delta: 0.01
+    optimizer: 'adam'
+    optim_param:                                  
+        lr: 0.004
+    scheduler: 'reducelronplateau'
+    scheduler_param:
+        patience: 50
+        factor: 0.5
+
+    force_loss_weight   : 1.00
+    stress_loss_weight: 0.01
+    error_record:  
+        - ['Energy', 'RMSE']
+        - ['Force', 'RMSE']
+        - ['Stress', 'RMSE']
+        - ['Energy', 'MAE']
+        - ['Force', 'MAE']
+        - ['Stress', 'MAE']
+        - ['Energy', 'Loss']
+        - ['Force', 'Loss']
+        - ['Stress', 'Loss']
+        - ['TotalLoss', 'None']
+
+    per_epoch: 5                              # Generate epoch every this number of times
+
+    continue: 
+        checkpoint: './checkpoint.pth'
+        reset_optimizer: False 
+        reset_scheduler: False 
+
+data:
+    batch_size: 1                                 # Batch size. If training fails due to memory shortage, lower this value
+    use_species_wise_shift_scale: True
+    scale: 1.858
+
+    save_by_train_valid: False
+    load_dataset_path: './small.sevenn_data'
+    load_validset_path: './small.sevenn_data'
+

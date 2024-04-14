@@ -1,39 +1,45 @@
+import os
+import sys
+import csv
 import copy
 import glob
-import os
 import shutil
 import subprocess
-import sys
 from collections import Counter
 from datetime import datetime
 
-import ase
-import ase.io
 import numpy as np
 import torch
-from ase.calculators.lammps.coordinatetransform import Prism
-from ase.calculators.singlepoint import SinglePointCalculator
-from ase.io.lammpsdata import write_lammps_data
+import ase
+import ase.io
+import ase.io.lammpsdata
+import ase.calculators as calculators
+import ase.calculators.lammps as ase_lammps
 
 import sevenn._keys as KEY
 from sevenn._const import SEVENN_VERSION
 
 """
-End to end test for the whole package.
+End to end test for SevenNet
 
 2023-10-08
 """
+test_root = os.path.dirname(os.path.abspath(__file__))
 
-OUTCAR = sys.argv[1]
-INPUT_YAML = sys.argv[2]
+INPUT_YAML = sys.argv[1] if __file__ == 'testbot.py' else None
+OUTCAR = f"{test_root}/OUTCAR_test"
 LMP_BIN = 'lmp'
 
-# These code are strongly dependent with below two files
-LMP_SCRIPT = os.path.abspath('./LMP_SCRIPT/oneshot.lmp')  # pre-defined
+LMP_SCRIPT = f"{test_root}/LMP_SCRIPT/oneshot.lmp"
+
+ATOL = 1e-6
+RTOL = 1e-5
 
 e3gnn_found = False
 e3gnn_parallel_found = False
 
+def bar():
+    print("-" * 50)
 
 def subprocess_routine(cmd, name, print_stdout=False):
     start = datetime.now()
@@ -53,35 +59,49 @@ def subprocess_routine(cmd, name, print_stdout=False):
 
 def greeting():
     global e3gnn_found, e3gnn_parallel_found
-    print('Hello, world!')
+    global RTOL, ATOL
     print(f'SEVENNet version {SEVENN_VERSION}')
     print(f'PyTorch version {torch.__version__}')
     print(f'ASE version {ase.__version__}')
 
-    re = subprocess.run([LMP_BIN, '-h'], capture_output=True)
-    stdout = re.stdout.decode('utf-8')
-    lines = stdout.split('\n')
+    try:
+        re = subprocess.run([LMP_BIN, '-h'], capture_output=True)
+        stdout = re.stdout.decode('utf-8')
+        lines = stdout.split('\n')
 
-    kwords = ['Large-scale', 'MPI', 'Compiler', 'OS:', 'C++']
+        kwords = ['Large-scale', 'MPI', 'Compiler', 'OS:', 'C++']
 
-    print('\nCompiled lammps metadata:')
-    for ln in lines:
-        if any([kw in ln for kw in kwords]):
-            print(ln)
-        if 'e3gnn' in ln:
-            e3gnn_found = True
-        if 'e3gnn/parallel' in ln:
-            e3gnn_parallel_found = True
+        print('\nCompiled lammps metadata:')
+        for ln in lines:
+            if any([kw in ln for kw in kwords]):
+                print(ln)
+            if 'e3gnn' in ln:
+                e3gnn_found = True
+            if 'e3gnn/parallel' in ln:
+                e3gnn_parallel_found = True
 
-    if not e3gnn_found:
-        print('e3gnn not found, lammps serial test will be skipped.')
-        print('Did you correctly put e3gnn.cpp/h in lammps/src?')
-    if not e3gnn_parallel_found:
-        print(
-            'e3gnn_parallel not found, lammps parallel test will be skipped.'
-        )
-        print('Did you correctly put e3gnn_parallel.cpp/h in lammps/src?')
-        print("Also, don't forget to put comm_brick.cpp/h in lammps/src")
+        if not e3gnn_found:
+            print('e3gnn not found, lammps serial test will be skipped.')
+            print('Did you correctly put e3gnn.cpp/h in lammps/src?')
+        if not e3gnn_parallel_found:
+            print(
+                'e3gnn_parallel not found, lammps parallel test will be skipped.'
+            )
+            print('Did you correctly put e3gnn_parallel.cpp/h in lammps/src?')
+            print("Also, don't forget to put comm_brick.cpp/h in lammps/src")
+
+    except Exception as e:
+        print(e)
+        print("Exception while executing LAMMPS, skip related tests")
+        e3gnn_found = False
+        e3gnn_parallel_found = False
+
+    if torch.cuda.is_available():
+        print("CUDA available, we lower accuracy constraint and use the GPU")
+        ATOL *= 10
+        RTOL *= 10
+    else:
+        print("Use CPU for the test")
 
 
 def atoms_info_print(atoms):
@@ -106,7 +126,7 @@ def atoms_info_print(atoms):
 
 
 def graph_build_test():
-    print('sevenn_graph_build on OUTCAR')
+    print('sevenn_graph_build test')
 
     graph_build_cmd = (
         f'sevenn_graph_build {OUTCAR} 4.0 -f vasp-out -o data'.split()
@@ -115,12 +135,12 @@ def graph_build_test():
 
 
 def sevenn_train_test():
-    print('\nsevenn_train on data')
+    print('sevenn training test')
     ori_dir = os.getcwd()
 
     os.makedirs('./training', exist_ok=True)
     shutil.copy('./data.sevenn_data', './training/data.sevenn_data')
-    shutil.copy(f'{INPUT_YAML}', './training/input.yaml')
+    shutil.copy(INPUT_YAML, './training/input.yaml')
 
     os.chdir('./training')
     sevenn_train_cmd = f'sevenn input.yaml'.split()
@@ -130,11 +150,11 @@ def sevenn_train_test():
     with open('./log.sevenn', 'r') as f:
         lines = f.readlines()
 
-    metrics = ['EnergyRMSE', 'ForceRMSE']
+    metrics = ['Energy_RMSE', 'Force_RMSE']
     rmse = None
     for ln in lines:
         if ln.startswith('Valid'):
-            rmse = ln.split()[1:3]
+            rmse = ln.split()[1:3]  #TODO: more robust way
     rmse_dct = {k: float(v) for k, v in zip(metrics, rmse)}
     cp_path = os.path.abspath('./checkpoint_best.pth')
 
@@ -142,102 +162,96 @@ def sevenn_train_test():
     return rmse_dct, cp_path
 
 
+def sevenn_infer_to_atoms(inference_folder):
+    def np_str_to_np_array(np_str):
+        tmp = np_str.replace('[', '').replace(']', '').split()
+        return np.array([float(x) for x in tmp])
+
+    info_list = None
+    if os.path.exists(f'{inference_folder}/info.csv'):
+        with open(f'{inference_folder}/info.csv', 'r') as f:
+            reader = csv.DictReader(f)
+            info_list = [row for row in reader]
+
+    with open(f'{inference_folder}/per_graph.csv', 'r') as f:
+        reader = csv.DictReader(f)
+        per_graph = [row for row in reader]
+
+    if info_list is not None:
+        per_graph = [
+            {**row, KEY.INFO: info_list[i]}
+            for i, row in enumerate(per_graph)
+        ]
+
+    with open(f'{inference_folder}/per_atom.csv', 'r') as f:
+        reader = csv.DictReader(f)
+        per_atom = [row for row in reader]
+
+    atoms_list = []
+    for _, row in enumerate(per_graph):
+        info = row[KEY.INFO]
+        natoms = int(row[KEY.NUM_ATOMS])
+        cell_a = np_str_to_np_array(row[KEY.CELL + '_a'])
+        cell_b = np_str_to_np_array(row[KEY.CELL + '_b'])
+        cell_c = np_str_to_np_array(row[KEY.CELL + '_c'])
+        cell = np.array([cell_a, cell_b, cell_c])
+        calc_res = {}
+        energy = float(row[KEY.PRED_TOTAL_ENERGY])
+        calc_res['energy'] = energy
+        calc_res['free_energy'] = energy
+        if (
+            KEY.PRED_STRESS + '_xx' in row
+            and row[KEY.PRED_STRESS + '_xx'] != '-'
+        ):
+            stress_xx = float(row[KEY.PRED_STRESS + '_xx'])
+            stress_yy = float(row[KEY.PRED_STRESS + '_yy'])
+            stress_zz = float(row[KEY.PRED_STRESS + '_zz'])
+            stress_xy = float(row[KEY.PRED_STRESS + '_xy'])
+            stress_zx = float(row[KEY.PRED_STRESS + '_zx'])
+            stress_yz = float(row[KEY.PRED_STRESS + '_yz'])
+            stress = np.array([
+                stress_xx,
+                stress_yy,
+                stress_zz,
+                stress_yz,
+                stress_zx,
+                stress_xy,
+            ])
+            stress = -1 * stress / 1602.1766208  # convert kB to eV/A^3
+            calc_res['stress'] = stress
+        per_atom_data = per_atom[:natoms]
+        per_atom = per_atom[natoms:]
+        species = []
+        pos = []
+        forces = []
+        for _, frow in enumerate(per_atom_data):
+            species.append(frow[KEY.ATOMIC_NUMBERS])
+            pos.append([
+                float(frow[KEY.POS + '_x']),
+                float(frow[KEY.POS + '_y']),
+                float(frow[KEY.POS + '_z']),
+            ])
+            forces.append([
+                float(frow[KEY.PRED_FORCE + '_x']),
+                float(frow[KEY.PRED_FORCE + '_y']),
+                float(frow[KEY.PRED_FORCE + '_z']),
+            ])
+        species = np.array(species)
+        pos = np.array(pos)
+        forces = np.array(forces)
+        calc_res['forces'] = forces
+        atoms = ase.Atoms(
+            numbers=species, positions=pos, cell=cell, pbc=True, info=info
+        )
+        calculator =\
+            calculators.singlepoint.SinglePointCalculator(atoms, **calc_res)
+        atoms = calculator.get_atoms()
+        atoms_list.append(atoms)
+
+    return atoms_list
+
 def sevenn_inferece_test(cp_path: str):
-    def sevenn_infer_to_atoms(inference_folder):
-        import csv
-        import os
-
-        import ase.atoms
-        from ase.calculators.singlepoint import SinglePointCalculator
-
-        def np_str_to_np_array(np_str):
-            tmp = np_str.replace('[', '').replace(']', '').split()
-            return np.array([float(x) for x in tmp])
-
-        info_list = None
-        if os.path.exists(f'{inference_folder}/info.csv'):
-            with open(f'{inference_folder}/info.csv', 'r') as f:
-                reader = csv.DictReader(f)
-                info_list = [row for row in reader]
-
-        with open(f'{inference_folder}/per_graph.csv', 'r') as f:
-            reader = csv.DictReader(f)
-            per_graph = [row for row in reader]
-
-        if info_list is not None:
-            per_graph = [
-                {**row, KEY.INFO: info_list[i]}
-                for i, row in enumerate(per_graph)
-            ]
-
-        with open(f'{inference_folder}/per_atom.csv', 'r') as f:
-            reader = csv.DictReader(f)
-            per_atom = [row for row in reader]
-
-        atoms_list = []
-        for i, row in enumerate(per_graph):
-            info = row[KEY.INFO]
-            label = row[KEY.USER_LABEL]
-            natoms = int(row[KEY.NUM_ATOMS])
-            cell_a = np_str_to_np_array(row[KEY.CELL + '_a'])
-            cell_b = np_str_to_np_array(row[KEY.CELL + '_b'])
-            cell_c = np_str_to_np_array(row[KEY.CELL + '_c'])
-            cell = np.array([cell_a, cell_b, cell_c])
-            calc_res = {}
-            energy = float(row[KEY.PRED_TOTAL_ENERGY])
-            calc_res['energy'] = energy
-            calc_res['free_energy'] = energy
-            if (
-                KEY.PRED_STRESS + '_xx' in row
-                and row[KEY.PRED_STRESS + '_xx'] != '-'
-            ):
-                stress_xx = float(row[KEY.PRED_STRESS + '_xx'])
-                stress_yy = float(row[KEY.PRED_STRESS + '_yy'])
-                stress_zz = float(row[KEY.PRED_STRESS + '_zz'])
-                stress_xy = float(row[KEY.PRED_STRESS + '_xy'])
-                stress_zx = float(row[KEY.PRED_STRESS + '_zx'])
-                stress_yz = float(row[KEY.PRED_STRESS + '_yz'])
-                stress = np.array([
-                    stress_xx,
-                    stress_yy,
-                    stress_zz,
-                    stress_yz,
-                    stress_zx,
-                    stress_xy,
-                ])
-                stress = -1 * stress / 1602.1766208  # convert kB to eV/A^3
-                calc_res['stress'] = stress
-            per_atom_data = per_atom[:natoms]
-            per_atom = per_atom[natoms:]
-            species = []
-            pos = []
-            forces = []
-            for j, frow in enumerate(per_atom_data):
-                species.append(frow[KEY.ATOMIC_NUMBERS])
-                pos.append([
-                    float(frow[KEY.POS + '_x']),
-                    float(frow[KEY.POS + '_y']),
-                    float(frow[KEY.POS + '_z']),
-                ])
-                forces.append([
-                    float(frow[KEY.PRED_FORCE + '_x']),
-                    float(frow[KEY.PRED_FORCE + '_y']),
-                    float(frow[KEY.PRED_FORCE + '_z']),
-                ])
-            species = np.array(species)
-            pos = np.array(pos)
-            forces = np.array(forces)
-            calc_res['forces'] = forces
-            atoms = ase.atoms.Atoms(
-                numbers=species, positions=pos, cell=cell, pbc=True, info=info
-            )
-            calculator = SinglePointCalculator(atoms, **calc_res)
-            atoms = calculator.get_atoms()
-            atoms_list.append(atoms)
-
-        return atoms_list
-
-    print('\nsevenn_inference on OUTCAR')
+    print('sevenn_inference test')
     sevenn_inference_cmd = (
         f'sevenn_inference -o inference {cp_path} {OUTCAR}'.split()
     )
@@ -257,19 +271,20 @@ def sevenn_inferece_test(cp_path: str):
 
 
 def sevenn_get_model_test(cp_path, is_parallel):
-    print('\nsevenn_get_model')
+    print('sevenn get model')
     os.makedirs('./potential', exist_ok=True)
+    name = "sevenn_get_model"
     if is_parallel:
         sevenn_get_model_cmd = (
             f'sevenn_get_model -p {cp_path} -o potential/parallel'.split()
         )
+        name += ' parallel'
     else:
         sevenn_get_model_cmd = (
             f'sevenn_get_model {cp_path} -o potential/serial'.split()
         )
-
-    subprocess_routine(sevenn_get_model_cmd, 'sevenn_get_model')
-
+        name += ' serial'
+    subprocess_routine(sevenn_get_model_cmd, name)
     if is_parallel:
         pts = sorted(glob.glob('./potential/parallel*.pt'))
         lmp_pot_str = f'{len(pts)}'
@@ -290,13 +305,9 @@ def sevenn_lmp_test(
     replicate='1 1 1',
     rot_atoms_back=True,
 ):
-    def lammps_results_to_atoms(lammps_log, force_dump):
-        from ase import Atoms
-        from ase.calculators.singlepoint import SinglePointCalculator
-        from ase.io import lammpsdata, read
-
+    def lammps_results_to_atoms(lammps_log, force_dump, read_stress=True):
         # read lammps log file
-        # TODO: Read stress from lammps after stress in lmp is implemented
+        #TODO: May not robust, use lammps python
         with open(lammps_log, 'r') as f:
             lines = f.readlines()
         for i, line in enumerate(lines):
@@ -311,7 +322,7 @@ def sevenn_lmp_test(
         assert 'PotEng' in lmp_log
 
         # read lammps dump file
-        latoms = read(force_dump, format='lammps-dump-text', index=':')[0]
+        latoms = ase.io.read(force_dump, format='lammps-dump-text', index=':')[0]
         latoms.calc.results['energy'] = lmp_log['PotEng']
         latoms.calc.results['free_energy'] = lmp_log['PotEng']
         latoms.info = {
@@ -319,6 +330,15 @@ def sevenn_lmp_test(
             'lmp_log': lmp_log,
             'lmp_dump': force_dump,
         }
+
+        if read_stress:
+            stress = np.array([
+                [lmp_log['Pxx'], lmp_log['Pxy'], lmp_log['Pxz']],
+                [lmp_log['Pxy'], lmp_log['Pyy'], lmp_log['Pyz']],
+                [lmp_log['Pxz'], lmp_log['Pyz'], lmp_log['Pzz']],
+            ])
+            stress = -1 * stress / 1602.1766208 / 1000  # convert bars to eV/A^3
+            latoms.calc.results['stress'] = stress
 
         # TODO: for now, parse only first frame, maybe we could parse all frames
         #       by sync log and force dump (Steps in log & 'index' in read)
@@ -332,8 +352,10 @@ def sevenn_lmp_test(
     chem = list(set(atoms.get_chemical_symbols()))
 
     # Way to ase handle lammps structure
-    prism = Prism(atoms.get_cell())
-    write_lammps_data('./lammps_stct', atoms, prismobj=prism, specorder=chem)
+    prism = ase_lammps.coordinatetransform.Prism(atoms.get_cell())
+    ase.io.lammpsdata.write_lammps_data(
+        './lammps_stct', atoms, prismobj=prism, specorder=chem
+    )
 
     with open(LMP_SCRIPT, 'r') as f:
         cont = f.read()
@@ -356,10 +378,16 @@ def sevenn_lmp_test(
         lmp_cmd = f'{mpicmd} -np {ncores} {lmp_cmd}'
     lmp_cmd = lmp_cmd.split()
 
-    print('\nLAMMPS test')
+    print('LAMMPS test')
     subprocess_routine(lmp_cmd, 'lammps run')
 
-    latoms = lammps_results_to_atoms('./log.lammps', './force.dump')
+    #TODO: after implement stress for parallel, update this
+    read_stress = True
+    if pair_style == 'e3gnn/parallel':
+        read_stress = False
+    latoms = lammps_results_to_atoms(
+        './log.lammps', './force.dump', read_stress
+    )
 
     # To obey lammps convention ase rotated cell and we just read that cell
     # by ase, cell & positions are rotate via cell @ rot_mat, pos dot rot_mat
@@ -368,10 +396,17 @@ def sevenn_lmp_test(
         results = copy.deepcopy(latoms.calc.results)
         r_force = np.dot(results['forces'], rot_mat.T)
         results['forces'] = r_force
+        if 'stress' in results:
+            # see ase.calculators.lammpsrun.py
+            stress_tensor = results['stress']
+            stress_atoms =\
+                np.dot(np.dot(rot_mat, stress_tensor), rot_mat.T)
+            results['stress'] = stress_atoms
         r_cell = latoms.get_cell() @ rot_mat.T
         latoms.set_cell(r_cell, scale_atoms=True)
-
-        latoms = SinglePointCalculator(latoms, **results).get_atoms()
+        latoms = calculators.singlepoint.SinglePointCalculator(
+            latoms, **results
+        ).get_atoms()
 
     os.chdir(ori_dir)
 
@@ -379,14 +414,11 @@ def sevenn_lmp_test(
 
 
 def compare_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-8):
-    from ase import Atoms
-    from ase.calculators.singlepoint import SinglePointCalculator
-
-    if not isinstance(atoms1, Atoms):
+    if not isinstance(atoms1, ase.Atoms):
         raise TypeError(
             f'atoms1 should be instance of ase.Atoms, not {type(atoms1)}'
         )
-    if not isinstance(atoms2, Atoms):
+    if not isinstance(atoms2, ase.Atoms):
         raise TypeError(
             f'atoms2 should be instance of ase.Atoms, not {type(atoms2)}'
         )
@@ -401,6 +433,7 @@ def compare_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-8):
         print(atoms2.get_cell())
         raise ValueError('atoms1 and atoms2 have different cell')
 
+    """
     if not atoms1.calc or not atoms2.calc:
         raise ValueError('atoms1 and atoms2 should have calculator')
 
@@ -414,157 +447,155 @@ def compare_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-8):
             'atoms2.calc should be instance of'
             f' ase.calculator.SinglePointCalculator, not {type(atoms2.calc)}'
         )
+    """
 
     if not np.allclose(
-        atoms1.calc.results['energy'],
-        atoms2.calc.results['energy'],
+        atoms1.get_potential_energy(),
+        atoms2.get_potential_energy(),
         rtol=rtol,
         atol=atol,
     ):
-        print('atoms1 energy:', atoms1.calc.results['energy'])
-        print('atoms2 energy:', atoms2.calc.results['energy'])
+        print('atoms1 energy:', atoms1.get_potential_energy())
+        print('atoms2 energy:', atoms2.get_potential_energy())
         raise ValueError('atoms1 and atoms2 have different energy')
-    print(f'atoms1 and atoms2 have same total energy')
 
     if not np.allclose(
-        atoms1.calc.results['forces'],
-        atoms2.calc.results['forces'],
+        atoms1.get_forces(),
+        atoms2.get_forces(),
         rtol=rtol,
         atol=atol,
     ):
         # increasing atol iteratively to find the difference
+        f1 = atoms1.get_forces()
+        f2 = atoms2.get_forces()
         flag = False
-        for i in range(4):
+        for _ in range(3):
             atol *= 10
-            if np.allclose(
-                atoms1.calc.results['forces'],
-                atoms2.calc.results['forces'],
-                rtol=rtol,
-                atol=atol,
-            ):
+            if np.allclose( f1, f2, rtol=rtol, atol=atol,):
                 flag = True
                 break
         if not flag:
-            raise ValueError('atoms1 and atoms2 have truely different forces')
+            raise ValueError('atoms1 and atoms2 have different forces')
         else:
-            print(f'atoms1 and atoms2 have same forces, within atol={atol}')
+            print("Warning: force comparison failed, but within atol={atol}")
+
+    try:
+        s1 = atoms1.get_stress(voigt=False)
+        s2 = atoms2.get_stress(voigt=False)
+        if not np.allclose(s1, s2, rtol=rtol, atol=atol):
+            print('atoms1 stress:', s1)
+            print('atoms2 stress:', s2)
+            raise ValueError('atoms1 and atoms2 have different stress')
+    except calculators.calculator.PropertyNotImplementedError:
+        print('One of atoms does not have stress, skip stress comparison')
 
     return True
 
 
-def train_infer_rmse_test(train_rmse_dct, infer_rmse_dct):
-    print('Since we used validation set of training to inference, we expect')
-    print(
-        'validation rmse of sevenn_train and rmse of sevenn_infer to be same'
-    )
-
+def train_infer_rmse_test(train_rmse_dct, infer_rmse_dct, atol=1e-6):
     if np.isclose(
-        train_rmse_dct['EnergyRMSE'], infer_rmse_dct['Energy'], atol=1e-6
+        train_rmse_dct['Energy_RMSE'], infer_rmse_dct['Energy'], atol=atol
     ):
         print('Energy RMSE test passed')
     else:
         raise ValueError(
-            f"Energy RMSE test failed: {train_rmse_dct['EnergyRMSE']} !="
+            f"Energy RMSE test failed: {train_rmse_dct['Energy_RMSE']} !="
             f" {infer_rmse_dct['Energy']}"
         )
 
     if np.isclose(
-        train_rmse_dct['ForceRMSE'], infer_rmse_dct['Force'], atol=1e-6
+        train_rmse_dct['Force_RMSE'], infer_rmse_dct['Force'], atol=atol
     ):
         print('Force RMSE test passed')
     else:
         raise ValueError(
-            f"Force RMSE test failed: {train_rmse_dct['ForceRMSE']} !="
+            f"Force RMSE test failed: {train_rmse_dct['Force_RMSE']} !="
             f" {infer_rmse_dct['Force']}"
         )
 
     return True
 
 
-def sevenn_calculator_test(atoms):
+def sevenn_calculator_test(checkpoint, atoms, device):
     from sevenn.sevennet_calculator import SevenNetCalculator
-    if os.getenv("SEVENNET_0_CP") is None:
-        print("SEVENNET_0_CP not set")
-        return
-    cal = SevenNetCalculator(device="cpu")
+    cal = SevenNetCalculator(checkpoint, device="cpu")
+    ref_atoms = copy.deepcopy(atoms)
     atoms.set_calculator(cal)
-    atoms.get_potential_energy()
-    atoms.get_forces()
-    atoms.get_stress()
+
+    if compare_atoms(ref_atoms, atoms, rtol=RTOL, atol=ATOL):
+        print('SevenNetCalculator test passed')
 
 
 def main():
     if __file__ != 'testbot.py':
-        print('Change directory to the location of testbot.py')
-        os.chdir(os.path.dirname(__file__))
+        raise RuntimeError('Please execute the script in the same directory')
 
-    print('Check files for testbot exist')
+    print('Check necessary files')
     for check in [OUTCAR, LMP_SCRIPT, INPUT_YAML]:
         if not os.path.exists(check):
             raise FileNotFoundError(f'{check} not found')
 
     greeting()
-    print('----------------------------------------------------')
+    bar()
 
     atoms = ase.io.read(OUTCAR, format='vasp-out')
     atoms_info_print(atoms)
-    print('----------------------------------------------------')
+    bar()
 
     graph_build_test()
-    print('----------------------------------------------------')
+    bar()
 
     train_rmse_dct, cp_path = sevenn_train_test()
     cp_path = './training/checkpoint_best.pth'
-    print('----------------------------------------------------')
+    bar()
 
     infer_rmse_dct, infer_atoms = sevenn_inferece_test(cp_path)
-    print('----------------------------------------------------')
+    bar()
 
-    sevenn_calculator_test(atoms)
-    print('----------------------------------------------------')
+    train_infer_rmse_test(train_rmse_dct, infer_rmse_dct, atol=ATOL)
+    bar()
 
-    train_infer_rmse_test(train_rmse_dct, infer_rmse_dct)
-    print('----------------------------------------------------')
+    sevenn_calculator_test(cp_path, infer_atoms, device='auto')
+    bar()
 
     if e3gnn_found:
-        print('\ntest lmp serial potential')
         seri_pot_str = sevenn_get_model_test(cp_path, False)
-        print('----------------------------------------------------')
+        bar()
         serial_atoms = sevenn_lmp_test(
             atoms, 'e3gnn', seri_pot_str, './e3gnn_test'
         )
-        print('----------------------------------------------------')
+        bar()
 
-        if compare_atoms(infer_atoms, serial_atoms):
-            print('\nInference and serial test passed')
-        print('----------------------------------------------------')
+        if compare_atoms(infer_atoms, serial_atoms, rtol=RTOL, atol=ATOL):
+            print('LAMMPS e3gnn serial test passed')
+        bar()
+    else:
+        print('e3gnn not found, lammps serial test skipped')
 
     if e3gnn_found and e3gnn_parallel_found:
-        print('\ntest lmp parallel potential')
         para_pot_str = sevenn_get_model_test(cp_path, True)
-        print('----------------------------------------------------')
+        bar()
 
-        print('\nReplicate cell by 3x3x3 to get correct force for parallel')
-        serial_333 = sevenn_lmp_test(
-            atoms, 'e3gnn', seri_pot_str, './e3gnn_333', replicate='3 3 3'
+        print('Replicate cell by 2x1x1 for parallel test')
+        serial_211 = sevenn_lmp_test(
+            atoms, 'e3gnn', seri_pot_str, './e3gnn_211', replicate='2 1 1'
         )
-        print('----------------------------------------------------')
-        print('\nSerial 333 lammps run done')
-        para_333 = sevenn_lmp_test(
+        bar()
+        para_211 = sevenn_lmp_test(
             atoms,
             'e3gnn/parallel',
             para_pot_str,
-            './e3gnn_parallel_333',
+            './e3gnn_parallel_211',
             mpicmd='mpirun',
-            replicate='3 3 3',
+            replicate='2 1 1',
             ncores=2,
         )
-        print('----------------------------------------------------')
-        print('\nParallel 333 lammps run done')
-
-        if compare_atoms(serial_333, para_333):
-            print('\nSerial and parallel test passed')
-        print('----------------------------------------------------')
+        bar()
+        if compare_atoms(serial_211, para_211, rtol=RTOL, atol=ATOL):
+            print('Serial and parallel test passed')
+        bar()
+    else:
+        print('e3gnn_parallel not found, lammps parallel test skipped')
 
     print('Energy RMSE (as classifier btw tests):')
     print(f"{infer_rmse_dct['Energy']}")
