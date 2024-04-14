@@ -65,6 +65,38 @@ def to_atom_graph_list(atom_graph_batch):
     return data_list
 
 
+def error_recorder_from_loss_functions(loss_functions):
+    from sevenn.error_recorder import ERROR_TYPES, ErrorRecorder, RMSError, MAError
+    from sevenn.train.loss import PerAtomEnergyLoss, ForceLoss, StressLoss
+    from copy import deepcopy
+    metrics = []
+    BASE = deepcopy(ERROR_TYPES)
+    for loss_function, _ in loss_functions:
+        ref_key = loss_function.ref_key
+        pred_key = loss_function.pred_key
+        unit = loss_function.unit
+        criterion = loss_function.criterion
+        name = loss_function.name
+        base = None
+        if type(loss_function) is PerAtomEnergyLoss:
+            base = BASE['Energy']
+        elif type(loss_function) is ForceLoss:
+            base = BASE['Force']
+        elif type(loss_function) is StressLoss:
+            base = BASE['Stress']
+        else:
+            base = {}
+        base['name'] = name
+        base['ref_key'] = ref_key
+        base['pred_key'] = pred_key
+        if type(criterion) is torch.nn.MSELoss:
+            base['name'] = base['name'] + '_RMSE'
+            metrics.append(RMSError(**base))
+        elif type(criterion) is torch.nn.L1Loss:
+            metrics.append(MAError(**base))
+    return ErrorRecorder(metrics)
+
+
 def postprocess_output_with_label(output, loss_types):
     from sevenn._const import LossType
 
@@ -141,7 +173,7 @@ def onehot_to_chem(one_hot_indicies, type_map):
 
 def _map_old_model(old_model_state_dict):
     """
-    For compatibility with old namings
+    For compatibility with old namings (before 'correct' branch merged 2404XX)
     Map old model's module names to new model's module names
     """
     _old_module_name_mapping = {
