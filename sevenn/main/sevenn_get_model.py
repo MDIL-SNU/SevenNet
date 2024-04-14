@@ -3,17 +3,16 @@ import argparse
 import torch
 
 import sevenn._const as _const
-import sevenn._keys as KEY
 from sevenn.scripts.deploy import deploy, deploy_parallel
 import sevenn.util
 
 description_get_model = (
     f'sevenn version={_const.SEVENN_VERSION}, sevenn_get_model.'
-    + ' Deploy model from checkpoint'
+    + ' Deploy model for LAMMPS from the checkpoint'
 )
-checkpoint_help = 'checkpoint path to deploy model'
-output_name_help = 'filename prefix of deployed model'
-get_parallel_help = 'whether deploy parallel model'
+checkpoint_help = 'checkpoint path'
+output_name_help = 'filename prefix'
+get_parallel_help = 'deploy parallel model'
 
 
 def main(args=None):

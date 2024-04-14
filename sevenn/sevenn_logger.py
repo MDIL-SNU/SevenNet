@@ -1,6 +1,4 @@
-import csv
 import os
-import sys
 import traceback
 from datetime import datetime
 
@@ -125,13 +123,6 @@ class Logger(metaclass=Singleton):
         ln = '-' * fs
         total_atom_type = train_loss.keys()
         content = ''
-        """
-        content = \
-            f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}".\
-            format(lb_pad=lb_pad, pad=pad)\
-            + f"{'F_RMSE(T)':<{pad}}{'F_RMSE(V)':<{pad}}".format(pad=pad)
-        content += f"{'S_RMSE(T)':<{pad}}{'S_RMSE(V)':<{pad}}".format(pad=pad)
-        """
 
         for at in total_atom_type:
             t_F = train_loss[at]
@@ -345,7 +336,8 @@ class Logger(metaclass=Singleton):
         """
         elapsed = str(datetime.now() - self.timer_dct[name])
         # elapsed = elapsed.strftime('%H-%M-%S')
-        del self.timer_dct[name]
+        if remove:
+            del self.timer_dct[name]
         self.write(f'{message}: {elapsed[:-4]}\n')
 
     def dict_of_counter(self, counter_dict):
@@ -408,10 +400,10 @@ class Logger(metaclass=Singleton):
             for cstr, sh, sc in zip(chem_str, shift, scale):
                 kv_write(f'{cstr}', f'{sh:.6f}, {sc:.6f}')
 
-        self.writeline('Denumerator (avg_num_neigh**0.5) for each layer')
+        self.writeline('Denominator (avg_num_neigh**0.5) for each layer')
         for i in range(config[KEY.NUM_CONVOLUTION]):
-            denumerator = model._modules[f'{i}_convolution'].denumerator
-            kv_write(f'{i}th layer denumerator', f'{denumerator.item():.6f}')
+            denominator = model._modules[f'{i}_convolution'].denominator
+            kv_write(f'{i}th layer denominator', f'{denominator.item():.6f}')
         num_weights = sum(
             p.numel() for p in model.parameters() if p.requires_grad
         )

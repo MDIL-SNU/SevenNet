@@ -20,9 +20,9 @@ import sevenn._keys as KEY
 from sevenn._const import SEVENN_VERSION
 
 """
-End to end test for SevenNet
+Tests for SevenNet
 
-2023-10-08
+2023-04-14
 """
 test_root = os.path.dirname(os.path.abspath(__file__))
 

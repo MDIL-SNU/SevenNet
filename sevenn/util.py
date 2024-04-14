@@ -2,7 +2,6 @@ import warnings
 
 import numpy as np
 import torch
-from torch_geometric.loader import DataLoader
 
 import sevenn.train.dataload
 import sevenn._keys as KEY
@@ -257,10 +256,6 @@ def chemical_species_preprocess(input_chem):
     ]
     config[KEY.NUM_SPECIES] = len(chemical_specie)
     config[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
-    # print(config[KEY.TYPE_MAP])
-    # print(config[KEY.NUM_SPECIES])  # why
-    # print(config[KEY.CHEMICAL_SPECIES])  # we need
-    # print(config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER])  # all of this?
     return config
 
 

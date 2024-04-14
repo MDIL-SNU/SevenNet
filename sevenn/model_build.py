@@ -330,8 +330,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             weight_layer_input_to_hidden=weight_nn_layers,
             weight_layer_act=act_radial,
             # TODO: BOTNet says no sqrt is better
-            denumerator=avg_num_neigh[i] ** 0.5,
-            train_denumerator=train_avg_num_neigh,
+            denominator=avg_num_neigh[i] ** 0.5,
+            train_denominator=train_avg_num_neigh,
             is_parallel=parallel,
         )
 

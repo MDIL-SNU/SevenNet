@@ -4,15 +4,13 @@ from typing import List
 
 import numpy as np
 import torch
-from ase import Atoms, io
+from ase import io
 from ase.calculators.singlepoint import SinglePointCalculator
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 import sevenn._keys as KEY
 from sevenn._const import LossType
-from sevenn.nn.node_embedding import get_type_mapper_from_specie
-from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.train.dataload import graph_build
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import (

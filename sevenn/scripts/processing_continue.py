@@ -5,7 +5,6 @@ import torch
 
 import sevenn._keys as KEY
 from sevenn.sevenn_logger import Logger
-from sevenn.train.trainer import Trainer
 
 
 def check_config_compatible(config, config_cp):
@@ -100,9 +99,9 @@ def processing_continue(config):
     avg_num_neigh_cp = []
     for i in range(config_cp[KEY.NUM_CONVOLUTION]):
         avg_num_neigh_cp.append(
-            (model_state_dict_cp[f'{i} convolution.denumerator'] ** 2).item()
+            (model_state_dict_cp[f'{i} convolution.denominator'] ** 2).item()
         )
-        del model_state_dict_cp[f'{i} convolution.denumerator']
+        del model_state_dict_cp[f'{i} convolution.denominator']
 
     # these dataset-dependent values should be later handled by processing_dataset.py
     config.update({

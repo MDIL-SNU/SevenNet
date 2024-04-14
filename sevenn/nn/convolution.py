@@ -3,7 +3,7 @@ from typing import List
 import torch
 import torch.nn as nn
 from e3nn.nn import FullyConnectedNet
-from e3nn.o3 import Irreps, Linear, TensorProduct
+from e3nn.o3 import Irreps, TensorProduct
 from e3nn.util.jit import compile_mode
 from torch_scatter import scatter
 
@@ -25,8 +25,8 @@ class IrrepsConvolution(nn.Module):
         irreps_out: Irreps,
         weight_layer_input_to_hidden: List[int],
         weight_layer_act=ShiftedSoftPlus,
-        denumerator: float = 1.0,
-        train_denumerator: bool = False,
+        denominator: float = 1.0,
+        train_denominator: bool = False,
         data_key_x: str = KEY.NODE_FEATURE,
         data_key_filter: str = KEY.EDGE_ATTR,
         data_key_weight_input: str = KEY.EDGE_EMBEDDING,
@@ -34,13 +34,13 @@ class IrrepsConvolution(nn.Module):
         is_parallel: bool = False,
     ):
         super().__init__()
-        self.denumerator = nn.Parameter(
-            torch.FloatTensor([denumerator]), requires_grad=train_denumerator
+        self.denominator = nn.Parameter(
+            torch.FloatTensor([denominator]), requires_grad=train_denominator
         )
-        self.KEY_X = data_key_x
-        self.KEY_FILTER = data_key_filter
-        self.KEY_WEIGHT_INPUT = data_key_weight_input
-        self.KEY_EDGE_IDX = data_key_edge_idx
+        self.key_x = data_key_x
+        self.key_filter = data_key_filter
+        self.key_weight_input = data_key_weight_input
+        self.key_edge_idx = data_key_edge_idx
         self.is_parallel = is_parallel
 
         instructions = []
@@ -74,21 +74,21 @@ class IrrepsConvolution(nn.Module):
         )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        weight = self.weight_nn(data[self.KEY_WEIGHT_INPUT])
-        x = data[self.KEY_X]
+        weight = self.weight_nn(data[self.key_weight_input])
+        x = data[self.key_x]
         if self.is_parallel:
             x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
 
         # note that 1 -> src 0 -> dst
-        edge_src = data[self.KEY_EDGE_IDX][1]
-        edge_dst = data[self.KEY_EDGE_IDX][0]
+        edge_src = data[self.key_edge_idx][1]
+        edge_dst = data[self.key_edge_idx][0]
 
-        message = self.convolution(x[edge_src], data[self.KEY_FILTER], weight)
+        message = self.convolution(x[edge_src], data[self.key_filter], weight)
 
         x = scatter(message, edge_dst, dim=0, dim_size=len(x))
-        x = x.div(self.denumerator)
+        x = x.div(self.denominator)
         if self.is_parallel:
             # NLOCAL is # of atoms in system at 'CPU'
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
-        data[self.KEY_X] = x
+        data[self.key_x] = x
         return data

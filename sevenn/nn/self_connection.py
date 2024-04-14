@@ -27,12 +27,12 @@ class SelfConnectionIntro(nn.Module):
         self.fc_tensor_product = FullyConnectedTensorProduct(
             irreps_x, irreps_operand, irreps_out
         )
-        self.KEY_X = data_key_x
-        self.KEY_OPERAND = data_key_operand
+        self.key_x = data_key_x
+        self.key_operand = data_key_operand
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         data[KEY.SELF_CONNECTION_TEMP] = self.fc_tensor_product(
-            data[self.KEY_X], data[self.KEY_OPERAND]
+            data[self.key_x], data[self.key_operand]
         )
         return data
 
@@ -52,10 +52,10 @@ class SelfConnectionLinearIntro(nn.Module):
     ):
         super().__init__()
         self.linear = Linear(irreps_x, irreps_out)
-        self.KEY_X = data_key_x
+        self.key_x = data_key_x
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[KEY.SELF_CONNECTION_TEMP] = self.linear(data[self.KEY_X])
+        data[KEY.SELF_CONNECTION_TEMP] = self.linear(data[self.key_x])
         return data
 
 
@@ -71,9 +71,9 @@ class SelfConnectionOutro(nn.Module):
         data_key_x: str = KEY.NODE_FEATURE,
     ):
         super().__init__()
-        self.KEY_X = data_key_x
+        self.key_x = data_key_x
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[self.KEY_X] = data[self.KEY_X] + data[KEY.SELF_CONNECTION_TEMP]
+        data[self.key_x] = data[self.key_x] + data[KEY.SELF_CONNECTION_TEMP]
         del data[KEY.SELF_CONNECTION_TEMP]
         return data

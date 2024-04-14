@@ -6,7 +6,6 @@ from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
 import sevenn._keys as KEY
-import sevenn.util
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.scripts.processing_continue import processing_continue
 from sevenn.scripts.processing_dataset import processing_dataset

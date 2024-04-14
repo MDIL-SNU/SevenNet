@@ -8,7 +8,7 @@ import sevenn._keys as KEY
 from sevenn._const import LossType
 from sevenn.error_recorder import ErrorRecorder
 from sevenn.train.optim import loss_dict, optim_dict, scheduler_dict
-from sevenn.util import AverageNumber, postprocess_output, squared_error
+from sevenn.util import postprocess_output
 
 
 class Trainer:

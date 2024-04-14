@@ -1,5 +1,5 @@
 import os
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 import torch
@@ -48,6 +48,7 @@ class SevenNetCalculator(Calculator):
             else:
                 checkpoint = model
             model, config = sevenn.util.model_from_checkpoint(checkpoint)
+            sevennet_config = config
         else:
             if model._use_type_map is False and model.type_map is None:
                 raise ValueError("model must have a type_map")

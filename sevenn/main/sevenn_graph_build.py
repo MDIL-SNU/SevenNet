@@ -1,46 +1,34 @@
 import argparse
 import os
-import sys
 from datetime import datetime
 
-import sevenn._keys as KEY
 import sevenn.scripts.graph_build as graph_build
 from sevenn._const import SEVENN_VERSION
 from sevenn.sevenn_logger import Logger
 
 description = (
     f'sevenn version={SEVENN_VERSION}, sevenn_graph_build.\n'
-    + 'Note that this command is optional. You can build graph by writting'
-    ' appropriate input.yaml for training.\n'
     + "Create '.sevenn_data' from ase readable or VASP OUTCARs (by"
     " structure_list).\n"
-    + 'It expects units read from ase atoms have correct units.\n'
 )
 
 source_help = (
-    'Primitive data to build graph, assume structure_list if format is not'
-    ' given '
-    + 'or assume root dir of pickles of ase.Atoms list if directory'
+    'source data to build graph'
 )
 label_by_help = (
-    'label the given dataset with given string, '
-    + 'if the src is dir of .pkl, default is the name of the directory '
-    + 'if the src is structure_list, default is the label of the'
-    ' structure_list file'
+    'label the output dataset with the given string.'
 )
-cutoff_help = 'cutoff radius for graph building in Angstrom '
+cutoff_help = 'cutoff radius of edges in Angstrom'
 suffix_help = (
-    'when source is dir, suffix of files. if not given, read all recursively'
-    + 'ignored if source is structure_list'
+    'when source is dir, suffix of the files.'
 )
 copy_info_help = (
-    'do not copy ase.Atoms.info to graph data, '
-    + 'ignored if source is sturcture_list'
+    'copy ase.Atoms.info to output dataset'
 )
 format_help = (
-    'format of the source, defualt is structure_list '
-    + 'if it is pkl/pickle, assume they are list of ase.Atoms, '
-    + 'else, the input is directly passed to ase.io.read'
+    'type of the source, defualt is structure_list. '
+    + 'If it is pkl/pickle, assume they are list of ase.Atoms. '
+    + 'Otherwise, it is directly passed to ase.io.read'
 )
 
 
@@ -113,14 +101,14 @@ def cmd_parse_data(args=None):
     ag.add_argument(
         '-o',
         '--out',
-        help='filename or dir path to write outputs',
+        help='path to write outputs',
         type=str,
         default='./',
     )
     ag.add_argument(
         '-sb',
         '--save_by_label',
-        help='save the graph by label',
+        help='if source is structure_list, separate the output dataset by label',
         action='store_true',
         default=False,
     )

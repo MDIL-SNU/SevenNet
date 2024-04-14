@@ -34,7 +34,7 @@ class EquivariantGate(nn.Module):
         data_key_x: str = KEY.NODE_FEATURE,
     ):
         super().__init__()
-        self.KEY_X = data_key_x
+        self.key_x = data_key_x
 
         parity_mapper = {'e': 1, 'o': -1}
         act_scalar_dict = {
@@ -61,8 +61,8 @@ class EquivariantGate(nn.Module):
             [(mul, (0, irreps_gates_parity)) for mul, _ in irreps_gated]
         )
 
-        act_scalars = [act_scalar_dict[p] for mul, (l, p) in irreps_scalars]
-        act_gates = [act_gate_dict[p] for mul, (l, p) in irreps_gates]
+        act_scalars = [act_scalar_dict[p] for _, (_, p) in irreps_scalars]
+        act_gates = [act_gate_dict[p] for _, (_, p) in irreps_gates]
 
         self.gate = Gate(
             irreps_scalars, act_scalars, irreps_gates, act_gates, irreps_gated
@@ -75,5 +75,5 @@ class EquivariantGate(nn.Module):
         return self.gate.irreps_in
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[self.KEY_X] = self.gate(data[self.KEY_X])
+        data[self.key_x] = self.gate(data[self.key_x])
         return data

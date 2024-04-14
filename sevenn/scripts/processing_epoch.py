@@ -1,15 +1,10 @@
-import math
 import os
-from typing import Dict
 
-import numpy as np
 import torch
 
 import sevenn._keys as KEY
-from sevenn._const import LossType
 from sevenn.error_recorder import ErrorRecorder
 from sevenn.sevenn_logger import Logger
-from sevenn.train.trainer import Trainer
 
 
 def processing_epoch(

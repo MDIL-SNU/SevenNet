@@ -11,14 +11,13 @@ from sevenn.scripts.train import train
 from sevenn.sevenn_logger import Logger
 
 description = (
-    f'sevenn version={SEVENN_VERSION}, based on input.yaml, train model'
+    f'sevenn version={SEVENN_VERSION}, train model based on the input.yaml'
 )
 
-input_yaml_help = 'main input.yaml file for model & training'
-working_dir_help = 'directory path to write output. default is cwd'
-screen_help = 'print log output to screen or not'
-get_parallel_help = 'deploy parallel model from serial one'
-distributed_help = 'run in DDP or not'
+input_yaml_help = 'input.yaml for training'
+working_dir_help = 'path to write output. Default is cwd.'
+screen_help = 'print log to stdout'
+distributed_help = 'set this flag if it is distributed training'
 
 # TODO: do somthing for model type (it is not printed on log)
 global_config = {
@@ -57,7 +56,7 @@ def main(args=None):
 
     if distributed:
         Logger().writeline(
-            f'Distributed training enabled, total world size: {world_size}'
+            f'Distributed training enabled, total world size is {world_size}'
         )
 
     try:
