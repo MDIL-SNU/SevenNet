@@ -3,6 +3,7 @@ import warnings
 
 import torch
 
+import sevenn.util as util
 import sevenn._keys as KEY
 from sevenn.sevenn_logger import Logger
 
@@ -79,6 +80,7 @@ def processing_continue(config):
 
     from_epoch = checkpoint['epoch']
     model_state_dict_cp = checkpoint['model_state_dict']
+    model_state_dict_cp = util._map_old_model(model_state_dict_cp)
     optimizer_state_dict_cp = (
         checkpoint['optimizer_state_dict']
         if not continue_dct[KEY.RESET_OPTIMIZER]
@@ -90,18 +92,18 @@ def processing_continue(config):
         else None
     )
 
-    shift_cp = model_state_dict_cp['rescale atomic energy.shift'].numpy()
-    del model_state_dict_cp['rescale atomic energy.shift']
+    shift_cp = model_state_dict_cp['rescale_atomic_energy.shift'].numpy()
+    del model_state_dict_cp['rescale_atomic_energy.shift']
 
-    scale_cp = model_state_dict_cp['rescale atomic energy.scale'].numpy()
-    del model_state_dict_cp['rescale atomic energy.scale']
+    scale_cp = model_state_dict_cp['rescale_atomic_energy.scale'].numpy()
+    del model_state_dict_cp['rescale_atomic_energy.scale']
 
     avg_num_neigh_cp = []
     for i in range(config_cp[KEY.NUM_CONVOLUTION]):
         avg_num_neigh_cp.append(
-            (model_state_dict_cp[f'{i} convolution.denominator'] ** 2).item()
+            (model_state_dict_cp[f'{i}_convolution.denominator'] ** 2).item()
         )
-        del model_state_dict_cp[f'{i} convolution.denominator']
+        del model_state_dict_cp[f'{i}_convolution.denominator']
 
     # these dataset-dependent values should be later handled by processing_dataset.py
     config.update({

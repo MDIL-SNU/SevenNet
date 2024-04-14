@@ -164,6 +164,8 @@ def _map_old_model(old_model_state_dict):
     for k, v in old_model_state_dict.items():
         key_name = k.split('.')[0]
         follower = '.'.join(k.split('.')[1:])
+        if 'denumerator' in follower:
+            follower = follower.replace('denumerator', 'denominator')
         if key_name in _old_module_name_mapping:
             new_key_name = _old_module_name_mapping[key_name] + '.' + follower
             new_model_state_dict[new_key_name] = v
