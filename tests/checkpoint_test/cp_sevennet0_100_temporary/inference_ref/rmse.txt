@@ -1,3 +1,0 @@
-Energy rmse (eV/atom): 18.832910439573592
-Force rmse (eV/A): 0.638829484524844
-Stress rmse (kbar): 143.33967933505014

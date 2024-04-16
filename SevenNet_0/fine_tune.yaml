@@ -28,7 +28,7 @@ model:
 
     is_parity: False
     optimize_by_reduce: True
-    self_connection_type: 'MACE'
+    self_connection_type: 'linear'
 
     # ~~~~~ Above settings (which defines model) should be maintained for fine tuning ~~~~~~ #
 

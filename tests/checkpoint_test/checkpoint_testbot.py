@@ -15,12 +15,17 @@ Test for checkpoint sanity
 2024-04-13
 """
 
-TARGET = sys.argv[1]
+TARGET = sys.argv[1] if len(sys.argv) > 1 else 'cp_sevennet_0' 
 
 LMP_SCRIPT = tbot.LMP_SCRIPT
 LMP_BIN = tbot.LMP_BIN
 
-CHECKPOINT = f"{TARGET}/checkpoint.pth"
+if TARGET == "cp_sevennet_0":
+    print("Using SEVENNET_0_CP environment variable")
+    cp_path = os.getenv("SEVENNET_0_CP")
+else:
+    cp_path = f"{TARGET}/checkpoint.pth"
+CHECKPOINT = cp_path
 CONTINUE_INPUT_YAML = f"{TARGET}/continue_input.yaml"
 INFERENCE_REF_DIR = f"{TARGET}/inference_ref"
 DATA_REF = f"{TARGET}/data_ref.sevenn_data"
