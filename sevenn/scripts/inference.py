@@ -4,20 +4,18 @@ from typing import List
 
 import numpy as np
 import torch
-from ase import Atoms, io
+from ase import io
 from ase.calculators.singlepoint import SinglePointCalculator
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 import sevenn._keys as KEY
 from sevenn._const import LossType
-from sevenn.nn.node_embedding import get_type_mapper_from_specie
-from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.train.dataload import graph_build
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import (
     AverageNumber,
-    load_model_from_checkpoint,
+    model_from_checkpoint,
     postprocess_output,
     squared_error,
     to_atom_graph_list,
@@ -82,12 +80,10 @@ def poscars_to_atoms(poscars: List[str]):
 
 
 def write_inference_csv(output_list, rmse_dct, out, no_ref):
-    is_stress = 'STRESS' in rmse_dct
     for i, output in enumerate(output_list):
         output = output.fit_dimension()
-        if is_stress:
-            output[KEY.STRESS] = output[KEY.STRESS] * 1602.1766208
-            output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
+        output[KEY.STRESS] = output[KEY.STRESS] * 1602.1766208
+        output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
         output_list[i] = output.to_numpy_dict()
 
     per_graph_keys = [
@@ -138,8 +134,7 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
         with open(f'{out}/rmse.txt', 'w') as f:
             f.write(f"Energy rmse (eV/atom): {rmse_dct['ENERGY']}\n")
             f.write(f"Force rmse (eV/A): {rmse_dct['FORCE']}\n")
-            if is_stress:
-                f.write(f"Stress rmse (kbar): {rmse_dct['STRESS']}\n")
+            f.write(f"Stress rmse (kbar): {rmse_dct['STRESS']}\n")
 
     try:
         with open(f'{out}/info.csv', 'w', newline='') as f:
@@ -183,15 +178,13 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
 def inference_main(
     checkpoint, fnames, output_path, num_cores=1, device='cpu', batch_size=5
 ):
-    checkpoint = torch.load(checkpoint, map_location=device)
-    config = checkpoint['config']
-    cutoff = config[KEY.CUTOFF]
-    type_map = config[KEY.TYPE_MAP]
-
-    model = load_model_from_checkpoint(checkpoint)
+    model, config = model_from_checkpoint(checkpoint)
     model.to(device)
     model.set_is_batch_data(True)
     model.eval()
+
+    cutoff = config[KEY.CUTOFF]
+    type_map = config[KEY.TYPE_MAP]
 
     head = os.path.basename(fnames[0])
     atoms_list = None
@@ -208,16 +201,9 @@ def inference_main(
         inference_set = AtomGraphDataset(data_list, cutoff)
 
     inference_set.x_to_one_hot_idx(type_map)
-    if config[KEY.IS_TRAIN_STRESS]:
-        inference_set.toggle_requires_grad_of_data(KEY.POS, True)
-        is_stress = True
-    else:
-        inference_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
-        is_stress = False
+    inference_set.toggle_requires_grad_of_data(KEY.POS, True)
 
-    loss_types = [LossType.ENERGY, LossType.FORCE]
-    if is_stress:
-        loss_types.append(LossType.STRESS)
+    loss_types = [LossType.ENERGY, LossType.FORCE, LossType.STRESS]
 
     l2_err = {k: AverageNumber() for k in loss_types}
     infer_list = inference_set.to_list()

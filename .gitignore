@@ -1,7 +1,5 @@
 build/
 dist
 sevenn.egg-info
-tests
-test_yamls
 *.swp
 dev.vim

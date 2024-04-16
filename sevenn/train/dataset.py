@@ -1,13 +1,12 @@
 import itertools
 import random
-import warnings
 from collections import Counter
 from typing import Callable, Dict, List, Optional, Union
 
 import numpy as np
 import torch
 from ase.data import chemical_symbols
-from sklearn.linear_model import Lasso, LinearRegression, Ridge
+from sklearn.linear_model import Ridge
 from torch_scatter import scatter
 
 import sevenn._keys as KEY
@@ -246,8 +245,6 @@ class AtomGraphDataset:
         """
         assert not (self.x_is_one_hot_idx is True and type_map is None)
         natoms = {}
-        if type_map is not None:
-            type_map_rev = {v: k for k, v in type_map.items()}
         for label, data in self.dataset.items():
             natoms[label] = Counter()
             for datum in data:

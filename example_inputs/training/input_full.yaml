@@ -81,10 +81,10 @@ train:
 
     # If the dataset changed (for fine-tuning),
     # setting 'use_statistic_value_of_checkpoint' to True roughly changes model's accuracy in the beginning of training.
-    # We recommand to use it as False, and turn train_shift_scale and train_avg_num_neigh to True. 
+    # We recommand to use it as False, and turn train_shift_scale and train_avg_num_neigh to True.
 
 data:
-    batch_size: 2                                 # Per GPU batch size. 
+    batch_size: 2                                 # Per GPU batch size.
     data_divide_ratio: 0.1                        # Split dataset into training and validation sets by this ratio
 
     #shift: 0.0                                   # User defined shift

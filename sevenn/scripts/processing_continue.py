@@ -1,10 +1,11 @@
 import os
+import warnings
 
 import torch
 
 import sevenn._keys as KEY
+import sevenn.util as util
 from sevenn.sevenn_logger import Logger
-from sevenn.train.trainer import Trainer
 
 
 def check_config_compatible(config, config_cp):
@@ -24,13 +25,20 @@ def check_config_compatible(config, config_cp):
         KEY.USE_SPECIES_WISE_SHIFT_SCALE,
         KEY.USE_BIAS_IN_LINEAR,
         KEY.OPTIMIZE_BY_REDUCE,
+        KEY.SELF_CONNECTION_TYPE,
     ]
     for sbs in SHOULD_BE_SAME:
         if config[sbs] == config_cp[sbs]:
             continue
+        if sbs is KEY.SELF_CONNECTION_TYPE and config_cp[sbs] is 'MACE':
+            warnings.warn(
+                'We do not support this version of checkpoints to continue '
+                'Please use self_connection_type=\'linear\' in input.yaml '
+                'and train from scratch',
+                UserWarning,
+            )
         raise ValueError(
-            f'Value of {sbs} should be same.                 {config[sbs]} !='
-            f' {config_cp[sbs]}'
+            f'Value of {sbs} should be same. {config[sbs]} != {config_cp[sbs]}'
         )
 
     try:
@@ -71,6 +79,7 @@ def processing_continue(config):
 
     from_epoch = checkpoint['epoch']
     model_state_dict_cp = checkpoint['model_state_dict']
+    model_state_dict_cp = util._map_old_model(model_state_dict_cp)
     optimizer_state_dict_cp = (
         checkpoint['optimizer_state_dict']
         if not continue_dct[KEY.RESET_OPTIMIZER]
@@ -82,18 +91,18 @@ def processing_continue(config):
         else None
     )
 
-    shift_cp = model_state_dict_cp['rescale atomic energy.shift'].numpy()
-    del model_state_dict_cp['rescale atomic energy.shift']
+    shift_cp = model_state_dict_cp['rescale_atomic_energy.shift'].numpy()
+    del model_state_dict_cp['rescale_atomic_energy.shift']
 
-    scale_cp = model_state_dict_cp['rescale atomic energy.scale'].numpy()
-    del model_state_dict_cp['rescale atomic energy.scale']
+    scale_cp = model_state_dict_cp['rescale_atomic_energy.scale'].numpy()
+    del model_state_dict_cp['rescale_atomic_energy.scale']
 
     avg_num_neigh_cp = []
     for i in range(config_cp[KEY.NUM_CONVOLUTION]):
         avg_num_neigh_cp.append(
-            (model_state_dict_cp[f'{i} convolution.denumerator'] ** 2).item()
+            (model_state_dict_cp[f'{i}_convolution.denominator'] ** 2).item()
         )
-        del model_state_dict_cp[f'{i} convolution.denumerator']
+        del model_state_dict_cp[f'{i}_convolution.denominator']
 
     # these dataset-dependent values should be later handled by processing_dataset.py
     config.update({

@@ -1,6 +1,4 @@
-import csv
 import os
-import sys
 import traceback
 from datetime import datetime
 
@@ -125,13 +123,6 @@ class Logger(metaclass=Singleton):
         ln = '-' * fs
         total_atom_type = train_loss.keys()
         content = ''
-        """
-        content = \
-            f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}".\
-            format(lb_pad=lb_pad, pad=pad)\
-            + f"{'F_RMSE(T)':<{pad}}{'F_RMSE(V)':<{pad}}".format(pad=pad)
-        content += f"{'S_RMSE(T)':<{pad}}{'S_RMSE(V)':<{pad}}".format(pad=pad)
-        """
 
         for at in total_atom_type:
             t_F = train_loss[at]
@@ -151,7 +142,7 @@ class Logger(metaclass=Singleton):
             content += '\n'
         self.write(content)
 
-    # TODO : refactoring!!!, this is not loss, rmse
+    # deprecated (see error recorer)
     def epoch_write_loss(self, train_loss, valid_loss):
         lb_pad = 21
         fs = 6
@@ -345,7 +336,8 @@ class Logger(metaclass=Singleton):
         """
         elapsed = str(datetime.now() - self.timer_dct[name])
         # elapsed = elapsed.strftime('%H-%M-%S')
-        del self.timer_dct[name]
+        if remove:
+            del self.timer_dct[name]
         self.write(f'{message}: {elapsed[:-4]}\n')
 
     def dict_of_counter(self, counter_dict):
@@ -384,7 +376,7 @@ class Logger(metaclass=Singleton):
         kv_write = partial(self.format_k_v, write=True)
         self.writeline('Irreps of features')
         kv_write(
-            'edge_feature', model.get_irreps_in('EdgeEmbedding', 'irreps_out')
+            'edge_feature', model.get_irreps_in('edge_embedding', 'irreps_out')
         )
         for i in range(config[KEY.NUM_CONVOLUTION]):
             kv_write(
@@ -393,10 +385,10 @@ class Logger(metaclass=Singleton):
             )
         kv_write(
             'readout irreps',
-            model.get_irreps_in(f'{i} equivariant gate', 'irreps_out'),
+            model.get_irreps_in(f'{i}_equivariant_gate', 'irreps_out'),
         )
-        shift = model._modules['rescale atomic energy'].shift
-        scale = model._modules['rescale atomic energy'].scale
+        shift = model._modules['rescale_atomic_energy'].shift
+        scale = model._modules['rescale_atomic_energy'].scale
         if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
             kv_write('global shift', f'{shift.item():.6f}')
             kv_write('global scale', f'{scale.item():.6f}')
@@ -408,10 +400,10 @@ class Logger(metaclass=Singleton):
             for cstr, sh, sc in zip(chem_str, shift, scale):
                 kv_write(f'{cstr}', f'{sh:.6f}, {sc:.6f}')
 
-        self.writeline('Denumerator (avg_num_neigh**0.5) for each layer')
+        self.writeline('Denominator (avg_num_neigh**0.5) for each layer')
         for i in range(config[KEY.NUM_CONVOLUTION]):
-            denumerator = model._modules[f'{i} convolution'].denumerator
-            kv_write(f'{i}th layer denumerator', f'{denumerator.item():.6f}')
+            denominator = model._modules[f'{i}_convolution'].denominator
+            kv_write(f'{i}th layer denominator', f'{denominator.item():.6f}')
         num_weights = sum(
             p.numel() for p in model.parameters() if p.requires_grad
         )

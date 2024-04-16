@@ -32,19 +32,19 @@ class OnehotEmbedding(nn.Module):
     ):
         super().__init__()
         self.num_classes = num_classes
-        self.KEY_X = data_key_x
-        self.KEY_SAVE = data_key_save
-        self.KEY_ADDITIONAL = data_key_additional
+        self.key_x = data_key_x
+        self.key_save = data_key_save
+        self.key_additional_output = data_key_additional
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        inp = data[self.KEY_X]
+        inp = data[self.key_x]
         embd = torch.nn.functional.one_hot(inp, self.num_classes)
         embd = embd.float()
-        data[self.KEY_X] = embd
-        if self.KEY_ADDITIONAL is not None:
-            data[self.KEY_ADDITIONAL] = embd
-        if self.KEY_SAVE is not None:
-            data[self.KEY_SAVE] = inp
+        data[self.key_x] = embd
+        if self.key_additional_output is not None:
+            data[self.key_additional_output] = embd
+        if self.key_save is not None:
+            data[self.key_save] = inp
         return data
 
 
@@ -84,11 +84,3 @@ def one_hot_atom_embedding(
     embd = embd.to(torch.get_default_dtype())
 
     return embd
-
-
-def main():
-    _ = 1
-
-
-if __name__ == '__main__':
-    main()

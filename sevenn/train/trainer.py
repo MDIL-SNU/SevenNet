@@ -1,14 +1,11 @@
-from typing import Dict
-
 import torch
 import torch.distributed as dist
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 import sevenn._keys as KEY
-from sevenn._const import LossType
 from sevenn.error_recorder import ErrorRecorder
-from sevenn.train.optim import loss_dict, optim_dict, scheduler_dict
-from sevenn.util import AverageNumber, postprocess_output, squared_error
+from sevenn.train.loss import get_loss_functions_from_config
+from sevenn.train.optim import optim_dict, scheduler_dict
 
 
 class Trainer:
@@ -27,21 +24,6 @@ class Trainer:
             self.model.set_is_batch_data(True)
         self.device = device
 
-        self.loss_weights = {LossType.ENERGY: 1.0}
-        self.loss_weights[LossType.FORCE] = config[KEY.FORCE_WEIGHT]
-
-        # where trace stress is used for?
-        self.is_trace_stress = config[KEY.IS_TRACE_STRESS]
-        self.is_train_stress = config[KEY.IS_TRAIN_STRESS]
-        self.is_stress = self.is_trace_stress or self.is_train_stress
-        if self.is_train_stress:
-            self.loss_weights[LossType.STRESS] = config[KEY.STRESS_WEIGHT]
-
-        # init loss_types
-        self.loss_types = [LossType.ENERGY, LossType.FORCE]
-        if self.is_stress:
-            self.loss_types.append(LossType.STRESS)
-
         param = [p for p in self.model.parameters() if p.requires_grad]
         optimizer = optim_dict[config[KEY.OPTIMIZER].lower()]
         optim_param = config[KEY.OPTIM_PARAM]
@@ -51,13 +33,9 @@ class Trainer:
         scheduler_param = config[KEY.SCHEDULER_PARAM]
         self.scheduler = scheduler(self.optimizer, **scheduler_param)
 
-        loss = loss_dict[config[KEY.LOSS].lower()]
-        # TODO: handle this kind of case in parse_input not here
-        try:
-            loss_param = config[KEY.LOSS_PARAM]
-        except KeyError:
-            loss_param = {}
-        self.criterion = loss(**loss_param)
+        # This should be outside of the trainer(?)
+        # list of tuples (loss_definition, weight)
+        self.loss_functions = get_loss_functions_from_config(config)
 
     def run_one_epoch(
         self, loader, is_train=False, error_recorder: ErrorRecorder = None
@@ -74,22 +52,14 @@ class Trainer:
             output = self.model(batch)
             error_recorder.update(output)
             if is_train:
-                total_loss = self.loss_calculator(output)
+                total_loss = torch.tensor([0.0], device=self.device)
+                for loss_def, w in self.loss_functions:
+                    total_loss += loss_def.get_loss(output, self.model) * w
                 total_loss.backward()
                 self.optimizer.step()
 
         if self.distributed:
             self.recorder_all_reduce(error_recorder)
-
-    def loss_calculator(self, output):
-        unit_converted = postprocess_output(output, self.loss_types)
-        total_loss = torch.tensor([0.0], device=self.device)
-        for loss_type in self.loss_types:
-            pred, ref, _ = unit_converted[loss_type]
-            total_loss += (
-                self.criterion(pred, ref) * self.loss_weights[loss_type]
-            )
-        return total_loss
 
     def scheduler_step(self, metric=None):
         if self.scheduler is None:

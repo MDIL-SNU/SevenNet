@@ -1,4 +1,3 @@
-import glob
 import os
 import random
 
@@ -121,10 +120,7 @@ def processing_dataset(config, working_dir):
     dataset.group_by_key()  # apply labels inside original datapoint
     dataset.unify_dtypes()  # unify dtypes of all data points
 
-    if is_stress:
-        dataset.toggle_requires_grad_of_data(KEY.POS, True)
-    else:
-        dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
+    dataset.toggle_requires_grad_of_data(KEY.POS, True)
 
     # TODO: I think manual chemical species input is redundant
     chem_in_db = dataset.get_species()
@@ -180,10 +176,7 @@ def processing_dataset(config, working_dir):
         valid_set.group_by_key()
         valid_set.unify_dtypes()
 
-        if is_stress:
-            valid_set.toggle_requires_grad_of_data(KEY.POS, True)
-        else:
-            valid_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
+        valid_set.toggle_requires_grad_of_data(KEY.POS, True)
 
         # condition 1: validset chems should be subset of trainset chems
         valid_chems = valid_set.get_species()

@@ -3,16 +3,16 @@ import argparse
 import torch
 
 import sevenn._const as _const
-import sevenn._keys as KEY
+import sevenn.util
 from sevenn.scripts.deploy import deploy, deploy_parallel
 
 description_get_model = (
     f'sevenn version={_const.SEVENN_VERSION}, sevenn_get_model.'
-    + ' Deploy model from checkpoint'
+    + ' Deploy model for LAMMPS from the checkpoint'
 )
-checkpoint_help = 'checkpoint path to deploy model'
-output_name_help = 'filename prefix of deployed model'
-get_parallel_help = 'whether deploy parallel model'
+checkpoint_help = 'checkpoint path'
+output_name_help = 'filename prefix'
+get_parallel_help = 'deploy parallel model'
 
 
 def main(args=None):
@@ -34,15 +34,14 @@ def main(args=None):
     defaults.update(_const.DEFAULT_TRAINING_CONFIG)
     for k_d, v_d in defaults.items():
         if k_d not in config.keys():
-            print(f'{k_d} was not found in given config')
-            print(f'{v_d} inserted as defaults')
             config[k_d] = v_d
+            print(f'{k_d} not found in config, {v_d} inserted as defaults')
+    # for backward compatibility
+    stct_dct = sevenn.util._map_old_model(stct_dct)
 
     if get_serial:
         deploy(stct_dct, config, output_prefix)
     else:
-        # if config[KEY.NUM_CONVOLUTION] == 1:
-        #    raise ValueError("parallel model of NUM_CONVOLUTION == 1 is meaningless")
         deploy_parallel(stct_dct, config, output_prefix)
 
 

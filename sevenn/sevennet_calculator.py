@@ -1,13 +1,13 @@
 import os
-from typing import List, Union
+from typing import Union
 
 import numpy as np
 import torch
 from ase.calculators.calculator import Calculator, all_changes
 
+import sevenn._keys as KEY
 import sevenn.util
 from sevenn.nn.sequential import AtomGraphSequential
-import sevenn._keys as KEY
 
 
 class SevenNetCalculator(Calculator):
@@ -24,8 +24,8 @@ class SevenNetCalculator(Calculator):
 
     def __init__(
         self,
-        model: Union[AtomGraphSequential, str] = "SevenNet-0",
-        device: Union[torch.device, str] = "cuda",
+        model: Union[AtomGraphSequential, str] = 'SevenNet-0',
+        device: Union[torch.device, str] = 'auto',
         sevennet_config=None,
         **kwargs
     ):
@@ -33,24 +33,32 @@ class SevenNetCalculator(Calculator):
 
         Args:
             model (SevenNet): AtomGraphSequential or path to the checkpoint file.
-            device (str, optional): Torch device to use. Defaults to "cuda".
+            device (str, optional): Torch device to use. Defaults to "auto".
         """
         super().__init__(**kwargs)
 
-        if not isinstance(model, AtomGraphSequential) and not isinstance(model, str):
-            raise ValueError("model must be an instance of AtomGraphSequential or str.")
+        if not isinstance(model, AtomGraphSequential) and not isinstance(
+            model, str
+        ):
+            raise ValueError(
+                'model must be an instance of AtomGraphSequential or str.'
+            )
         if isinstance(model, str):
             # TODO: Download it from internet
-            if model == "SevenNet-0":  # special case loading pre-trained model
-                checkpoint = os.getenv("SEVENNET_0_CP")
+            if model == 'SevenNet-0':  # special case loading pre-trained model
+                checkpoint = os.getenv('SEVENNET_0_CP')
                 if checkpoint is None:
-                    raise ValueError("Please set env variable SEVENNET_0_CP as checkpoint path.")
+                    raise ValueError(
+                        'Please set env variable SEVENNET_0_CP as checkpoint'
+                        ' path.'
+                    )
             else:
                 checkpoint = model
             model, config = sevenn.util.model_from_checkpoint(checkpoint)
+            sevennet_config = config
         else:
             if model._use_type_map is False and model.type_map is None:
-                raise ValueError("model must have a type_map")
+                raise ValueError('model must have a type_map')
             model.set_use_type_map(True)
         self.sevennet_config = sevennet_config  # metadata which can be None
         try:
@@ -60,10 +68,19 @@ class SevenNetCalculator(Calculator):
 
         self.model = model
 
-        if not isinstance(device, torch.device) and not isinstance(device, str):
-            raise ValueError("device must be an instance of torch.device or str.")
+        if not isinstance(device, torch.device) and not isinstance(
+            device, str
+        ):
+            raise ValueError(
+                'device must be an instance of torch.device or str.'
+            )
         if isinstance(device, str):
-            self.device = torch.device(device)
+            if device == 'auto':
+                self.device = torch.device(
+                    'cuda' if torch.cuda.is_available() else 'cpu'
+                )
+            else:
+                self.device = torch.device(device)
         else:
             self.device = device
 
@@ -73,7 +90,9 @@ class SevenNetCalculator(Calculator):
 
         self.implemented_properties = ['energy', 'forces', 'stress']
 
-    def calculate(self, atoms=None, properties=None, system_changes=all_changes):
+    def calculate(
+        self, atoms=None, properties=None, system_changes=all_changes
+    ):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
         data = sevenn.util.unlabeled_atoms_to_input(atoms, self.cutoff)
@@ -87,5 +106,10 @@ class SevenNetCalculator(Calculator):
             'free_energy': energy,
             'energy': energy,
             'forces': output[KEY.PRED_FORCE].detach().cpu().numpy(),
-            'stress': np.array((-output[KEY.PRED_STRESS]).detach().cpu().numpy()[[0, 1, 2, 4, 5, 3]])
+            'stress': np.array(
+                (-output[KEY.PRED_STRESS])
+                .detach()
+                .cpu()
+                .numpy()[[0, 1, 2, 4, 5, 3]]
+            ),
         }
