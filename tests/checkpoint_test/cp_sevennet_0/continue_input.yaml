@@ -5,7 +5,7 @@ model:
     is_parity: False
     lmax: 2
     num_convolution_layer: 5
-    irreps_manual: 
+    irreps_manual:
         - "128x0e"
         - "128x0e+64x1e+32x2e"
         - "128x0e+64x1e+32x2e"
@@ -17,8 +17,8 @@ model:
     radial_basis:                                 # Function and its parameters to encode radial distance
         radial_basis_name: 'bessel'               # Only 'bessel' is currently supported
         bessel_basis_num: 8                       # Equivalent to 'num_basis' in nequip. Represents the number of Bessel functions as the radial basis
-    cutoff_function:                              
-        cutoff_function_name: 'XPLOR'          
+    cutoff_function:
+        cutoff_function_name: 'XPLOR'
         cutoff_on: 4.5
 
     act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
@@ -28,7 +28,7 @@ model:
     train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
     train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
     optimize_by_reduce: True
-                                                                  
+
     self_connection_type: 'linear'
 
 train:
@@ -40,7 +40,7 @@ train:
     loss_param:
         delta: 0.01
     optimizer: 'adam'
-    optim_param:                                  
+    optim_param:
         lr: 0.004
     scheduler: 'reducelronplateau'
     scheduler_param:
@@ -49,7 +49,7 @@ train:
 
     force_loss_weight   : 1.00
     stress_loss_weight: 0.01
-    error_record:  
+    error_record:
         - ['Energy', 'RMSE']
         - ['Force', 'RMSE']
         - ['Stress', 'RMSE']
@@ -63,10 +63,10 @@ train:
 
     per_epoch: 5                              # Generate epoch every this number of times
 
-    continue: 
+    continue:
         checkpoint: './checkpoint.pth'
-        reset_optimizer: False 
-        reset_scheduler: False 
+        reset_optimizer: False
+        reset_scheduler: False
 
 data:
     batch_size: 1                                 # Batch size. If training fails due to memory shortage, lower this value
@@ -76,4 +76,3 @@ data:
     save_by_train_valid: False
     load_dataset_path: './small.sevenn_data'
     load_validset_path: './small.sevenn_data'
-

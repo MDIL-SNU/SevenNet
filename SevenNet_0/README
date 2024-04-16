@@ -14,4 +14,3 @@ Refer to example_inputs/md_{serial/parallel}_example/ for their usage in LAMMPS.
 
 Both serial and parallel model gives same results but parallel model enable multi-GPU MD simulation and serial model enable stress output in MD.
 We're currently developing stress output for parallel model.
-

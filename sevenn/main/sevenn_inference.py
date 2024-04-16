@@ -13,9 +13,7 @@ description = (
     + 'using the model stored in a checkpoint.'
 )
 checkpoint_help = 'checkpoint'
-target_help = (
-    'target files to evaluate. '
-)
+target_help = 'target files to evaluate. '
 
 
 def main(args=None):
@@ -40,7 +38,7 @@ def cmd_parse_data(args=None):
         '--device',
         type=str,
         default='auto',
-        help="cpu/cuda/cuda:x",
+        help='cpu/cuda/cuda:x',
     )
     ag.add_argument(
         '-n',
@@ -56,9 +54,7 @@ def cmd_parse_data(args=None):
         default='sevenn_inference_result',
         help='path to save the outputs',
     )
-    ag.add_argument(
-        '-b', '--batch', type=int, default='5', help='batch size'
-    )
+    ag.add_argument('-b', '--batch', type=int, default='5', help='batch size')
 
     args = ag.parse_args()
 

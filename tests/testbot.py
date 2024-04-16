@@ -1,20 +1,20 @@
-import os
-import sys
-import csv
 import copy
+import csv
 import glob
+import os
 import shutil
 import subprocess
+import sys
 from collections import Counter
 from datetime import datetime
 
-import numpy as np
-import torch
 import ase
-import ase.io
-import ase.io.lammpsdata
 import ase.calculators as calculators
 import ase.calculators.lammps as ase_lammps
+import ase.io
+import ase.io.lammpsdata
+import numpy as np
+import torch
 
 import sevenn._keys as KEY
 from sevenn._const import SEVENN_VERSION
@@ -27,10 +27,10 @@ Tests for SevenNet
 test_root = os.path.dirname(os.path.abspath(__file__))
 
 INPUT_YAML = sys.argv[1] if __file__ == 'testbot.py' else None
-OUTCAR = f"{test_root}/OUTCAR_test"
+OUTCAR = f'{test_root}/OUTCAR_test'
 LMP_BIN = 'lmp'
 
-LMP_SCRIPT = f"{test_root}/LMP_SCRIPT/oneshot.lmp"
+LMP_SCRIPT = f'{test_root}/LMP_SCRIPT/oneshot.lmp'
 
 ATOL = 1e-6
 RTOL = 1e-5
@@ -38,8 +38,10 @@ RTOL = 1e-5
 e3gnn_found = False
 e3gnn_parallel_found = False
 
+
 def bar():
-    print("-" * 50)
+    print('-' * 50)
+
 
 def subprocess_routine(cmd, name, print_stdout=False):
     start = datetime.now()
@@ -85,23 +87,24 @@ def greeting():
             print('Did you correctly put e3gnn.cpp/h in lammps/src?')
         if not e3gnn_parallel_found:
             print(
-                'e3gnn_parallel not found, lammps parallel test will be skipped.'
+                'e3gnn_parallel not found, lammps parallel test will be'
+                ' skipped.'
             )
             print('Did you correctly put e3gnn_parallel.cpp/h in lammps/src?')
             print("Also, don't forget to put comm_brick.cpp/h in lammps/src")
 
     except Exception as e:
         print(e)
-        print("Exception while executing LAMMPS, skip related tests")
+        print('Exception while executing LAMMPS, skip related tests')
         e3gnn_found = False
         e3gnn_parallel_found = False
 
     if torch.cuda.is_available():
-        print("CUDA available, we lower accuracy constraint and use the GPU")
+        print('CUDA available, we lower accuracy constraint and use the GPU')
         ATOL *= 10
         RTOL *= 10
     else:
-        print("Use CPU for the test")
+        print('Use CPU for the test')
 
 
 def atoms_info_print(atoms):
@@ -154,7 +157,7 @@ def sevenn_train_test():
     rmse = None
     for ln in lines:
         if ln.startswith('Valid'):
-            rmse = ln.split()[1:3]  #TODO: more robust way
+            rmse = ln.split()[1:3]  # TODO: more robust way
     rmse_dct = {k: float(v) for k, v in zip(metrics, rmse)}
     cp_path = os.path.abspath('./checkpoint_best.pth')
 
@@ -179,8 +182,7 @@ def sevenn_infer_to_atoms(inference_folder):
 
     if info_list is not None:
         per_graph = [
-            {**row, KEY.INFO: info_list[i]}
-            for i, row in enumerate(per_graph)
+            {**row, KEY.INFO: info_list[i]} for i, row in enumerate(per_graph)
         ]
 
     with open(f'{inference_folder}/per_atom.csv', 'r') as f:
@@ -243,12 +245,14 @@ def sevenn_infer_to_atoms(inference_folder):
         atoms = ase.Atoms(
             numbers=species, positions=pos, cell=cell, pbc=True, info=info
         )
-        calculator =\
-            calculators.singlepoint.SinglePointCalculator(atoms, **calc_res)
+        calculator = calculators.singlepoint.SinglePointCalculator(
+            atoms, **calc_res
+        )
         atoms = calculator.get_atoms()
         atoms_list.append(atoms)
 
     return atoms_list
+
 
 def sevenn_inferece_test(cp_path: str):
     print('sevenn_inference test')
@@ -272,7 +276,7 @@ def sevenn_inferece_test(cp_path: str):
 def sevenn_get_model_test(cp_path, is_parallel):
     print('sevenn get model')
     os.makedirs('./potential', exist_ok=True)
-    name = "sevenn_get_model"
+    name = 'sevenn_get_model'
     if is_parallel:
         sevenn_get_model_cmd = (
             f'sevenn_get_model -p {cp_path} -o potential/parallel'.split()
@@ -306,7 +310,7 @@ def sevenn_lmp_test(
 ):
     def lammps_results_to_atoms(lammps_log, force_dump, read_stress=True):
         # read lammps log file
-        #TODO: May not robust, use lammps python
+        # TODO: May not robust, use lammps python
         with open(lammps_log, 'r') as f:
             lines = f.readlines()
         for i, line in enumerate(lines):
@@ -321,7 +325,9 @@ def sevenn_lmp_test(
         assert 'PotEng' in lmp_log
 
         # read lammps dump file
-        latoms = ase.io.read(force_dump, format='lammps-dump-text', index=':')[0]
+        latoms = ase.io.read(force_dump, format='lammps-dump-text', index=':')[
+            0
+        ]
         latoms.calc.results['energy'] = lmp_log['PotEng']
         latoms.calc.results['free_energy'] = lmp_log['PotEng']
         latoms.info = {
@@ -336,7 +342,9 @@ def sevenn_lmp_test(
                 [lmp_log['Pxy'], lmp_log['Pyy'], lmp_log['Pyz']],
                 [lmp_log['Pxz'], lmp_log['Pyz'], lmp_log['Pzz']],
             ])
-            stress = -1 * stress / 1602.1766208 / 1000  # convert bars to eV/A^3
+            stress = (
+                -1 * stress / 1602.1766208 / 1000
+            )  # convert bars to eV/A^3
             latoms.calc.results['stress'] = stress
 
         # TODO: for now, parse only first frame, maybe we could parse all frames
@@ -380,7 +388,7 @@ def sevenn_lmp_test(
     print('LAMMPS test')
     subprocess_routine(lmp_cmd, 'lammps run')
 
-    #TODO: after implement stress for parallel, update this
+    # TODO: after implement stress for parallel, update this
     read_stress = True
     if pair_style == 'e3gnn/parallel':
         read_stress = False
@@ -398,8 +406,7 @@ def sevenn_lmp_test(
         if 'stress' in results:
             # see ase.calculators.lammpsrun.py
             stress_tensor = results['stress']
-            stress_atoms =\
-                np.dot(np.dot(rot_mat, stress_tensor), rot_mat.T)
+            stress_atoms = np.dot(np.dot(rot_mat, stress_tensor), rot_mat.T)
             results['stress'] = stress_atoms
         r_cell = latoms.get_cell() @ rot_mat.T
         latoms.set_cell(r_cell, scale_atoms=True)
@@ -470,13 +477,18 @@ def compare_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-8):
         flag = False
         for _ in range(3):
             atol *= 10
-            if np.allclose( f1, f2, rtol=rtol, atol=atol,):
+            if np.allclose(
+                f1,
+                f2,
+                rtol=rtol,
+                atol=atol,
+            ):
                 flag = True
                 break
         if not flag:
             raise ValueError('atoms1 and atoms2 have different forces')
         else:
-            print(f"Warning: force comparison failed, but within atol={atol}")
+            print(f'Warning: force comparison failed, but within atol={atol}')
 
     try:
         s1 = atoms1.get_stress(voigt=False)
@@ -517,7 +529,8 @@ def train_infer_rmse_test(train_rmse_dct, infer_rmse_dct, atol=1e-6):
 
 def sevenn_calculator_test(checkpoint, atoms, device):
     from sevenn.sevennet_calculator import SevenNetCalculator
-    cal = SevenNetCalculator(checkpoint, device="cpu")
+
+    cal = SevenNetCalculator(checkpoint, device='cpu')
     ref_atoms = copy.deepcopy(atoms)
     atoms.set_calculator(cal)
 

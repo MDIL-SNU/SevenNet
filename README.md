@@ -88,7 +88,7 @@ These models can be used as lammps potential to run parallel MD simulations with
 * LAMMPS version of 'stable_2Aug2023' [`LAMMPS`](https://github.com/lammps/lammps)
 * [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 
-Incompatibility with other LAMMPS versions usually arises from the modified comm_brick.h/cpp. We will seek a more proper multi-GPU communication implementation without changing the original LAMMPS code. 
+Incompatibility with other LAMMPS versions usually arises from the modified comm_brick.h/cpp. We will seek a more proper multi-GPU communication implementation without changing the original LAMMPS code.
 However, if you have to use other versions of LAMMPS, you can patch your LAMMPS version by simply putting
 void forward_comm(class PairE3GNNParallel *);
 void reverse_comm(class PairE3GNNParallel *);
@@ -204,7 +204,7 @@ If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3
 * Development of support for a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
 
 ## Citation
-If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet or its pre-trained model SevenNet-0, (2) underlying GNN-IP architecture NequIP 
+If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet or its pre-trained model SevenNet-0, (2) underlying GNN-IP architecture NequIP
 
 (1) Y. Park, J. Kim, S. Hwang, and S. Han, "Scalable Parallel Algorithm for Graph Neural Network Interatomic Potentials in Molecular Dynamics Simulations". arXiv, arXiv:2402.03789. (2024) (https://arxiv.org/abs/2402.03789)
 

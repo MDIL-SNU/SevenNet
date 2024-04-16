@@ -29,9 +29,9 @@ class AtomGraphSequential(nn.Sequential):
         self.cutoff = cutoff
         self.type_map = type_map
         if cutoff == 0.0:
-            warnings.warn("cutoff is 0.0 or not given", UserWarning)
+            warnings.warn('cutoff is 0.0 or not given', UserWarning)
         if type_map == {-1: -1}:
-            warnings.warn("type_map is not given", UserWarning)
+            warnings.warn('type_map is not given', UserWarning)
 
         super().__init__(modules)
 
@@ -71,7 +71,7 @@ class AtomGraphSequential(nn.Sequential):
         if the data is not one-hot encoded
         """
         if self.type_map is {-1: -1}:
-            raise ValueError("type_map is not set")
+            raise ValueError('type_map is not set')
         device = data[KEY.NODE_FEATURE].device
         data[KEY.NODE_FEATURE] = torch.LongTensor(
             [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]

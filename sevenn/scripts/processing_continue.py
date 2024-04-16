@@ -3,8 +3,8 @@ import warnings
 
 import torch
 
-import sevenn.util as util
 import sevenn._keys as KEY
+import sevenn.util as util
 from sevenn.sevenn_logger import Logger
 
 
@@ -30,16 +30,15 @@ def check_config_compatible(config, config_cp):
     for sbs in SHOULD_BE_SAME:
         if config[sbs] == config_cp[sbs]:
             continue
-        if sbs is KEY.SELF_CONNECTION_TYPE and config_cp[sbs] is "MACE":
+        if sbs is KEY.SELF_CONNECTION_TYPE and config_cp[sbs] is 'MACE':
             warnings.warn(
-                "We do not support this version of checkpoints to continue "
-                "Please use self_connection_type='linear' in input.yaml "
-                "and train from scratch",
+                'We do not support this version of checkpoints to continue '
+                'Please use self_connection_type=\'linear\' in input.yaml '
+                'and train from scratch',
                 UserWarning,
             )
         raise ValueError(
-            f'Value of {sbs} should be same. {config[sbs]} !='
-            f' {config_cp[sbs]}'
+            f'Value of {sbs} should be same. {config[sbs]} != {config_cp[sbs]}'
         )
 
     try:

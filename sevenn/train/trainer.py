@@ -7,6 +7,7 @@ from sevenn.error_recorder import ErrorRecorder
 from sevenn.train.loss import get_loss_functions_from_config
 from sevenn.train.optim import optim_dict, scheduler_dict
 
+
 class Trainer:
     def __init__(self, model, config: dict):
         self.distributed = config[KEY.IS_DDP]

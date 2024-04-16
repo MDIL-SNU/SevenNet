@@ -1,6 +1,6 @@
+import warnings
 from collections import OrderedDict
 from typing import Union
-import warnings
 
 from e3nn.o3 import FullTensorProduct, Irreps
 
@@ -16,10 +16,7 @@ from sevenn.nn.edge_embedding import (
     XPLORCutoff,
 )
 from sevenn.nn.equivariant_gate import EquivariantGate
-from sevenn.nn.force_output import (
-    ForceOutputFromEdge,
-    ForceStressOutput,
-)
+from sevenn.nn.force_output import ForceOutputFromEdge, ForceStressOutput
 from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.scale import Rescale, SpeciesWiseRescale
@@ -30,12 +27,13 @@ from sevenn.nn.self_connection import (
 )
 from sevenn.nn.sequential import AtomGraphSequential
 
-
 # warning from PyTorch, about e3nn type annotations
 warnings.filterwarnings(
-    'ignore', 
-    message="The TorchScript type system doesn't "
-            "support instance-level annotations"
+    'ignore',
+    message=(
+        "The TorchScript type system doesn't "
+        "support instance-level annotations"
+    ),
 )
 
 

@@ -19,7 +19,7 @@ model:
     radial_basis:
         radial_basis_name: 'bessel'
         bessel_basis_num: 8
-    cutoff_function:                            
+    cutoff_function:
         cutoff_function_name: 'XPLOR'
         cutoff_on: 4.5
 
@@ -72,7 +72,7 @@ train:
     # We recommand to use it as 'False', and turn train_shift_scale and train_avg_num_neigh to 'True' for fine-tuning dataset adaptation.
 
 data:
-    batch_size: 8 
+    batch_size: 8
     data_divide_ratio: 0.1
 
     use_species_wise_shift_scale: True  # should be True for fine-tuning SevenNet-0

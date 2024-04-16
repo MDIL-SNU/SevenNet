@@ -1,12 +1,14 @@
+import glob
 import os
 import shutil
 import sys
-import glob
 
 import yaml
 
 # Add parent directory to sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
+sys.path.insert(
+    0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../..'))
+)
 import tests.testbot as tbot
 
 """
@@ -15,20 +17,20 @@ Test for checkpoint sanity
 2024-04-13
 """
 
-TARGET = sys.argv[1] if len(sys.argv) > 1 else 'cp_sevennet_0' 
+TARGET = sys.argv[1] if len(sys.argv) > 1 else 'cp_sevennet_0'
 
 LMP_SCRIPT = tbot.LMP_SCRIPT
 LMP_BIN = tbot.LMP_BIN
 
-if TARGET == "cp_sevennet_0":
-    print("Using SEVENNET_0_CP environment variable")
-    cp_path = os.getenv("SEVENNET_0_CP")
+if TARGET == 'cp_sevennet_0':
+    print('Using SEVENNET_0_CP environment variable')
+    cp_path = os.getenv('SEVENNET_0_CP')
 else:
-    cp_path = f"{TARGET}/checkpoint.pth"
+    cp_path = f'{TARGET}/checkpoint.pth'
 CHECKPOINT = cp_path
-CONTINUE_INPUT_YAML = f"{TARGET}/continue_input.yaml"
-INFERENCE_REF_DIR = f"{TARGET}/inference_ref"
-DATA_REF = f"{TARGET}/data_ref.sevenn_data"
+CONTINUE_INPUT_YAML = f'{TARGET}/continue_input.yaml'
+INFERENCE_REF_DIR = f'{TARGET}/inference_ref'
+DATA_REF = f'{TARGET}/data_ref.sevenn_data'
 
 CP_OUTCAR = None
 CP_ATOL = None
@@ -38,7 +40,7 @@ CP_e3gnn_parallel_found = None
 
 
 def bar():
-    print("-" * 50)
+    print('-' * 50)
 
 
 def sevenn_continue_test():
@@ -57,10 +59,10 @@ def sevenn_continue_test():
     train = inputs['train']
     train['epoch'] = 1
     train['error_record'] = [
-        ['Energy', 'RMSE'], 
-        ['Force', 'RMSE'], 
+        ['Energy', 'RMSE'],
+        ['Force', 'RMSE'],
         ['Stress', 'RMSE'],
-        ['TotalLoss', 'None']
+        ['TotalLoss', 'None'],
     ]
     train['per_epoch'] = 100
     train['continue']['checkpoint'] = 'checkpoint.pth'
@@ -127,11 +129,11 @@ def main():
 
     print('Check necessary files')
     for check in [
-        LMP_SCRIPT, 
-        CHECKPOINT, 
-        CONTINUE_INPUT_YAML, 
-        INFERENCE_REF_DIR, 
-        DATA_REF
+        LMP_SCRIPT,
+        CHECKPOINT,
+        CONTINUE_INPUT_YAML,
+        INFERENCE_REF_DIR,
+        DATA_REF,
     ]:
         if not os.path.exists(check):
             raise FileNotFoundError(f'{check} not found')
@@ -153,7 +155,9 @@ def main():
         print('Continue training test skipped')
         bar()
     # test inference same
-    if not os.path.exists('inference') or not os.path.exists('inference_small'):
+    if not os.path.exists('inference') or not os.path.exists(
+        'inference_small'
+    ):
         ref_atoms = sevenn_inference_test_with_compare()
         bar()
     else:
@@ -163,7 +167,9 @@ def main():
 
     # test get_model serial
     if not os.path.exists('potential/serial.pt'):
-        seri_pot_str = tbot.sevenn_get_model_test(CHECKPOINT, is_parallel=False)
+        seri_pot_str = tbot.sevenn_get_model_test(
+            CHECKPOINT, is_parallel=False
+        )
         bar()
     else:
         seri_pot_str = os.path.abspath('potential/serial.pt')

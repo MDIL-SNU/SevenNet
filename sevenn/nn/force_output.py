@@ -71,7 +71,9 @@ class ForceOutput(nn.Module):
         energy = [(data[self.key_energy]).sum()]
 
         grad = torch.autograd.grad(
-            energy, pos_tensor, create_graph=self.training, 
+            energy,
+            pos_tensor,
+            create_graph=self.training,
         )[0]
 
         # without this 'if', type(grad) is 'Optional[Tensor]' which result in error
@@ -104,7 +106,9 @@ class ForceStressOutput(nn.Module):
         energy = [(data[self.key_energy]).sum()]
 
         grad = torch.autograd.grad(
-            energy, [pos_tensor, data['_strain']], create_graph=self.training,
+            energy,
+            [pos_tensor, data['_strain']],
+            create_graph=self.training,
         )
 
         # make grad is not Optional[Tensor]

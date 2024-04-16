@@ -12,19 +12,11 @@ description = (
     " structure_list).\n"
 )
 
-source_help = (
-    'source data to build graph'
-)
-label_by_help = (
-    'label the output dataset with the given string.'
-)
+source_help = 'source data to build graph'
+label_by_help = 'label the output dataset with the given string.'
 cutoff_help = 'cutoff radius of edges in Angstrom'
-suffix_help = (
-    'when source is dir, suffix of the files.'
-)
-copy_info_help = (
-    'copy ase.Atoms.info to output dataset'
-)
+suffix_help = 'when source is dir, suffix of the files.'
+copy_info_help = 'copy ase.Atoms.info to output dataset'
 format_help = (
     'type of the source, defualt is structure_list. '
     + 'If it is pkl/pickle, assume they are list of ase.Atoms. '
@@ -108,7 +100,9 @@ def cmd_parse_data(args=None):
     ag.add_argument(
         '-sb',
         '--save_by_label',
-        help='if source is structure_list, separate the output dataset by label',
+        help=(
+            'if source is structure_list, separate the output dataset by label'
+        ),
         action='store_true',
         default=False,
     )

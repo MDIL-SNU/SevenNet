@@ -3,8 +3,8 @@ import argparse
 import torch
 
 import sevenn._const as _const
-from sevenn.scripts.deploy import deploy, deploy_parallel
 import sevenn.util
+from sevenn.scripts.deploy import deploy, deploy_parallel
 
 description_get_model = (
     f'sevenn version={_const.SEVENN_VERSION}, sevenn_get_model.'

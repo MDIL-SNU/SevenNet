@@ -67,8 +67,7 @@ def deploy_parallel(model_state_dct, config, fname):
     model_state_dct.update(dct_temp)
 
     for model_part in model_list:
-        missing, _ =\
-            model_part.load_state_dict(model_state_dct, strict=False)
+        missing, _ = model_part.load_state_dict(model_state_dct, strict=False)
         # Ensure all values are inserted
         assert len(missing) == 0
 

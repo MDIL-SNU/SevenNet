@@ -144,7 +144,7 @@ def atoms_to_graph(
             'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
         ),
         KEY.NUM_ATOMS: len(atomic_numbers),
-        KEY.PER_ATOM_ENERGY: y_energy / len(pos)
+        KEY.PER_ATOM_ENERGY: y_energy / len(pos),
     }
 
     if transfer_info and atoms.info is not None:

@@ -3,8 +3,8 @@ import warnings
 import numpy as np
 import torch
 
-import sevenn.train.dataload
 import sevenn._keys as KEY
+import sevenn.train.dataload
 
 
 class AverageNumber:
@@ -66,9 +66,16 @@ def to_atom_graph_list(atom_graph_batch):
 
 
 def error_recorder_from_loss_functions(loss_functions):
-    from sevenn.error_recorder import ERROR_TYPES, ErrorRecorder, RMSError, MAError
-    from sevenn.train.loss import PerAtomEnergyLoss, ForceLoss, StressLoss
     from copy import deepcopy
+
+    from sevenn.error_recorder import (
+        ERROR_TYPES,
+        ErrorRecorder,
+        MAError,
+        RMSError,
+    )
+    from sevenn.train.loss import ForceLoss, PerAtomEnergyLoss, StressLoss
+
     metrics = []
     BASE = deepcopy(ERROR_TYPES)
     for loss_function, _ in loss_functions:
@@ -180,17 +187,19 @@ def _map_old_model(old_model_state_dict):
         'EdgeEmbedding': 'edge_embedding',
         'reducing nn input to hidden': 'reduce_input_to_hidden',
         'reducing nn hidden to energy': 'reduce_hidden_to_energy',
-        'rescale atomic energy': 'rescale_atomic_energy'
+        'rescale atomic energy': 'rescale_atomic_energy',
     }
     for i in range(10):
-        _old_module_name_mapping[f'{i} self connection intro'] =\
+        _old_module_name_mapping[f'{i} self connection intro'] = (
             f'{i}_self_connection_intro'
-        _old_module_name_mapping[f'{i} convolution'] =\
-            f'{i}_convolution'
-        _old_module_name_mapping[f'{i} self interaction 2'] =\
+        )
+        _old_module_name_mapping[f'{i} convolution'] = f'{i}_convolution'
+        _old_module_name_mapping[f'{i} self interaction 2'] = (
             f'{i}_self_interaction_2'
-        _old_module_name_mapping[f'{i} equivariant gate'] =\
+        )
+        _old_module_name_mapping[f'{i} equivariant gate'] = (
             f'{i}_equivariant_gate'
+        )
 
     new_model_state_dict = {}
     for k, v in old_model_state_dict.items():
@@ -204,7 +213,7 @@ def _map_old_model(old_model_state_dict):
         else:
             new_model_state_dict[k] = v
     return new_model_state_dict
-    
+
 
 def model_from_checkpoint(checkpoint):
     from sevenn._const import (
@@ -242,16 +251,18 @@ def model_from_checkpoint(checkpoint):
         if isinstance(v, torch.Tensor):
             config[k] = v.cpu()
 
-    if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == "XPLOR" and\
-        config[KEY.SELF_CONNECTION_TYPE] == "MACE":
+    if (
+        config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR'
+        and config[KEY.SELF_CONNECTION_TYPE] == 'MACE'
+    ):
         warnings.warn(
-            "Note that the potential you're loading trained on "
-            "WRONG cutoff function. We revised them correctly in this version. "
-            "Please 1) re-train with but with self_connection_type='linear' "
-            "or 2) use correct SevenNet-0 from github.",
+            "Note that the potential you're loading trained on WRONG cutoff"
+            " function. We revised them correctly in this version. Please 1)"
+            " re-train with but with self_connection_type='linear' or 2) use"
+            " correct SevenNet-0 from github.",
             UserWarning,
         )
-        config[KEY.SELF_CONNECTION_TYPE] = "linear"
+        config[KEY.SELF_CONNECTION_TYPE] = 'linear'
 
     model = build_E3_equivariant_model(config)
     missing, _ = model.load_state_dict(model_state_dict, strict=False)
@@ -263,12 +274,12 @@ def model_from_checkpoint(checkpoint):
 
     assert len(missing) == 0, f'Missing keys: {missing}'
 
-
     return model, config
 
 
 def unlabeled_atoms_to_input(atoms, cutoff):
     from sevenn.atom_graph_data import AtomGraphData
+
     atom_graph = AtomGraphData.from_numpy_dict(
         sevenn.train.dataload.unlabeled_atoms_to_graph(atoms, cutoff)
     )
@@ -375,4 +386,3 @@ def print_tensor_info(tensor):
     print('Requires Gradient: ', tensor.requires_grad)
     print('Grad Function: ', tensor.grad_fn)
     print('Gradient: ', tensor.grad)
-
