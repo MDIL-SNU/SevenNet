@@ -142,7 +142,7 @@ class Logger(metaclass=Singleton):
             content += '\n'
         self.write(content)
 
-    # TODO : refactoring!!!, this is not loss, rmse
+    # deprecated (see error recorer)
     def epoch_write_loss(self, train_loss, valid_loss):
         lb_pad = 21
         fs = 6

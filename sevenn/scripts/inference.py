@@ -80,12 +80,10 @@ def poscars_to_atoms(poscars: List[str]):
 
 
 def write_inference_csv(output_list, rmse_dct, out, no_ref):
-    is_stress = 'STRESS' in rmse_dct
     for i, output in enumerate(output_list):
         output = output.fit_dimension()
-        if is_stress:
-            output[KEY.STRESS] = output[KEY.STRESS] * 1602.1766208
-            output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
+        output[KEY.STRESS] = output[KEY.STRESS] * 1602.1766208
+        output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
         output_list[i] = output.to_numpy_dict()
 
     per_graph_keys = [
@@ -136,8 +134,7 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
         with open(f'{out}/rmse.txt', 'w') as f:
             f.write(f"Energy rmse (eV/atom): {rmse_dct['ENERGY']}\n")
             f.write(f"Force rmse (eV/A): {rmse_dct['FORCE']}\n")
-            if is_stress:
-                f.write(f"Stress rmse (kbar): {rmse_dct['STRESS']}\n")
+            f.write(f"Stress rmse (kbar): {rmse_dct['STRESS']}\n")
 
     try:
         with open(f'{out}/info.csv', 'w', newline='') as f:
@@ -204,16 +201,9 @@ def inference_main(
         inference_set = AtomGraphDataset(data_list, cutoff)
 
     inference_set.x_to_one_hot_idx(type_map)
-    if config[KEY.IS_TRAIN_STRESS]:
-        inference_set.toggle_requires_grad_of_data(KEY.POS, True)
-        is_stress = True
-    else:
-        inference_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
-        is_stress = False
+    inference_set.toggle_requires_grad_of_data(KEY.POS, True)
 
-    loss_types = [LossType.ENERGY, LossType.FORCE]
-    if is_stress:
-        loss_types.append(LossType.STRESS)
+    loss_types = [LossType.ENERGY, LossType.FORCE, LossType.STRESS]
 
     l2_err = {k: AverageNumber() for k in loss_types}
     infer_list = inference_set.to_list()

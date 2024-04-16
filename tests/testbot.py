@@ -60,7 +60,7 @@ def subprocess_routine(cmd, name, print_stdout=False):
 def greeting():
     global e3gnn_found, e3gnn_parallel_found
     global RTOL, ATOL
-    print(f'SEVENNet version {SEVENN_VERSION}')
+    print(f'SevenNet version {SEVENN_VERSION}')
     print(f'PyTorch version {torch.__version__}')
     print(f'ASE version {ase.__version__}')
 
@@ -260,8 +260,7 @@ def sevenn_inferece_test(cp_path: str):
 
     with open('./inference/rmse.txt', 'r') as f:
         lines = f.readlines()
-    is_stress = os.path.exists('./inference/stress.csv')
-    delm = 3 if is_stress else 2
+    delm = 2  # energy and force (stress RMSE might missing)
     rmse_dct = {l.split()[0]: float(l.split()[-1]) for l in lines[:delm]}
 
     infer_atoms = sevenn_infer_to_atoms('./inference')
@@ -477,7 +476,7 @@ def compare_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-8):
         if not flag:
             raise ValueError('atoms1 and atoms2 have different forces')
         else:
-            print("Warning: force comparison failed, but within atol={atol}")
+            print(f"Warning: force comparison failed, but within atol={atol}")
 
     try:
         s1 = atoms1.get_stress(voigt=False)

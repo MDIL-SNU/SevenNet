@@ -106,10 +106,6 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     data_key_weight_input = KEY.EDGE_EMBEDDING  # default
 
     # parameter initialization
-    is_stress = (
-        model_config[KEY.IS_TRACE_STRESS] or model_config[KEY.IS_TRAIN_STRESS]
-    )
-
     cutoff = model_config[KEY.CUTOFF]
     num_species = model_config[KEY.NUM_SPECIES]
 
@@ -179,10 +175,10 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         # operate on r/||r||
         spherical_module=SphericalEncoding(lmax_edge, -1 if is_parity else 1),
     )
-    if is_stress:
+    if not parallel:
         layers.update({
             # simple edge preprocessor module with no param
-            'edge_preprocess': EdgePreprocess(is_stress),
+            'edge_preprocess': EdgePreprocess(is_stress=True),
         })
 
     layers.update({
@@ -422,7 +418,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             data_key_energy=KEY.PRED_TOTAL_ENERGY,
             data_key_force=KEY.PRED_FORCE,
         )
-        gradient_module = fso if is_stress else fof
+        gradient_module = fso if not parallel else fof
         layers.update({'force_output': gradient_module})
 
     # output extraction part
