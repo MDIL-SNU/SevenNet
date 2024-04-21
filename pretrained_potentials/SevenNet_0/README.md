@@ -1,6 +1,8 @@
 ## SevenNet-0
 SevenNet-0 is an interatomic potential pre-trained on the [M3GNet dataset](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599).
 
+**Warning:** If you used SevenNet-0 before April 23, 2024, you might be using the problematic version. Please refer to ./archive/240423_SevenNet_0/README.md for guidance.
+
 It can be directly applied to any system without training and fine-tuned with another dataset if accuracy is unsatisfactory.
 
 - checkpoint_sevennet_0.pth: checkpoint of SevenNet-0 model.
@@ -24,3 +26,4 @@ $ sevenn_get_model {-p} checkpoint_sevennet_0.pth
 ```
 Refer to example_inputs/md_{serial/parallel}_example/ for their usage in LAMMPS.
 Both serial and parallel model gives the same results but the parallel model enable multi-GPU MD simulation.
+
