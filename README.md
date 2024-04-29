@@ -67,14 +67,14 @@ If you want to use SevenNet-0, you can do something like below
 ```bash
 echo "export SEVENNET_0_CP={PATH_TO_SEVENNET}/pretrained_potentials/SevenNet_0/checkpoint_sevennet_0.pth" >> ~/.bashrc
 ```
-SevenNetCalculator try to read SEVENNET_0_CP environment variable.
+SevenNetCalculator tries to read the SEVENNET_0_CP environment variable.
 
 ```python
 import sevenn.sevennet_calculator import SevenNetCalculator
 sevenet_0_cal = SevenNetCalculator(device='cpu')
 ```
 
-### Training sevenn
+### Training
 
 ```
 cd example_inputs/training
@@ -95,7 +95,7 @@ torchrun --standalone --nnodes={# of nodes} --nproc_per_node {# of GPUs} --no_py
 ```
 Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 
-### Sevenn_inference
+### sevenn_inference
 
 Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at the same directory
 ```
@@ -105,7 +105,7 @@ sevenn_inference checkpoint_best.pt ../data/label_1/*
 This will create dir 'sevenn_infer_result'. It includes .csv files that enumerate prediction/reference results of energy and force on OUTCARs in `data/label_1` directory.
 You can try `sevenn_inference --help` for more information on this command.
 
-### Sevenn_get_model
+### sevenn_get_model
 
 Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at the same directory
 ```
