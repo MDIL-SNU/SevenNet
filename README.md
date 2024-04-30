@@ -58,7 +58,7 @@ For its detailed usage, please check [SevenNet Calculator for ASE](#sevennet-cal
 ### SevenNet Calculator for ASE
 
 ```python
-import sevenn.sevennet_calculator import SevenNetCalculator
+from sevenn.sevennet_calculator import SevenNetCalculator
 checkpoint_path = ### PATH TO CHECKPOINT ###
 sevenet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
 ```
@@ -70,7 +70,7 @@ echo "export SEVENNET_0_CP={PATH_TO_SEVENNET}/pretrained_potentials/SevenNet_0/c
 SevenNetCalculator tries to read the SEVENNET_0_CP environment variable.
 
 ```python
-import sevenn.sevennet_calculator import SevenNetCalculator
+from sevenn.sevennet_calculator import SevenNetCalculator
 sevenet_0_cal = SevenNetCalculator(device='cpu')
 ```
 
