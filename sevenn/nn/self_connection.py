@@ -20,27 +20,27 @@ class SelfConnectionIntro(nn.Module):
         irreps_out: Irreps,
         data_key_x: str = KEY.NODE_FEATURE,
         data_key_operand: str = KEY.NODE_ATTR,
-        **kwargs,
+        **kwargs,  # for compatibility
     ):
         super().__init__()
 
         self.fc_tensor_product = FullyConnectedTensorProduct(
             irreps_x, irreps_operand, irreps_out
         )
-        self.KEY_X = data_key_x
-        self.KEY_OPERAND = data_key_operand
+        self.key_x = data_key_x
+        self.key_operand = data_key_operand
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         data[KEY.SELF_CONNECTION_TEMP] = self.fc_tensor_product(
-            data[self.KEY_X], data[self.KEY_OPERAND]
+            data[self.key_x], data[self.key_operand]
         )
         return data
 
 
 @compile_mode('script')
-class SelfConnectionMACEIntro(nn.Module):
+class SelfConnectionLinearIntro(nn.Module):
     """
-    MACE style self connection update
+    Linear style self connection update
     """
 
     def __init__(
@@ -48,14 +48,14 @@ class SelfConnectionMACEIntro(nn.Module):
         irreps_x: Irreps,
         irreps_out: Irreps,
         data_key_x: str = KEY.NODE_FEATURE,
-        **kwargs,
+        **kwargs,  # for compatibility
     ):
         super().__init__()
         self.linear = Linear(irreps_x, irreps_out)
-        self.KEY_X = data_key_x
+        self.key_x = data_key_x
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[KEY.SELF_CONNECTION_TEMP] = self.linear(data[self.KEY_X])
+        data[KEY.SELF_CONNECTION_TEMP] = self.linear(data[self.key_x])
         return data
 
 
@@ -69,12 +69,11 @@ class SelfConnectionOutro(nn.Module):
     def __init__(
         self,
         data_key_x: str = KEY.NODE_FEATURE,
-        **kwargs,
     ):
         super().__init__()
-        self.KEY_X = data_key_x
+        self.key_x = data_key_x
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[self.KEY_X] = data[self.KEY_X] + data[KEY.SELF_CONNECTION_TEMP]
+        data[self.key_x] = data[self.key_x] + data[KEY.SELF_CONNECTION_TEMP]
         del data[KEY.SELF_CONNECTION_TEMP]
         return data

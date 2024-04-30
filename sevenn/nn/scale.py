@@ -29,11 +29,11 @@ class Rescale(nn.Module):
         self.scale = nn.Parameter(
             torch.FloatTensor([scale]), requires_grad=train_shift_scale
         )
-        self.KEY_INPUT = data_key_in
-        self.KEY_OUTPUT = data_key_out
+        self.key_input = data_key_in
+        self.key_output = data_key_out
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[self.KEY_OUTPUT] = data[self.KEY_INPUT] * self.scale + self.shift
+        data[self.key_output] = data[self.key_input] * self.scale + self.shift
 
         return data
 
@@ -60,13 +60,13 @@ class SpeciesWiseRescale(nn.Module):
         self.scale = nn.Parameter(
             torch.FloatTensor(scale), requires_grad=train_shift_scale
         )
-        self.KEY_INPUT = data_key_in
-        self.KEY_OUTPUT = data_key_out
-        self.KEY_INDICIES = data_key_indicies
+        self.key_input = data_key_in
+        self.key_output = data_key_out
+        self.key_indicies = data_key_indicies
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        indicies = data[self.KEY_INDICIES]
-        data[self.KEY_OUTPUT] = data[self.KEY_INPUT] * self.scale[
+        indicies = data[self.key_indicies]
+        data[self.key_output] = data[self.key_input] * self.scale[
             indicies
         ].view(-1, 1) + self.shift[indicies].view(-1, 1)
 

@@ -1,8 +1,5 @@
 import os
-import pickle
-from typing import List, Optional
 
-import sevenn._keys as KEY
 from sevenn.sevenn_logger import Logger
 from sevenn.train.dataload import file_to_dataset, match_reader
 from sevenn.train.dataset import AtomGraphDataset

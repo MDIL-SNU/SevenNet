@@ -24,16 +24,16 @@ class IrrepsLinear(nn.Module):
         **e3nn_linear_params,
     ):
         super().__init__()
-        self.KEY_INPUT = data_key_in
+        self.key_input = data_key_in
         if data_key_out is None:
-            self.KEY_OUTPUT = data_key_in
+            self.key_output = data_key_in
         else:
-            self.KEY_OUTPUT = data_key_out
+            self.key_output = data_key_out
 
         self.linear = Linear(irreps_in, irreps_out, **e3nn_linear_params)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[self.KEY_OUTPUT] = self.linear(data[self.KEY_INPUT])
+        data[self.key_output] = self.linear(data[self.key_input])
         return data
 
 
@@ -53,8 +53,8 @@ class AtomReduce(nn.Module):
     ):
         super().__init__()
 
-        self.KEY_INPUT = data_key_in
-        self.KEY_OUTPUT = data_key_out
+        self.key_input = data_key_in
+        self.key_output = data_key_out
         self.constant = constant
         self.reduce = reduce
 
@@ -63,19 +63,19 @@ class AtomReduce(nn.Module):
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self._is_batch_data:
-            data[self.KEY_OUTPUT] = (
+            data[self.key_output] = (
                 scatter(
-                    data[self.KEY_INPUT],
+                    data[self.key_input],
                     data[KEY.BATCH],
                     dim=0,
                     reduce=self.reduce,
                 )
                 * self.constant
             )
-            data[self.KEY_OUTPUT] = data[self.KEY_OUTPUT].squeeze(1)
+            data[self.key_output] = data[self.key_output].squeeze(1)
         else:
-            data[self.KEY_OUTPUT] = (
-                torch.sum(data[self.KEY_INPUT]) * self.constant
+            data[self.key_output] = (
+                torch.sum(data[self.key_input]) * self.constant
             )
 
         return data
@@ -85,8 +85,6 @@ class AtomReduce(nn.Module):
 class FCN_e3nn(nn.Module):
     """
     wrapper class of e3nn FullyConnectedNet
-    doesn't necessarily have irrpes since it is only
-    applicable scalar but for consistency(?_?)
     """
 
     def __init__(
@@ -100,14 +98,14 @@ class FCN_e3nn(nn.Module):
         **e3nn_params,
     ):
         super().__init__()
-        self.KEY_INPUT = data_key_in
+        self.key_input = data_key_in
         self.irreps_in = irreps_in
         if data_key_out is None:
-            self.KEY_OUTPUT = data_key_in
+            self.key_output = data_key_in
         else:
-            self.KEY_OUTPUT = data_key_out
+            self.key_output = data_key_out
 
-        for mul, irrep in irreps_in:
+        for _, irrep in irreps_in:
             assert irrep.is_scalar()
         inp_dim = irreps_in.dim
 
@@ -118,5 +116,5 @@ class FCN_e3nn(nn.Module):
         )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[self.KEY_OUTPUT] = self.fcn(data[self.KEY_INPUT])
+        data[self.key_output] = self.fcn(data[self.key_input])
         return data

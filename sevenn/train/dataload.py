@@ -2,7 +2,7 @@ import os.path
 import pickle
 from functools import partial
 from itertools import islice
-from typing import Dict, List, Optional
+from typing import List, Optional
 
 import ase
 import ase.io
@@ -25,6 +25,7 @@ from braceexpand import braceexpand
 import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
+
 
 def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
     pos = atoms.get_positions()
@@ -66,6 +67,7 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
     data[KEY.INFO] = {}
     return data
 
+
 def atoms_to_graph(
     atoms: ase.Atoms, cutoff: float, transfer_info: bool = True
 ):
@@ -91,7 +93,7 @@ def atoms_to_graph(
 
     try:
         y_energy = atoms.get_potential_energy(force_consistent=True)
-    except NotImplementedError as e:
+    except NotImplementedError:
         y_energy = atoms.get_potential_energy()
     y_force = atoms.get_forces(apply_constraint=False)
     try:
@@ -101,7 +103,7 @@ def atoms_to_graph(
         # So we restore it
         y_stress = -1 * atoms.get_stress()
         y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
-    except RuntimeError as e:
+    except RuntimeError:
         y_stress = None
 
     pos = atoms.get_positions()
@@ -144,7 +146,7 @@ def atoms_to_graph(
         KEY.NUM_ATOMS: len(atomic_numbers),
         KEY.PER_ATOM_ENERGY: y_energy / len(pos),
     }
-    # data.num_nodes = data[KEY.NUM_ATOMS]  # is it really necessary?
+
     if transfer_info and atoms.info is not None:
         data[KEY.INFO] = atoms.info
     else:
@@ -247,7 +249,7 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
 
     raw_str_dict = {}
     label = 'Default'
-    for i, line in enumerate(lines):
+    for line in lines:
         if line.strip() == '':
             continue
         tmp_label = parse_label(line)
@@ -271,10 +273,6 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
             index = string2index(index_expr)
             for expanded_filename in list(braceexpand(files_expr)):
                 f_stream = open(expanded_filename, 'r')
-                """
-                stct_lists += io.read(expanded_filename, index=index_expr,
-                                      format=format_outputs, parallel=False)
-                """
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
                 try:

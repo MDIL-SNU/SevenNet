@@ -1,3 +1,4 @@
+import warnings
 from collections import OrderedDict
 from typing import Dict
 
@@ -20,13 +21,18 @@ class AtomGraphSequential(nn.Sequential):
     def __init__(
         self,
         modules: Dict[str, nn.Module],
-        cutoff: float,
-        type_map: Dict[int, int]
+        cutoff: float = 0.0,
+        type_map: Dict[int, int] = {-1: -1},
     ):
         if type(modules) != OrderedDict:
             modules = OrderedDict(modules)
         self.cutoff = cutoff
         self.type_map = type_map
+        if cutoff == 0.0:
+            warnings.warn('cutoff is 0.0 or not given', UserWarning)
+        if type_map == {-1: -1}:
+            warnings.warn('type_map is not given', UserWarning)
+
         super().__init__(modules)
 
     def set_is_batch_data(self, flag: bool):
@@ -64,8 +70,8 @@ class AtomGraphSequential(nn.Sequential):
         User must call this function first before the forward
         if the data is not one-hot encoded
         """
-        if self.type_map is None:
-            raise ValueError("type_map is not set")
+        if self.type_map is {-1: -1}:
+            raise ValueError('type_map is not set')
         device = data[KEY.NODE_FEATURE].device
         data[KEY.NODE_FEATURE] = torch.LongTensor(
             [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
