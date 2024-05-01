@@ -182,23 +182,15 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     cutoff = model_config[KEY.CUTOFF]
     num_species = model_config[KEY.NUM_SPECIES]
     feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]
-
-    lmax = model_config[KEY.LMAX]
-    lmax_edge = (
-        model_config[KEY.LMAX_EDGE]
-        if model_config[KEY.LMAX_EDGE] >= 0
-        else lmax
-    )
-    lmax_node = (
-        model_config[KEY.LMAX_NODE]
-        if model_config[KEY.LMAX_NODE] >= 0
-        else lmax
-    )
     num_convolution_layer = model_config[KEY.NUM_CONVOLUTION]
     is_parity = model_config[KEY.IS_PARITY]  # boolean
-    irreps_filter = Irreps.spherical_harmonics(
-        lmax_edge, -1 if is_parity else 1
-    )
+
+    lmax_node = lmax_edge = model_config[KEY.LMAX]
+    if model_config[KEY.LMAX_EDGE] > 0:
+        lmax_edge = model_config[KEY.LMAX_EDGE]
+    if model_config[KEY.LMAX_EDGE] > 0:
+        lmax_node = model_config[KEY.LMAX_EDGE]
+
     irreps_manual = None
     if model_config[KEY.IRREPS_MANUAL] is not False:
         irreps_manual = model_config[KEY.IRREPS_MANUAL]
@@ -206,7 +198,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             irreps_manual = [Irreps(irr) for irr in irreps_manual]
             assert len(irreps_manual) == num_convolution_layer + 1
         except Exception:
-            raise RuntimeError('invalid irreps_manual input given')
+            raise RuntimeError('invalid irreps_manual input')
 
     radial_basis_module, radial_basis_num = init_radial_basis(model_config)
     cutoff_function_module = init_cutoff_function(model_config)
@@ -222,6 +214,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         cutoff_module=cutoff_function_module,
         spherical_module=SphericalEncoding(lmax_edge, -1 if is_parity else 1),
     )
+    irreps_filter = edge_embedding.spherical.irreps_out
     layers.update({'edge_preprocess': EdgePreprocess(is_stress=True)})
     layers.update({'edge_embedding': edge_embedding})
 
@@ -271,7 +264,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             irreps_out_tp,
             irreps_out,
             weight_nn_layers,
-            avg_num_neigh[t] ** 0.5,
+            avg_num_neigh[t],
             t,
             parallel
         )

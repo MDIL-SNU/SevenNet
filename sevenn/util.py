@@ -180,7 +180,7 @@ def onehot_to_chem(one_hot_indicies, type_map):
 
 def _map_old_model(old_model_state_dict):
     """
-    For compatibility with old namings (before 'correct' branch merged 2404XX)
+    For compatibility with old namings (before 'correct' branch merged 240501)
     Map old model's module names to new model's module names
     """
     _old_module_name_mapping = {
@@ -238,6 +238,9 @@ def model_from_checkpoint(checkpoint):
 
     model_state_dict = checkpoint['model_state_dict']
     config = checkpoint['config']
+
+    if not config[KEY.OPTIMIZE_BY_REDUCE]:
+        raise ValueError("This potential file is no longer supported")
 
     for k, v in defaults.items():
         if k not in config:

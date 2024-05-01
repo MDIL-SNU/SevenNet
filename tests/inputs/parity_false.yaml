@@ -14,7 +14,6 @@ model:
 
     train_shift_scale: False
     train_avg_num_neigh: False
-    optimize_by_reduce: False
     use_bias_in_linear: False
 
 train:
