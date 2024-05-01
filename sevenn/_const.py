@@ -118,7 +118,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.AVG_NUM_NEIGH: True,
     KEY.TRAIN_AVG_NUM_NEIGH: False,
     KEY.TRAIN_SHIFT_SCALE: False,
-    KEY.OPTIMIZE_BY_REDUCE: False,
+    KEY.OPTIMIZE_BY_REDUCE: True,
     KEY.USE_BIAS_IN_LINEAR: False,
     KEY.READOUT_AS_FCN: False,
     # Applied af readout as fcn is True
