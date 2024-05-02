@@ -1,7 +1,9 @@
+from typing import Union
 import warnings
 
 import numpy as np
 import torch
+from e3nn.o3 import Irreps, FullTensorProduct
 
 import sevenn._keys as KEY
 import sevenn.train.dataload
@@ -372,6 +374,33 @@ def load_model_from_checkpoint(checkpoint):
     model.load_state_dict(model_state_dict, strict=False)
 
     return model
+
+
+def infer_irreps_out(
+    irreps_x: Irreps,
+    irreps_operand: Irreps,
+    drop_l: Union[bool, int] = False,
+    parity_mode: str = 'full',
+    fix_multiplicity: Union[bool, int] = False,
+):
+    assert parity_mode in ['full', 'even', 'sph']
+    # (mul, (ir, p))
+    irreps_out = FullTensorProduct(
+        irreps_x, irreps_operand
+    ).irreps_out.simplify()
+    new_irreps_elem = []
+    for mul, (l, p) in irreps_out:
+        elem = (mul, (l, p))
+        if drop_l is not False and l > drop_l:
+            continue
+        if parity_mode is 'even' and p == -1:
+            continue
+        elif parity_mode is 'sph' and p != (-1)**l:
+            continue
+        if fix_multiplicity:
+            elem = (fix_multiplicity, (l, p))
+        new_irreps_elem.append(elem)
+    return Irreps(new_irreps_elem)
 
 
 def print_tensor_info(tensor):

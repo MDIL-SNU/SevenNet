@@ -1,11 +1,11 @@
 import warnings
 from collections import OrderedDict
-from typing import Union
 
-from e3nn.o3 import FullTensorProduct, Irreps
+from e3nn.o3 import Irreps
 
 import sevenn._const as _const
 import sevenn._keys as KEY
+import sevenn.util as util
 from .nn.edge_embedding import (
     BesselBasis,
     EdgeEmbedding,
@@ -18,7 +18,15 @@ from .nn.force_output import ForceStressOutput
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
 from .nn.node_embedding import OnehotEmbedding
 from .nn.scale import Rescale, SpeciesWiseRescale
-from .nn.interaction_blocks import _NequIP_interaction_block
+from .nn.self_connection import (
+    SelfConnectionIntro,
+    SelfConnectionLinearIntro,
+    SelfConnectionOutro,
+)
+from .nn.interaction_blocks import (
+    NequIP_interaction_block,
+    MACE_interaction_block,
+)
 from .nn.sequential import AtomGraphSequential
 
 # warning from PyTorch, about e3nn type annotations
@@ -31,28 +39,19 @@ warnings.filterwarnings(
 )
 
 
-def infer_irreps_out(
-    irreps_x: Irreps,
-    irreps_operand: Irreps,
-    drop_l: Union[bool, int] = False,
-    fix_multiplicity: Union[bool, int] = False,
-    only_even_p: bool = False,
-):
-    # (mul, (ir, p))
-    irreps_out = FullTensorProduct(
-        irreps_x, irreps_operand
-    ).irreps_out.simplify()
-    new_irreps_elem = []
-    for mul, (l, p) in irreps_out:
-        elem = (mul, (l, p))
-        if drop_l is not False and l > drop_l:
-            continue
-        if only_even_p and p == -1:
-            continue
-        if fix_multiplicity:
-            elem = (fix_multiplicity, (l, p))
-        new_irreps_elem.append(elem)
-    return Irreps(new_irreps_elem)
+def init_self_connection(config):
+    self_connection_type = config[KEY.SELF_CONNECTION_TYPE]
+    intro, outro = None, None
+    if self_connection_type == 'none':
+        pass
+    elif self_connection_type == 'nequip':
+        intro, outro = SelfConnectionIntro, SelfConnectionOutro
+        return SelfConnectionIntro, SelfConnectionOutro
+    elif self_connection_type == 'linear':
+        intro, outro = SelfConnectionLinearIntro, SelfConnectionOutro
+    else:
+        raise ValueError('something went wrong...')
+    return intro, outro
 
 
 def init_radial_basis(config):
@@ -75,36 +74,21 @@ def init_cutoff_function(config):
         return PolynomialCutoff(p, cutoff)
     elif cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
         return XPLORCutoff(cutoff_function_dct['cutoff_on'], cutoff)
-
     raise RuntimeError('something went very wrong...')
 
 
 def _to_parallel_model(layers: OrderedDict, config):
+    num_classes = layers['onehot_idx_to_onehot'].num_classes
+    one_hot_irreps = Irreps(f'{num_classes}x0e')
+    irreps_node_zero = layers['onehot_to_feature_x'].linear.irreps_out
+
     layers = list(layers.items())
     layers_list = []
 
-    num_species = config[KEY.NUM_SPECIES]
-    one_hot_irreps = Irreps(f'{num_species}x0e')
-    feature_multiplicity = config[KEY.NODE_FEATURE_MULTIPLICITY]
-    irreps_manual = None
     is_parity = config[KEY.IS_PARITY]  # boolean
     lmax = config[KEY.LMAX]
-    lmax_edge = config[KEY.LMAX_EDGE] if config[KEY.LMAX_EDGE] >= 0 else lmax
+    lmax_edge = config[KEY.LMAX_EDGE] if config[KEY.LMAX_EDGE] > 0 else lmax
     num_convolution_layer = config[KEY.NUM_CONVOLUTION]
-
-    if config[KEY.IRREPS_MANUAL] is not False:
-        irreps_manual = config[KEY.IRREPS_MANUAL]
-        try:
-            irreps_manual = [Irreps(irr) for irr in irreps_manual]
-            assert len(irreps_manual) == num_convolution_layer + 1
-        except Exception:
-            raise RuntimeError('invalid irreps_manual input given')
-
-    irreps_node_zero = (
-        Irreps(f'{feature_multiplicity}x0e')
-        if irreps_manual is None
-        else irreps_manual[0]
-    )
 
     def insert_after(module_name_after, key_module_pair, layers):
         idx = -1
@@ -131,7 +115,7 @@ def _to_parallel_model(layers: OrderedDict, config):
     layers = insert_after('onehot_to_feature_x', (
         'one_hot_ghost', OnehotEmbedding(
              data_key_x=KEY.NODE_FEATURE_GHOST,
-             num_classes=num_species,
+             num_classes=num_classes,
              data_key_save=None,
              data_key_additional=None,
          )), layers
@@ -175,40 +159,45 @@ def _to_parallel_model(layers: OrderedDict, config):
 
 
 # TODO: it gets bigger and bigger. refactor it
-def build_E3_equivariant_model(model_config: dict, parallel=False):
+def build_E3_equivariant_model(config: dict, parallel=False):
     layers = OrderedDict()
 
     ################## initialize ####################
-    cutoff = model_config[KEY.CUTOFF]
-    num_species = model_config[KEY.NUM_SPECIES]
-    feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]
-    num_convolution_layer = model_config[KEY.NUM_CONVOLUTION]
-    is_parity = model_config[KEY.IS_PARITY]  # boolean
+    cutoff = config[KEY.CUTOFF]
+    num_species = config[KEY.NUM_SPECIES]
+    feature_multiplicity = config[KEY.NODE_FEATURE_MULTIPLICITY]
+    num_convolution_layer = config[KEY.NUM_CONVOLUTION]
+    is_parity = config[KEY.IS_PARITY]  # boolean
+    interaction_type = config[KEY.INTERACTION_TYPE]
+    use_bias_in_linear = config[KEY.USE_BIAS_IN_LINEAR]
 
-    lmax_node = lmax_edge = model_config[KEY.LMAX]
-    if model_config[KEY.LMAX_EDGE] > 0:
-        lmax_edge = model_config[KEY.LMAX_EDGE]
-    if model_config[KEY.LMAX_EDGE] > 0:
-        lmax_node = model_config[KEY.LMAX_EDGE]
+    lmax_node = lmax_edge = config[KEY.LMAX]
+    if config[KEY.LMAX_EDGE] > 0:
+        lmax_edge = config[KEY.LMAX_EDGE]
+    if config[KEY.LMAX_NODE] > 0:
+        lmax_node = config[KEY.LMAX_EDGE]
+
+    act_radial = _const.ACTIVATION[config[KEY.ACTIVATION_RADIAL]]
+    self_connection_pair = init_self_connection(config)
 
     irreps_manual = None
-    if model_config[KEY.IRREPS_MANUAL] is not False:
-        irreps_manual = model_config[KEY.IRREPS_MANUAL]
+    if config[KEY.IRREPS_MANUAL] is not False:
+        irreps_manual = config[KEY.IRREPS_MANUAL]
         try:
             irreps_manual = [Irreps(irr) for irr in irreps_manual]
             assert len(irreps_manual) == num_convolution_layer + 1
         except Exception:
             raise RuntimeError('invalid irreps_manual input')
 
-    radial_basis_module, radial_basis_num = init_radial_basis(model_config)
-    cutoff_function_module = init_cutoff_function(model_config)
+    radial_basis_module, radial_basis_num = init_radial_basis(config)
+    cutoff_function_module = init_cutoff_function(config)
 
-    avg_num_neigh = model_config[KEY.AVG_NUM_NEIGH]
+    avg_num_neigh = config[KEY.AVG_NUM_NEIGH]
     if type(avg_num_neigh) is not list:
         avg_num_neigh = [avg_num_neigh] * num_convolution_layer
+    train_conv_denominator = config[KEY.TRAIN_AVG_NUM_NEIGH]
 
-    use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
-
+    #-----------------------model definition-------------------------#
     edge_embedding = EdgeEmbedding(
         basis_module=radial_basis_module,
         cutoff_module=cutoff_function_module,
@@ -221,8 +210,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     one_hot_irreps = Irreps(f'{num_species}x0e')
     irreps_x = (
         Irreps(f'{feature_multiplicity}x0e')
-        if irreps_manual is None
-        else irreps_manual[0]
+        if irreps_manual is None else irreps_manual[0]
     )
     layers.update({
         'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
@@ -234,45 +222,77 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         ),
     })
 
-    weight_nn_hidden = model_config[KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS]
+    weight_nn_hidden = config[KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS]
     weight_nn_layers = [radial_basis_num] + weight_nn_hidden
 
+    param_interaction_block = {
+        "irreps_filter": irreps_filter,
+        "weight_nn_layers": weight_nn_layers,
+        "conv_denominator": avg_num_neigh,
+        "train_conv_denominator": train_conv_denominator,
+        "self_connection_pair": self_connection_pair,
+        "act_radial": act_radial,
+        "bias_in_linear": use_bias_in_linear,
+        "num_species": num_species,
+        "parallel": parallel,
+    }
+    interaction_builder = None
+    if interaction_type == 'nequip':
+        act_scalar = {}
+        act_gate = {}
+        for k, v in config[KEY.ACTIVATION_SCARLAR].items():
+            act_scalar[k] = _const.ACTIVATION_DICT[k][v]
+        for k, v in config[KEY.ACTIVATION_GATE].items():
+            act_gate[k] = _const.ACTIVATION_DICT[k][v]
+        param_interaction_block.update({
+            "act_scalar": act_scalar,
+            "act_gate": act_gate,
+        })
+        interaction_builder = NequIP_interaction_block
+    elif interaction_type == 'mace':
+        param_interaction_block.update({
+            "correlation": config[KEY.CORRELATION],
+        })
+        interaction_builder = MACE_interaction_block
+
+
     for t in range(num_convolution_layer):
-        only_even_p = False
-        if t == num_convolution_layer - 1:
-            lmax_node = 0
-            only_even_p = True
+        param_interaction_block.update({
+            "irreps_x": irreps_x, "t": t, 
+            "conv_denominator": avg_num_neigh[t]
+        })
 
-        # irreps out after tensorproduct
-        irreps_out_tp = infer_irreps_out(
-            irreps_x, irreps_filter,
-            drop_l=lmax_node, only_even_p=only_even_p,
-        )
+        if interaction_type == 'nequip':
+            parity_mode = "full"
+            if t == num_convolution_layer - 1:
+                lmax_node = 0
+                parity_mode = "even"
+            irreps_out_tp = util.infer_irreps_out(
+                irreps_x, irreps_filter, lmax_node, parity_mode,
+            )
+        elif interaction_type == 'mace':
+            parity_mode = "sph"
+            irreps_out_tp = util.infer_irreps_out(
+                irreps_x, irreps_filter, lmax_edge, parity_mode,
+            )
+            if t == num_convolution_layer - 1:  # scalar output
+                lmax_node = 0
+                parity_mode = "even"
 
-        # node irreps out
-        irreps_out =\
-            infer_irreps_out(
-                irreps_x, irreps_filter,
-                drop_l=lmax_node, only_even_p=only_even_p,
-                fix_multiplicity=feature_multiplicity,
-            ) if irreps_manual is None else irreps_manual[t + 1]
+        irreps_out = util.infer_irreps_out(
+            irreps_x, irreps_filter, lmax_node, parity_mode,
+            fix_multiplicity=feature_multiplicity,
+        ) if irreps_manual is None else irreps_manual[t + 1]
 
-        interaction_block = _NequIP_interaction_block(
-            model_config,
-            irreps_x,
-            irreps_filter,
-            irreps_out_tp,
-            irreps_out,
-            weight_nn_layers,
-            avg_num_neigh[t],
-            t,
-            parallel
-        )
-        layers.update(interaction_block)
+        param_interaction_block.update({
+            "irreps_out_tp": irreps_out_tp,
+            "irreps_out": irreps_out,
+        })
+        layers.update(interaction_builder(**param_interaction_block))
         irreps_x = irreps_out
-        # end of interaction block for-loop
 
-    if model_config[KEY.READOUT_AS_FCN] is False:
+
+    if config[KEY.READOUT_AS_FCN] is False:
         mid_dim = (
             feature_multiplicity
             if irreps_manual is None
@@ -295,8 +315,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             ),
         })
     else:
-        act = _const.ACTIVATION[model_config[KEY.READOUT_FCN_ACTIVATION]]
-        hidden_neurons = model_config[KEY.READOUT_FCN_HIDDEN_NEURONS]
+        act = _const.ACTIVATION[config[KEY.READOUT_FCN_ACTIVATION]]
+        hidden_neurons = config[KEY.READOUT_FCN_HIDDEN_NEURONS]
         layers.update({
             'readout_FCN': FCN_e3nn(
                 dim_out=1,
@@ -308,12 +328,12 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             )
         })
 
-    shift = model_config[KEY.SHIFT]
-    scale = model_config[KEY.SCALE]
-    train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
+    shift = config[KEY.SHIFT]
+    scale = config[KEY.SCALE]
+    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
     rescale_module = (
         SpeciesWiseRescale
-        if model_config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
+        if config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
         else Rescale
     )
     layers.update({
@@ -338,9 +358,9 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     layers.update({'force_output': gradient_module})
 
     # output extraction part
-    type_map = model_config[KEY.TYPE_MAP]
+    type_map = config[KEY.TYPE_MAP]
     if parallel:
-        layers_list = _to_parallel_model(layers, model_config)
+        layers_list = _to_parallel_model(layers, config)
         return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
     else:
         return AtomGraphSequential(layers, cutoff, type_map)

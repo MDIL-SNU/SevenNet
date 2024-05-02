@@ -188,8 +188,9 @@ USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'
 
-
+INTERACTION_TYPE = 'interaction_type'
 # From MACE
+CORRELATION = 'correlation'
 
 
 # deprecated

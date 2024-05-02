@@ -370,6 +370,7 @@ class Logger(metaclass=Singleton):
         self.writeline('\n'.join(table_output))
 
     # TODO: print it without config
+    # TODO: refactoring, readout part name :(
     def print_model_info(self, model, config):
         from functools import partial
 
@@ -380,13 +381,24 @@ class Logger(metaclass=Singleton):
         )
         for i in range(config[KEY.NUM_CONVOLUTION]):
             kv_write(
-                f'{i}th node_feature',
+                f'{i}th node',
                 model.get_irreps_in(f'{i}_self_interaction_1'),
             )
-        kv_write(
-            'readout irreps',
-            model.get_irreps_in(f'{i}_equivariant_gate', 'irreps_out'),
-        )
+            kv_write(
+                f'{i}th TP output',
+                model.get_irreps_in(f'{i}_self_interaction_2'),
+            )
+        if config[KEY.INTERACTION_TYPE] == 'nequip':
+            kv_write(
+                'readout irreps',
+                model.get_irreps_in(f'{i}_equivariant_gate', 'irreps_out'),
+            )
+        elif config[KEY.INTERACTION_TYPE] == 'mace':
+            kv_write(
+                'readout irreps',
+                model.get_irreps_in(f'{i}_self_interaction_3', 'irreps_out'),
+            )
+
         shift = model._modules['rescale_atomic_energy'].shift
         scale = model._modules['rescale_atomic_energy'].scale
         if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
@@ -400,7 +412,7 @@ class Logger(metaclass=Singleton):
             for cstr, sh, sc in zip(chem_str, shift, scale):
                 kv_write(f'{cstr}', f'{sh:.6f}, {sc:.6f}')
 
-        self.writeline('Denominator (avg_num_neigh**0.5) for each layer')
+        self.writeline('Denominator (avg_num_neigh) for each layer')
         for i in range(config[KEY.NUM_CONVOLUTION]):
             denominator = model._modules[f'{i}_convolution'].denominator
             kv_write(f'{i}th layer denominator', f'{denominator.item():.6f}')

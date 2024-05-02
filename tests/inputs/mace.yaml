@@ -1,0 +1,46 @@
+model:
+    ########################## CANNOT MODIFY ##########################
+    cutoff: 4.0
+    chemical_species: 'Auto'
+    ########################## CANNOT MODIFY ##########################
+    channel: 4
+    radial_basis:
+        radial_basis_name: 'bessel'
+        bessel_basis_num: 8
+
+    lmax_node: 2
+    lmax_edge: 3
+    num_convolution_layer: 3
+    correlation: 3
+    interaction_type: 'mace'
+
+    train_shift_scale: False
+    train_avg_num_neigh: False
+    use_bias_in_linear: False
+
+train:
+    ########################## CANNOT MODIFY ##########################
+    epoch: 1
+    per_epoch: 5
+    ########################## CANNOT MODIFY ##########################
+    random_seed: 7
+    optimizer: 'adam'
+    optim_param:
+        lr: 0.005
+    scheduler: 'exponentiallr'
+    scheduler_param:
+        gamma: 0.99
+
+    is_train_stress: True  # True by default
+
+data:
+    #save_dataset_path: 'total' #path or filename to save total dataset
+    #save_by_label: True
+    #structure_list: './structure_list'
+
+    ########################## CANNOT MODIFY ##########################
+    batch_size: 1
+    load_dataset_path: './data.sevenn_data'
+    load_validset_path: './data.sevenn_data'
+    ########################## CANNOT MODIFY ##########################
+    #save_by_train_valid: True
