@@ -179,7 +179,6 @@ READOUT_AS_FCN = 'readout_as_fcn'
 READOUT_FCN_HIDDEN_NEURONS = 'readout_fcn_hidden_neurons'
 READOUT_FCN_ACTIVATION = 'readout_fcn_activation'
 
-AVG_NUM_NEIGHBOR = 'avg_num_neigh'  # deprecated
 AVG_NUM_NEIGH = 'avg_num_neigh'
 SHIFT = 'shift'
 SCALE = 'scale'
@@ -189,7 +188,10 @@ USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'
 
-OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
+INTERACTION_TYPE = 'interaction_type'
+# From MACE
+CORRELATION = 'correlation'
+
 
 # deprecated
 DRAW_PARITY = 'draw_parity'
@@ -199,3 +201,5 @@ SAVE_DATA_PICKLE = 'save_data_pickle'
 SKIP_OUTPUT_UNTIL = 'skip_output_until'
 DRAW_LC = 'draw_learning_curve'
 OUTPUT_PER_EPOCH = 'output_per_epoch'
+AVG_NUM_NEIGHBOR = 'avg_num_neigh'
+OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'

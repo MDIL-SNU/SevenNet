@@ -7,8 +7,12 @@ model:
     radial_basis:
         radial_basis_name: 'bessel'
         bessel_basis_num: 8
-    lmax: 2
-    num_convolution_layer: 2
+
+    lmax_node: 2
+    lmax_edge: 3
+    num_convolution_layer: 3
+    correlation: 3
+    interaction_type: 'mace'
 
     train_shift_scale: False
     train_avg_num_neigh: False
@@ -30,7 +34,6 @@ train:
     is_train_stress: True  # True by default
 
 data:
-    use_species_wise_shift_scale: True
     #save_dataset_path: 'total' #path or filename to save total dataset
     #save_by_label: True
     #structure_list: './structure_list'

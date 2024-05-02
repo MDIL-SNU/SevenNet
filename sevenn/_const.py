@@ -12,6 +12,7 @@ IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of paralell model
 IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
+IMPLEMENTED_INTERACTION_TYPE = ['nequip', 'mace']
 
 SUPPORTING_METRICS = ['RMSE', 'ComponentRMSE', 'MAE', 'Loss']
 SUPPORTING_ERROR_TYPES = [
@@ -118,13 +119,15 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.AVG_NUM_NEIGH: True,
     KEY.TRAIN_AVG_NUM_NEIGH: False,
     KEY.TRAIN_SHIFT_SCALE: False,
-    KEY.OPTIMIZE_BY_REDUCE: False,
+    KEY.OPTIMIZE_BY_REDUCE: True,
     KEY.USE_BIAS_IN_LINEAR: False,
     KEY.READOUT_AS_FCN: False,
     # Applied af readout as fcn is True
     KEY.READOUT_FCN_HIDDEN_NEURONS: [30, 30],
     KEY.READOUT_FCN_ACTIVATION: 'relu',
     KEY.SELF_CONNECTION_TYPE: 'nequip',
+    KEY.INTERACTION_TYPE: 'nequip',
+    KEY.CORRELATION: 3,
 }
 
 
@@ -201,7 +204,7 @@ MODEL_CONFIG_CONDITION = {
     ),
     KEY.TRAIN_SHIFT_SCALE: None,
     KEY.TRAIN_AVG_NUM_NEIGH: None,
-    KEY.OPTIMIZE_BY_REDUCE: None,
+    KEY.OPTIMIZE_BY_REDUCE: lambda x: x is True,
     KEY.USE_BIAS_IN_LINEAR: None,
     KEY.READOUT_AS_FCN: None,
     KEY.READOUT_FCN_HIDDEN_NEURONS: lambda x: all(
@@ -210,6 +213,8 @@ MODEL_CONFIG_CONDITION = {
     KEY.READOUT_FCN_ACTIVATION: lambda x: x in ACTIVATION.keys(),
     KEY.ACTIVATION_RADIAL: lambda x: x in ACTIVATION.keys(),
     KEY.SELF_CONNECTION_TYPE: lambda x: x in IMPLEMENTED_SELF_CONNECTION_TYPE,
+    KEY.INTERACTION_TYPE: lambda x: x in IMPLEMENTED_INTERACTION_TYPE,
+    KEY.CORRELATION: lambda x: isinstance(x, int)
 }
 
 
