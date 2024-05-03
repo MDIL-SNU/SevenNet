@@ -6,7 +6,6 @@ import torch
 from e3nn.o3 import Irreps, FullTensorProduct
 
 import sevenn._keys as KEY
-import sevenn.train.dataload
 
 
 class AverageNumber:
@@ -283,10 +282,11 @@ def model_from_checkpoint(checkpoint):
 
 
 def unlabeled_atoms_to_input(atoms, cutoff):
+    from sevenn.train.dataload import unlabeled_atoms_to_graph
     from sevenn.atom_graph_data import AtomGraphData
 
     atom_graph = AtomGraphData.from_numpy_dict(
-        sevenn.train.dataload.unlabeled_atoms_to_graph(atoms, cutoff)
+        unlabeled_atoms_to_graph(atoms, cutoff)
     )
     atom_graph[KEY.POS].requires_grad_(True)
     atom_graph[KEY.BATCH] = torch.zeros([0])
@@ -393,9 +393,9 @@ def infer_irreps_out(
         elem = (mul, (l, p))
         if drop_l is not False and l > drop_l:
             continue
-        if parity_mode is 'even' and p == -1:
+        if parity_mode == 'even' and p == -1:
             continue
-        elif parity_mode is 'sph' and p != (-1)**l:
+        elif parity_mode == 'sph' and p != (-1)**l:
             continue
         if fix_multiplicity:
             elem = (fix_multiplicity, (l, p))
