@@ -175,7 +175,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     if config[KEY.LMAX_EDGE] > 0:
         lmax_edge = config[KEY.LMAX_EDGE]
     if config[KEY.LMAX_NODE] > 0:
-        lmax_node = config[KEY.LMAX_EDGE]
+        lmax_node = config[KEY.LMAX_NODE]
 
     act_radial = _const.ACTIVATION[config[KEY.ACTIVATION_RADIAL]]
     self_connection_pair = init_self_connection(config)
