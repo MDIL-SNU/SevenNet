@@ -18,7 +18,7 @@ The installation and usage of SevenNet are split into two parts: training (handl
   * [Usage](#usage)
     + [SevenNet-0](#sevennet-0)
     + [SevenNet Calculator for ASE](#sevennet-calculator-for-ase)
-    + [Training sevenn](#training-sevenn)
+    + [Training sevenn](#training)
       - [Multi-GPU training](#multi-gpu-training)
     + [sevenn_inference](#sevenn_inference)
     + [sevenn_get_model](#sevenn_get_model)
@@ -49,7 +49,7 @@ pip install .
 ## Usage
 
 ### SevenNet-0
-SevenNet-0 is a pre-trained SevenNet potential on the [`Material Project dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599). You can try SevenNet-0 to your application without training. If the accuracy is unsatisfactory, it can be fine-tuned with SeveNnet.
+SevenNet-0 is a general-purpose interatomic potential trained on the [`Material Project dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599). You can try SevenNet-0 to your application without any training. If the accuracy was unsatisfactory, SevenNet-0 can be [fine-tuned](#Training).
 
 Checkpoint of SevenNet-0 (for use in ASE or fine-tuning) and deployed potentials (for LAMMPS) are located in `{path_to_SevenNet}/pretrained_potentials/SevenNet_0`.
 
@@ -58,7 +58,7 @@ For its detailed usage, please check [SevenNet Calculator for ASE](#sevennet-cal
 ### SevenNet Calculator for ASE
 
 ```python
-import sevenn.sevennet_calculator import SevenNetCalculator
+from sevenn.sevennet_calculator import SevenNetCalculator
 checkpoint_path = ### PATH TO CHECKPOINT ###
 sevenet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
 ```
@@ -70,7 +70,7 @@ echo "export SEVENNET_0_CP={PATH_TO_SEVENNET}/pretrained_potentials/SevenNet_0/c
 SevenNetCalculator tries to read the SEVENNET_0_CP environment variable.
 
 ```python
-import sevenn.sevennet_calculator import SevenNetCalculator
+from sevenn.sevennet_calculator import SevenNetCalculator
 sevenet_0_cal = SevenNetCalculator(device='cpu')
 ```
 
