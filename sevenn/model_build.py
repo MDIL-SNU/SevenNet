@@ -165,13 +165,14 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
     use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
 
+    _normalize_sph = model_config[KEY._NORMALIZE_SPH]
     # model definitions
     edge_embedding = EdgeEmbedding(
         # operate on ||r||
         basis_module=radial_basis_module,
         cutoff_module=cutoff_function_module,
         # operate on r/||r||
-        spherical_module=SphericalEncoding(lmax_edge, -1 if is_parity else 1),
+        spherical_module=SphericalEncoding(lmax_edge, -1 if is_parity else 1, normalize=_normalize_sph),
     )
     if not parallel:
         layers.update({
@@ -308,7 +309,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
                     basis_module=radial_basis_module,
                     cutoff_module=cutoff_function_module,
                     # operate on r/||r||
-                    spherical_module=SphericalEncoding(lmax_edge),
+                    spherical_module=SphericalEncoding(lmax_edge, -1 if is_parity else 1, normalize=_normalize_sph),
                 )
             })
             #######################################################

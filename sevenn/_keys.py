@@ -189,6 +189,7 @@ USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'
 
+_NORMALIZE_SPH = '_normalize_sph'
 OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
 
 # deprecated
