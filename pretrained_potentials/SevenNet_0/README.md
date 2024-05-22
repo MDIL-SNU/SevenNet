@@ -1,5 +1,4 @@
 ## SevenNet-0
-Updated: 2024-05-23
 SevenNet-0 is an interatomic potential pre-trained on the [M3GNet dataset](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599).
 
 **Warning:** Please update the potential with this version if you used SevenNet-0 before May 01, 2024. We deprecated the previous version, which has a bug related to the cutoff function.
@@ -15,9 +14,9 @@ It can be directly applied to any system without training and fine-tuned with an
 
 |                |Energy (eV/atom)|Force (eV/Å)|Stress (GPa)|
 |----------------|--------|-------|-------|
-|Train|0.018|0.041|0.33|
-|Valid|0.033|0.063|0.58|
-|Test|0.025|0.067|0.67|
+|Train|0.015|0.035|0.27|
+|Valid|0.032|0.064|0.56|
+|Test|0.025|0.070|0.68|
 
 
 ### Note

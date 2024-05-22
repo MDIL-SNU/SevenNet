@@ -32,7 +32,7 @@ model:
 
     # ~~~~~ Above settings (which defines model) should be maintained for fine tuning ~~~~~~ #
 
-    #avg_num_neigh: 1368.726 # Denominator for convolution layers in SevenNet 0 (root(1368) = 39). This will be loaded from the checkpoint.
+    #avg_num_neigh: 1368.726 # Denominator for convolution layers in SevenNet 0 (root(1368) = 39), will be read from checkpoint.
     train_shift_scale: True
     train_avg_num_neigh: True
 
@@ -66,10 +66,6 @@ train:
         reset_epoch: True
         checkpoint: './checkpoint_sevennet_0.pth'
         use_statistic_values_of_checkpoint: True # Set True to use shift, scale, and avg_num_neigh from checkpoint or not
-
-    # If the dataset changed (for fine-tuning),
-    # setting 'use_statistic_value_of_checkpoint' to False roughly changes model's accuracy in the beginning of training.
-    # Therefore, we recommend to use it is True.
 
 data:
     batch_size: 8
