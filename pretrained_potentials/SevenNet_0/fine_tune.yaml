@@ -67,10 +67,6 @@ train:
         checkpoint: './checkpoint_sevennet_0.pth'
         use_statistic_values_of_checkpoint: True # Set True to use shift, scale, and avg_num_neigh from checkpoint or not
 
-    # If the dataset changed (for fine-tuning),
-    # setting 'use_statistic_value_of_checkpoint' to False roughly changes model's accuracy in the beginning of training.
-    # We recommand to use it as 'False', and turn train_shift_scale and train_avg_num_neigh to 'True' for fine-tuning dataset adaptation.
-
 data:
     batch_size: 8
     data_divide_ratio: 0.1

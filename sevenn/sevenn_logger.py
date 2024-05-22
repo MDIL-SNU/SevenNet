@@ -303,17 +303,13 @@ class Logger(metaclass=Singleton):
         """
         print some important information from config
         """
-        content = (
-            'succesfully read yaml config!\n\n' + 'from model configuration\n'
-        )
-        for k, v in model_config.items():
-            content += Logger.format_k_v(k, v)
-        content += '\nfrom train configuration\n'
-        for k, v in train_config.items():
-            content += Logger.format_k_v(k, v)
-        content += '\nfrom data configuration\n'
-        for k, v in data_config.items():
-            content += Logger.format_k_v(k, v)
+        content = 'succesfully read yaml config\n'
+        for name, config in zip(["model", "data", "train"], [model_config, data_config, train_config]):
+            content += f'\nfrom {name} configuration\n'
+            for k, v in config.items():
+                if k.startswith("_"):
+                    continue
+                content += Logger.format_k_v(k, v)
         self.write(content)
 
     # TODO: This is not good make own exception

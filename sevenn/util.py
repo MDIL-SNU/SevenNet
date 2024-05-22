@@ -239,6 +239,11 @@ def model_from_checkpoint(checkpoint):
     model_state_dict = checkpoint['model_state_dict']
     config = checkpoint['config']
 
+    ################## for backward compat.
+    if KEY._NORMALIZE_SPH not in config:
+        config[KEY._NORMALIZE_SPH] = False
+    ################## for backward compat.
+
     for k, v in defaults.items():
         if k not in config:
             print(f'Warning: {k} not in config, using default value {v}')

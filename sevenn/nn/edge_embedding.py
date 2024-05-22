@@ -180,7 +180,7 @@ class SphericalEncoding(nn.Module):
     """
 
     def __init__(
-        self, lmax: int, parity: int = -1, normalization: str = 'component'
+        self, lmax: int, parity: int = -1, normalization: str = 'component', normalize = True,
     ):
         super().__init__()
         self.lmax = lmax
@@ -189,7 +189,7 @@ class SphericalEncoding(nn.Module):
         self.irreps_out = Irreps.spherical_harmonics(lmax, parity)
         self.sph = SphericalHarmonics(
             self.irreps_out,
-            normalize=False,
+            normalize=normalize,
             normalization=normalization,
             irreps_in=self.irreps_in,
         )

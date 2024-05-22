@@ -77,6 +77,12 @@ def processing_continue(config):
     check_config_compatible(config, config_cp)
     Logger().write('Checkpoint config is compatible\n')
 
+    ################## for backward compat.
+    if KEY._NORMALIZE_SPH not in config_cp:
+        config_cp.update({KEY._NORMALIZE_SPH: False})
+    config.update({KEY._NORMALIZE_SPH: config_cp[KEY._NORMALIZE_SPH]})
+    ################## for backward compat.
+
     from_epoch = checkpoint['epoch']
     model_state_dict_cp = checkpoint['model_state_dict']
     model_state_dict_cp = util._map_old_model(model_state_dict_cp)

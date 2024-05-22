@@ -24,7 +24,6 @@ model:
     act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip.
     act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip.
 
-    avg_num_neigh       : 1368.726                # Normalize the aggregation of messages by the average number of neighbors calculated from the training set
     train_shift_scale   : False                   # Enable training for shift & scale. Useful if the dataset is augmented
     train_avg_num_neigh : False                   # Enable training for avg_num_neigh. Useful if the dataset is augmented
     optimize_by_reduce: True
