@@ -7,7 +7,7 @@
 
 SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
 
-The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which was not possible despite their superior performance.
+The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which enable large-scale MD simulations or faster MD simulations.
 
 **PLEASE NOTE:** SevenNet is under active development and may not be fully stable.
 
@@ -85,7 +85,7 @@ Examples of `input_full.yaml` can be found under `SevenNet/example_inputs`. The 
 To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
 
 Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned as their default values. You can refer to the log to check the default inputs.
-Currently, detailed explanations of model hyperparameters can be found at [`nequip`](https://github.com/mir-group/nequip), or inside input_full.yaml.
+Currently, detailed explanations of model hyperparameters can be found at `input_full.yaml`.
 
 #### Multi-GPU training
 
@@ -126,16 +126,38 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 * PyTorch (same version as used for training)
 * LAMMPS version of 'stable_2Aug2023' [`LAMMPS`](https://github.com/lammps/lammps)
-* [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
+* (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 
-**PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if it is not available.
+**PLEASE NOTE:** CUDA-aware OpenMPI is optional, but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
 
-Ensure the LAMMPS version (stable_2Aug2023). You can easily switch the version using git from a shell.
+**PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
+
+Ensure the LAMMPS version (stable_2Aug2023). You can easily switch the version using git.
 ```
 $ git clone https://github.com/lammps/lammps.git lammps_dir
 $ cd lammps_dir
-$ git checkout stable_2Aug2023_update3
+$ git checkout stable_2Aug2023
 ```
+
+Run patch_lammps.sh
+```
+$ cd {path_to_SevenNet_root}
+$ sh patch_lammps.sh {path_to_lammps_dir}
+```
+
+Build LAMMPS with cmake (example):
+
+```
+$ cd {path_to_lammps_dir}
+$ mkdir build
+$ cd build
+$ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
+$ make -j4
+```
+
+If you prefer a manual patch, see the notes below.
+
+### Notes
 
 Note that the following commands will overwrite `comm_brick.cpp` and `comm_brick.h` in the original `LAMMPS`. While it does not affect the original functionality of `LAMMPS`, you may want to back up these files from the source if you're unsure.
 
@@ -155,30 +177,12 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
 ```
 
-To build lammps with cmake:
-
-```
-cd lammps
-mkdir build
-cd build
-cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
-```
-
-### Notes
 You can check whether your OpenMPI is CUDA-aware by using `ompi_info` command:
 
 ```
 $ ompi_info --parsable --all | grep mpi_built_with_cuda_support:value
 mca:mpi:base:param:mpi_built_with_cuda_support:value:true
 ```
-We're currently developing other options (other than CUDA-aware OpenMPI) to leverage parallel MD. Please let us know other inter-GPU communication backends you want for the SevenNet.
-
-Incompatibility with other LAMMPS versions usually arises from the modified comm_brick.h/cpp. We will seek a more proper multi-GPU communication implementation without changing the original LAMMPS code.
-However, if you have to use other versions of LAMMPS, you can patch your LAMMPS version by simply putting
-void forward_comm(class PairE3GNNParallel *);
-void reverse_comm(class PairE3GNNParallel *);
-these function declarations under 'public:' of comm_brick.h and copy-pasting bodies of the above functions from 'our' comm_brick.cpp to yours.
-Also, don't forget to `include "pair_e3gnn_parallel.h"` in comm_brick.cpp
 
 ## Usage for LAMMPS
 
@@ -241,7 +245,7 @@ Now, you can execute this LAMMPS script with a prefix for parallel models
 mpirun -np {# of GPUS to use} {LAMMPS_binary} -in {LAMMPS_script} -var pre {PATH TO SEVENNET}/pretrained_potentials/SevenNet_0/parallel_model/
 ```
 
-If a CUDA-aware OpenMPI is not found (it detects automatically in the code), `e3gnn/parallel` will not utilize GPUs even if they are available. You can check whether `OpenMPI` is found or not from the standard output of the `LAMMPS` simulation. Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently. You can select specific GPUs by setting the `CUDA_VISIBLE_DEVICES` environment variable.
+Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently.
 
 **PLEASE NOTE:** Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
 
