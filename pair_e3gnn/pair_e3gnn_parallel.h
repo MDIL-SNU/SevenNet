@@ -31,6 +31,7 @@ private:
   double cutoff_square;
   std::vector<torch::jit::Module> model_list;
   torch::Device device = torch::kCPU;
+  torch::Device device_comm = torch::kCPU;
   torch::Device get_cuda_device();
   bool use_cuda_mpi;
 

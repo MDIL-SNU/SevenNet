@@ -21,7 +21,6 @@
 #include <c10/core/Scalar.h>
 #include <c10/core/TensorOptions.h>
 #include <cstdlib>
-#include <limits>
 #include <numeric>
 #include <string>
 
@@ -38,7 +37,6 @@
 #include "force.h"
 #include "memory.h"
 #include "neigh_list.h"
-#include "neigh_request.h"
 #include "neighbor.h"
 // #include "nvToolsExt.h"
 
@@ -113,8 +111,9 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
 #else
   use_cuda_mpi = false;
 #endif
-  use_cuda_mpi = use_gpu && use_cuda_mpi;
-  if (use_cuda_mpi) {
+  //use_cuda_mpi = use_gpu && use_cuda_mpi;
+  //if (use_cuda_mpi) {
+  if (use_gpu) {
     device = get_cuda_device();
     device_name = "CUDA";
   } else {
@@ -125,14 +124,28 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   if (lmp->screen) {
     if (use_gpu && !use_cuda_mpi) {
       // GPU device + cuda-'NOT'aware mpi combination. is not supported yet
-      fprintf(lmp->screen, "GPU device is found but not activated since "
-                           "cuda_mpi(openMPI) is not found\n");
+      device_comm = torch::kCPU;
+      fprintf(lmp->screen, "cuda-aware mpi not found, communicate via host device\n");
     } else {
-      fprintf(lmp->screen, "PairE3GNNParallel using device : %s\n",
-              device_name.c_str());
-      fprintf(lmp->screen, "PairE3GNNParallel cuda-aware mpi: %s\n",
-              use_cuda_mpi ? "True" : "False");
+      device_comm = device;
     }
+    fprintf(lmp->screen, "PairE3GNNParallel using device : %s\n",
+            device_name.c_str());
+    fprintf(lmp->screen, "PairE3GNNParallel cuda-aware mpi: %s\n",
+            use_cuda_mpi ? "True" : "False");
+  }
+  if (lmp->logfile) {
+    if (use_gpu && !use_cuda_mpi) {
+      // GPU device + cuda-'NOT'aware mpi combination. is not supported yet
+      device_comm = torch::kCPU;
+      fprintf(lmp->logfile, "cuda-aware mpi not found, communicate via host device\n");
+    } else {
+      device_comm = device;
+    }
+    fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n",
+            device_name.c_str());
+    fprintf(lmp->logfile, "PairE3GNNParallel cuda-aware mpi: %s\n",
+            use_cuda_mpi ? "True" : "False");
   }
 }
 
@@ -384,8 +397,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
     auto ghost_and_extra_x = torch::zeros({ghost_node_num + extra_size, x_dim},
                                           FLOAT_TYPE.device(device));
-    x_comm = torch::cat({x_local, ghost_and_extra_x}, 0).to(device);
-
+    x_comm = torch::cat({x_local, ghost_and_extra_x}, 0).to(device_comm);
     comm_brick->forward_comm(this); // populate x_ghost by communication
 
     // What we got from forward_comm (node feature of ghosts)
@@ -450,7 +462,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     x_ghost = grads.at(3).detach(); // yes communication, not for grads_output
 
     auto extra_x = torch::zeros({extra_size, x_dim}, FLOAT_TYPE.device(device));
-    x_comm = torch::cat({x_local, x_ghost, extra_x}, 0).to(device);
+    x_comm = torch::cat({x_local, x_ghost, extra_x}, 0).to(device_comm);
 
     comm_brick->reverse_comm(this); // completes x_local
 
@@ -499,6 +511,17 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     f[i][1] = forces[graph_idx][1];
     f[i][2] = forces[graph_idx][2];
   }
+
+  if (eflag_atom) {
+    torch::Tensor atomic_energy_tensor =
+        output.at("atomic_energy").toTensor().cpu().squeeze();
+    auto atomic_energy = atomic_energy_tensor.accessor<float, 1>();
+    for (int graph_idx = 0; graph_idx < nlocal; graph_idx++) {
+      int i = graph_index_to_i[graph_idx];
+      eatom[i] += atomic_energy[graph_idx];
+    }
+  }
+
 
   // clean up comm preprocess variables
   comm_preprocess_done = false;
