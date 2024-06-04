@@ -3,12 +3,14 @@ from typing import Union
 
 import numpy as np
 import torch
+import torch.jit
 from ase.calculators.calculator import Calculator, all_changes
+from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
 import sevenn.util
-from sevenn.nn.sequential import AtomGraphSequential
 
+torch_script_type = torch.jit._script.RecursiveScriptModule
 
 class SevenNetCalculator(Calculator):
     """ASE calculator for SevenNet models
@@ -20,11 +22,14 @@ class SevenNetCalculator(Calculator):
     Note than ASE calculator is designed to be interface of other programs.
     But in this class, we simply run torch model inside ASE calculator.
     So there is no FileIO things.
+
+    Here, free_energy = energy
     """
 
     def __init__(
         self,
-        model: Union[AtomGraphSequential, str] = 'SevenNet-0',
+        model: str = 'SevenNet-0',
+        file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
         sevennet_config=None,
         **kwargs
@@ -37,36 +42,11 @@ class SevenNetCalculator(Calculator):
         """
         super().__init__(**kwargs)
 
-        if not isinstance(model, AtomGraphSequential) and not isinstance(
-            model, str
-        ):
+        file_type = file_type.lower()
+        if file_type not in ['checkpoint', 'torchscript']:
             raise ValueError(
-                'model must be an instance of AtomGraphSequential or str.'
+                'file_type should be checkpoint or torchscript'
             )
-        if isinstance(model, str):
-            # TODO: Download it from internet
-            if model == 'SevenNet-0':  # special case loading pre-trained model
-                checkpoint = os.getenv('SEVENNET_0_CP')
-                if checkpoint is None:
-                    raise ValueError(
-                        'Please set env variable SEVENNET_0_CP as checkpoint'
-                        ' path.'
-                    )
-            else:
-                checkpoint = model
-            model, config = sevenn.util.model_from_checkpoint(checkpoint)
-            sevennet_config = config
-        else:
-            if model._use_type_map is False and model.type_map is None:
-                raise ValueError('model must have a type_map')
-            model.set_use_type_map(True)
-        self.sevennet_config = sevennet_config  # metadata which can be None
-        try:
-            self.cutoff = model.cutoff
-        except AttributeError:
-            self.cutoff = self.sevennet_config[KEY.CUTOFF]
-
-        self.model = model
 
         if not isinstance(device, torch.device) and not isinstance(
             device, str
@@ -84,11 +64,50 @@ class SevenNetCalculator(Calculator):
         else:
             self.device = device
 
+        if file_type == 'checkpoint':
+            if model == 'SevenNet-0':  # special case loading pre-trained model
+                checkpoint = os.getenv('SEVENNET_0_CP')
+                if checkpoint is None:
+                    raise ValueError(
+                        'Please set env variable SEVENNET_0_CP as checkpoint'
+                        ' path.'
+                    )
+            else:
+                checkpoint = model
+            model_loaded, config = sevenn.util.model_from_checkpoint(checkpoint)
+            model_loaded.set_is_batch_data(False)
+            self.type_map = config[KEY.TYPE_MAP]
+            self.cutoff = config[KEY.CUTOFF]
+            self.sevennet_config = config
+        elif file_type == 'torchscript':
+            extra_dict = {
+                'chemical_symbols_to_index': b'',
+                'cutoff': b'',
+                'num_species': b'',
+                'model_type': b'',
+                'version': b'',
+                'dtype': b'',
+                'time': b'',
+            }
+            model_loaded = torch.jit.load(
+                model, 
+                _extra_files=extra_dict, 
+                map_location=self.device
+            )
+            chem_symbols = extra_dict['chemical_symbols_to_index'].decode('utf-8')
+            sym_to_num = {sym: n for n, sym in enumerate(chemical_symbols)}
+            self.type_map = {sym_to_num[sym]: i for i, sym in enumerate(chem_symbols.split())}
+            self.cutoff = float(extra_dict['cutoff'].decode('utf-8'))
+        else:
+            raise ValueError(f"Unknown file type")
+
+        self.model = model_loaded
+
         self.model.to(self.device)
         self.model.eval()
-        self.model.set_is_batch_data(False)
 
-        self.implemented_properties = ['energy', 'forces', 'stress']
+        # atomic_energy = energies in ASE, atoms_instance.get_potential_energies()
+        self.implemented_properties = ['free_energy', 'energy', 'forces', 'stress', 'energies']
 
     def calculate(
         self, atoms=None, properties=None, system_changes=all_changes
@@ -96,8 +115,15 @@ class SevenNetCalculator(Calculator):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
         data = sevenn.util.unlabeled_atoms_to_input(atoms, self.cutoff)
-        data = self.model.to_onehot_idx(data)
+
+        data[KEY.NODE_FEATURE] = torch.LongTensor(
+            [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
+        )
         data.to(self.device)
+
+        if isinstance(self.model, torch_script_type):
+            data = data.to_dict()
+            del data["data_info"]
 
         output = self.model(data)
         energy = output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item()
@@ -105,6 +131,7 @@ class SevenNetCalculator(Calculator):
         self.results = {
             'free_energy': energy,
             'energy': energy,
+            'energies': output[KEY.ATOMIC_ENERGY].detach().cpu().reshape(len(atoms)).numpy(),
             'forces': output[KEY.PRED_FORCE].detach().cpu().numpy(),
             'stress': np.array(
                 (-output[KEY.PRED_STRESS])
