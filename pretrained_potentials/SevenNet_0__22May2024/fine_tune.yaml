@@ -1,12 +1,10 @@
-# input.yaml for fine-tuning SevenNet-0
-
 model:
     chemical_species: 'Auto'
     cutoff: 5.0
     channel: 128
+    is_parity: False
     lmax: 2
     num_convolution_layer: 5
-
     irreps_manual:
         - "128x0e"
         - "128x0e+64x1e+32x2e"
@@ -15,11 +13,18 @@ model:
         - "128x0e+64x1e+32x2e"
         - "128x0e"
 
-    is_parity: False
-    self_connection_type: 'linear'
+    weight_nn_hidden_neurons: [64, 64]
+    radial_basis:
+        radial_basis_name: 'bessel'
+        bessel_basis_num: 8
+    cutoff_function:
+        cutoff_function_name: 'XPLOR'
+        cutoff_on: 4.5
 
-    train_shift_scale: True
-    train_denominator: True
+    # You can set these to True, if further tuning is needed.
+    train_shift_scale: False 
+    train_denominator: False
+    self_connection_type: 'linear'
 
 train:
     random_seed: 1
@@ -50,7 +55,8 @@ train:
         reset_scheduler: True
         reset_epoch: True
         checkpoint: './checkpoint_sevennet_0.pth'
-        use_statistic_values_of_checkpoint: True # Set True to use shift, scale, and avg_num_neigh from checkpoint or not
+        # Set True to use shift, scale, and avg_num_neigh from checkpoint (highly recommended)
+        use_statistic_values_of_checkpoint: True 
 
 data:
     batch_size: 4
