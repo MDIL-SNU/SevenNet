@@ -178,14 +178,7 @@ def processing_dataset(config, working_dir):
 
         valid_set.toggle_requires_grad_of_data(KEY.POS, True)
 
-        # condition 1: validset chems should be subset of trainset chems
-        valid_chems = valid_set.get_species()
-        if set(valid_chems).issubset(set(train_set.get_species())) is False:
-            raise ValueError(
-                'validset chemical species is not subset of trainset'
-            )
-
-        # condition 2: validset labels should be subset of trainset labels
+        # condition: validset labels should be subset of trainset labels
         valid_labels = valid_set.user_labels
         train_labels = train_set.user_labels
         if set(valid_labels).issubset(set(train_labels)) is False:
