@@ -158,7 +158,7 @@ DEFAULT_DATA_CONFIG = {
     KEY.RATIO: 0.1,
     KEY.BATCH_SIZE: 6,
     KEY.PREPROCESS_NUM_CORES: 1,
-    KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
+    #KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
     KEY.SHIFT: "per_atom_energy_mean",
     KEY.SCALE: "force_rms",
     KEY.DATA_SHUFFLE: True,

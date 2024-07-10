@@ -112,7 +112,7 @@ def init_model_config(config: dict):
         key for key in config.keys() if key not in model_meta.keys()
     ]
     if len(unknown_keys) != 0:
-        raise ValueError(f'unknown keys : {unknown_keys} is given')
+        warnings.warn(f"Unexpected model keys: {unknown_keys} will be ignored", UserWarning)
 
     return model_meta
 
@@ -207,7 +207,7 @@ def init_train_config(config: dict):
         key for key in config.keys() if key not in train_meta.keys()
     ]
     if len(unknown_keys) != 0:
-        raise ValueError(f'unknown keys : {unknown_keys} is given')
+        warnings.warn(f"Unexpected train keys: {unknown_keys} will be ignored", UserWarning)
 
     return train_meta
 
@@ -245,7 +245,7 @@ def init_data_config(config: dict):
         key for key in config.keys() if key not in data_meta.keys()
     ]
     if len(unknown_keys) != 0:
-        raise ValueError(f'unknown keys : {unknown_keys} is given')
+        warnings.warn(f"Unexpected data keys: {unknown_keys} will be ignored", UserWarning)
     return data_meta
 
 
@@ -262,7 +262,7 @@ def read_config_yaml(filename):
         elif key == 'data':
             data_meta = init_data_config(config)
         else:
-            raise ValueError(f'unexpected input {key} given')
+            raise ValueError(f'Unexpected input {key} given')
 
     # how about model_config is None and 'continue_train' is True?
     if model_meta is None or train_meta is None or data_meta is None:

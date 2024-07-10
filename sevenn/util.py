@@ -167,9 +167,10 @@ def _patch_old_config(config):
         raise ValueError("This checkpoint(optimize_by_reduce: False) is no longer supported")
     if KEY.CONV_DENOMINATOR not in config:
         config[KEY.CONV_DENOMINATOR] = 0.0
-        warnings.warn(f'conv denominator will be loaded from state_dict of checkpoint', UserWarning)
+        #warnings.warn(f'conv denominator will be loaded from state_dict of checkpoint', UserWarning)
     if KEY._NORMALIZE_SPH not in config:
         config[KEY._NORMALIZE_SPH] = False
+        warnings.warn(f'You are loading very old model, normalize_sph is False', UserWarning)
     return config
 
 

@@ -19,14 +19,13 @@ def check_config_compatible(config, config_cp):
         KEY.CUTOFF,
         KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS,
         KEY.NUM_CONVOLUTION,
-        KEY.DTYPE,
         KEY.USE_BIAS_IN_LINEAR,
         KEY.SELF_CONNECTION_TYPE,
     ]
     for sbs in SHOULD_BE_SAME:
         if config[sbs] == config_cp[sbs]:
             continue
-        if sbs is KEY.SELF_CONNECTION_TYPE and config_cp[sbs] is 'MACE':
+        if sbs == KEY.SELF_CONNECTION_TYPE and config_cp[sbs] == 'MACE':
             warnings.warn(
                 'We do not support this version of checkpoints to continue '
                 'Please use self_connection_type=\'linear\' in input.yaml '
