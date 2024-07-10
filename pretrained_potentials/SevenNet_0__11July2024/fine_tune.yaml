@@ -15,26 +15,11 @@ model:
         - "128x0e+64x1e+32x2e"
         - "128x0e"
 
-    weight_nn_hidden_neurons: [64, 64]
-    radial_basis:
-        radial_basis_name: 'bessel'
-        bessel_basis_num: 8
-    cutoff_function:
-        cutoff_function_name: 'XPLOR'
-        cutoff_on: 4.5
-
-    act_gate: {'e': 'silu', 'o': 'tanh'}
-    act_scalar: {'e': 'silu', 'o': 'tanh'}
-
     is_parity: False
-    optimize_by_reduce: True
     self_connection_type: 'linear'
 
-    # ~~~~~ Above settings (which defines model) should be maintained for fine tuning ~~~~~~ #
-
-    #avg_num_neigh: 1368.726 # Denominator for convolution layers in SevenNet 0 (root(1368) = 39), will be read from checkpoint.
     train_shift_scale: True
-    train_avg_num_neigh: True
+    train_denominator: True
 
 train:
     random_seed: 1
@@ -48,8 +33,8 @@ train:
     scheduler_param:
         gamma: 0.99
 
-    force_loss_weight   : 0.1
-    stress_loss_weight  : 1e-06
+    force_loss_weight: 0.1
+    stress_loss_weight: 1e-06
 
     per_epoch: 10
     # TotalEnergy, Energy, Force, Stress, Stress_GPa, TotalLoss
@@ -68,12 +53,10 @@ train:
         use_statistic_values_of_checkpoint: True # Set True to use shift, scale, and avg_num_neigh from checkpoint or not
 
 data:
-    batch_size: 8
+    batch_size: 4
     data_divide_ratio: 0.1
 
-    use_species_wise_shift_scale: True  # should be True for fine-tuning SevenNet-0
-
-    #data_format: 'ase'                           # Default is 'structure_list'
+    #data_format: 'ase'                           # Default is 'ase'
     #data_format_args:                            # Paramaters, will be passed to ase.io.read
         #index: '-10:'
 
@@ -82,7 +65,7 @@ data:
 
     # If only load_dataset_path is provided, train/valid set is automatically decided by splitting dataset by divide ratio
     # If both load_dataset_path & load_validset_path is provided, use load_dataset_path as training set.
-    load_dataset_path: ['structure_list']
+    load_dataset_path: ['fine_tuning_set.extxyz']
     #load_validset_path: ['./valid.sevenn_data']
 
     #save_dataset_path: 'total'
