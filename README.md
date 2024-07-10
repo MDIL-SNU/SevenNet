@@ -49,9 +49,15 @@ pip install .
 ## Usage
 
 ### SevenNet-0
-SevenNet-0 is a general-purpose interatomic potential trained on the [`Material Project dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599). You can try SevenNet-0 to your application without any training. If the accuracy was unsatisfactory, SevenNet-0 can be [fine-tuned](#Training).
+SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). You can try SevenNet-0 to your application without any training. If the accuracy is unsatisfactory, SevenNet-0 can be [fine-tuned](#Training).
 
-Checkpoint of SevenNet-0 (for use in ASE or fine-tuning) and deployed potentials (for LAMMPS) are located in `{path_to_SevenNet}/pretrained_potentials/SevenNet_0`.
+#### SevenNet-0 (11July2024)
+This model was trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). We suggest starting with this model as we found that it performs better than the previous SevenNet-0 (22May2024).
+
+#### SevenNet-0 (22May2024)
+This model was trained on [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599). This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190).
+
+Checkpoints of SevenNet-0 (for use in ASE or fine-tuning) and deployed potentials (for LAMMPS) are located in `{path_to_SevenNet}/pretrained_potentials/SevenNet_0__{release date}`.
 
 For its detailed usage, please check [SevenNet Calculator for ASE](#sevennet-calculator-for-ase), [For serial model](#for-serial-model), and [For parallel model](#for-parallel-model)
 
@@ -65,7 +71,7 @@ sevenet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
 
 If you want to use SevenNet-0, you can do something like below
 ```bash
-echo "export SEVENNET_0_CP={PATH_TO_SEVENNET}/pretrained_potentials/SevenNet_0/checkpoint_sevennet_0.pth" >> ~/.bashrc
+echo "export SEVENNET_0_CP={PATH_TO_SEVENNET}/pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth" >> ~/.bashrc
 ```
 SevenNetCalculator tries to read the SEVENNET_0_CP environment variable.
 
@@ -81,7 +87,7 @@ cd example_inputs/training
 sevenn input_full.yaml -s
 ```
 
-Examples of `input_full.yaml` can be found under `SevenNet/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training.
+Example `input_full.yaml` can be found under `SevenNet/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training.
 To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
 
 Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned as their default values. You can refer to the log to check the default inputs.
@@ -251,6 +257,7 @@ Ideally, one GPU per MPI process is expected. If the available GPUs are fewer th
 
 ## Future Works
 
+* Notebook examples and improved interface for non-command line usage
 * Implementation of pressure output in parallel MD simulations.
 * Development of support for a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
 * Easy use of parallel models
