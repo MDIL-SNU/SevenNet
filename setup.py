@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name='sevenn',
-    version='0.9.1',
+    version='0.9.2',
     description='SevenNet',
     author='Yutack Park, Jaesun Kim',
     python_requires='>=3.8',
