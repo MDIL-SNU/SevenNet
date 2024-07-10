@@ -3,3 +3,4 @@ dist
 sevenn.egg-info
 *.swp
 dev.vim
+tests/
