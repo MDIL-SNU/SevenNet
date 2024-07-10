@@ -6,7 +6,6 @@ from ase.data import atomic_numbers
 
 import sevenn._const
 import sevenn._keys as KEY
-from sevenn._const import LossType
 
 CHEM_SYMBOLS = {v: k for k, v in atomic_numbers.items()}
 
@@ -23,13 +22,10 @@ class Singleton(type):
 
 
 class Logger(metaclass=Singleton):
-    """
-    logger for simple gnn
-    """
 
     SCREEN_WIDTH = 120  # half size of my screen / changed due to stress output
 
-    def __init__(self, filename: str, screen: bool, rank: int = 0):
+    def __init__(self, filename: str = "log.sevenn", screen: bool = False, rank: int = 0):
         self.rank = rank
         if rank == 0:
             self.logfile = open(filename, 'w', buffering=1)
@@ -44,13 +40,14 @@ class Logger(metaclass=Singleton):
         # self.timer_dct = {}
 
     def __del__(self):
-        self.logfile.close()
+        if self.logfile is not None:
+            self.logfile.close()
         for f in self.files.values():
             f.close()
 
     def write(self, content: str):
         # no newline!
-        if self.rank == 0:
+        if self.logfile is not None:
             self.logfile.write(content)
             if self.screen:
                 print(content, end='')
@@ -139,52 +136,6 @@ class Logger(metaclass=Singleton):
             content += '{t_S:<{pad}.{fs}s}{v_S:<{pad}.{fs}s}'.format(
                 t_S=ln, v_S=ln, pad=pad, fs=fs
             )
-            content += '\n'
-        self.write(content)
-
-    # deprecated (see error recorer)
-    def epoch_write_loss(self, train_loss, valid_loss):
-        lb_pad = 21
-        fs = 6
-        pad = 21 - fs
-        is_stress = LossType.STRESS in train_loss['total']
-        content = (
-            f"{'Label':{lb_pad}}{'E_RMSE(T)':<{pad}}{'E_RMSE(V)':<{pad}}"
-            .format(lb_pad=lb_pad, pad=pad)
-            + f"{'F_RMSE(T)':<{pad}}{'F_RMSE(V)':<{pad}}".format(pad=pad)
-        )
-        if is_stress:
-            content += f"{'S_RMSE(T)':<{pad}}{'S_RMSE(V)':<{pad}}".format(
-                pad=pad
-            )
-
-        content += '\n'
-        label_keys = train_loss.keys()
-        for label in label_keys:
-            t_E = train_loss[label][LossType.ENERGY]
-            v_E = valid_loss[label][LossType.ENERGY]
-            t_F = train_loss[label][LossType.FORCE]
-            v_F = valid_loss[label][LossType.FORCE]
-            content += (
-                '{label:{lb_pad}}{t_E:<{pad}.{fs}f}{v_E:<{pad}.{fs}f}'.format(
-                    label=label,
-                    t_E=t_E,
-                    v_E=v_E,
-                    lb_pad=lb_pad,
-                    pad=pad,
-                    fs=fs,
-                )
-                + '{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}'.format(
-                    t_F=t_F, v_F=v_F, pad=pad, fs=fs
-                )
-            )
-            if is_stress:
-                t_S = train_loss[label][LossType.STRESS]
-                v_S = valid_loss[label][LossType.STRESS]
-                content += '{t_S:<{pad}.{fs}f}{v_S:<{pad}.{fs}f}'.format(
-                    t_S=t_S, v_S=v_S, pad=pad, fs=fs
-                )
-
             content += '\n'
         self.write(content)
 
@@ -284,6 +235,7 @@ class Logger(metaclass=Singleton):
             return content
         else:
             Logger().write(content)
+            return ""
 
     def greeting(self):
         LOGO_ASCII_FILE = f'{os.path.dirname(__file__)}/logo_ascii'
@@ -303,13 +255,17 @@ class Logger(metaclass=Singleton):
         """
         print some important information from config
         """
-        content = 'succesfully read yaml config\n'
-        for name, config in zip(["model", "data", "train"], [model_config, data_config, train_config]):
-            content += f'\nfrom {name} configuration\n'
-            for k, v in config.items():
-                if k.startswith("_"):
-                    continue
-                content += Logger.format_k_v(k, v)
+        content = (
+            'succesfully read yaml config!\n\n' + 'from model configuration\n'
+        )
+        for k, v in model_config.items():
+            content += Logger.format_k_v(k, v)
+        content += '\nfrom train configuration\n'
+        for k, v in train_config.items():
+            content += Logger.format_k_v(k, v)
+        content += '\nfrom data configuration\n'
+        for k, v in data_config.items():
+            content += Logger.format_k_v(k, v)
         self.write(content)
 
     # TODO: This is not good make own exception
@@ -366,6 +322,7 @@ class Logger(metaclass=Singleton):
         self.writeline('\n'.join(table_output))
 
     # TODO: print it without config
+    # TODO: refactoring, readout part name :(
     def print_model_info(self, model, config):
         from functools import partial
 
@@ -376,30 +333,14 @@ class Logger(metaclass=Singleton):
         )
         for i in range(config[KEY.NUM_CONVOLUTION]):
             kv_write(
-                f'{i}th node_feature',
+                f'{i}th node',
                 model.get_irreps_in(f'{i}_self_interaction_1'),
             )
         kv_write(
             'readout irreps',
             model.get_irreps_in(f'{i}_equivariant_gate', 'irreps_out'),
         )
-        shift = model._modules['rescale_atomic_energy'].shift
-        scale = model._modules['rescale_atomic_energy'].scale
-        if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
-            kv_write('global shift', f'{shift.item():.6f}')
-            kv_write('global scale', f'{scale.item():.6f}')
-        else:
-            chem_str = sevenn.util.onehot_to_chem(
-                list(range(config[KEY.NUM_SPECIES])), config[KEY.TYPE_MAP]
-            )
-            self.writeline('shift, scale tuple for each chemical species')
-            for cstr, sh, sc in zip(chem_str, shift, scale):
-                kv_write(f'{cstr}', f'{sh:.6f}, {sc:.6f}')
 
-        self.writeline('Denominator (avg_num_neigh**0.5) for each layer')
-        for i in range(config[KEY.NUM_CONVOLUTION]):
-            denominator = model._modules[f'{i}_convolution'].denominator
-            kv_write(f'{i}th layer denominator', f'{denominator.item():.6f}')
         num_weights = sum(
             p.numel() for p in model.parameters() if p.requires_grad
         )
