@@ -1,7 +1,11 @@
-## SevenNet-0
-SevenNet-0 is an interatomic potential pre-trained on the [M3GNet dataset](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599).
+## SevenNet-0 (11July2024)
+SevenNet-0 (11July2024) is an interatomic potential pre-trained on the [MPTrj(CHGNet) dataset](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
 
-**Warning:** Please update the potential with this version if you used SevenNet-0 before May 01, 2024. We deprecated the previous version, which has a bug related to the cutoff function.
+**Warning:** This is NOT the potential referred to in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). Please check 'SevenNet/pretrained_potentials/SevenNet_0__22May2024' for the referenced there.
+
+SevenNet-0 (11July2024) has the same architecture and number of parameters as SevenNet-0 (22May2024), but the training process and dataset differ.
+
+We found that this model performs better than the previous SevenNet-0 (22May2024). 
 
 It can be directly applied to any system without training and fine-tuned with another dataset if accuracy is unsatisfactory.
 
@@ -9,15 +13,7 @@ It can be directly applied to any system without training and fine-tuned with an
 - serial_model/deployed_serial.pt: LAMMPS potential for single GPU runs.
 - parallel_model/deployed_parallel_{0-4}.pt: LAMMPS potential for multi-GPU runs.
 - fine_tune.yaml: example input.yaml for fine-tuning.
-
-### Accuracy
-
-|                |Energy (eV/atom)|Force (eV/Å)|Stress (GPa)|
-|----------------|--------|-------|-------|
-|Train|0.015|0.035|0.27|
-|Valid|0.032|0.064|0.56|
-|Test|0.025|0.070|0.68|
-
+- pre_train.yaml: example input.yaml file used in pre-training.
 
 ### Note
 You can obtain the same deployed models by running the following command (-p for parallel)
@@ -25,5 +21,5 @@ You can obtain the same deployed models by running the following command (-p for
 $ sevenn_get_model {-p} checkpoint_sevennet_0.pth
 ```
 Refer to example_inputs/md_{serial/parallel}_example/ for their usage in LAMMPS.
-Both serial and parallel model gives the same results but the parallel model enable multi-GPU MD simulation.
+Both serial and parallel model gives the same results but the parallel model enables multi-GPU MD simulation.
 
