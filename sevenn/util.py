@@ -1,10 +1,11 @@
+from typing import Union
 import warnings
 
 import numpy as np
 import torch
+from e3nn.o3 import Irreps, FullTensorProduct
 
 import sevenn._keys as KEY
-import sevenn.train.dataload
 
 
 class AverageNumber:
@@ -104,28 +105,6 @@ def error_recorder_from_loss_functions(loss_functions):
     return ErrorRecorder(metrics)
 
 
-def postprocess_output_with_label(output, loss_types):
-    from sevenn._const import LossType
-
-    results = postprocess_output(output, loss_types)
-    batched_label = output[KEY.USER_LABEL]
-    label_set = set(batched_label)
-    labeled = {k: {} for k in label_set}
-    for loss_type, (pred, ref, vdim) in results.items():
-        i_from = 0
-        i_to = None
-        # if loss_type in [LossType.ENERGY, LossType.STRESS]:
-        #    i_to = vdim
-        for idx, label in enumerate(batched_label):
-            if loss_type is LossType.FORCE:
-                i_to = i_from + vdim * results[KEY.NUM_ATOMS][idx].item()
-            else:
-                i_to = i_from + vdim
-            labeled[label][loss_type] = (pred[i_from:i_to], ref[i_from:i_to])
-            i_from = i_to
-    return labeled
-
-
 def postprocess_output(output, loss_types):
     from sevenn._const import LossType
 
@@ -178,6 +157,22 @@ def onehot_to_chem(one_hot_indicies, type_map):
     return [chemical_symbols[type_map_rev[x]] for x in one_hot_indicies]
 
 
+def _patch_old_config(config):
+    # Fixing my old mistakes
+    if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == "XPLOR":
+        config[KEY.CUTOFF_FUNCTION].pop("poly_cut_p_value", None)
+    config[KEY.TRAIN_DENOMINTAOR] = config.pop("train_avg_num_neigh", False)
+    _opt = config.pop("optimize_by_reduce", None)
+    if _opt == False:
+        raise ValueError("This checkpoint(optimize_by_reduce: False) is no longer supported")
+    if KEY.CONV_DENOMINATOR not in config:
+        config[KEY.CONV_DENOMINATOR] = 0.0
+        warnings.warn(f'conv denominator will be loaded from state_dict of checkpoint', UserWarning)
+    if KEY._NORMALIZE_SPH not in config:
+        config[KEY._NORMALIZE_SPH] = False
+    return config
+
+
 def _map_old_model(old_model_state_dict):
     """
     For compatibility with old namings (before 'correct' branch merged 2404XX)
@@ -217,9 +212,9 @@ def _map_old_model(old_model_state_dict):
 
 def model_from_checkpoint(checkpoint):
     from sevenn._const import (
-        DEFAULT_DATA_CONFIG,
-        DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
-        DEFAULT_TRAINING_CONFIG,
+        model_defaults,
+        data_defaults,
+        train_defaults,
     )
     from sevenn.model_build import build_E3_equivariant_model
 
@@ -230,44 +225,26 @@ def model_from_checkpoint(checkpoint):
     else:
         raise ValueError('checkpoint must be either str or dict')
 
-    defaults = {
-        **DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
-        **DEFAULT_DATA_CONFIG,
-        **DEFAULT_TRAINING_CONFIG,
-    }
-
     model_state_dict = checkpoint['model_state_dict']
     config = checkpoint['config']
-
-    ################## for backward compat.
-    if KEY._NORMALIZE_SPH not in config:
-        config[KEY._NORMALIZE_SPH] = False
-    ################## for backward compat.
+    defaults = {
+        **model_defaults(config),
+        **train_defaults(config),
+        **data_defaults(config),
+    }
+    config = _patch_old_config(config)
 
     for k, v in defaults.items():
         if k not in config:
-            print(f'Warning: {k} not in config, using default value {v}')
+            warnings.warn(f'{k} not in config, using default value {v}', UserWarning)
             config[k] = v
 
     # expect only non-tensor values in config, if exists, move to cpu
     # This can be happen if config has torch tensor as value (shift, scale)
-    # TODO: putting only non-tensors at first place is better
+    # TODO: save only non-tensors at first place is better
     for k, v in config.items():
         if isinstance(v, torch.Tensor):
             config[k] = v.cpu()
-
-    if (
-        config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR'
-        and config[KEY.SELF_CONNECTION_TYPE] == 'MACE'
-    ):
-        warnings.warn(
-            "Note that the potential you're loading trained on WRONG cutoff"
-            " function. We revised them correctly in this version. Please 1)"
-            " re-train with but with self_connection_type='linear' or 2) use"
-            " correct SevenNet-0 from github.",
-            UserWarning,
-        )
-        config[KEY.SELF_CONNECTION_TYPE] = 'linear'
 
     model = build_E3_equivariant_model(config)
     missing, _ = model.load_state_dict(model_state_dict, strict=False)
@@ -283,10 +260,11 @@ def model_from_checkpoint(checkpoint):
 
 
 def unlabeled_atoms_to_input(atoms, cutoff):
+    from sevenn.train.dataload import unlabeled_atoms_to_graph
     from sevenn.atom_graph_data import AtomGraphData
 
     atom_graph = AtomGraphData.from_numpy_dict(
-        sevenn.train.dataload.unlabeled_atoms_to_graph(atoms, cutoff)
+        unlabeled_atoms_to_graph(atoms, cutoff)
     )
     atom_graph[KEY.POS].requires_grad_(True)
     atom_graph[KEY.BATCH] = torch.zeros([0])
@@ -340,6 +318,7 @@ def load_model_from_checkpoint(checkpoint):
         DEFAULT_TRAINING_CONFIG,
     )
     from sevenn.model_build import build_E3_equivariant_model
+    warnings.warn(f'This method is deprecated, use model_from_checkpoint instead', DeprecationWarning)
 
     if isinstance(checkpoint, str):
         checkpoint = torch.load(checkpoint, map_location='cpu')
@@ -376,18 +355,28 @@ def load_model_from_checkpoint(checkpoint):
     return model
 
 
-def print_tensor_info(tensor):
-    print('Tensor Value: \n', tensor)
-    print('Shape: ', tensor.shape)
-    print('Size: ', tensor.size())
-    print('Number of Dimensions: ', tensor.dim())
-    print('Data Type: ', tensor.dtype)
-    print('Device: ', tensor.device)
-    print('Layout: ', tensor.layout)
-    print('Is it a CUDA tensor?: ', tensor.is_cuda)
-    print('Is it a sparse tensor?: ', tensor.is_sparse)
-    print('Is it a quantized tensor?: ', tensor.is_quantized)
-    print('Number of Elements: ', tensor.numel())
-    print('Requires Gradient: ', tensor.requires_grad)
-    print('Grad Function: ', tensor.grad_fn)
-    print('Gradient: ', tensor.grad)
+def infer_irreps_out(
+    irreps_x: Irreps,
+    irreps_operand: Irreps,
+    drop_l: Union[bool, int] = False,
+    parity_mode: str = 'full',
+    fix_multiplicity: Union[bool, int] = False,
+) -> Irreps:
+    assert parity_mode in ['full', 'even', 'sph']
+    # (mul, (ir, p))
+    irreps_out = FullTensorProduct(
+        irreps_x, irreps_operand
+    ).irreps_out.simplify()
+    new_irreps_elem = []
+    for mul, (l, p) in irreps_out:
+        elem = (mul, (l, p))
+        if drop_l is not False and l > drop_l:
+            continue
+        if parity_mode == 'even' and p == -1:
+            continue
+        elif parity_mode == 'sph' and p != (-1)**l:
+            continue
+        if fix_multiplicity:
+            elem = (fix_multiplicity, (l, p))
+        new_irreps_elem.append(elem)
+    return Irreps(new_irreps_elem)

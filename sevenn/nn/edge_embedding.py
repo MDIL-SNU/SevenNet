@@ -79,20 +79,20 @@ class EdgePreprocess(nn.Module):
 
 class BesselBasis(nn.Module):
     """
-    f : (*, 1) -> (*, num_basis)
+    f : (*, 1) -> (*, bessel_basis_num)
     """
 
     def __init__(
         self,
-        num_basis: int,
         cutoff_length: float,
+        bessel_basis_num: int = 8,
         trainable_coeff: bool = True,
     ):
         super().__init__()
-        self.num_basis = num_basis
+        self.num_basis = bessel_basis_num
         self.prefactor = 2.0 / cutoff_length
         self.coeffs = torch.FloatTensor(
-            [n * math.pi / cutoff_length for n in range(1, num_basis + 1)]
+            [n * math.pi / cutoff_length for n in range(1, bessel_basis_num + 1)]
         )
         if trainable_coeff:
             self.coeffs = nn.Parameter(self.coeffs)
@@ -110,10 +110,11 @@ class PolynomialCutoff(nn.Module):
 
     def __init__(
         self,
-        p: int,
         cutoff_length: float,
+        poly_cut_p_value: int = 6,
     ):
         super().__init__()
+        p = poly_cut_p_value
         self.cutoff_length = cutoff_length
         self.p = p
         self.coeff_p0 = (p + 1.0) * (p + 2.0) / 2.0
@@ -137,8 +138,8 @@ class XPLORCutoff(nn.Module):
 
     def __init__(
         self,
-        cutoff_on: float,
         cutoff_length: float,
+        cutoff_on: float,
     ):
         super().__init__()
         self.r_on = cutoff_on

@@ -19,12 +19,8 @@ def check_config_compatible(config, config_cp):
         KEY.CUTOFF,
         KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS,
         KEY.NUM_CONVOLUTION,
-        KEY.ACTIVATION_GATE,
-        KEY.ACTIVATION_SCARLAR,
         KEY.DTYPE,
-        KEY.USE_SPECIES_WISE_SHIFT_SCALE,
         KEY.USE_BIAS_IN_LINEAR,
-        KEY.OPTIMIZE_BY_REDUCE,
         KEY.SELF_CONNECTION_TYPE,
     ]
     for sbs in SHOULD_BE_SAME:
@@ -46,7 +42,7 @@ def check_config_compatible(config, config_cp):
     except KeyError:
         return
 
-    TRAINABLE_CONFIGS = [KEY.TRAIN_AVG_NUM_NEIGH, KEY.TRAIN_SHIFT_SCALE]
+    TRAINABLE_CONFIGS = [KEY.TRAIN_DENOMINTAOR, KEY.TRAIN_SHIFT_SCALE]
     if (
         any((not cntdct[KEY.RESET_SCHEDULER], not cntdct[KEY.RESET_OPTIMIZER]))
         and all(config[k] == config_cp[k] for k in TRAINABLE_CONFIGS) is False
@@ -73,19 +69,18 @@ def processing_continue(config):
             f'checkpoint file {continue_dct[KEY.CHECKPOINT]} not found'
         )
 
+    model_cp, config_cp = util.model_from_checkpoint(checkpoint)
+    model_state_dict_cp = model_cp.state_dict()
+
     # it will raise error if not compatible
     check_config_compatible(config, config_cp)
     Logger().write('Checkpoint config is compatible\n')
 
     ################## for backward compat.
-    if KEY._NORMALIZE_SPH not in config_cp:
-        config_cp.update({KEY._NORMALIZE_SPH: False})
     config.update({KEY._NORMALIZE_SPH: config_cp[KEY._NORMALIZE_SPH]})
     ################## for backward compat.
 
     from_epoch = checkpoint['epoch']
-    model_state_dict_cp = checkpoint['model_state_dict']
-    model_state_dict_cp = util._map_old_model(model_state_dict_cp)
     optimizer_state_dict_cp = (
         checkpoint['optimizer_state_dict']
         if not continue_dct[KEY.RESET_OPTIMIZER]
@@ -97,16 +92,16 @@ def processing_continue(config):
         else None
     )
 
+    # These could be changed based on given continue_input.yaml
+    # ex) adapt to statistics of fine-tuning dataset
     shift_cp = model_state_dict_cp['rescale_atomic_energy.shift'].numpy()
     del model_state_dict_cp['rescale_atomic_energy.shift']
-
     scale_cp = model_state_dict_cp['rescale_atomic_energy.scale'].numpy()
     del model_state_dict_cp['rescale_atomic_energy.scale']
-
-    avg_num_neigh_cp = []
+    conv_denominators = []
     for i in range(config_cp[KEY.NUM_CONVOLUTION]):
-        avg_num_neigh_cp.append(
-            (model_state_dict_cp[f'{i}_convolution.denominator'] ** 2).item()
+        conv_denominators.append(
+            (model_state_dict_cp[f'{i}_convolution.denominator']).item()
         )
         del model_state_dict_cp[f'{i}_convolution.denominator']
 
@@ -114,7 +109,7 @@ def processing_continue(config):
     config.update({
         KEY.SHIFT + '_cp': shift_cp,
         KEY.SCALE + '_cp': scale_cp,
-        KEY.AVG_NUM_NEIGH + '_cp': avg_num_neigh_cp,
+        KEY.CONV_DENOMINATOR + '_cp': conv_denominators,
     })
 
     chem_speices_related = {
