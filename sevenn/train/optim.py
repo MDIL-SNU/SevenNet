@@ -59,6 +59,7 @@ scheduler_dict = {
     'exponentiallr': scheduler.ExponentialLR,
     'cosineannealinglr': scheduler.CosineAnnealingLR,
     'reducelronplateau': scheduler.ReduceLROnPlateau,
+    'linearlr': scheduler.LinearLR,
 }
 
 scheduler_param_name_type_dict = {
@@ -80,6 +81,12 @@ scheduler_param_name_type_dict = {
         'min_lr': float,
         'eps': float,
     },
+    'linearlr': {
+        'start_factor': float,
+        'end_factor': float,
+        'total_iters': int,
+        'last_epoch': int,
+    }
 }
 
 loss_dict = {'mse': nn.MSELoss, 'huber': nn.HuberLoss}
