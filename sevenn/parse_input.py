@@ -1,6 +1,7 @@
 import glob
 import os
-from typing import Callable
+import warnings
+from typing import Callable, Any
 
 import torch
 import yaml
@@ -17,103 +18,42 @@ from sevenn.train.optim import (
 )
 from sevenn.util import chemical_species_preprocess
 
-# TODO: This file do too many things at once
-#       And roles are overlaped with _const conditions
-
 
 def config_initialize(
-    key: str, config: dict, default_dct: dict, condition: Callable = None
+    key: str, config: dict, default: Any, conditions,
 ):
-    """
-    check require type by checking type of defaults
-    cast user input to required type(type of default value)
-    if casting was successful, check condition(user_input)
-    if true, return processed input
-
-    condition is callable of one input and boolean return
-    if return of condition is False, raise error
-    at condition stage, user input type is valid
-
-    do dirty jobs for trivial configs for int, float, boolean
-    """
-
-    # no default value exist -> you should not use this function
-    assert key in default_dct.keys()
-
     # default value exist & no user input -> return default
-    default_val = default_dct[key]
     if key not in config.keys():
-        return default_val
+        return default
 
-    # check user input from type of default value
-    required_type = type(default_val)
-    assert required_type in (float, int, bool, str, dict, list)
-
+    # No validation method exist => accept user input
     user_input = config[key]
-    if required_type in (int, float, str):
-        try:
-            user_input = required_type(user_input)
-        except ValueError:
-            raise ValueError(f'given {user_input} for {key} is strange')
-        except TypeError:
-            raise TypeError(f'given {user_input} for {key} is strange')
-    elif required_type == bool:
-        if type(user_input) == str:
-            if user_input.lower() in ('yes', 'true', 't', '.t.', '1'):
-                user_input = True
-            elif user_input.lower() in ('no', 'false', 'f', '.f.', '0'):
-                user_input = False
-        elif type(user_input) == int:
-            if user_input == 1:
-                user_input = True
-            elif user_input == 0 or user_input == -1:
-                user_input = False
-        elif type(user_input) == bool:
-            pass
-        else:
-            raise ValueError(f'given {user_input} for {key} is not boolean')
-    elif required_type == dict:
-        # special case. recursively call this function for each dict key
-        if type(user_input) != dict:
-            raise ValueError(f'{key} should be dictionary')
-        for inside_key, val in default_val.items():
-            if val is None:
-                continue  # ignore None default value of dict
-            inside_condition = None
-            if type(condition) == dict and inside_key in condition.keys():
-                inside_condition = condition[inside_key]
-            user_input[inside_key] = config_initialize(
-                inside_key, user_input, default_val, inside_condition
-            )
-    elif required_type == list:
-        # assume all list memeber have same type
-        if type(user_input) == str:
-            user_input = (
-                user_input.replace('-', ',').replace(' ', ',').split(',')
-            )
-        elif type(user_input) == list:  # yaml support list type input!
-            pass
-        else:
-            raise ValueError(
-                f'given {user_input} for {key}                     cannot be'
-                ' interpreted as list'
-            )
-
-        list_member_type = type(default_val[0])
-        try:
-            user_input = [list_member_type(x) for x in user_input]
-        except ValueError:
-            raise ValueError(f'strange list input {user_input} for {key}')
-
-    # dict is special case
-    if required_type is dict or condition is None or condition(user_input):
+    if key in conditions:
+        condition = conditions[key]
+    else:
         return user_input
 
-    raise ValueError(f'unexpected input {user_input} for {key}')
+    if type(default) is dict and isinstance(condition, dict):
+        for i_key, val in default.items():
+            user_input[i_key] =\
+                config_initialize(i_key, user_input, val, condition)
+        return user_input
+    elif isinstance(condition, type): 
+        if isinstance(user_input, condition):
+            return user_input
+        else:
+            try:
+                return condition(user_input)  # try type casting
+            except ValueError:
+                raise ValueError(f"Expect '{user_input}' for '{key}' is {condition}")
+    elif isinstance(condition, Callable) and condition(user_input):
+        return user_input
+    else:
+        raise ValueError(f"Given input '{user_input}' for '{key}' is not valid")
 
 
 def init_model_config(config: dict):
-    defaults = _const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG
+    defaults = _const.model_defaults(config)
     model_meta = {}
 
     # init complicated ones
@@ -138,58 +78,48 @@ def init_model_config(config: dict):
             raise ValueError(f'given {KEY.CHEMICAL_SPECIES} input is strange')
         model_meta.update(chemical_species_preprocess(input_chem))
 
-    for act_key in [KEY.ACTIVATION_GATE, KEY.ACTIVATION_SCARLAR]:
-        if act_key not in config.keys():
-            model_meta[act_key] = defaults[act_key]
-            continue
-        user_input = config[act_key]
-        if type(user_input) is not dict:
-            raise ValueError(f"{act_key} should be dict of 'o' and 'e'")
-        for key, val in user_input.items():
-            if key == 'e' and val in _const.ACTIVATION_FOR_EVEN.keys():
-                continue
-            elif key == 'o' and val in _const.ACTIVATION_FOR_ODD.keys():
-                continue
-            else:
-                raise ValueError(f"{act_key} should be dict of 'o' and 'e'")
-        model_meta[act_key] = user_input
-
-    if KEY.IRREPS_MANUAL not in config.keys():
-        model_meta[KEY.IRREPS_MANUAL] = defaults[KEY.IRREPS_MANUAL]
-    else:
-        model_meta[KEY.IRREPS_MANUAL] = config[KEY.IRREPS_MANUAL]
-
-    # TODO: implement this behavior in _const.py not here
-    if KEY.AVG_NUM_NEIGH not in config.keys():
-        model_meta[KEY.AVG_NUM_NEIGH] = defaults[KEY.AVG_NUM_NEIGH]
-    else:
-        if type(config[KEY.AVG_NUM_NEIGH]) not in [float, bool, list]:
-            raise ValueError('avg_num_neigh should be float or bool')
-        model_meta[KEY.AVG_NUM_NEIGH] = config[KEY.AVG_NUM_NEIGH]
+    ######## deprecation warnings #########
+    if KEY.AVG_NUM_NEIGH in config:
+        warnings.warn(
+            "key 'avg_num_neigh' is deprecated. Please use 'conv_denominator'. "
+            "We use the default, the average number of neighbors in the dataset, "
+            "if not provided.",
+            UserWarning,
+        )
+        config.pop(KEY.AVG_NUM_NEIGH)
+    if KEY.TRAIN_AVG_NUM_NEIGH in config:
+        warnings.warn(
+            "key 'train_avg_num_neigh' is deprecated. Please use 'train_denominator'. "
+            "We overwrite train_denominator as given train_avg_num_neigh",
+            UserWarning,
+        )
+        config[KEY.TRAIN_DENOMINTAOR] = config[KEY.TRAIN_AVG_NUM_NEIGH]
+        config.pop(KEY.TRAIN_AVG_NUM_NEIGH)
+    if KEY.OPTIMIZE_BY_REDUCE in config:
+        warnings.warn(
+            "key 'optimize_by_reduce' is deprecated. Always true",
+            UserWarning,
+        )
+        config.pop(KEY.OPTIMIZE_BY_REDUCE)
+    ######## deprecation warnings #########
 
     # init simpler ones
-    for key, cond in _const.MODEL_CONFIG_CONDITION.items():
-        model_meta[key] = config_initialize(key, config, defaults, cond)
+    for key, default in _const.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG.items():
+        model_meta[key] =\
+            config_initialize(key, config, default, _const.MODEL_CONFIG_CONDITION)
 
     unknown_keys = [
         key for key in config.keys() if key not in model_meta.keys()
     ]
     if len(unknown_keys) != 0:
-        raise ValueError(f'unknown keys : {unknown_keys} is given')
-
-    # remove unnecessary keys for briefness in log
-    if model_meta[KEY.READOUT_AS_FCN] is False:
-        model_meta[KEY.READOUT_FCN_ACTIVATION] = None
-        model_meta[KEY.READOUT_FCN_HIDDEN_NEURONS] = None
-        # model_meta.pop(KEY.READOUT_FCN_ACTIVATION)
-        # model_meta.pop(KEY.READOUT_FCN_HIDDEN_NEURONS)
+        warnings.warn(f"Unexpected model keys: {unknown_keys} will be ignored", UserWarning)
 
     return model_meta
 
 
 def init_train_config(config: dict):
     train_meta = {}
-    defaults = _const.DEFAULT_TRAINING_CONFIG
+    defaults = _const.train_defaults(config)
 
     try:
         device_input = config[KEY.DEVICE]
@@ -208,13 +138,10 @@ def init_train_config(config: dict):
         if type_key not in config.keys():
             train_meta[type_key] = defaults[type_key]
             continue
-
         user_input = config[type_key].lower()
         available_keys = name_dicts[idx].keys()
-
         if type(user_input) is not str:
             raise ValueError(f'{type_key} should be type: string.')
-
         if user_input not in available_keys:
             ava_key_to_str = ''
             for i, key in enumerate(available_keys):
@@ -272,24 +199,22 @@ def init_train_config(config: dict):
         train_meta[KEY.CONTINUE][KEY.CHECKPOINT] = checkpoint
 
     # init simpler ones
-    for key, cond in _const.TRAINING_CONFIG_CONDITION.items():
-        train_meta[key] = config_initialize(key, config, defaults, cond)
-
-    if KEY.CHECKPOINT not in train_meta[KEY.CONTINUE].keys():
-        train_meta[KEY.CONTINUE][KEY.CHECKPOINT] = False
+    for key, default in _const.DEFAULT_TRAINING_CONFIG.items():
+        train_meta[key] =\
+            config_initialize(key, config, default, _const.TRAINING_CONFIG_CONDITION)
 
     unknown_keys = [
         key for key in config.keys() if key not in train_meta.keys()
     ]
     if len(unknown_keys) != 0:
-        raise ValueError(f'unknown keys : {unknown_keys} is given')
+        warnings.warn(f"Unexpected train keys: {unknown_keys} will be ignored", UserWarning)
 
     return train_meta
 
 
 def init_data_config(config: dict):
     data_meta = {}
-    defaults = _const.DEFAULT_DATA_CONFIG
+    defaults = _const.data_defaults(config)
 
     if KEY.LOAD_DATASET not in config.keys():
         raise ValueError('load_dataset_path is not given')
@@ -305,42 +230,22 @@ def init_data_config(config: dict):
             elif type(inp) is list:
                 for i in inp:
                     extended.extend(glob.glob(i))
+            if len(extended) == 0:
+                raise ValueError(f'Cannot find {inp} for {load_data_key}'
+                    + ' or path is not given')
             data_meta[load_data_key] = extended
         else:
             data_meta[load_data_key] = False
 
-    if KEY.SAVE_DATASET in config.keys():
-        inp = config[KEY.SAVE_DATASET]
-        if type(inp) is not str:
-            raise ValueError(
-                'save_dataset_path is given but it is not pathlike'
-            )
-        data_meta[KEY.SAVE_DATASET] = inp
-    else:
-        data_meta[KEY.SAVE_DATASET] = False
-
-    for skey in [KEY.SHIFT, KEY.SCALE]:
-        if skey not in config.keys():
-            data_meta[skey] = defaults[skey]
-            continue
-        inp = config[skey]
-        if type(inp) is int or type(inp) is float:
-            data_meta[skey] = float(inp)
-        elif type(inp) is list and all([type(i) is float for i in inp]):
-            data_meta[skey] = inp
-            config[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = True
-            data_meta[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = True
-        else:
-            raise ValueError('shift/scale should be float or list of float')
-
-    for key, cond in _const.DATA_CONFIG_CONDITION.items():
-        data_meta[key] = config_initialize(key, config, defaults, cond)
+    for key, default in _const.DEFAULT_DATA_CONFIG.items():
+        data_meta[key] =\
+            config_initialize(key, config, default, _const.DATA_CONFIG_CONDITION)
 
     unknown_keys = [
         key for key in config.keys() if key not in data_meta.keys()
     ]
     if len(unknown_keys) != 0:
-        raise ValueError(f'unknown keys : {unknown_keys} is given')
+        warnings.warn(f"Unexpected data keys: {unknown_keys} will be ignored", UserWarning)
     return data_meta
 
 
@@ -357,7 +262,7 @@ def read_config_yaml(filename):
         elif key == 'data':
             data_meta = init_data_config(config)
         else:
-            raise ValueError(f'unexpected input {key} given')
+            raise ValueError(f'Unexpected input {key} given')
 
     # how about model_config is None and 'continue_train' is True?
     if model_meta is None or train_meta is None or data_meta is None:

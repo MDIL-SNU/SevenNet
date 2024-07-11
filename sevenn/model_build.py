@@ -1,12 +1,12 @@
 import warnings
 from collections import OrderedDict
-from typing import Union
 
-from e3nn.o3 import FullTensorProduct, Irreps
+from e3nn.o3 import Irreps
 
 import sevenn._const as _const
 import sevenn._keys as KEY
 from sevenn.nn.convolution import IrrepsConvolution
+import sevenn.util as util
 from sevenn.nn.edge_embedding import (
     BesselBasis,
     EdgeEmbedding,
@@ -37,66 +37,49 @@ warnings.filterwarnings(
 )
 
 
-def infer_irreps_out(
-    irreps_x: Irreps,
-    irreps_operand: Irreps,
-    drop_l: Union[bool, int] = False,
-    fix_multiplicity: Union[bool, int] = False,
-    only_even_p: bool = False,
-):
-    # (mul, (ir, p))
-    irreps_out = FullTensorProduct(
-        irreps_x, irreps_operand
-    ).irreps_out.simplify()
-    new_irreps_elem = []
-    for mul, (l, p) in irreps_out:
-        elem = (mul, (l, p))
-        if drop_l is not False and l > drop_l:
-            continue
-        if only_even_p and p == -1:
-            continue
-        if fix_multiplicity:
-            elem = (fix_multiplicity, (l, p))
-        new_irreps_elem.append(elem)
-    return Irreps(new_irreps_elem)
+def init_self_connection(config):
+    self_connection_type = config[KEY.SELF_CONNECTION_TYPE]
+    intro, outro = None, None
+    if self_connection_type == 'none':
+        pass
+    elif self_connection_type == 'nequip':
+        intro, outro = SelfConnectionIntro, SelfConnectionOutro
+        return SelfConnectionIntro, SelfConnectionOutro
+    elif self_connection_type == 'linear':
+        intro, outro = SelfConnectionLinearIntro, SelfConnectionOutro
+    else:
+        raise ValueError('something went wrong...')
+    return intro, outro
 
 
 def init_radial_basis(config):
     radial_basis_dct = config[KEY.RADIAL_BASIS]
-    cutoff = config[KEY.CUTOFF]
+    param = {"cutoff_length": config[KEY.CUTOFF]}
+    param.update(radial_basis_dct)
+    del param[KEY.RADIAL_BASIS_NAME]
 
     if radial_basis_dct[KEY.RADIAL_BASIS_NAME] == 'bessel':
-        basis_num = radial_basis_dct[KEY.BESSEL_BASIS_NUM]
-        return BesselBasis(basis_num, cutoff), basis_num
+        basis_function =  BesselBasis(**param)
+        return basis_function, basis_function.num_basis
 
     raise RuntimeError('something went very wrong...')
 
 
-# TODO: totally messed up :(
 def init_cutoff_function(config):
     cutoff_function_dct = config[KEY.CUTOFF_FUNCTION]
-    cutoff = config[KEY.CUTOFF]
+    param = {"cutoff_length": config[KEY.CUTOFF]}
+    param.update(cutoff_function_dct)
+    del param[KEY.CUTOFF_FUNCTION_NAME]
+
     if cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'poly_cut':
-        p = cutoff_function_dct[KEY.POLY_CUT_P]
-        return PolynomialCutoff(p, cutoff)
+        return PolynomialCutoff(**param)
     elif cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
-        return XPLORCutoff(cutoff_function_dct['cutoff_on'], cutoff)
-
+        return XPLORCutoff(**param)
     raise RuntimeError('something went very wrong...')
-
-
-def init_self_connection(config):
-    self_connection_type = config[KEY.SELF_CONNECTION_TYPE]
-    if self_connection_type == 'none':
-        return None, None
-    elif self_connection_type == 'nequip':
-        return SelfConnectionIntro, SelfConnectionOutro
-    elif self_connection_type == 'linear':
-        return SelfConnectionLinearIntro, SelfConnectionOutro
 
 
 # TODO: it gets bigger and bigger. refactor it
-def build_E3_equivariant_model(model_config: dict, parallel=False):
+def build_E3_equivariant_model(config: dict, parallel=False):
     """
     IDENTICAL to nequip model
     atom embedding is not part of model
@@ -104,26 +87,26 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     data_key_weight_input = KEY.EDGE_EMBEDDING  # default
 
     # parameter initialization
-    cutoff = model_config[KEY.CUTOFF]
-    num_species = model_config[KEY.NUM_SPECIES]
+    cutoff = config[KEY.CUTOFF]
+    num_species = config[KEY.NUM_SPECIES]
 
-    feature_multiplicity = model_config[KEY.NODE_FEATURE_MULTIPLICITY]
+    feature_multiplicity = config[KEY.NODE_FEATURE_MULTIPLICITY]
 
-    lmax = model_config[KEY.LMAX]
+    lmax = config[KEY.LMAX]
     lmax_edge = (
-        model_config[KEY.LMAX_EDGE]
-        if model_config[KEY.LMAX_EDGE] >= 0
+        config[KEY.LMAX_EDGE]
+        if config[KEY.LMAX_EDGE] >= 0
         else lmax
     )
     lmax_node = (
-        model_config[KEY.LMAX_NODE]
-        if model_config[KEY.LMAX_NODE] >= 0
+        config[KEY.LMAX_NODE]
+        if config[KEY.LMAX_NODE] >= 0
         else lmax
     )
 
-    num_convolution_layer = model_config[KEY.NUM_CONVOLUTION]
+    num_convolution_layer = config[KEY.NUM_CONVOLUTION]
 
-    is_parity = model_config[KEY.IS_PARITY]  # boolean
+    is_parity = config[KEY.IS_PARITY]  # boolean
 
     irreps_spherical_harm = Irreps.spherical_harmonics(
         lmax_edge, -1 if is_parity else 1
@@ -136,36 +119,35 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         layers = OrderedDict()
 
     irreps_manual = None
-    if model_config[KEY.IRREPS_MANUAL] is not False:
-        irreps_manual = model_config[KEY.IRREPS_MANUAL]
+    if config[KEY.IRREPS_MANUAL] is not False:
+        irreps_manual = config[KEY.IRREPS_MANUAL]
         try:
             irreps_manual = [Irreps(irr) for irr in irreps_manual]
             assert len(irreps_manual) == num_convolution_layer + 1
         except Exception:
             raise RuntimeError('invalid irreps_manual input given')
 
-    sc_intro, sc_outro = init_self_connection(model_config)
+    sc_intro, sc_outro = init_self_connection(config)
 
     act_scalar = {}
     act_gate = {}
-    for k, v in model_config[KEY.ACTIVATION_SCARLAR].items():
+    for k, v in config[KEY.ACTIVATION_SCARLAR].items():
         act_scalar[k] = _const.ACTIVATION_DICT[k][v]
-    for k, v in model_config[KEY.ACTIVATION_GATE].items():
+    for k, v in config[KEY.ACTIVATION_GATE].items():
         act_gate[k] = _const.ACTIVATION_DICT[k][v]
-    act_radial = _const.ACTIVATION[model_config[KEY.ACTIVATION_RADIAL]]
+    act_radial = _const.ACTIVATION[config[KEY.ACTIVATION_RADIAL]]
 
-    radial_basis_module, radial_basis_num = init_radial_basis(model_config)
-    cutoff_function_module = init_cutoff_function(model_config)
+    radial_basis_module, radial_basis_num = init_radial_basis(config)
+    cutoff_function_module = init_cutoff_function(config)
 
-    avg_num_neigh = model_config[KEY.AVG_NUM_NEIGH]
-    if type(avg_num_neigh) is not list:
-        avg_num_neigh = [avg_num_neigh] * num_convolution_layer
-    train_avg_num_neigh = model_config[KEY.TRAIN_AVG_NUM_NEIGH]
+    conv_denominator = config[KEY.CONV_DENOMINATOR]
+    if not isinstance(conv_denominator, list):
+        conv_denominator = [conv_denominator] * num_convolution_layer
+    train_conv_denominator = config[KEY.TRAIN_DENOMINTAOR]
 
-    optimize_by_reduce = model_config[KEY.OPTIMIZE_BY_REDUCE]
-    use_bias_in_linear = model_config[KEY.USE_BIAS_IN_LINEAR]
+    use_bias_in_linear = config[KEY.USE_BIAS_IN_LINEAR]
 
-    _normalize_sph = model_config[KEY._NORMALIZE_SPH]
+    _normalize_sph = config[KEY._NORMALIZE_SPH]
     # model definitions
     edge_embedding = EdgeEmbedding(
         # operate on ||r||
@@ -227,7 +209,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
     # get all possible irreps from tp (here we drop l > lmax)
     irreps_node_attr = one_hot_irreps
 
-    weight_nn_hidden = model_config[KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS]
+    weight_nn_hidden = config[KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS]
     # output layer determined at each IrrepsConvolution layer
     weight_nn_layers = [radial_basis_num] + weight_nn_hidden
 
@@ -235,28 +217,27 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         # here, we can infer irreps of x after interaction from lmax and f0_irreps
         interaction_block = {}
 
-        only_even_p = False
-        if optimize_by_reduce:
-            if i == num_convolution_layer - 1:
-                lmax_node = 0
-                only_even_p = True
+        parity_mode = "full"
+        if i == num_convolution_layer - 1:
+            lmax_node = 0
+            parity_mode = "even"
 
         # raw irreps out after message(convolution) function
-        tp_irreps_out = infer_irreps_out(
+        tp_irreps_out = util.infer_irreps_out(
             irreps_x,  # node feature irreps
             irreps_spherical_harm,  # filter irreps
             drop_l=lmax_node,
-            only_even_p=only_even_p,
+            parity_mode=parity_mode,
         )
 
         # multiplicity maintained irreps after Gate, linear, ..
         true_irreps_out = (
-            infer_irreps_out(
+            util.infer_irreps_out(
                 irreps_x,
                 irreps_spherical_harm,
                 drop_l=lmax_node,
+                parity_mode=parity_mode,
                 fix_multiplicity=feature_multiplicity,
-                only_even_p=only_even_p,
             )
             if irreps_manual is None
             else irreps_manual[i + 1]
@@ -301,8 +282,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             layers.update(interaction_block)
             interaction_block = {}  # TODO: this is confusing
             #######################################################
-            radial_basis_module, _ = init_radial_basis(model_config)
-            cutoff_function_module = init_cutoff_function(model_config)
+            radial_basis_module, _ = init_radial_basis(config)
+            cutoff_function_module = init_cutoff_function(config)
             interaction_block.update({
                 'edge_embedding': EdgeEmbedding(
                     # operate on ||r||
@@ -325,8 +306,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             weight_layer_input_to_hidden=weight_nn_layers,
             weight_layer_act=act_radial,
             # TODO: BOTNet says no sqrt is better
-            denominator=avg_num_neigh[i] ** 0.5,
-            train_denominator=train_avg_num_neigh,
+            denominator=conv_denominator[i],
+            train_denominator=train_conv_denominator,
             is_parallel=parallel,
         )
 
@@ -349,7 +330,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
 
         # end of interaction block for-loop
 
-    if model_config[KEY.READOUT_AS_FCN] is False:
+    if config[KEY.READOUT_AS_FCN] is False:
         mid_dim = (
             feature_multiplicity
             if irreps_manual is None
@@ -372,8 +353,8 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             ),
         })
     else:
-        act = _const.ACTIVATION[model_config[KEY.READOUT_FCN_ACTIVATION]]
-        hidden_neurons = model_config[KEY.READOUT_FCN_HIDDEN_NEURONS]
+        act = _const.ACTIVATION[config[KEY.READOUT_FCN_ACTIVATION]]
+        hidden_neurons = config[KEY.READOUT_FCN_HIDDEN_NEURONS]
         layers.update({
             'readout_FCN': FCN_e3nn(
                 dim_out=1,
@@ -385,12 +366,12 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
             )
         })
 
-    shift = model_config[KEY.SHIFT]
-    scale = model_config[KEY.SCALE]
-    train_shift_scale = model_config[KEY.TRAIN_SHIFT_SCALE]
+    shift = config[KEY.SHIFT]
+    scale = config[KEY.SCALE]
+    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
     rescale_module = (
         SpeciesWiseRescale
-        if model_config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
+        if config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
         else Rescale
     )
     layers.update({
@@ -421,7 +402,7 @@ def build_E3_equivariant_model(model_config: dict, parallel=False):
         layers.update({'force_output': gradient_module})
 
     # output extraction part
-    type_map = model_config[KEY.TYPE_MAP]
+    type_map = config[KEY.TYPE_MAP]
     if parallel:
         return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
     else:

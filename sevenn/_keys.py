@@ -179,15 +179,16 @@ READOUT_AS_FCN = 'readout_as_fcn'
 READOUT_FCN_HIDDEN_NEURONS = 'readout_fcn_hidden_neurons'
 READOUT_FCN_ACTIVATION = 'readout_fcn_activation'
 
-AVG_NUM_NEIGHBOR = 'avg_num_neigh'  # deprecated
 AVG_NUM_NEIGH = 'avg_num_neigh'
+CONV_DENOMINATOR = 'conv_denominator'
 SHIFT = 'shift'
 SCALE = 'scale'
 
 USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
 
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
-TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'
+TRAIN_DENOMINTAOR = 'train_denominator'
+TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 _NORMALIZE_SPH = '_normalize_sph'
 OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'

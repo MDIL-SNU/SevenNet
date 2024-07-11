@@ -36,69 +36,102 @@ def dataset_load(file: str, config):
 
 
 def handle_shift_scale(config, train_set, checkpoint_given):
-    shift, scale, avg_num_neigh = None, None, None
+    """
+    Priority (first comes later to overwrite):
+        1. Float given in yaml
+        2. Use statistic values of checkpoint == True
+        3. Plain options (provided as string)
+    """
+    shift, scale, conv_denominator = None, None, None
+    type_map = config[KEY.TYPE_MAP]
+    n_chem = len(type_map)
 
     Logger().writeline('\nCalculating statistic values from dataset')
-    if not config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]:
+
+    shift_given = config[KEY.SHIFT]
+    scale_given = config[KEY.SCALE]
+    _expand_shift = True
+    _expand_scale = True
+    use_species_wise_shift_scale = False
+
+    if shift_given == 'per_atom_energy_mean':
         shift = train_set.get_per_atom_energy_mean()
-        scale = train_set.get_force_rms()
-        Logger().write(
-            f'calculated per_atom_energy mean shift is {shift:.6f} eV\n'
-        )
-        Logger().write(
-            f'calculated force rms scale is {scale:.6f} eV/Angstrom\n'
-        )
-    else:
-        type_map = config[KEY.TYPE_MAP]
-        n_chem = len(type_map)
+    elif shift_given == 'elemwise_reference_energies':
         shift = train_set.get_species_ref_energy_by_linear_comb(n_chem)
+        _expand_shift = False
+        use_species_wise_shift_scale = True
+
+    if scale_given == 'force_rms':
+        scale = train_set.get_force_rms()
+    elif scale_given == 'per_atom_energy_std':
+        scale = train_set.get_statistics(KEY.PER_ATOM_ENERGY)['Total']['std']
+    elif scale_given == 'elemwise_force_rms':
         scale = train_set.get_species_wise_force_rms(n_chem)
-        chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
-        Logger().write('calculated specie wise shift, scale is\n')
-        for cstr, sh, sc in zip(chem_strs, shift, scale):
-            Logger().format_k_v(f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True)
+        _expand_scale = False
+        use_species_wise_shift_scale = True
+
     avg_num_neigh = train_set.get_avg_num_neigh()
-    Logger().format_k_v('avg_num_neigh', f'{avg_num_neigh:.6f}', write=True)
+    Logger().format_k_v('Average # of neighbors', f'{avg_num_neigh:.6f}', write=True)
+
+    if config[KEY.CONV_DENOMINATOR] == "avg_num_neigh":
+        conv_denominator = avg_num_neigh
+    elif config[KEY.CONV_DENOMINATOR] == "sqrt_avg_num_neigh":
+        conv_denominator = avg_num_neigh ** (0.5)
 
     if (
         checkpoint_given
         and config[KEY.CONTINUE][KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT]
     ):
         Logger().writeline(
-            'Overwrite shift, scale, avg_num_neigh from checkpoint'
+            'Overwrite shift, scale, conv_denominator from model checkpoint'
         )
-        # Values extracted from checkpoint in processing_continue.py
+        # Values extracted from checkpoint (not config) in processing_continue.py
         shift = config[KEY.SHIFT + '_cp']
         scale = config[KEY.SCALE + '_cp']
-        avg_num_neigh = config[KEY.AVG_NUM_NEIGH + '_cp']
+        # shift & scale would be both array (with same lenght) or scalar
+        assert len(list(shift)) == len(list(scale))
+        if len(list(shift)) > 1:
+            use_species_wise_shift_scale = True
+            _expand_shift = _expand_scale = False
+        else:
+            shift = shift.item()
+            scale = scale.item()
+        conv_denominator = config[KEY.CONV_DENOMINATOR + '_cp']
 
     # overwrite shift scale anyway if defined in yaml.
-    if config[KEY.SHIFT] is not False:
-        Logger().writeline('Overwrite shift to value given in yaml')
-        if (
-            type(config[KEY.SHIFT]) is float
-            and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
-        ):
-            shift = [config[KEY.SHIFT]] * len(config[KEY.TYPE_MAP])
-        else:
-            shift = config[KEY.SHIFT]
-    if config[KEY.SCALE] is not False:
-        Logger().writeline('Overwrite scale to value given in yaml')
-        if (
-            type(config[KEY.SCALE]) is float
-            and config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
-        ):
-            scale = [config[KEY.SCALE]] * len(config[KEY.TYPE_MAP])
-        else:
-            scale = config[KEY.SCALE]
-    if type(config[KEY.AVG_NUM_NEIGH]) in [float, list]:
-        Logger().writeline('Overwrite avg_num_neigh to value given in yaml')
-        avg_num_neigh = config[KEY.AVG_NUM_NEIGH]
+    if type(shift_given) in [list, float]:
+        Logger().writeline('Overwrite shift to value(s) given in yaml')
+        _expand_shift = isinstance(shift_given, float)
+        shift = shift_given
+    if type(scale_given) in [list, float]:
+        Logger().writeline('Overwrite scale to value(s) given in yaml')
+        _expand_scale = isinstance(scale_given, float)
+        scale = scale_given
 
-    if type(avg_num_neigh) is float:
-        avg_num_neigh = [avg_num_neigh] * config[KEY.NUM_CONVOLUTION]
+    if isinstance(config[KEY.CONV_DENOMINATOR], float):
+        Logger().writeline('Overwrite conv_denominator to value given in yaml')
+        conv_denominator = config[KEY.CONV_DENOMINATOR]
 
-    return shift, scale, avg_num_neigh
+    if isinstance(conv_denominator, float):
+        conv_denominator = [conv_denominator] * config[KEY.NUM_CONVOLUTION]
+
+    if use_species_wise_shift_scale:
+        chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
+        if _expand_shift:
+            shift = [shift] * n_chem
+        if _expand_scale:
+            scale = [scale] * n_chem
+        Logger().write('Use element-wise shift, scale\n')
+        for cstr, sh, sc in zip(chem_strs, shift, scale):
+            Logger().format_k_v(f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True)
+    else:
+        Logger().write('Use global shift, scale\n')
+        Logger().format_k_v("shift, scale", f'{shift:.6f}, {scale:.6f}', write=True)
+
+    Logger().format_k_v("(1st) conv_denominator is", f'{conv_denominator[0]:.6f}', write=True)
+
+    config[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = use_species_wise_shift_scale
+    return shift, scale, conv_denominator
 
 
 # TODO: This is too long
@@ -178,14 +211,7 @@ def processing_dataset(config, working_dir):
 
         valid_set.toggle_requires_grad_of_data(KEY.POS, True)
 
-        # condition 1: validset chems should be subset of trainset chems
-        valid_chems = valid_set.get_species()
-        if set(valid_chems).issubset(set(train_set.get_species())) is False:
-            raise ValueError(
-                'validset chemical species is not subset of trainset'
-            )
-
-        # condition 2: validset labels should be subset of trainset labels
+        # condition: validset labels should be subset of trainset labels
         valid_labels = valid_set.user_labels
         train_labels = train_set.user_labels
         if set(valid_labels).issubset(set(train_labels)) is False:
@@ -263,11 +289,11 @@ def processing_dataset(config, working_dir):
     Logger().write(Logger.format_k_v('training_set size', train_set.len()))
     Logger().write(Logger.format_k_v('validation_set size', valid_set.len()))
 
-    shift, scale, avg_num_neigh = handle_shift_scale(
+    shift, scale, conv_denominator = handle_shift_scale(
         config, train_set, checkpoint_given
     )
     config.update(
-        {KEY.SHIFT: shift, KEY.SCALE: scale, KEY.AVG_NUM_NEIGH: avg_num_neigh}
+        {KEY.SHIFT: shift, KEY.SCALE: scale, KEY.CONV_DENOMINATOR: conv_denominator}
     )
 
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
