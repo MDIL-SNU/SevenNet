@@ -38,10 +38,10 @@ The installation and usage of SevenNet are split into two parts: training (handl
 
 You can find the installation guides for these packages from the [`PyTorch official`](https://pytorch.org/get-started/locally/), [`TorchGeometric docs`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) and [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter). Remember that these packages have dependencies on your CUDA version.
 
-```
-git clone https://github.com/MDIL-SNU/SevenNet.git
-cd SevenNet
-pip install .
+**PLEASE NOTE:** You must install PyTorch, TorchGeometric, and pytorch_scatter before installing SevenNet. They are not marked as dependencies since they are coupled with the CUDA version.
+
+```bash
+pip install sevenn
 ```
 
 ## Usage
