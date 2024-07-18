@@ -204,6 +204,7 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.RANDOM_SEED: 1,
     KEY.EPOCH: 300,
     KEY.LOSS: 'mse',
+    KEY.LOSS_PARAM: {},
     KEY.OPTIMIZER: 'adam',
     KEY.OPTIM_PARAM: {},
     KEY.SCHEDULER: 'exponentiallr',
