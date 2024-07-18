@@ -76,7 +76,7 @@ class ForceOutput(nn.Module):
             create_graph=self.training,
         )[0]
 
-        # without this 'if', type(grad) is 'Optional[Tensor]' which result in error
+        # For torchscript
         if grad is not None:
             data[self.key_force] = torch.neg(grad)
         return data

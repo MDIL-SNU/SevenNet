@@ -43,7 +43,7 @@ class AtomGraphDataset:
         dataset: Union[Dict[str, List], List],
         cutoff: float,
         metadata: Optional[Dict] = None,
-        x_is_one_hot_idx: Optional[bool] = False,
+        x_is_one_hot_idx: bool = False,
     ):
         """
         Default constructor of AtomGraphDataset
@@ -51,14 +51,13 @@ class AtomGraphDataset:
             dataset (Union[Dict[str, List], List]: dataset as dict or pure list
             metadata (Dict, Optional): metadata of data
             cutoff (float): cutoff radius of graphs inside the dataset
-            x_is_one_hot_idx (bool, Optional): if True, x is one_hot_idx, eles 'Z'
+            x_is_one_hot_idx (bool): if True, x is one_hot_idx, eles 'Z'
 
         'x' (node feature) of dataset can have 3 states, atomic_numbers,
         one_hot_idx, or one_hot_vector.
 
-        atomic_numbers is the most general one but cannot directly used for input
+        atomic_numbers is general but cannot directly used for input
         one_hot_idx is can be input of the model but requires 'type_map'
-        one_hot_idx to one_hot_vector is done by model, so it should not be used here
         """
         self.cutoff = cutoff
         self.x_is_one_hot_idx = x_is_one_hot_idx
@@ -196,7 +195,6 @@ class AtomGraphDataset:
         """
 
         def divide(ratio: float, data_list: List, ignore_test=True):
-            # Get list as input and return list divided by 1-2*ratio : ratio : ratio
             if ratio > 0.5:
                 raise ValueError('Ratio must not exceed 0.5')
             data_len = len(data_list)
@@ -392,7 +390,6 @@ class AtomGraphDataset:
 
         check consistent data type, float, double, long integer etc
         """
-        assert type(dataset) == AtomGraphDataset
 
         def default_validator(db1, db2):
             cut_consis = db1.cutoff == db2.cutoff
@@ -425,19 +422,13 @@ class AtomGraphDataset:
 
     # TODO: this by_label is not straightforward
     def save(self, path, by_label=False):
-        """
-        with open(path, 'wb') as f:
-            pickle.dump(self, f)
-        """
         if by_label:
             for label, data in self.dataset.items():
-                to = f'{path}/{label}.sevenn_data'
-                # torch.save(AtomGraphDataset({label: data}, metadata=self.meta), to)
                 torch.save(
                     AtomGraphDataset(
                         {label: data}, self.cutoff, metadata=self.meta
                     ),
-                    to,
+                    f'{path}/{label}.sevenn_data',
                 )
         else:
             if path.endswith('.sevenn_data') is False:

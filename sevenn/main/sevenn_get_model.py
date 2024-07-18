@@ -1,6 +1,5 @@
 import argparse
-
-import torch
+import os
 
 import sevenn._const as _const
 import sevenn.util
@@ -10,7 +9,10 @@ description_get_model = (
     f'sevenn version={_const.SEVENN_VERSION}, sevenn_get_model.'
     + ' Deploy model for LAMMPS from the checkpoint'
 )
-checkpoint_help = 'checkpoint path'
+checkpoint_help = (
+    'path to the checkpoint | SevenNet-0 | 7net-0 |'
+    ' {SevenNet-0|7net-0}_{11July2024|22May2024}'
+)
 output_name_help = 'filename prefix'
 get_parallel_help = 'deploy parallel model'
 
@@ -18,14 +20,19 @@ get_parallel_help = 'deploy parallel model'
 def main(args=None):
     checkpoint, output_prefix, get_parallel = cmd_parse_get_model(args)
     get_serial = not get_parallel
-    cp_file = torch.load(checkpoint, map_location=torch.device('cpu'))
 
     if output_prefix is None:
         output_prefix = (
             'deployed_parallel' if not get_serial else 'deployed_serial'
         )
 
-    model, config = sevenn.util.model_from_checkpoint(checkpoint)
+    checkpoint_path = None
+    if os.path.isfile(checkpoint):
+        checkpoint_path = checkpoint
+    else:
+        checkpoint_path = sevenn.util.pretrained_name_to_path(checkpoint)
+
+    model, config = sevenn.util.model_from_checkpoint(checkpoint_path)
     stct_dct = model.state_dict()
 
     if get_serial:

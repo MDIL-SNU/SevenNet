@@ -36,7 +36,6 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
         'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
     )
 
-    # remove redundant edges (self interaction) but saves self interaction cross PBC
     is_zero_idx = np.all(edge_vec == 0, axis=1)
     is_self_idx = edge_src == edge_dst
     non_trivials = ~(is_zero_idx & is_self_idx)
@@ -83,8 +82,8 @@ def atoms_to_graph(
     Raises:
         RuntimeError: if ase atoms are somewhat imperfect
 
-    Use free_energy by default (atoms.get_potential_energy(force_consistent=True))
-    If it is not available, use energy (atoms.get_potential_energy())
+    Use free_energy: atoms.get_potential_energy(force_consistent=True)
+    If it is not available, use atoms.get_potential_energy()
     If stress is available, initialize stress tensor
     Ignore constraints like selective dynamics
 
@@ -114,7 +113,6 @@ def atoms_to_graph(
         'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
     )
 
-    # remove redundant edges (self interaction) but saves self interaction cross PBC
     is_zero_idx = np.all(edge_vec == 0, axis=1)
     is_self_idx = edge_src == edge_dst
     non_trivials = ~(is_zero_idx & is_self_idx)
@@ -177,7 +175,6 @@ def graph_build(
 
     if not serial:
         pool = mp.Pool(num_cores)
-        # this is not strictly correct because it updates for every input not output
         graph_list = pool.starmap(
             atoms_to_graph, tqdm.tqdm(inputs, total=len(atoms_list))
         )
@@ -204,9 +201,9 @@ def pkl_atoms_reader(fname):
     """
     with open(fname, 'rb') as f:
         atoms_list = pickle.load(f)
-    if type(atoms_list) != list:
+    if not isinstance(atoms_list, list):
         raise TypeError('The content of the pkl is not list')
-    if type(atoms_list[0]) != ase.Atoms:
+    if not isinstance(atoms_list[0], ase.Atoms):
         raise TypeError('The content of the pkl is not list of ase.Atoms')
     return atoms_list
 
@@ -313,7 +310,7 @@ def match_reader(reader_name: str, **kwargs):
         metadata.update({'origin': 'structure_list'})
     else:
         reader = partial(ase_reader, **kwargs)
-        metadata.update({'origin': f'ase_reader'})
+        metadata.update({'origin': 'ase_reader'})
     return reader, metadata
 
 
@@ -332,15 +329,15 @@ def file_to_dataset(
     # expect label: atoms_list dct or atoms or list of atoms
     atoms = reader(file)
 
-    if type(atoms) == list:
+    if type(atoms) is list:
         if label is None:
             label = KEY.LABEL_NONE
         atoms_dct = {label: atoms}
-    elif type(atoms) == ase.Atoms:
+    elif isinstance(atoms, ase.Atoms):
         if label is None:
             label = KEY.LABEL_NONE
         atoms_dct = {label: [atoms]}
-    elif type(atoms) == dict:
+    elif isinstance(atoms, dict):
         atoms_dct = atoms
     else:
         raise TypeError('The return of reader is not list or dict')

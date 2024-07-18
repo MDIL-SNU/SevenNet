@@ -91,9 +91,9 @@ class BesselBasis(nn.Module):
         super().__init__()
         self.num_basis = bessel_basis_num
         self.prefactor = 2.0 / cutoff_length
-        self.coeffs = torch.FloatTensor(
-            [n * math.pi / cutoff_length for n in range(1, bessel_basis_num + 1)]
-        )
+        self.coeffs = torch.FloatTensor([
+            n * math.pi / cutoff_length for n in range(1, bessel_basis_num + 1)
+        ])
         if trainable_coeff:
             self.coeffs = nn.Parameter(self.coeffs)
 
@@ -147,7 +147,6 @@ class XPLORCutoff(nn.Module):
         assert self.r_on < self.r_cut
 
     def forward(self, r: torch.Tensor) -> torch.Tensor:
-        # r > r_cut switch is not necessary since edges are already based on cutoff
         r_sq = r * r
         r_on_sq = self.r_on * self.r_on
         r_cut_sq = self.r_cut * self.r_cut
@@ -162,26 +161,12 @@ class XPLORCutoff(nn.Module):
 
 @compile_mode('script')
 class SphericalEncoding(nn.Module):
-    """
-    Calculate spherical harmonics from 0 to lmax
-    taking displacement vector (EDGE_VEC) as input.
-
-    lmax: maximum angular momentum quantum number used in model
-    normalization : {'integral', 'component', 'norm'}
-        normalization of the output tensors
-        Valid options:
-        * *component*: :math:`\|Y^l(x)\|^2 = 2l+1, x \in S^2`
-        * *norm*: :math:`\|Y^l(x)\| = 1, x \in S^2`, ``component / sqrt(2l+1)``
-        * *integral*: :math:`\int_{S^2} Y^l_m(x)^2 dx = 1`, ``component / sqrt(4pi)``
-
-    Returns
-    -------
-    `torch.Tensor`
-        a tensor of shape ``(..., (lmax+1)^2)``
-    """
-
     def __init__(
-        self, lmax: int, parity: int = -1, normalization: str = 'component', normalize = True,
+        self,
+        lmax: int,
+        parity: int = -1,
+        normalization: str = 'component',
+        normalize=True,
     ):
         super().__init__()
         self.lmax = lmax

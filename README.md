@@ -128,7 +128,7 @@ sevenn_get_model checkpoint_best.pt -p
 This will create multiple `deployed_parallel_*.pt` files. The number of deployed models equals the number of message-passing layers.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
-## Installation for LAMMPS 
+## Installation for LAMMPS
 
 * PyTorch (same version as used for training)
 * LAMMPS version of 'stable_2Aug2023' [`LAMMPS`](https://github.com/lammps/lammps)
@@ -241,7 +241,7 @@ Note that SevenNet-0 parallel model is located in `{PATH TO SEVENNET}/pretrained
 I recommend using variables to handle file paths for parallel models.
 
 ```
-pair_style e3gnn/parallel 
+pair_style e3gnn/parallel
 pair_coeff * * 5 ${pre}/deployed_parallel_0.pt ${pre}/deployed_parallel_1.pt ${pre}/deployed_parallel_2.pt ${pre}/deployed_parallel_3.pt ${pre}/deployed_parallel_4.pt {chemical species}
 ```
 

@@ -58,15 +58,8 @@ def processing_continue(config):
     continue_dct = config[KEY.CONTINUE]
     Logger().write('\nContinue found, loading checkpoint\n')
 
-    try:
-        checkpoint = torch.load(
-            continue_dct[KEY.CHECKPOINT], map_location='cpu'
-        )
-        config_cp = checkpoint['config']
-    except FileNotFoundError:
-        raise FileNotFoundError(
-            f'checkpoint file {continue_dct[KEY.CHECKPOINT]} not found'
-        )
+    checkpoint = torch.load(continue_dct[KEY.CHECKPOINT], map_location='cpu')
+    config_cp = checkpoint['config']
 
     model_cp, config_cp = util.model_from_checkpoint(checkpoint)
     model_state_dict_cp = model_cp.state_dict()
@@ -75,9 +68,8 @@ def processing_continue(config):
     check_config_compatible(config, config_cp)
     Logger().write('Checkpoint config is compatible\n')
 
-    ################## for backward compat.
+    # for backward compat.
     config.update({KEY._NORMALIZE_SPH: config_cp[KEY._NORMALIZE_SPH]})
-    ################## for backward compat.
 
     from_epoch = checkpoint['epoch']
     optimizer_state_dict_cp = (
@@ -104,7 +96,7 @@ def processing_continue(config):
         )
         del model_state_dict_cp[f'{i}_convolution.denominator']
 
-    # these dataset-dependent values should be later handled by processing_dataset.py
+    # Further handled by processing_dataset.py
     config.update({
         KEY.SHIFT + '_cp': shift_cp,
         KEY.SCALE + '_cp': scale_cp,

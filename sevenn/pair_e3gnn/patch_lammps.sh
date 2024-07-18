@@ -1,6 +1,7 @@
 #!/bin/bash
 
 lammps_root=$1
+SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
 echo "Usage: sh patch_lammps.sh {lammps_root}"
 
 # Check if the lammps_root directory exists
@@ -10,14 +11,14 @@ if [ ! -d "$lammps_root" ]; then
 fi
 
 # Check if the given directory is the root of LAMMPS source
-if [ ! -d "$lammps_root/cmake" ]; then
-    echo "Given $lammps_root is not root of LAMMPS source"
+if [ ! -d "$lammps_root/cmake" ] && [ ! -d "$lammps_root/potentials" ]; then
+    echo "Given $lammps_root is not a root of LAMMPS source"
     exit 1
 fi
 
 # Check if the script is being run from the root of SevenNet
-if [ ! -d "./pair_e3gnn" ]; then
-    echo "Please run this script in the root of SevenNet"
+if [ ! -f "${SCRIPT_DIR}/pair_e3gnn.cpp" ]; then
+    echo "Script executed in a wrong directory"
     exit 1
 fi
 
@@ -47,7 +48,9 @@ cp $lammps_root/src/comm_brick.cpp $backup_dir/
 cp $lammps_root/src/comm_brick.h $backup_dir/
 
 # 2. Copy everything inside pair_e3gnn to LAMMPS source
-cp ./pair_e3gnn/* $lammps_root/src/
+# script is located in pair_e3gnn folder
+cp $SCRIPT_DIR/*.cpp $lammps_root/src/
+cp $SCRIPT_DIR/*.h $lammps_root/src/
 
 # 3. Copy cmake/CMakeLists.txt from original source as backup
 cp $lammps_root/cmake/CMakeLists.txt $backup_dir/CMakeLists.txt
@@ -65,11 +68,11 @@ EOF2
 # Check if the command is found and its value is true
 cuda_support=$(ompi_info --parsable --all | grep mpi_built_with_cuda_support:value)
 if [[ -z "$cuda_support" ]]; then
-    echo "OpenMPI not found, parallel performance could be low"
+    echo "OpenMPI not found, parallel performance is not optimal"
 elif [[ "$cuda_support" == *"true" ]]; then
     echo "OpenMPI is CUDA aware"
 else
-    echo "This OpenMPI is not CUDA aware, parallel performance could be low"
+    echo "This system's OpenMPI is not 'CUDA aware', parallel performance is not optimal"
 fi
 
 # ?. Print changes and backup file locations
