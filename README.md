@@ -92,7 +92,7 @@ Once you initiate training, `log.sevenn` will contain all parsed inputs from `in
 #### Multi-GPU training
 We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use one process (CPU core) per GPU.
 ```bash
-torchrun --standalone --nnodes={# of nodes} --nproc_per_node {# of GPUs} --no_python sevenn input.yaml -d
+torchrun --standalone --nnodes {# of nodes} --nproc_per_node {# of GPUs} --no_python sevenn input.yaml -d
 ```
 Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 
