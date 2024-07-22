@@ -7,7 +7,6 @@ import numpy as np
 import torch
 from ase.data import chemical_symbols
 from sklearn.linear_model import Ridge
-from torch_scatter import scatter
 
 import sevenn._keys as KEY
 import sevenn.util as util
@@ -329,11 +328,16 @@ class AtomGraphDataset:
         atomx = torch.concat([d[self.DATA_KEY_X] for d in data_list])
         force = torch.concat([d[self.DATA_KEY_FORCE] for d in data_list])
 
-        rms = torch.sqrt(
-            scatter(force.square(), atomx, dim=0, reduce='mean').mean(dim=1)
+        index = atomx.repeat_interleave(3, 0).reshape(force.shape)
+        rms = torch.zeros(
+            (num_chem_species, 3),
+            dtype=force.dtype,
+            device=force.device
         )
-        if len(rms) < num_chem_species:
-            rms = torch.cat([rms, torch.zeros(num_chem_species - len(rms))])
+        rms.scatter_reduce_(
+            0, index, force.square(),
+            reduce='mean', include_self=False
+        )
         return rms
 
     def get_avg_num_neigh(self):

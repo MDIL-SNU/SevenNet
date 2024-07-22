@@ -1,9 +1,10 @@
+from typing import Callable, List, Optional
+
 import torch
 import torch.nn as nn
 from e3nn.nn import FullyConnectedNet
 from e3nn.o3 import Irreps, Linear
 from e3nn.util.jit import compile_mode
-from torch_scatter import scatter
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
@@ -20,7 +21,7 @@ class IrrepsLinear(nn.Module):
         irreps_in: Irreps,
         irreps_out: Irreps,
         data_key_in: str,
-        data_key_out: str = None,
+        data_key_out: Optional[str] = None,
         **e3nn_linear_params,
     ):
         super().__init__()
@@ -48,7 +49,7 @@ class AtomReduce(nn.Module):
         self,
         data_key_in: str,
         data_key_out: str,
-        reduce='sum',
+        reduce: str = 'sum',
         constant: float = 1.0,
     ):
         super().__init__()
@@ -63,16 +64,13 @@ class AtomReduce(nn.Module):
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self._is_batch_data:
-            data[self.key_output] = (
-                scatter(
-                    data[self.key_input],
-                    data[KEY.BATCH],
-                    dim=0,
-                    reduce=self.reduce,
-                )
-                * self.constant
+            src = data[self.key_input].squeeze(1)
+            size = int(data[KEY.BATCH].max()) + 1
+            output = torch.zeros(
+                (size), dtype=src.dtype, device=src.device,
             )
-            data[self.key_output] = data[self.key_output].squeeze(1)
+            output.scatter_reduce_(0, data[KEY.BATCH], src, reduce='sum')
+            data[self.key_output] = output * self.constant
         else:
             data[self.key_output] = (
                 torch.sum(data[self.key_input]) * self.constant
@@ -91,10 +89,10 @@ class FCN_e3nn(nn.Module):
         self,
         irreps_in: Irreps,  # confirm it is scalar & input size
         dim_out: int,
-        hidden_neurons,
-        activation,
+        hidden_neurons: List[int],
+        activation: Callable,
         data_key_in: str,
-        data_key_out: str = None,
+        data_key_out: Optional[str] = None,
         **e3nn_params,
     ):
         super().__init__()

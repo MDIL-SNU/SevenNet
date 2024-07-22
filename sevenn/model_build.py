@@ -16,7 +16,7 @@ from sevenn.nn.edge_embedding import (
     XPLORCutoff,
 )
 from sevenn.nn.equivariant_gate import EquivariantGate
-from sevenn.nn.force_output import ForceOutputFromEdge, ForceStressOutput
+from sevenn.nn.force_output import ForceStressOutput
 from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.scale import Rescale, SpeciesWiseRescale
@@ -32,7 +32,7 @@ warnings.filterwarnings(
     'ignore',
     message=(
         "The TorchScript type system doesn't "
-        "support instance-level annotations"
+        'support instance-level annotations'
     ),
 )
 
@@ -61,8 +61,7 @@ def init_radial_basis(config):
     if radial_basis_dct[KEY.RADIAL_BASIS_NAME] == 'bessel':
         basis_function = BesselBasis(**param)
         return basis_function, basis_function.num_basis
-
-    raise RuntimeError('something went very wrong...')
+    raise RuntimeError('something went wrong...')
 
 
 def init_cutoff_function(config):
@@ -80,10 +79,6 @@ def init_cutoff_function(config):
 
 # TODO: it gets bigger and bigger. refactor it
 def build_E3_equivariant_model(config: dict, parallel=False):
-    """
-    IDENTICAL to nequip model
-    atom embedding is not part of model
-    """
     data_key_weight_input = KEY.EDGE_EMBEDDING  # default
 
     # parameter initialization
@@ -103,6 +98,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     irreps_spherical_harm = Irreps.spherical_harmonics(
         lmax_edge, -1 if is_parity else 1
     )
+    layers_list = []
     if parallel:
         layers_list = [OrderedDict() for _ in range(num_convolution_layer)]
         layers_idx = 0
@@ -150,11 +146,10 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             lmax_edge, -1 if is_parity else 1, normalize=_normalize_sph
         ),
     )
-    if not parallel:
-        layers.update({
-            # simple edge preprocessor module with no param
-            'edge_preprocess': EdgePreprocess(is_stress=True),
-        })
+    layers.update({
+        # simple edge preprocessor module with no param
+        'edge_preprocess': EdgePreprocess(is_stress=True),
+    })
 
     layers.update({
         # 'Not' simple edge embedding module
@@ -375,22 +370,18 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             constant=1.0,
         ),
     })
-    if not parallel:
-        fso = ForceStressOutput(
-            data_key_energy=KEY.PRED_TOTAL_ENERGY,
-            data_key_force=KEY.PRED_FORCE,
-            data_key_stress=KEY.PRED_STRESS,
-        )
-        fof = ForceOutputFromEdge(
-            data_key_energy=KEY.PRED_TOTAL_ENERGY,
-            data_key_force=KEY.PRED_FORCE,
-        )
-        gradient_module = fso if not parallel else fof
-        layers.update({'force_output': gradient_module})
+    gradient_module = ForceStressOutput(
+        data_key_energy=KEY.PRED_TOTAL_ENERGY,
+        data_key_force=KEY.PRED_FORCE,
+        data_key_stress=KEY.PRED_STRESS,
+    )
+    layers.update({'force_output': gradient_module})
 
     # output extraction part
     type_map = config[KEY.TYPE_MAP]
     if parallel:
+        del layers_list[0]['edge_preprocess']  # done in LAMMPS
+        del layers_list[-1]['force_output']  # done in LAMMPS
         return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
     else:
         return AtomGraphSequential(layers, cutoff, type_map)
