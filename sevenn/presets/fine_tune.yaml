@@ -1,4 +1,5 @@
 # Example input.yaml for fine-tuning sevennet-0
+# '*' signifies default. You can check log.sevenn for defaults.
 
 model:  # model keys should be consistent except for train_* keys
     chemical_species: 'Auto'
@@ -59,7 +60,7 @@ train:  # Customizable
         reset_epoch: True
         checkpoint: 'SevenNet-0_11July2024'
         # Set True to use shift, scale, and avg_num_neigh from checkpoint (highly recommended)
-        use_statistic_values_of_checkpoint: True 
+        use_statistic_values_of_checkpoint: True
 
 data:  # Customizable
     batch_size: 4
@@ -67,9 +68,9 @@ data:  # Customizable
 
     # ase.io.read readable data files or structure_list or .sevenn_data files can be used as dataset.
     # .sevenn_data is preprocessed data set has edges connected (can be obtained by using sevenn_graph_build or by save_** options below)
-    data_format: 'ase'                            # Default is 'ase'
-    data_format_args:                             # Paramaters, will be passed to ase.io.read see: https://wiki.fysik.dtu.dk/ase/ase/io/io.html
-        index: ':'
+    data_format: 'ase'                            # One of 'ase', 'structure_list' (.sevenn_data is always readable)
+    data_format_args:                             # if `data_format` is `ase`, args will be passed to `ase.io.read`
+        index: ':'                                # see `https://wiki.fysik.dtu.dk/ase/ase/io/io.html` for more valid arguments
 
     # If only load_dataset_path is provided, train/valid set is automatically decided by splitting dataset by divide ratio
     # If both load_dataset_path & load_validset_path is provided, use load_dataset_path as training set.
