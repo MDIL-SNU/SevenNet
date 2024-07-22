@@ -35,16 +35,17 @@ requires = [
     "pyyaml",
     "e3nn",
     "tqdm",
+    "torch_geometric"
 ]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools.package-data]
 sevenn = [
-    "logo_ascii", 
-    "pair_e3gnn/*.cpp", 
-    "pair_e3gnn/*.h", 
+    "logo_ascii",
+    "pair_e3gnn/*.cpp",
+    "pair_e3gnn/*.h",
     "presets/*.yaml",
-    "pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth", 
+    "pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth",
     "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth"
 ]
 
