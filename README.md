@@ -37,14 +37,14 @@ The installation and usage of SevenNet are split into two parts: training (handl
 Please install PyTorch from [`PyTorch official`](https://pytorch.org/get-started/locally/) before installing the SevenNet.
 Note that for SevenNet, `torchvision` and `torchaudio` are redundant. You can omit them from the command provided in the installation guide.
 
-Matching PyTorch + CUDA versions may cause problems, especially when compiling SevenNet with LAMMPS. Here are the versions we've been using internally, without problems.
+Matching PyTorch + CUDA versions may cause problems, especially when compiling SevenNet with LAMMPS. Here are the recommended versions we've been using internally without an issue.
 - PyTorch/2.2.2 + CUDA/12.1.0
 - PyTorch/1.13.1 + CUDA/12.1.0
 - PyTorch/1.12.0 + CUDA/11.6.2
 
-Using the newer versions of CUDA with PyTorch is usually not an issue. For example, we were able to compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
+Using the newer versions of CUDA with PyTorch is usually not an issue. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
 
-**PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version, and manual installation is safe for this case.
+**PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version, therefore manual installation is safer.
 
 After the PyTorch installation, simply run
 ```bash
@@ -139,22 +139,20 @@ These models can be used as lammps potential to run parallel MD simulations with
 * LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
 * (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 
+As system-wise requirements, you also need CUDA and Intel MKL. 
+
 **PLEASE NOTE:** CUDA-aware OpenMPI is optional, but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
-Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the version using git.
+Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the version using git. After switching the version, run `sevenn_patch_lammps` with the lammps directory path as an argument.
 ```bash
 git clone https://github.com/lammps/lammps.git lammps_dir
 cd lammps_dir
 git checkout stable_2Aug2023_update3
+sevenn_patch_lammps ./
 ```
-
-Run sevenn_patch_lammps
-```bash
-sevenn_patch_lammps {path_to_lammps_dir}
-```
-Refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
+You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
 Build LAMMPS with cmake (example):
 ```
@@ -164,6 +162,31 @@ $ cd build
 $ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
 $ make -j4
 ```
+
+ If you're having trouble with the above procedure and it is related to MKL, check the notes below.
+
+### Note for MKL errors
+You may encounter `MKL_INCLUDE_DIR NOT-FOUND` during cmake or see hundreds of `undefined reference to XXX` errors from `libtorch_cpu.so` at the end of the compilation. This typically indicates that either Intel MKL is not installed or its environment variables are not correctly set.
+
+First, check if there are Intel MKL modules available on your system (these may have names like intel-oneapi, intel-mkl, intel-compiler, etc.). Load the relevant module to automatically configure the necessary settings.
+
+If the module is not available, I recommend using Conda. Install `mkl` and `mkl-include` with the following command:
+```bash
+conda install -c intel mkl mkl-include
+```
+If you encounter an error, remove `-c intel`. This is a known bug in the recent Conda version.
+
+Next, configure the `LD_LIBRARY_PATH` for MKL libraries:
+```bash
+export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+```
+
+Finally, append the following to your cmake command:
+```bash
+-DMKL_INCLUDE_DIR="$CONDA_PREFIX/include"
+```
+
+Before running the command, I recommend you clean the files generated from the previous `cmake` command.
 
 ## Usage for LAMMPS
 
@@ -197,7 +220,7 @@ The number of segmented `*.pt` files is the same as the number of message-passin
 
 Check [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
 
-**PLEASE NOTE:** One GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently.
+One GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently.
 
 **PLEASE NOTE:** Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
 
