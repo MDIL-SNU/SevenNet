@@ -188,6 +188,13 @@ pair_style e3gnn/parallel
 pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {space separated chemical species}
 ```
 
+For example,
+```
+pair_style e3gnn/parallel
+pair_coeff * * 4 ./deployed_parallel_0.pt ./deployed_parallel_1.pt ./deployed_parallel_2.pt ./deployed_parallel_3.pt Hf O
+```
+The number of segmented `*.pt` files is the same as the number of message-passing layers of the model.
+
 Check [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
 
 **PLEASE NOTE:** One GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently.
