@@ -9,7 +9,7 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
 
 The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which enable large-scale MD simulations or faster MD simulations.
 
-The installation and usage of SevenNet are split into two parts: training (handled by PyTorch) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later used to run molecular dynamics simulations via LAMMPS.
+The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)).
 
 - [SevenNet](#sevennet)
   * [Installation](#installation)
