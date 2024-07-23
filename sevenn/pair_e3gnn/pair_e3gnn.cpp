@@ -129,7 +129,7 @@ void PairE3GNN::compute(int eflag, int vflag) {
   torch::Tensor inp_pos = torch::zeros({nlocal, 3});
 
   torch::Tensor inp_cell_volume =
-      torch::dot(inp_cell[0], torch::cross(inp_cell[1], inp_cell[2]));
+      torch::dot(inp_cell[0], torch::cross(inp_cell[1], inp_cell[2], 0));
 
   float pbc_shift_tmp[nedges_upper_bound][3];
 

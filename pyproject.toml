@@ -14,6 +14,17 @@ classifiers = [
     "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
     "Operating System :: POSIX :: Linux",
 ]
+dependencies = [
+    "ase",
+    "braceexpand",
+    "pyyaml",
+    "e3nn",
+    "tqdm",
+    "scikit-learn",
+    "torch_geometric",
+    "numpy<2.0",
+]
+
 
 [project.scripts]
 sevenn = "sevenn.main.sevenn:main"
@@ -28,22 +39,15 @@ Homepage = "https://github.com/MDIL-SNU/SevenNet"
 Issues = "https://github.com/MDIL-SNU/SevenNet/issues"
 
 [build-system]
-requires = [
-    "setuptools>=61.0",
-    "ase",
-    "braceexpand",
-    "pyyaml",
-    "e3nn",
-    "tqdm",
-    "torch_geometric"
-]
 build-backend = "setuptools.build_meta"
+requires = ["setuptools>=61.0"]
 
 [tool.setuptools.package-data]
 sevenn = [
     "logo_ascii",
     "pair_e3gnn/*.cpp",
     "pair_e3gnn/*.h",
+    "pair_e3gnn/patch_lammps.sh",
     "presets/*.yaml",
     "pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth",
     "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth"

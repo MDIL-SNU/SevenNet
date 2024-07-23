@@ -123,7 +123,6 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
 
   if (lmp->screen) {
     if (use_gpu && !use_cuda_mpi) {
-      // GPU device + cuda-'NOT'aware mpi combination. is not supported yet
       device_comm = torch::kCPU;
       fprintf(lmp->screen,
               "cuda-aware mpi not found, communicate via host device\n");
@@ -137,7 +136,6 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   }
   if (lmp->logfile) {
     if (use_gpu && !use_cuda_mpi) {
-      // GPU device + cuda-'NOT'aware mpi combination. is not supported yet
       device_comm = torch::kCPU;
       fprintf(lmp->logfile,
               "cuda-aware mpi not found, communicate via host device\n");
@@ -212,12 +210,12 @@ void PairE3GNNParallel::warning_pressure() {
       fprintf(
           lmp->screen,
           "WARNING: PairE3GNNParallel does not support pressure calculation. "
-          "Pressure on log is WRONG. Use serial version if you needed\n");
+          "Pressure on log is wrong. Use serial version if you needed\n");
     if (lmp->logfile)
       fprintf(
           lmp->logfile,
           "WARNING: PairE3GNNParallel does not support pressure calculation. "
-          "Pressure on log is WRONG. Use serial version if you needed\n");
+          "Pressure on log is wrong. Use serial version if you needed\n");
     already_did = true;
   }
 }
@@ -495,12 +493,12 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   dE_dr = dE_dr.to(torch::kCPU);
   torch::Tensor force_tensor = torch::zeros({graph_indexer, 3});
 
-  force_tensor.scatter_(
+  force_tensor.scatter_reduce_(
       0, edge_idx_src_tensor.repeat_interleave(3).view({nedges, 3}), dE_dr,
-      "add");
-  force_tensor.scatter_(
+      "sum");
+  force_tensor.scatter_reduce_(
       0, edge_idx_dst_tensor.repeat_interleave(3).view({nedges, 3}),
-      torch::neg(dE_dr), "add");
+      torch::neg(dE_dr), "sum");
 
   auto forces = force_tensor.accessor<float, 2>();
 
@@ -639,7 +637,8 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
       }
     }
     if (!found_flag) {
-      error->all(FLERR, "Unknown chemical specie is given");
+      error->all(FLERR, "Unknown chemical specie is given or the number of "
+                        "potential files is not consistent");
     }
   }
 
