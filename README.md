@@ -32,14 +32,21 @@ The installation and usage of SevenNet are split into two parts: training (handl
 ## Installation
 
 * Python >= 3.8
-* PyTorch >= 1.11
-* [`TorchGeometric`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
-* [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter)
+* PyTorch >= 1.12.0
 
-You can find the installation guides for these packages from the [`PyTorch official`](https://pytorch.org/get-started/locally/), [`TorchGeometric docs`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) and [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter). Remember that these packages have dependencies on your CUDA version.
+Please install PyTorch from [`PyTorch official`](https://pytorch.org/get-started/locally/) before installing the SevenNet.
+Note that for SevenNet, `torchvision` and `torchaudio` are redundant. You can omit them from the command provided in the installation guide.
 
-**PLEASE NOTE:** You must install PyTorch, TorchGeometric, and pytorch_scatter before installing SevenNet. They are not marked as dependencies since they are coupled with the CUDA version.
+Matching PyTorch + CUDA versions may cause problems, especially when compiling SevenNet with LAMMPS. Here are the versions we've been using internally, without problems.
+- PyTorch/2.2.2 + CUDA/12.1.0
+- PyTorch/1.13.1 + CUDA/12.1.0
+- PyTorch/1.12.0 + CUDA/11.6.2
 
+Using the newer versions of CUDA with PyTorch is usually not an issue. For example, we were able to compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
+
+**PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version, and manual installation is safe for this case.
+
+After the PyTorch installation, simply run
 ```bash
 pip install sevenn
 ```
@@ -53,6 +60,8 @@ SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF datas
 This model was trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). We suggest starting with this model as we found that it performs better than the previous SevenNet-0 (22May2024). Check [`Matbench Discovery leaderborad`](https://matbench-discovery.materialsproject.org/) for this model's performance on materials discovery.
 
 Whenever the checkpoint path is the input, this model can be loaded via `7net-0 | SevenNet-0 | 7net-0_11July2024 | SevenNet-0_11July2024` keywords.
+
+Acknowledgments: This potential was developed with the support of the Samsung Advanced Institute of Technology (SAIT) and utilized the resources of the Samsung SSC-21 cluster.
 
 #### SevenNet-0 (22May2024)
 This model was trained on [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599). This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190).
@@ -87,10 +96,9 @@ Other valid preset options are: `base`, `fine_tune`, and `sevennet-0`.
 Check comments of `base` yaml for explanations.
 
 To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
-Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. You can refer to the log to check the default inputs.
 
 #### Multi-GPU training
-We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use one process (CPU core) per GPU.
+We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use one process (or a CPU core) per GPU.
 ```bash
 torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
 ```
@@ -125,30 +133,28 @@ sevenn_get_model 7net-0 -p
 This will create multiple `deployed_parallel_*.pt` files. The number of deployed models equals the number of message-passing layers.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
-See `sevenn_inference --help` for more information.
-
 ## Installation for LAMMPS
 
 * PyTorch (same version as used for training)
-* LAMMPS version of 'stable_2Aug2023' [`LAMMPS`](https://github.com/lammps/lammps)
+* LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
 * (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 
 **PLEASE NOTE:** CUDA-aware OpenMPI is optional, but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
-Ensure the LAMMPS version (stable_2Aug2023). You can easily switch the version using git.
+Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the version using git.
 ```bash
 git clone https://github.com/lammps/lammps.git lammps_dir
 cd lammps_dir
-git checkout stable_2Aug2023
+git checkout stable_2Aug2023_update3
 ```
 
 Run sevenn_patch_lammps
 ```bash
 sevenn_patch_lammps {path_to_lammps_dir}
 ```
-Refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the patch process.
+Refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
 Build LAMMPS with cmake (example):
 ```
