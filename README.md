@@ -135,11 +135,12 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 ## Installation for LAMMPS
 
+
 * PyTorch (same version as used for training)
 * LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
 * (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 
-As system-wise requirements, you also need CUDA and Intel MKL. 
+As system-wise requirements, you also need CUDA and Intel MKL. Currently, this installation guide is dedicated to Linux. 
 
 **PLEASE NOTE:** CUDA-aware OpenMPI is optional, but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
 
@@ -163,9 +164,15 @@ $ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.
 $ make -j4
 ```
 
+If the compilation is successful, you will find the executable at `{path_to_lammps_dir}/build/lmp`. To use this binary easily, for example, create a soft link in your bin directory (which should be included in your $PATH).
+```bash
+ln -s {absolute_path_to_lammps_dir}/build/lmp $HOME/.local/bin/lmp
+```
+This will allow you to run the binary using `lmp -in my_lammps_script.lmp`.
+
  If you're having trouble with the above procedure and it is related to MKL, check the notes below.
 
-### Note for MKL errors
+### Note for MKL
 You may encounter `MKL_INCLUDE_DIR NOT-FOUND` during cmake or see hundreds of `undefined reference to XXX` errors from `libtorch_cpu.so` at the end of the compilation. This typically indicates that either Intel MKL is not installed or its environment variables are not correctly set.
 
 First, check if there are Intel MKL modules available on your system (these may have names like intel-oneapi, intel-mkl, intel-compiler, etc.). Load the relevant module to automatically configure the necessary settings.
