@@ -338,7 +338,7 @@ class AtomGraphDataset:
             0, index, force.square(),
             reduce='mean', include_self=False
         )
-        return rms
+        return torch.sqrt(rms.mean(dim=1))
 
     def get_avg_num_neigh(self):
         n_neigh = []
