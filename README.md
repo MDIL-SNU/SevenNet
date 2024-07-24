@@ -35,18 +35,18 @@ The installation and usage of SevenNet are split into two parts: training + comm
 * PyTorch >= 1.12.0
 
 Please install PyTorch from [`PyTorch official`](https://pytorch.org/get-started/locally/) before installing the SevenNet.
-Note that for SevenNet, `torchvision` and `torchaudio` are redundant. You can omit them from the command provided in the installation guide.
+Note that for SevenNet, `torchvision` and `torchaudio` are redundant. You can safely exclude these packages from the installation commands.
 
-Matching PyTorch + CUDA versions may cause problems, especially when compiling SevenNet with LAMMPS. Here are the recommended versions we've been using internally without an issue.
+Here are the recommended versions we've been using internally without an issue.
 - PyTorch/2.2.2 + CUDA/12.1.0
 - PyTorch/1.13.1 + CUDA/12.1.0
 - PyTorch/1.12.0 + CUDA/11.6.2
 
-Using the newer versions of CUDA with PyTorch is usually not an issue. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
+Using the newer versions of CUDA with PyTorch is usually not a problem. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
 
-**PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version, therefore manual installation is safer.
+**PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version.
 
-After the PyTorch installation, simply run
+After the PyTorch installation, run
 ```bash
 pip install sevenn
 ```
@@ -135,29 +135,27 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 ## Installation for LAMMPS
 
-
 * PyTorch (same version as used for training)
 * LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
 * (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
-
-As system-wise requirements, you also need CUDA and Intel MKL. Currently, this installation guide is dedicated to Linux. 
-
-**PLEASE NOTE:** CUDA-aware OpenMPI is optional, but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
+* MKL-include
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
+If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module. If it is unavailable, read the 'Note for MKL' section before running cmake.
+
+CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
+
 Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the version using git. After switching the version, run `sevenn_patch_lammps` with the lammps directory path as an argument.
 ```bash
-git clone https://github.com/lammps/lammps.git lammps_dir
-cd lammps_dir
-git checkout stable_2Aug2023_update3
-sevenn_patch_lammps ./
+git clone https://github.com/lammps/lammps.git lammps_test --branch stable_2Aug2023_update3 --depth=1
+sevenn_patch_lammps ./lammps_test
 ```
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
 Build LAMMPS with cmake (example):
 ```
-$ cd {path_to_lammps_dir}
+$ cd ./lammps_test
 $ mkdir build
 $ cd build
 $ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
@@ -170,30 +168,23 @@ ln -s {absolute_path_to_lammps_dir}/build/lmp $HOME/.local/bin/lmp
 ```
 This will allow you to run the binary using `lmp -in my_lammps_script.lmp`.
 
- If you're having trouble with the above procedure and it is related to MKL, check the notes below.
-
 ### Note for MKL
-You may encounter `MKL_INCLUDE_DIR NOT-FOUND` during cmake or see hundreds of `undefined reference to XXX` errors from `libtorch_cpu.so` at the end of the compilation. This typically indicates that either Intel MKL is not installed or its environment variables are not correctly set.
+You may encounter MKL_INCLUDE_DIR NOT-FOUND during cmake. This usually means the environment variable is not set correctly, or mkl-include is not present on your system.
 
-First, check if there are Intel MKL modules available on your system (these may have names like intel-oneapi, intel-mkl, intel-compiler, etc.). Load the relevant module to automatically configure the necessary settings.
-
-If the module is not available, I recommend using Conda. Install `mkl` and `mkl-include` with the following command:
+Install mkl-include with:
 ```bash
-conda install -c intel mkl mkl-include
+conda install -c intel mkl-include
 ```
 If you encounter an error, remove `-c intel`. This is a known bug in the recent Conda version.
 
-Next, configure the `LD_LIBRARY_PATH` for MKL libraries:
+Append the following to your cmake command:
 ```bash
-export LD_LIBRARY_PATH=$CONDA_PREFIX/lib:$LD_LIBRARY_PATH
+-DMKL_INCLUDE_DIR=$CONDA_PREFIX/include
 ```
 
-Finally, append the following to your cmake command:
-```bash
--DMKL_INCLUDE_DIR="$CONDA_PREFIX/include"
-```
+If you see hundreds of `undefined reference to XXX` errors with `libtorch_cpu.so` at the end of compilation, check your `$LD_LIBRARY_PATH`. PyTorch depends on MKL libraries (this is a default backend for torch+CPU), therefore you already have them. For example, if you installed PyTorch using Conda, you may find `libmkl_*.so` files under `$CONDA_PREFIX/lib`. Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
 
-Before running the command, I recommend you clean the files generated from the previous `cmake` command.
+For other error cases, you might want to check [`pair-nequip`](https://github.com/mir-group/pair_nequip).
 
 ## Usage for LAMMPS
 
