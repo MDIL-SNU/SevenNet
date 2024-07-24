@@ -5,11 +5,11 @@
 
 # SevenNet
 
-SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
+SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://docs.lammps.org/Manual.html). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
 
 The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which enable large-scale MD simulations or faster MD simulations.
 
-The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)).
+The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
 - [SevenNet](#sevennet)
   * [Installation](#installation)
@@ -37,7 +37,7 @@ The installation and usage of SevenNet are split into two parts: training + comm
 Please install PyTorch from [`PyTorch official`](https://pytorch.org/get-started/locally/) before installing the SevenNet.
 Note that for SevenNet, `torchvision` and `torchaudio` are redundant. You can safely exclude these packages from the installation commands.
 
-Here are the recommended versions we've been using internally without an issue.
+Here are the recommended versions we've been using internally without any issues.
 - PyTorch/2.2.2 + CUDA/12.1.0
 - PyTorch/1.13.1 + CUDA/12.1.0
 - PyTorch/1.12.0 + CUDA/11.6.2
@@ -148,14 +148,14 @@ CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not ava
 
 Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the version using git. After switching the version, run `sevenn_patch_lammps` with the lammps directory path as an argument.
 ```bash
-git clone https://github.com/lammps/lammps.git lammps_test --branch stable_2Aug2023_update3 --depth=1
-sevenn_patch_lammps ./lammps_test
+git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Aug2023_update3 --depth=1
+sevenn_patch_lammps ./lammps_sevenn
 ```
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
 Build LAMMPS with cmake (example):
 ```
-$ cd ./lammps_test
+$ cd ./lammps_sevenn
 $ mkdir build
 $ cd build
 $ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
@@ -169,7 +169,7 @@ ln -s {absolute_path_to_lammps_dir}/build/lmp $HOME/.local/bin/lmp
 This will allow you to run the binary using `lmp -in my_lammps_script.lmp`.
 
 ### Note for MKL
-You may encounter MKL_INCLUDE_DIR NOT-FOUND during cmake. This usually means the environment variable is not set correctly, or mkl-include is not present on your system.
+You may encounter `MKL_INCLUDE_DIR NOT-FOUND` during cmake. This usually means the environment variable is not set correctly, or mkl-include is not present on your system.
 
 Install mkl-include with:
 ```bash
@@ -184,20 +184,22 @@ Append the following to your cmake command:
 
 If you see hundreds of `undefined reference to XXX` errors with `libtorch_cpu.so` at the end of compilation, check your `$LD_LIBRARY_PATH`. PyTorch depends on MKL libraries (this is a default backend for torch+CPU), therefore you already have them. For example, if you installed PyTorch using Conda, you may find `libmkl_*.so` files under `$CONDA_PREFIX/lib`. Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
 
-For other error cases, you might want to check [`pair-nequip`](https://github.com/mir-group/pair_nequip).
+For other error cases, you might want to check [`pair-nequip`](https://github.com/mir-group/pair_nequip), as the `pair-nequip` and SevenNet+LAMMPS shares similar requirements: torch + LAMMPS.
 
 ## Usage for LAMMPS
 
 ### To check installation
 
 ```bash
-{lmp_binary} -help | grep e3gnn
+{lammps_binary} -help | grep e3gnn
 ```
 You will see `e3gnn` and `e3gnn/parallel` as pair_style.
 
 ### For serial model
 
 ```
+units         metal
+atom_style    atomic
 pair_style e3gnn
 pair_coeff * * {path to serial model} {space separated chemical species}
 ```
@@ -205,6 +207,8 @@ pair_coeff * * {path to serial model} {space separated chemical species}
 ### For parallel model
 
 ```
+units         metal
+atom_style    atomic
 pair_style e3gnn/parallel
 pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {space separated chemical species}
 ```
@@ -214,11 +218,11 @@ For example,
 pair_style e3gnn/parallel
 pair_coeff * * 4 ./deployed_parallel_0.pt ./deployed_parallel_1.pt ./deployed_parallel_2.pt ./deployed_parallel_3.pt Hf O
 ```
-The number of segmented `*.pt` files is the same as the number of message-passing layers of the model.
+The number of segmented `*.pt` files is same as the number of message-passing layers of the model.
 
 Check [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
 
-One GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently.
+One GPU per MPI process is expected. The simulation may run inefficiently if the available GPUs are fewer than the MPI processes.
 
 **PLEASE NOTE:** Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
 
