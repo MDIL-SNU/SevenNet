@@ -81,8 +81,7 @@ def deploy_parallel(model_state_dct, config, fname):
     chem_list.strip()
 
     # dim of irreps_in of last model convolution is (max)comm_size
-    # except first one, first of every model is embedding followed by convolution
-    # TODO: this code is error prone
+    # TODO: this is error prone
     comm_size = (
         model_list[-1][1].convolution.irreps_in1.dim
         if len(model_list) > 1

@@ -1,5 +1,9 @@
-from setuptools import find_packages, setup
+# from setuptools import find_packages, setup
+import setuptools
 
+setuptools.setup()
+
+"""
 setup(
     name='sevenn',
     version='0.9.2',
@@ -25,3 +29,4 @@ setup(
         ]
     },
 )
+"""

@@ -111,8 +111,8 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
 #else
   use_cuda_mpi = false;
 #endif
-  //use_cuda_mpi = use_gpu && use_cuda_mpi;
-  //if (use_cuda_mpi) {
+  // use_cuda_mpi = use_gpu && use_cuda_mpi;
+  // if (use_cuda_mpi) {
   if (use_gpu) {
     device = get_cuda_device();
     device_name = "CUDA";
@@ -123,9 +123,9 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
 
   if (lmp->screen) {
     if (use_gpu && !use_cuda_mpi) {
-      // GPU device + cuda-'NOT'aware mpi combination. is not supported yet
       device_comm = torch::kCPU;
-      fprintf(lmp->screen, "cuda-aware mpi not found, communicate via host device\n");
+      fprintf(lmp->screen,
+              "cuda-aware mpi not found, communicate via host device\n");
     } else {
       device_comm = device;
     }
@@ -136,9 +136,9 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   }
   if (lmp->logfile) {
     if (use_gpu && !use_cuda_mpi) {
-      // GPU device + cuda-'NOT'aware mpi combination. is not supported yet
       device_comm = torch::kCPU;
-      fprintf(lmp->logfile, "cuda-aware mpi not found, communicate via host device\n");
+      fprintf(lmp->logfile,
+              "cuda-aware mpi not found, communicate via host device\n");
     } else {
       device_comm = device;
     }
@@ -210,12 +210,12 @@ void PairE3GNNParallel::warning_pressure() {
       fprintf(
           lmp->screen,
           "WARNING: PairE3GNNParallel does not support pressure calculation. "
-          "Pressure on log is WRONG. Use serial version if you needed\n");
+          "Pressure on log is wrong. Use serial version if you needed\n");
     if (lmp->logfile)
       fprintf(
           lmp->logfile,
           "WARNING: PairE3GNNParallel does not support pressure calculation. "
-          "Pressure on log is WRONG. Use serial version if you needed\n");
+          "Pressure on log is wrong. Use serial version if you needed\n");
     already_did = true;
   }
 }
@@ -488,20 +488,17 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     std::cout << world_rank << " Used/GraphSize: " << Mused / graph_size << "\n"
               << std::endl;
   }
-  // TODO: atomic energy things?
   eng_vdwl += energy_tensor.item<float>(); // accumulate energy
 
   dE_dr = dE_dr.to(torch::kCPU);
   torch::Tensor force_tensor = torch::zeros({graph_indexer, 3});
 
-  // TODO:where I can find torch_scatter cpp version? I heard this version(torch
-  // defaults) is slower.
-  force_tensor.scatter_(
+  force_tensor.scatter_reduce_(
       0, edge_idx_src_tensor.repeat_interleave(3).view({nedges, 3}), dE_dr,
-      "add");
-  force_tensor.scatter_(
+      "sum");
+  force_tensor.scatter_reduce_(
       0, edge_idx_dst_tensor.repeat_interleave(3).view({nedges, 3}),
-      torch::neg(dE_dr), "add");
+      torch::neg(dE_dr), "sum");
 
   auto forces = force_tensor.accessor<float, 2>();
 
@@ -521,7 +518,6 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
       eatom[i] += atomic_energy[graph_idx];
     }
   }
-
 
   // clean up comm preprocess variables
   comm_preprocess_done = false;
@@ -641,7 +637,8 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
       }
     }
     if (!found_flag) {
-      error->all(FLERR, "Unknown chemical specie is given");
+      error->all(FLERR, "Unknown chemical specie is given or the number of "
+                        "potential files is not consistent");
     }
   }
 
@@ -671,9 +668,7 @@ void PairE3GNNParallel::init_style() {
   neighbor->add_request(this, NeighConst::REQ_FULL);
 }
 
-double PairE3GNNParallel::init_one(int i, int j) { 
-  return cutoff; 
-}
+double PairE3GNNParallel::init_one(int i, int j) { return cutoff; }
 
 void PairE3GNNParallel::comm_preprocess() {
   assert(!comm_preprocess_done);

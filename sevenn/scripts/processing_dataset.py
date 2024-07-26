@@ -71,11 +71,13 @@ def handle_shift_scale(config, train_set, checkpoint_given):
         use_species_wise_shift_scale = True
 
     avg_num_neigh = train_set.get_avg_num_neigh()
-    Logger().format_k_v('Average # of neighbors', f'{avg_num_neigh:.6f}', write=True)
+    Logger().format_k_v(
+        'Average # of neighbors', f'{avg_num_neigh:.6f}', write=True
+    )
 
-    if config[KEY.CONV_DENOMINATOR] == "avg_num_neigh":
+    if config[KEY.CONV_DENOMINATOR] == 'avg_num_neigh':
         conv_denominator = avg_num_neigh
-    elif config[KEY.CONV_DENOMINATOR] == "sqrt_avg_num_neigh":
+    elif config[KEY.CONV_DENOMINATOR] == 'sqrt_avg_num_neigh':
         conv_denominator = avg_num_neigh ** (0.5)
 
     if (
@@ -85,7 +87,7 @@ def handle_shift_scale(config, train_set, checkpoint_given):
         Logger().writeline(
             'Overwrite shift, scale, conv_denominator from model checkpoint'
         )
-        # Values extracted from checkpoint (not config) in processing_continue.py
+        # Values extracted from checkpoint in processing_continue.py
         shift = config[KEY.SHIFT + '_cp']
         scale = config[KEY.SCALE + '_cp']
         # shift & scale would be both array (with same lenght) or scalar
@@ -126,9 +128,13 @@ def handle_shift_scale(config, train_set, checkpoint_given):
             Logger().format_k_v(f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True)
     else:
         Logger().write('Use global shift, scale\n')
-        Logger().format_k_v("shift, scale", f'{shift:.6f}, {scale:.6f}', write=True)
+        Logger().format_k_v(
+            'shift, scale', f'{shift:.6f}, {scale:.6f}', write=True
+        )
 
-    Logger().format_k_v("(1st) conv_denominator is", f'{conv_denominator[0]:.6f}', write=True)
+    Logger().format_k_v(
+        '(1st) conv_denominator is', f'{conv_denominator[0]:.6f}', write=True
+    )
 
     config[KEY.USE_SPECIES_WISE_SHIFT_SCALE] = use_species_wise_shift_scale
     return shift, scale, conv_denominator
@@ -268,7 +274,7 @@ def processing_dataset(config, working_dir):
             Logger().write('Turn off stress training\n')
     Logger().bar()
 
-    # If I did right job, saved data must have atomic numbers as X not one hot idx
+    # saved data must have atomic numbers as X not one hot idx
     if config[KEY.SAVE_BY_TRAIN_VALID]:
         train_set.save(prefix + 'train')
         valid_set.save(prefix + 'valid')
@@ -292,9 +298,11 @@ def processing_dataset(config, working_dir):
     shift, scale, conv_denominator = handle_shift_scale(
         config, train_set, checkpoint_given
     )
-    config.update(
-        {KEY.SHIFT: shift, KEY.SCALE: scale, KEY.CONV_DENOMINATOR: conv_denominator}
-    )
+    config.update({
+        KEY.SHIFT: shift,
+        KEY.SCALE: scale,
+        KEY.CONV_DENOMINATOR: conv_denominator,
+    })
 
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
     if config[KEY.DATA_SHUFFLE]:

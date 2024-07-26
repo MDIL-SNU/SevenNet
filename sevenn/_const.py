@@ -1,3 +1,4 @@
+import os
 from enum import Enum
 from typing import Dict
 
@@ -6,7 +7,7 @@ import torch
 import sevenn._keys as KEY
 from sevenn.nn.activation import ShiftedSoftPlus
 
-SEVENN_VERSION = '0.9.2'
+SEVENN_VERSION = '0.9.3'
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of paralell model
@@ -43,6 +44,14 @@ ACTIVATION_FOR_EVEN = {
 }
 ACTIVATION_FOR_ODD = {'tanh': torch.tanh, 'abs': torch.abs}
 ACTIVATION_DICT = {'e': ACTIVATION_FOR_EVEN, 'o': ACTIVATION_FOR_ODD}
+
+_prefix = os.path.abspath(f'{os.path.dirname(__file__)}/pretrained_potentials')
+SEVENNET_0_11July2024 = (
+    f'{_prefix}/SevenNet_0__11July2024/checkpoint_sevennet_0.pth'
+)
+SEVENNET_0_22May2024 = (
+    f'{_prefix}/SevenNet_0__22May2024/checkpoint_sevennet_0.pth'
+)
 
 
 # to avoid torch script to compile torch_geometry.data
@@ -90,12 +99,12 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.NUM_CONVOLUTION: 3,
     KEY.ACTIVATION_SCARLAR: {'e': 'silu', 'o': 'tanh'},
     KEY.ACTIVATION_GATE: {'e': 'silu', 'o': 'tanh'},
-    #KEY.AVG_NUM_NEIGH: True,  # deprecated
-    #KEY.TRAIN_AVG_NUM_NEIGH: False,  # deprecated
+    # KEY.AVG_NUM_NEIGH: True,  # deprecated
+    # KEY.TRAIN_AVG_NUM_NEIGH: False,  # deprecated
     KEY.CONV_DENOMINATOR: 'avg_num_neigh',
     KEY.TRAIN_DENOMINTAOR: False,
-    KEY.TRAIN_SHIFT_SCALE: False,  
-    #KEY.OPTIMIZE_BY_REDUCE: True,  # deprecated, always True
+    KEY.TRAIN_SHIFT_SCALE: False,
+    # KEY.OPTIMIZE_BY_REDUCE: True,  # deprecated, always True
     KEY.USE_BIAS_IN_LINEAR: False,
     KEY.READOUT_AS_FCN: False,
     # Applied af readout as fcn is True
@@ -121,7 +130,10 @@ MODEL_CONFIG_CONDITION = {
     },
     KEY.CUTOFF: float,
     KEY.NUM_CONVOLUTION: int,
-    KEY.CONV_DENOMINATOR: lambda x: isinstance(x, float) or x in ["avg_num_neigh", "sqrt_avg_num_neigh"],
+    KEY.CONV_DENOMINATOR: lambda x: isinstance(x, float) or x in [
+        'avg_num_neigh',
+        'sqrt_avg_num_neigh',
+    ],
     KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: list,
     KEY.TRAIN_SHIFT_SCALE: bool,
     KEY.TRAIN_DENOMINTAOR: bool,
@@ -147,7 +159,6 @@ def model_defaults(config):
     return defaults
 
 
-
 DEFAULT_DATA_CONFIG = {
     KEY.DTYPE: 'single',
     KEY.DATA_FORMAT: 'ase',
@@ -158,9 +169,9 @@ DEFAULT_DATA_CONFIG = {
     KEY.RATIO: 0.1,
     KEY.BATCH_SIZE: 6,
     KEY.PREPROCESS_NUM_CORES: 1,
-    #KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
-    KEY.SHIFT: "per_atom_energy_mean",
-    KEY.SCALE: "force_rms",
+    # KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
+    KEY.SHIFT: 'per_atom_energy_mean',
+    KEY.SCALE: 'force_rms',
     KEY.DATA_SHUFFLE: True,
 }
 
@@ -174,7 +185,7 @@ DATA_CONFIG_CONDITION = {
     KEY.RATIO: float,
     KEY.BATCH_SIZE: int,
     KEY.PREPROCESS_NUM_CORES: int,
-    #KEY.USE_SPECIES_WISE_SHIFT_SCALE: bool,
+    # KEY.USE_SPECIES_WISE_SHIFT_SCALE: bool,
     KEY.SHIFT: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SHIFT,
     KEY.SCALE: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SCALE,
     KEY.DATA_SHUFFLE: bool,
@@ -193,8 +204,11 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.RANDOM_SEED: 1,
     KEY.EPOCH: 300,
     KEY.LOSS: 'mse',
+    KEY.LOSS_PARAM: {},
     KEY.OPTIMIZER: 'adam',
+    KEY.OPTIM_PARAM: {},
     KEY.SCHEDULER: 'exponentiallr',
+    KEY.SCHEDULER_PARAM: {},
     KEY.FORCE_WEIGHT: 0.1,
     KEY.STRESS_WEIGHT: 1e-6,  # SIMPLE-NN default
     KEY.PER_EPOCH: 5,
@@ -228,7 +242,7 @@ TRAINING_CONFIG_CONDITION = {
     KEY.STRESS_WEIGHT: float,
     KEY.USE_TESTSET: None,  # Not used
     KEY.NUM_WORKERS: None,  # Not used
-    KEY.PER_EPOCH: int, 
+    KEY.PER_EPOCH: int,
     KEY.CONTINUE: {
         KEY.CHECKPOINT: str,
         KEY.RESET_OPTIMIZER: bool,

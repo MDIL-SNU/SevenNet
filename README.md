@@ -5,13 +5,11 @@
 
 # SevenNet
 
-SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://github.com/lammps/lammps). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
+SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://docs.lammps.org/Manual.html). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
 
 The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which enable large-scale MD simulations or faster MD simulations.
 
-**PLEASE NOTE:** SevenNet is under active development and may not be fully stable.
-
-The installation and usage of SevenNet are split into two parts: training (handled by PyTorch) and molecular dynamics (handled by [`LAMMPS`](https://github.com/lammps/lammps)). The model, once trained with PyTorch, is deployed using TorchScript and is later used to run molecular dynamics simulations via LAMMPS.
+The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
 - [SevenNet](#sevennet)
   * [Installation](#installation)
@@ -20,10 +18,10 @@ The installation and usage of SevenNet are split into two parts: training (handl
     + [SevenNet Calculator for ASE](#sevennet-calculator-for-ase)
     + [Training sevenn](#training)
       - [Multi-GPU training](#multi-gpu-training)
+    + [sevenn_graph build](#sevenn_graph_build)
     + [sevenn_inference](#sevenn_inference)
     + [sevenn_get_model](#sevenn_get_model)
   * [Installation for LAMMPS](#installation-for-lammps)
-    + [Notes](#notes)
   * [Usage for LAMMPS](#usage-for-lammps)
     + [To check installation](#to-check-installation)
     + [For serial model](#for-serial-model)
@@ -34,224 +32,197 @@ The installation and usage of SevenNet are split into two parts: training (handl
 ## Installation
 
 * Python >= 3.8
-* PyTorch >= 1.11
-* [`TorchGeometric`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html)
-* [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter)
+* PyTorch >= 1.12.0
 
-You can find the installation guides for these packages from the [`PyTorch official`](https://pytorch.org/get-started/locally/), [`TorchGeometric docs`](https://pytorch-geometric.readthedocs.io/en/latest/install/installation.html) and [`pytorch_scatter`](https://github.com/rusty1s/pytorch_scatter). Remember that these packages have dependencies on your CUDA version.
+Please install PyTorch from [`PyTorch official`](https://pytorch.org/get-started/locally/) before installing the SevenNet.
+Note that for SevenNet, `torchvision` and `torchaudio` are redundant. You can safely exclude these packages from the installation commands.
 
-```
-git clone https://github.com/MDIL-SNU/SevenNet.git
-cd SevenNet
-pip install .
+Here are the recommended versions we've been using internally without any issues.
+- PyTorch/2.2.2 + CUDA/12.1.0
+- PyTorch/1.13.1 + CUDA/12.1.0
+- PyTorch/1.12.0 + CUDA/11.6.2
+
+Using the newer versions of CUDA with PyTorch is usually not a problem. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
+
+**PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version.
+
+After the PyTorch installation, run
+```bash
+pip install sevenn
 ```
 
 ## Usage
 
 ### SevenNet-0
-SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). You can try SevenNet-0 to your application without any training. If the accuracy is unsatisfactory, SevenNet-0 can be [fine-tuned](#Training).
+SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). You can try SevenNet-0 to your application without any training. If the accuracy is unsatisfactory, SevenNet-0 can be [fine-tuned](#training).
 
 #### SevenNet-0 (11July2024)
-This model was trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). We suggest starting with this model as we found that it performs better than the previous SevenNet-0 (22May2024).
+This model was trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). We suggest starting with this model as we found that it performs better than the previous SevenNet-0 (22May2024). Check [`Matbench Discovery leaderborad`](https://matbench-discovery.materialsproject.org/) for this model's performance on materials discovery. For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11July2024).
+
+Whenever the checkpoint path is the input, this model can be loaded via `7net-0 | SevenNet-0 | 7net-0_11July2024 | SevenNet-0_11July2024` keywords.
+
+**Acknowledgments**: This work was supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
 #### SevenNet-0 (22May2024)
-This model was trained on [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599). This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190).
+This model was trained on [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599). This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
-Checkpoints of SevenNet-0 (for use in ASE or fine-tuning) and deployed potentials (for LAMMPS) are located in `{path_to_SevenNet}/pretrained_potentials/SevenNet_0__{release date}`.
-
-For its detailed usage, please check [SevenNet Calculator for ASE](#sevennet-calculator-for-ase), [For serial model](#for-serial-model), and [For parallel model](#for-parallel-model)
+Whenever the checkpoint path is the input, this model can be loaded via `7net-0_22May2024 | SevenNet-0_22May2024` keywords.
 
 ### SevenNet Calculator for ASE
 
+[ASE (Atomic Simulation Environment)](https://wiki.fysik.dtu.dk/ase/) is a set of tools and Python modules for atomistic simulations. SevenNet-0 and SevenNet-trained potentials can be used with ASE for its use in python.
+
+For pre-trained models,
+```python
+from sevenn.sevennet_calculator import SevenNetCalculator
+sevenet_0_cal = SevenNetCalculator("7net-0", device='cpu')  # 7net-0, SevenNet-0, 7net-0_22May2024, 7net-0_11July2024 ...
+```
+
+For user trained models,
 ```python
 from sevenn.sevennet_calculator import SevenNetCalculator
 checkpoint_path = ### PATH TO CHECKPOINT ###
 sevenet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
 ```
 
-If you want to use SevenNet-0, you can do something like below
-```bash
-echo "export SEVENNET_0_CP={PATH_TO_SEVENNET}/pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth" >> ~/.bashrc
-```
-SevenNetCalculator tries to read the SEVENNET_0_CP environment variable.
-
-```python
-from sevenn.sevennet_calculator import SevenNetCalculator
-sevenet_0_cal = SevenNetCalculator(device='cpu')
-```
-
 ### Training
 
-```
-cd example_inputs/training
-sevenn input_full.yaml -s
+```bash
+sevenn_preset base > input.yaml
+sevenn input.yaml -s
 ```
 
-Example `input_full.yaml` can be found under `SevenNet/example_inputs`. The `structure_list` file is used to select VASP OUTCARs for training.
+Other valid preset options are: `base`, `fine_tune`, and `sevennet-0`.
+Check comments of `base` yaml for explanations.
+
 To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
 
-Once you initiate training, `log.sevenn` will contain all parsed inputs from `input.yaml`. Any parameters not specified in the input will be automatically assigned as their default values. You can refer to the log to check the default inputs.
-Currently, detailed explanations of model hyperparameters can be found at `input_full.yaml`.
-
 #### Multi-GPU training
-
-We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use one process (CPU core) per GPU.
-```
-torchrun --standalone --nnodes={# of nodes} --nproc_per_node {# of GPUs} --no_python sevenn input.yaml -d
+We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use one process (or a CPU core) per GPU.
+```bash
+torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
 ```
 Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 
+### sevenn_graph_build
+```bash
+sevenn_graph_build -f ase my_train_data.extxyz 5.0
+```
+
+You can preprocess the dataset with `sevenn_graph_build` to obtain `*.sevenn_data` files. The cutoff length should be provided.
+See `sevenn_graph_build --help` for more information.
+
 ### sevenn_inference
-
-Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at the same directory
+```bash
+sevenn_inference checkpoint_best.pt path_to_my_structures/*
 ```
-sevenn_inference checkpoint_best.pt ../data/label_1/*
-```
-
-This will create dir 'sevenn_infer_result'. It includes .csv files that enumerate prediction/reference results of energy and force on OUTCARs in `data/label_1` directory.
-You can try `sevenn_inference --help` for more information on this command.
+This will create dir `sevenn_infer_result`. It includes .csv files that enumerate prediction/reference results of energy and force.
+See `sevenn_inference --help` for more information.
 
 ### sevenn_get_model
-
-Assuming that you've done temporal training of 10 epochs by above "To start training using 'sevenn'", try below at the same directory
+This command is for deploying lammps potentials from checkpoints. The argument is either the path to checkpoint or the name of pre-trained potential.
+```bash
+sevenn_get_model 7net-0
 ```
-sevenn_get_model checkpoint_best.pt
-```
-
-This will create `deployed_serial.pt`, which can be used as lammps potential under `e3gnn` pair_style. Please take a look at the lammps installation process below.
+This will create `deployed_serial.pt`, which can be used as lammps potential under `e3gnn` pair_style. 
 
 The parallel model can be obtained in a similar way
+```bash
+sevenn_get_model 7net-0 -p
 ```
-sevenn_get_model checkpoint_best.pt -p
-```
-
 This will create multiple `deployed_parallel_*.pt` files. The number of deployed models equals the number of message-passing layers.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
-## Installation for LAMMPS 
+## Installation for LAMMPS
 
 * PyTorch (same version as used for training)
-* LAMMPS version of 'stable_2Aug2023' [`LAMMPS`](https://github.com/lammps/lammps)
+* LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
 * (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
-
-**PLEASE NOTE:** CUDA-aware OpenMPI is optional, but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
+* MKL-include
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
-Ensure the LAMMPS version (stable_2Aug2023). You can easily switch the version using git.
-```
-$ git clone https://github.com/lammps/lammps.git lammps_dir
-$ cd lammps_dir
-$ git checkout stable_2Aug2023
-```
+If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module. If it is unavailable, read the 'Note for MKL' section before running cmake.
 
-Run patch_lammps.sh
+CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
+
+Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the version using git. After switching the version, run `sevenn_patch_lammps` with the lammps directory path as an argument.
+```bash
+git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Aug2023_update3 --depth=1
+sevenn_patch_lammps ./lammps_sevenn
 ```
-$ cd {path_to_SevenNet_root}
-$ sh patch_lammps.sh {path_to_lammps_dir}
-```
+You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
 Build LAMMPS with cmake (example):
-
 ```
-$ cd {path_to_lammps_dir}
+$ cd ./lammps_sevenn
 $ mkdir build
 $ cd build
 $ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
 $ make -j4
 ```
 
-If you prefer a manual patch, see the notes below.
-
-### Notes
-
-Note that the following commands will overwrite `comm_brick.cpp` and `comm_brick.h` in the original `LAMMPS`. While it does not affect the original functionality of `LAMMPS`, you may want to back up these files from the source if you're unsure.
-
+If the compilation is successful, you will find the executable at `{path_to_lammps_dir}/build/lmp`. To use this binary easily, for example, create a soft link in your bin directory (which should be included in your $PATH).
+```bash
+ln -s {absolute_path_to_lammps_dir}/build/lmp $HOME/.local/bin/lmp
 ```
-cp {path_to_SevenNet}/pair_e3gnn/* path_to_lammps/src/
+This will allow you to run the binary using `lmp -in my_lammps_script.lmp`.
+
+### Note for MKL
+You may encounter `MKL_INCLUDE_DIR NOT-FOUND` during cmake. This usually means the environment variable is not set correctly, or mkl-include is not present on your system.
+
+Install mkl-include with:
+```bash
+conda install -c intel mkl-include
 ```
+If you encounter an error, remove `-c intel`. This is a known bug in the recent Conda version.
 
-If you have correctly installed CUDA-aware OpenMPI, the remaining process is identical to [`pair-nequip`](https://github.com/mir-group/pair_nequip).
-
-Please make the following modifications to lammps/cmake/CMakeLists.txt:
-Change `set(CMAKE_CXX_STANDARD 11)` to `set(CMAKE_CXX_STANDARD 14)`.
-Then append the following lines in the same file:
-
-```
-find_package(Torch REQUIRED)
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
-target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
+Append the following to your cmake command:
+```bash
+-DMKL_INCLUDE_DIR=$CONDA_PREFIX/include
 ```
 
-You can check whether your OpenMPI is CUDA-aware by using `ompi_info` command:
+If you see hundreds of `undefined reference to XXX` errors with `libtorch_cpu.so` at the end of compilation, check your `$LD_LIBRARY_PATH`. PyTorch depends on MKL libraries (this is a default backend for torch+CPU), therefore you already have them. For example, if you installed PyTorch using Conda, you may find `libmkl_*.so` files under `$CONDA_PREFIX/lib`. Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
 
-```
-$ ompi_info --parsable --all | grep mpi_built_with_cuda_support:value
-mca:mpi:base:param:mpi_built_with_cuda_support:value:true
-```
+For other error cases, you might want to check [`pair-nequip`](https://github.com/mir-group/pair_nequip), as the `pair-nequip` and SevenNet+LAMMPS shares similar requirements: torch + LAMMPS.
 
 ## Usage for LAMMPS
 
 ### To check installation
 
-For serial MD,
+```bash
+{lammps_binary} -help | grep e3gnn
 ```
-$ cd ${path_to_SevenNetetet}/example_inputs/md_serial_example
-$ {lammps_binary} -in in.lmp
-
-###lammps outputs for 5 MD steps###
-
-$ grep PairE3GNN log.lammps
-PairE3GNN using device : CUDA
-```
-
-For parallel MD
-```
-$ cd ${path_to_SevenNet}/example_inputs/md_serial_example
-$ mpirun -np {# of GPUs you want to use} {lammps_binary} -in in.lmp
-
-###lammps outputs for 5 MD steps###
-
-$ grep PairE3GNN log.lammps
-PairE3GNNParallel using device : CUDA
-PairE3GNNParallel cuda-aware mpi : True
-```
-
-Example MD input scripts for `LAMMPS` can be found under `SevenNet/example_inputs`. If you've correctly installed `LAMMPS`, there are two additional pair styles available: `e3gnn` and `e3gnn/parallel`.
-
-In the `pair_coeff` of the lammps script, you need to provide the path of the trained models (either serial or parallel). For parallel models, you should specify how many segmented models will be used.
+You will see `e3gnn` and `e3gnn/parallel` as pair_style.
 
 ### For serial model
 
 ```
+units         metal
+atom_style    atomic
 pair_style e3gnn
-pair_coeff * * {path to serial model} {chemical species}
+pair_coeff * * {path to serial model} {space separated chemical species}
 ```
-
-Note that SevenNet-0 serial model is located in `{PATH TO SEVENNET}/pretrained_potentials/SevenNet_0/serial_model/deployed_serial.pt`.
 
 ### For parallel model
 
 ```
+units         metal
+atom_style    atomic
 pair_style e3gnn/parallel
-pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {chemical species}
+pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {space separated chemical species}
 ```
 
-Note that SevenNet-0 parallel model is located in `{PATH TO SEVENNET}/pretrained_potentials/SevenNet_0/parallel_model/deployed_parallel_*.pt`.
-I recommend using variables to handle file paths for parallel models.
-
+For example,
 ```
-pair_style e3gnn/parallel 
-pair_coeff * * 5 ${pre}/deployed_parallel_0.pt ${pre}/deployed_parallel_1.pt ${pre}/deployed_parallel_2.pt ${pre}/deployed_parallel_3.pt ${pre}/deployed_parallel_4.pt {chemical species}
+pair_style e3gnn/parallel
+pair_coeff * * 4 ./deployed_parallel_0.pt ./deployed_parallel_1.pt ./deployed_parallel_2.pt ./deployed_parallel_3.pt Hf O
 ```
+The number of segmented `*.pt` files is same as the number of message-passing layers of the model.
 
-Now, you can execute this LAMMPS script with a prefix for parallel models
+Check [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
 
-```
-mpirun -np {# of GPUS to use} {LAMMPS_binary} -in {LAMMPS_script} -var pre {PATH TO SEVENNET}/pretrained_potentials/SevenNet_0/parallel_model/
-```
-
-Ideally, one GPU per MPI process is expected. If the available GPUs are fewer than the MPI processes, the simulation may run inefficiently.
+One GPU per MPI process is expected. The simulation may run inefficiently if the available GPUs are fewer than the MPI processes.
 
 **PLEASE NOTE:** Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
 

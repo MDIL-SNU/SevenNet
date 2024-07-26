@@ -15,11 +15,15 @@ It can be directly applied to any system without training and fine-tuned with an
 - fine_tune.yaml: example input.yaml for fine-tuning.
 - pre_train.yaml: example input.yaml file used in pre-training.
 
+For SevenNet-0 (11July2024), we did not split the dataset.
+|                |Energy (eV/atom)|Force (eV/Å)|Stress (GPa)|
+|----------------|--------|-------|-------|
+|Train|0.011|0.040|0.28|
+
 ### Note
 You can obtain the same deployed models by running the following command (-p for parallel)
 ```bash
-$ sevenn_get_model {-p} checkpoint_sevennet_0.pth
+$ sevenn_get_model {-p} 7net-0_11July2024
 ```
 Refer to example_inputs/md_{serial/parallel}_example/ for their usage in LAMMPS.
 Both serial and parallel model gives the same results but the parallel model enables multi-GPU MD simulation.
-

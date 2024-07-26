@@ -5,11 +5,42 @@ import torch.nn as nn
 from e3nn.nn import FullyConnectedNet
 from e3nn.o3 import Irreps, TensorProduct
 from e3nn.util.jit import compile_mode
-from torch_scatter import scatter
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 from sevenn.nn.activation import ShiftedSoftPlus
+
+
+def _broadcast(
+    src: torch.Tensor,
+    other: torch.Tensor,
+    dim: int
+):
+    if dim < 0:
+        dim = other.dim() + dim
+    if src.dim() == 1:
+        for _ in range(0, dim):
+            src = src.unsqueeze(0)
+    for _ in range(src.dim(), other.dim()):
+        src = src.unsqueeze(-1)
+    src = src.expand_as(other)
+    return src
+
+
+def message_gather(
+    node_features: torch.Tensor,
+    edge_dst: torch.Tensor,
+    message: torch.Tensor
+):
+    index = _broadcast(edge_dst, message, 0)
+    out_shape = [len(node_features)] + list(message.shape[1:])
+    out = torch.zeros(
+        out_shape,
+        dtype=node_features.dtype,
+        device=node_features.device
+    )
+    out.scatter_reduce_(0, index, message, reduce='sum')
+    return out
 
 
 @compile_mode('script')
@@ -85,7 +116,7 @@ class IrrepsConvolution(nn.Module):
 
         message = self.convolution(x[edge_src], data[self.key_filter], weight)
 
-        x = scatter(message, edge_dst, dim=0, dim_size=len(x))
+        x = message_gather(x, edge_dst, message)
         x = x.div(self.denominator)
         if self.is_parallel:
             # NLOCAL is # of atoms in system at 'CPU'

@@ -1,9 +1,9 @@
-from typing import Union
 import warnings
+from typing import Union
 
 import numpy as np
 import torch
-from e3nn.o3 import Irreps, FullTensorProduct
+from e3nn.o3 import FullTensorProduct, Irreps
 
 import sevenn._keys as KEY
 
@@ -82,7 +82,7 @@ def error_recorder_from_loss_functions(loss_functions):
     for loss_function, _ in loss_functions:
         ref_key = loss_function.ref_key
         pred_key = loss_function.pred_key
-        unit = loss_function.unit
+        # unit = loss_function.unit
         criterion = loss_function.criterion
         name = loss_function.name
         base = None
@@ -159,18 +159,19 @@ def onehot_to_chem(one_hot_indicies, type_map):
 
 def _patch_old_config(config):
     # Fixing my old mistakes
-    if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == "XPLOR":
-        config[KEY.CUTOFF_FUNCTION].pop("poly_cut_p_value", None)
-    config[KEY.TRAIN_DENOMINTAOR] = config.pop("train_avg_num_neigh", False)
-    _opt = config.pop("optimize_by_reduce", None)
-    if _opt == False:
-        raise ValueError("This checkpoint(optimize_by_reduce: False) is no longer supported")
+    if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
+        config[KEY.CUTOFF_FUNCTION].pop('poly_cut_p_value', None)
+    config[KEY.TRAIN_DENOMINTAOR] = config.pop('train_avg_num_neigh', False)
+    _opt = config.pop('optimize_by_reduce', None)
+    if _opt is False:
+        raise ValueError(
+            'This checkpoint(optimize_by_reduce: False) is no longer supported'
+        )
     if KEY.CONV_DENOMINATOR not in config:
         config[KEY.CONV_DENOMINATOR] = 0.0
-        #warnings.warn(f'conv denominator will be loaded from state_dict of checkpoint', UserWarning)
     if KEY._NORMALIZE_SPH not in config:
         config[KEY._NORMALIZE_SPH] = False
-        warnings.warn(f'You are loading very old model, normalize_sph is False', UserWarning)
+        # Warn this in the docs, not here for SevenNet-0 (22May2024)
     return config
 
 
@@ -212,11 +213,7 @@ def _map_old_model(old_model_state_dict):
 
 
 def model_from_checkpoint(checkpoint):
-    from sevenn._const import (
-        model_defaults,
-        data_defaults,
-        train_defaults,
-    )
+    from sevenn._const import data_defaults, model_defaults, train_defaults
     from sevenn.model_build import build_E3_equivariant_model
 
     if isinstance(checkpoint, str):
@@ -237,7 +234,9 @@ def model_from_checkpoint(checkpoint):
 
     for k, v in defaults.items():
         if k not in config:
-            warnings.warn(f'{k} not in config, using default value {v}', UserWarning)
+            warnings.warn(
+                f'{k} not in config, using default value {v}', UserWarning
+            )
             config[k] = v
 
     # expect only non-tensor values in config, if exists, move to cpu
@@ -261,8 +260,8 @@ def model_from_checkpoint(checkpoint):
 
 
 def unlabeled_atoms_to_input(atoms, cutoff):
-    from sevenn.train.dataload import unlabeled_atoms_to_graph
     from sevenn.atom_graph_data import AtomGraphData
+    from sevenn.train.dataload import unlabeled_atoms_to_graph
 
     atom_graph = AtomGraphData.from_numpy_dict(
         unlabeled_atoms_to_graph(atoms, cutoff)
@@ -319,7 +318,11 @@ def load_model_from_checkpoint(checkpoint):
         DEFAULT_TRAINING_CONFIG,
     )
     from sevenn.model_build import build_E3_equivariant_model
-    warnings.warn(f'This method is deprecated, use model_from_checkpoint instead', DeprecationWarning)
+
+    warnings.warn(
+        'This method is deprecated, use model_from_checkpoint instead',
+        DeprecationWarning,
+    )
 
     if isinstance(checkpoint, str):
         checkpoint = torch.load(checkpoint, map_location='cpu')
@@ -375,9 +378,25 @@ def infer_irreps_out(
             continue
         if parity_mode == 'even' and p == -1:
             continue
-        elif parity_mode == 'sph' and p != (-1)**l:
+        elif parity_mode == 'sph' and p != (-1) ** l:
             continue
         if fix_multiplicity:
             elem = (fix_multiplicity, (l, p))
         new_irreps_elem.append(elem)
     return Irreps(new_irreps_elem)
+
+
+def pretrained_name_to_path(name: str) -> str:
+    import sevenn._const as _const
+
+    name = name.lower()
+    heads = ['sevennet-0', '7net-0']
+    checkpoint_path = None
+    if name in [f'{n}_11july2024' for n in heads] or name in heads:
+        checkpoint_path = _const.SEVENNET_0_11July2024
+    elif name in [f'{n}_22may2024' for n in heads]:
+        checkpoint_path = _const.SEVENNET_0_22May2024
+    else:
+        raise ValueError('Not a valid potential')
+
+    return checkpoint_path

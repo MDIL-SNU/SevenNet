@@ -22,7 +22,6 @@ repos:
       - id: check-shebang-scripts-are-executable
       - id: check-merge-conflict
       - id: check-vcs-permalinks
-      - id: check-yaml
       - id: debug-statements
       - id: destroyed-symlinks
       - id: detect-private-key
@@ -41,32 +40,32 @@ repos:
     rev: 5.13.2
     hooks:
       - id: isort
-        exclude: 'pair_e3gnn/pair_e3gnn_parallel.h'
-        exclude: 'pair_e3gnn/comm_brick.h'
-        exclude: 'pair_e3gnn/comm_brick.cpp'
-
-  - repo: https://github.com/psf/black
-    rev: 23.12.1
-    hooks:
-      - id: black
-        args: ['--skip-string-normalization', '--line-length=79', '--preview']
-        exclude: 'pair_e3gnn/pair_e3gnn_parallel.h'
-        exclude: 'pair_e3gnn/comm_brick.h'
-        exclude: 'pair_e3gnn/comm_brick.cpp'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.cpp'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.h'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.cpp'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.h'
+        exclude: 'sevenn/pair_e3gnn/comm_brick.h'
+        exclude: 'sevenn/pair_e3gnn/comm_brick.cpp'
 
   - repo: https://github.com/pycqa/flake8
     rev: 6.1.0
     hooks:
       - id: flake8
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.cpp'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.h'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.cpp'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.h'
+        exclude: 'sevenn/pair_e3gnn/comm_brick.h'
+        exclude: 'sevenn/pair_e3gnn/comm_brick.cpp'
         require_serial: true
-        exclude: 'pair_e3gnn/pair_e3gnn_parallel.h'
-        exclude: 'pair_e3gnn/comm_brick.h'
-        exclude: 'pair_e3gnn/comm_brick.cpp'
 
   - repo: https://github.com/pre-commit/mirrors-clang-format
     rev: 'v17.0.6'
     hooks:
       - id: clang-format
-        exclude: 'pair_e3gnn/pair_e3gnn_parallel.h'
-        exclude: 'pair_e3gnn/comm_brick.h'
-        exclude: 'pair_e3gnn/comm_brick.cpp'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.cpp'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.h'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.cpp'
+        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.h'
+        exclude: 'sevenn/pair_e3gnn/comm_brick.h'
+        exclude: 'sevenn/pair_e3gnn/comm_brick.cpp'

@@ -5,8 +5,8 @@ from e3nn.o3 import Irreps
 
 import sevenn._const as _const
 import sevenn._keys as KEY
-from sevenn.nn.convolution import IrrepsConvolution
 import sevenn.util as util
+from sevenn.nn.convolution import IrrepsConvolution
 from sevenn.nn.edge_embedding import (
     BesselBasis,
     EdgeEmbedding,
@@ -16,7 +16,7 @@ from sevenn.nn.edge_embedding import (
     XPLORCutoff,
 )
 from sevenn.nn.equivariant_gate import EquivariantGate
-from sevenn.nn.force_output import ForceOutputFromEdge, ForceStressOutput
+from sevenn.nn.force_output import ForceStressOutput
 from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.scale import Rescale, SpeciesWiseRescale
@@ -32,7 +32,7 @@ warnings.filterwarnings(
     'ignore',
     message=(
         "The TorchScript type system doesn't "
-        "support instance-level annotations"
+        'support instance-level annotations'
     ),
 )
 
@@ -54,20 +54,19 @@ def init_self_connection(config):
 
 def init_radial_basis(config):
     radial_basis_dct = config[KEY.RADIAL_BASIS]
-    param = {"cutoff_length": config[KEY.CUTOFF]}
+    param = {'cutoff_length': config[KEY.CUTOFF]}
     param.update(radial_basis_dct)
     del param[KEY.RADIAL_BASIS_NAME]
 
     if radial_basis_dct[KEY.RADIAL_BASIS_NAME] == 'bessel':
-        basis_function =  BesselBasis(**param)
+        basis_function = BesselBasis(**param)
         return basis_function, basis_function.num_basis
-
-    raise RuntimeError('something went very wrong...')
+    raise RuntimeError('something went wrong...')
 
 
 def init_cutoff_function(config):
     cutoff_function_dct = config[KEY.CUTOFF_FUNCTION]
-    param = {"cutoff_length": config[KEY.CUTOFF]}
+    param = {'cutoff_length': config[KEY.CUTOFF]}
     param.update(cutoff_function_dct)
     del param[KEY.CUTOFF_FUNCTION_NAME]
 
@@ -80,10 +79,6 @@ def init_cutoff_function(config):
 
 # TODO: it gets bigger and bigger. refactor it
 def build_E3_equivariant_model(config: dict, parallel=False):
-    """
-    IDENTICAL to nequip model
-    atom embedding is not part of model
-    """
     data_key_weight_input = KEY.EDGE_EMBEDDING  # default
 
     # parameter initialization
@@ -93,16 +88,8 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     feature_multiplicity = config[KEY.NODE_FEATURE_MULTIPLICITY]
 
     lmax = config[KEY.LMAX]
-    lmax_edge = (
-        config[KEY.LMAX_EDGE]
-        if config[KEY.LMAX_EDGE] >= 0
-        else lmax
-    )
-    lmax_node = (
-        config[KEY.LMAX_NODE]
-        if config[KEY.LMAX_NODE] >= 0
-        else lmax
-    )
+    lmax_edge = config[KEY.LMAX_EDGE] if config[KEY.LMAX_EDGE] >= 0 else lmax
+    lmax_node = config[KEY.LMAX_NODE] if config[KEY.LMAX_NODE] >= 0 else lmax
 
     num_convolution_layer = config[KEY.NUM_CONVOLUTION]
 
@@ -111,6 +98,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     irreps_spherical_harm = Irreps.spherical_harmonics(
         lmax_edge, -1 if is_parity else 1
     )
+    layers_list = []
     if parallel:
         layers_list = [OrderedDict() for _ in range(num_convolution_layer)]
         layers_idx = 0
@@ -154,13 +142,14 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         basis_module=radial_basis_module,
         cutoff_module=cutoff_function_module,
         # operate on r/||r||
-        spherical_module=SphericalEncoding(lmax_edge, -1 if is_parity else 1, normalize=_normalize_sph),
+        spherical_module=SphericalEncoding(
+            lmax_edge, -1 if is_parity else 1, normalize=_normalize_sph
+        ),
     )
-    if not parallel:
-        layers.update({
-            # simple edge preprocessor module with no param
-            'edge_preprocess': EdgePreprocess(is_stress=True),
-        })
+    layers.update({
+        # simple edge preprocessor module with no param
+        'edge_preprocess': EdgePreprocess(is_stress=True),
+    })
 
     layers.update({
         # 'Not' simple edge embedding module
@@ -214,13 +203,12 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     weight_nn_layers = [radial_basis_num] + weight_nn_hidden
 
     for i in range(num_convolution_layer):
-        # here, we can infer irreps of x after interaction from lmax and f0_irreps
         interaction_block = {}
 
-        parity_mode = "full"
+        parity_mode = 'full'
         if i == num_convolution_layer - 1:
             lmax_node = 0
-            parity_mode = "even"
+            parity_mode = 'even'
 
         # raw irreps out after message(convolution) function
         tp_irreps_out = util.infer_irreps_out(
@@ -243,18 +231,8 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             else irreps_manual[i + 1]
         )
 
-        # output irreps of linear 2 & self_connection is determined by Gate
-        # Gate require extra scalars(or weight) for l>0 features in nequip,
-        # they make it from linear2. (and self_connection have to fit its dimension)
-        # Here, initialize gate first and put it later
         gate_layer = EquivariantGate(true_irreps_out, act_scalar, act_gate)
         irreps_for_gate_in = gate_layer.get_gate_irreps_in()
-
-        # from here, data flow split into self connection part and convolution part
-        # self connection part is represented as Intro, Outro pair
-
-        # note that this layer does not overwrite x, it calculates tp of in & operand
-        # and save its results in somewhere to concatenate to new_x at Outro
 
         interaction_block[f'{i}_self_connection_intro'] = sc_intro(
             irreps_x=irreps_x,
@@ -290,7 +268,11 @@ def build_E3_equivariant_model(config: dict, parallel=False):
                     basis_module=radial_basis_module,
                     cutoff_module=cutoff_function_module,
                     # operate on r/||r||
-                    spherical_module=SphericalEncoding(lmax_edge, -1 if is_parity else 1, normalize=_normalize_sph),
+                    spherical_module=SphericalEncoding(
+                        lmax_edge,
+                        -1 if is_parity else 1,
+                        normalize=_normalize_sph,
+                    ),
                 )
             })
             #######################################################
@@ -388,22 +370,18 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             constant=1.0,
         ),
     })
-    if not parallel:
-        fso = ForceStressOutput(
-            data_key_energy=KEY.PRED_TOTAL_ENERGY,
-            data_key_force=KEY.PRED_FORCE,
-            data_key_stress=KEY.PRED_STRESS,
-        )
-        fof = ForceOutputFromEdge(
-            data_key_energy=KEY.PRED_TOTAL_ENERGY,
-            data_key_force=KEY.PRED_FORCE,
-        )
-        gradient_module = fso if not parallel else fof
-        layers.update({'force_output': gradient_module})
+    gradient_module = ForceStressOutput(
+        data_key_energy=KEY.PRED_TOTAL_ENERGY,
+        data_key_force=KEY.PRED_FORCE,
+        data_key_stress=KEY.PRED_STRESS,
+    )
+    layers.update({'force_output': gradient_module})
 
     # output extraction part
     type_map = config[KEY.TYPE_MAP]
     if parallel:
+        del layers_list[0]['edge_preprocess']  # done in LAMMPS
+        del layers_list[-1]['force_output']  # done in LAMMPS
         return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
     else:
         return AtomGraphSequential(layers, cutoff, type_map)

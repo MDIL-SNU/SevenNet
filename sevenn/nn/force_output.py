@@ -1,52 +1,9 @@
 import torch
 import torch.nn as nn
 from e3nn.util.jit import compile_mode
-from torch_scatter import scatter
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
-
-
-@compile_mode('script')
-class ForceOutputFromEdge(nn.Module):
-    """
-    works when edge_vec.requires_grad_ is True
-    """
-
-    def __init__(
-        self,
-        data_key_edge_vec: str = KEY.EDGE_VEC,
-        data_key_edge_idx: str = KEY.EDGE_IDX,
-        data_key_energy: str = KEY.SCALED_ENERGY,
-        data_key_force: str = KEY.SCALED_FORCE,
-        data_key_num_atoms: str = KEY.NUM_ATOMS,
-    ):
-        super().__init__()
-        self.key_edge_vec = data_key_edge_vec
-        self.key_energy = data_key_energy
-        self.key_force = data_key_force
-        self.key_edge_idx = data_key_edge_idx
-        self.key_num_atoms = data_key_num_atoms
-
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        tot_num = torch.sum(data[self.key_num_atoms])
-        edge_idx = data[self.key_edge_idx]
-
-        edge_vec_tensor = [data[self.key_edge_vec]]
-        energy = [(data[self.key_energy]).sum()]
-
-        dE_dr = torch.autograd.grad(
-            energy, edge_vec_tensor, create_graph=self.training
-        )[0]
-
-        if dE_dr is not None:
-            force = torch.zeros(tot_num, 3)
-            force = scatter(dE_dr, edge_idx[0], dim=0, dim_size=tot_num)
-            force -= scatter(dE_dr, edge_idx[1], dim=0, dim_size=tot_num)
-
-            data[self.key_force] = force
-
-        return data
 
 
 @compile_mode('script')
@@ -76,7 +33,7 @@ class ForceOutput(nn.Module):
             create_graph=self.training,
         )[0]
 
-        # without this 'if', type(grad) is 'Optional[Tensor]' which result in error
+        # For torchscript
         if grad is not None:
             data[self.key_force] = torch.neg(grad)
         return data

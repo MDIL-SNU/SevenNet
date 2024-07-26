@@ -25,7 +25,9 @@ class Logger(metaclass=Singleton):
 
     SCREEN_WIDTH = 120  # half size of my screen / changed due to stress output
 
-    def __init__(self, filename: str = "log.sevenn", screen: bool = False, rank: int = 0):
+    def __init__(
+        self, filename: str = 'log.sevenn', screen: bool = False, rank: int = 0
+    ):
         self.rank = rank
         if rank == 0:
             self.logfile = open(filename, 'w', buffering=1)
@@ -93,10 +95,7 @@ class Logger(metaclass=Singleton):
         content += self.format_k_v('Total', sum(total_natom.values()))
         self.write(content)
 
-    def statistic_write(self, statistic):
-        """
-        expect statistic is dict(key as label) of dict(key of mean, std, and so on)
-        """
+    def statistic_write(self, statistic: dict):
         content = ''
         for label, dct in statistic.items():
             dct_new = {}
@@ -235,7 +234,7 @@ class Logger(metaclass=Singleton):
             return content
         else:
             Logger().write(content)
-            return ""
+            return ''
 
     def greeting(self):
         LOGO_ASCII_FILE = f'{os.path.dirname(__file__)}/logo_ascii'

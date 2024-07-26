@@ -24,7 +24,7 @@ class AtomGraphSequential(nn.Sequential):
         cutoff: float = 0.0,
         type_map: Dict[int, int] = {-1: -1},
     ):
-        if type(modules) != OrderedDict:
+        if not isinstance(modules, OrderedDict):
             modules = OrderedDict(modules)
         self.cutoff = cutoff
         self.type_map = type_map
