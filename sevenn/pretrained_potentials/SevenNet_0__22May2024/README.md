@@ -15,7 +15,7 @@ It can be directly applied to any system without training and fine-tuned with an
 - fine_tune.yaml: example input.yaml for fine-tuning.
 
 ### Accuracy
-
+MAE (Mean absolute error)
 |                |Energy (eV/atom)|Force (eV/Å)|Stress (GPa)|
 |----------------|--------|-------|-------|
 |Train|0.015|0.035|0.27|
