@@ -15,7 +15,7 @@ It can be directly applied to any system without training and fine-tuned with an
 - fine_tune.yaml: example input.yaml for fine-tuning.
 - pre_train.yaml: example input.yaml file used in pre-training.
 
-For SevenNet-0 (11July2024), we did not split the dataset.
+MAE (Mean absolute error), for SevenNet-0 (11July2024), we did not split the dataset.
 |                |Energy (eV/atom)|Force (eV/Å)|Stress (GPa)|
 |----------------|--------|-------|-------|
 |Train|0.011|0.040|0.28|
