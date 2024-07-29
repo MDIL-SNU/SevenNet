@@ -50,7 +50,7 @@ class SpeciesWiseRescale(nn.Module):
         scale: List[float],
         data_key_in=KEY.SCALED_ATOMIC_ENERGY,
         data_key_out=KEY.ATOMIC_ENERGY,
-        data_key_indicies=KEY.ATOM_TYPE,
+        data_key_indices=KEY.ATOM_TYPE,
         train_shift_scale: bool = False,
     ):
         super().__init__()
@@ -62,12 +62,12 @@ class SpeciesWiseRescale(nn.Module):
         )
         self.key_input = data_key_in
         self.key_output = data_key_out
-        self.key_indicies = data_key_indicies
+        self.key_indices = data_key_indices
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        indicies = data[self.key_indicies]
+        indices = data[self.key_indices]
         data[self.key_output] = data[self.key_input] * self.scale[
-            indicies
-        ].view(-1, 1) + self.shift[indicies].view(-1, 1)
+            indices
+        ].view(-1, 1) + self.shift[indices].view(-1, 1)
 
         return data

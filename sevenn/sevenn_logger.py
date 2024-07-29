@@ -207,27 +207,27 @@ class Logger(metaclass=Singleton):
     @staticmethod
     def format_k_v(key, val, write=False):
         MAX_KEY_SIZE = 20
-        SPERATOR = ', '
+        SEPARATOR = ', '
         EMPTY_PADDING = ' ' * (MAX_KEY_SIZE + 3)
         NEW_LINE_LEN = Logger.SCREEN_WIDTH - 5
         val = str(val)
         content = f'{key:<{MAX_KEY_SIZE}}: {val}'
         if len(content) > NEW_LINE_LEN:
             content = f'{key:<{MAX_KEY_SIZE}}: '
-            # sperate val by sperator
-            val_list = val.split(SPERATOR)
+            # septate val by separator
+            val_list = val.split(SEPARATOR)
             current_len = len(content)
             for val_compo in val_list:
                 current_len += len(val_compo)
                 if current_len > NEW_LINE_LEN:
-                    newline_content = f'{EMPTY_PADDING}{val_compo}{SPERATOR}'
+                    newline_content = f'{EMPTY_PADDING}{val_compo}{SEPARATOR}'
                     content += f'\\\n{newline_content}'
                     current_len = len(newline_content)
                 else:
-                    content += f'{val_compo}{SPERATOR}'
+                    content += f'{val_compo}{SEPARATOR}'
 
-        if content.endswith(f'{SPERATOR}'):
-            content = content[: -len(SPERATOR)]
+        if content.endswith(f'{SEPARATOR}'):
+            content = content[: -len(SEPARATOR)]
         content += '\n'
 
         if write is False:
@@ -255,7 +255,7 @@ class Logger(metaclass=Singleton):
         print some important information from config
         """
         content = (
-            'succesfully read yaml config!\n\n' + 'from model configuration\n'
+            'successfully read yaml config!\n\n' + 'from model configuration\n'
         )
         for k, v in model_config.items():
             content += Logger.format_k_v(k, v)
@@ -271,10 +271,10 @@ class Logger(metaclass=Singleton):
     def error(self, e: Exception):
         content = ''
         if type(e) is ValueError:
-            content += 'Error occured!\n'
+            content += 'Error occurred!\n'
             content += str(e) + '\n'
         else:
-            content += 'Unknown error occured!\n'
+            content += 'Unknown error occurred!\n'
             content += traceback.format_exc()
         self.write(content)
 

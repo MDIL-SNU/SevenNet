@@ -59,7 +59,7 @@ def train(config, working_dir: str):
         state_dicts, start_epoch, init_csv = None, 1, True
 
     # config updated
-    # Note that continue and dataset cannot be seperated completely
+    # Note that continue and dataset cannot be separated completely
     data_lists = processing_dataset(config, working_dir)
     loaders = init_loaders(*data_lists, config)
 

@@ -33,7 +33,7 @@ class AverageNumber:
 
 def to_atom_graph_list(atom_graph_batch):
     """
-    torch_geometric batched data to seperate list
+    torch_geometric batched data to separate list
     original to_data_list() by PyG is not enough since
     it doesn't handle inferred tensors
     """
@@ -150,11 +150,11 @@ def squared_error(pred, ref, vdim):
     return torch.reshape(MSE(pred, ref), (-1, vdim)).sum(dim=1)
 
 
-def onehot_to_chem(one_hot_indicies, type_map):
+def onehot_to_chem(one_hot_indices, type_map):
     from ase.data import chemical_symbols
 
     type_map_rev = {v: k for k, v in type_map.items()}
-    return [chemical_symbols[type_map_rev[x]] for x in one_hot_indicies]
+    return [chemical_symbols[type_map_rev[x]] for x in one_hot_indices]
 
 
 def _patch_old_config(config):

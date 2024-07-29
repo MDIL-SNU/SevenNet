@@ -90,7 +90,7 @@ def handle_shift_scale(config, train_set, checkpoint_given):
         # Values extracted from checkpoint in processing_continue.py
         shift = config[KEY.SHIFT + '_cp']
         scale = config[KEY.SCALE + '_cp']
-        # shift & scale would be both array (with same lenght) or scalar
+        # shift & scale would be both array (with same length) or scalar
         assert len(list(shift)) == len(list(scale))
         if len(list(shift)) > 1:
             use_species_wise_shift_scale = True

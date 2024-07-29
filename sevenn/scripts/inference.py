@@ -221,7 +221,7 @@ def inference_main(
             output_list.extend(to_atom_graph_list(output))  # unroll batch data
     except Exception as e:
         print(e)
-        print("Keeping 'info' failed. Try with separted info")
+        print("Keeping 'info' failed. Try with separated info")
         infer_list, info_list = inference_set.seperate_info()
         loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
         output_list = []

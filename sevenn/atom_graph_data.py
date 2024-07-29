@@ -34,7 +34,7 @@ class AtomGraphData(torch_geometric.data.Data):
             self[k] = v
 
     def to_numpy_dict(self):
-        # This is not debuged yet!
+        # This is not debugged yet!
         dct = {
             k: v.detach().cpu().numpy() if type(v) is torch.Tensor else v
             for k, v in self.items()
