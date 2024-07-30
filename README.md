@@ -16,7 +16,7 @@ The installation and usage of SevenNet are split into two parts: training + comm
     - [SevenNet Calculator for ASE](#sevennet-calculator-for-ase)
     - [Training sevenn](#training)
       - [Multi-GPU training](#multi-gpu-training)
-    - [sevenn_graph build](#sevenn_graph_build)
+    - [sevenn_graph_build](#sevenn_graph_build)
     - [sevenn_inference](#sevenn_inference)
     - [sevenn_get_model](#sevenn_get_model)
   - [Installation for LAMMPS](#installation-for-lammps)
@@ -55,7 +55,9 @@ pip install sevenn
 
 ### SevenNet-0
 
-SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). You can try SevenNet-0 to your application without any training. If the accuracy is unsatisfactory, SevenNet-0 can be [fine-tuned](#training).
+SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). 
+
+While SevenNet-0 can be applied to downstream tasks as it is, it is recommended to [`fine-tune`](#training) SevenNet-0 before addressing real downstream tasks.
 
 #### SevenNet-0 (11July2024)
 
@@ -93,12 +95,12 @@ sevenet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
 ### Training
 
 ```bash
-sevenn_preset base > input.yaml
+sevenn_preset fine_tune > input.yaml
 sevenn input.yaml -s
 ```
 
 Other valid preset options are: `base`, `fine_tune`, and `sevennet-0`.
-Check comments of `base` yaml for explanations.
+Check comments in the preset yaml files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
 
 To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
 
