@@ -173,7 +173,7 @@ You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch proc
 
 Build LAMMPS with cmake (example):
 
-```
+```bash
 cd ./lammps_sevenn
 mkdir build
 cd build

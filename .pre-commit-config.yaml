@@ -75,3 +75,4 @@ repos:
     hooks:
       - id: codespell
         stages: [commit, commit-msg]
+        args: ["--ignore-words-list", "Commun"]
