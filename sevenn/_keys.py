@@ -41,7 +41,7 @@ NODE_ATTR: Final[str] = 'node_attr'  # (N, N_species) from one_hot
 EDGE_ATTR: Final[str] = 'edge_attr'  # (from spherical harmonics)
 EDGE_EMBEDDING: Final[str] = 'edge_embedding'  # (from edge embedding)
 
-# inputs of loss fuction
+# inputs of loss function
 ENERGY: Final[str] = 'total_energy'  # (1)
 FORCE: Final[str] = 'force_of_atoms'  # (N, 3)
 STRESS: Final[str] = 'stress'  # (6)

@@ -19,7 +19,7 @@ working_dir_help = 'path to write output. Default is cwd.'
 screen_help = 'print log to stdout'
 distributed_help = 'set this flag if it is distributed training'
 
-# TODO: do somthing for model type (it is not printed on log)
+# TODO: do something for model type (it is not printed on log)
 global_config = {
     'version': SEVENN_VERSION,
     KEY.MODEL_TYPE: 'E3_equivariant_model',

@@ -50,7 +50,7 @@ class AtomGraphDataset:
             dataset (Union[Dict[str, List], List]: dataset as dict or pure list
             metadata (Dict, Optional): metadata of data
             cutoff (float): cutoff radius of graphs inside the dataset
-            x_is_one_hot_idx (bool): if True, x is one_hot_idx, eles 'Z'
+            x_is_one_hot_idx (bool): if True, x is one_hot_idx, else 'Z'
 
         'x' (node feature) of dataset can have 3 states, atomic_numbers,
         one_hot_idx, or one_hot_vector.
@@ -102,7 +102,7 @@ class AtomGraphDataset:
 
     def seperate_info(self, data_key=KEY.INFO):
         """
-        seperate info from data and save it as list of dict
+        Separate info from data and save it as list of dict
         to make it compatible with torch_geometric and later training
         """
         data_list = self.to_list()
@@ -119,7 +119,7 @@ class AtomGraphDataset:
 
     def get_species(self):
         """
-        You can also use get_natoms and extract keys from there istead of this
+        You can also use get_natoms and extract keys from there instead of this
         (And it is more efficient)
         get chemical species of dataset
         return list of SORTED chemical species (as str)
@@ -294,13 +294,13 @@ class AtomGraphDataset:
         y = y.numpy()
 
         # tweak to fine tune training from many-element to small element
-        zero_indicies = np.all(c == 0, axis=0)
-        c_reduced = c[:, ~zero_indicies]
+        zero_indices = np.all(c == 0, axis=0)
+        c_reduced = c[:, ~zero_indices]
         full_coeff = np.zeros(num_chem_species)
         coef_reduced = (
             Ridge(alpha=0.1, fit_intercept=False).fit(c_reduced, y).coef_
         )
-        full_coeff[~zero_indicies] = coef_reduced
+        full_coeff[~zero_indices] = coef_reduced
 
         return full_coeff
 
@@ -385,7 +385,7 @@ class AtomGraphDataset:
         return res
 
     def augment(self, dataset, validator: Optional[Callable] = None):
-        """check meta compatiblity here
+        """check meta compatibility here
         dataset(AtomGraphDataset): data to augment
         validator(Callable, Optional): function(self, dataset) -> bool
 

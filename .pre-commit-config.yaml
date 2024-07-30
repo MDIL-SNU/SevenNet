@@ -69,3 +69,10 @@ repos:
         exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.h'
         exclude: 'sevenn/pair_e3gnn/comm_brick.h'
         exclude: 'sevenn/pair_e3gnn/comm_brick.cpp'
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        stages: [commit, commit-msg]
+        args: ["--ignore-words-list", "Commun"]

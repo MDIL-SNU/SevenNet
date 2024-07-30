@@ -279,7 +279,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             layers = layers_list[layers_idx]
             # communication from lammps here
 
-        # convolution part, l>lmax is droped as defined in irreps_out
+        # convolution part, l>lmax is dropped as defined in irreps_out
         interaction_block[f'{i}_convolution'] = IrrepsConvolution(
             irreps_x=irreps_x,
             irreps_filter=irreps_spherical_harm,

@@ -18,7 +18,7 @@ cutoff_help = 'cutoff radius of edges in Angstrom'
 suffix_help = 'when source is dir, suffix of the files.'
 copy_info_help = 'copy ase.Atoms.info to output dataset'
 format_help = (
-    'type of the source, defualt is structure_list. '
+    'type of the source, default is structure_list. '
     + 'If it is pkl/pickle, assume they are list of ase.Atoms. '
     + 'Otherwise, it is directly passed to ase.io.read'
 )

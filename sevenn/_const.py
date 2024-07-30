@@ -10,7 +10,7 @@ from sevenn.nn.activation import ShiftedSoftPlus
 SEVENN_VERSION = '0.9.3'
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
-# TODO: support None. This became difficult because of paralell model
+# TODO: support None. This became difficult because of parallel model
 IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
 
 IMPLEMENTED_SHIFT = ['per_atom_energy_mean', 'elemwise_reference_energies']
