@@ -48,7 +48,7 @@ atom_modify sort 0 0
 
 You can find `r0ab.csv` and `d3_pars.csv` files in the `pair_e3gnn` directory. These files are necessary to calculate D3 interactions.
 
-`cutoff_d3` and `cutoff_d3_CN` are *square* of cutoff radii for energy/force and coordination number, respectively. Units are Bohr radius: 1 (Bohr radius) = 0.52917721 (Å). Default values are `9000` and `1600`, respectively. this is also the default values used in VASP. check the [note](#note-the-default-values-of-cutoff-parameters) for more informaiton.
+`cutoff_d3` and `cutoff_d3_CN` are *square* of cutoff radii for energy/force and coordination number, respectively. Units are Bohr radius: 1 (Bohr radius) = 0.52917721 (Å). Default values are `9000` and `1600`, respectively. this is also the default values used in VASP. check the [note](#note-the-default-cutoff-parameters) for more informaiton.
 
 Available `type_of_damping` are as follows:
 - `d3_damp_zero`: Zero damping
@@ -58,7 +58,7 @@ Available `type_of_damping` are as follows:
 
 `compute {name_of_your_compute} all pressure NULL virial pair/hybrid` is necesarry option for some simualtions. check the [note](#note-to-use-pair_d3-with-lammps-hybrid-hybridoverlay)
 
-## Note: Defaults values of cutoff parameters
+## Note: Defaults cutoff parameters
 In [VASP DFT-D3](https://www.vasp.at/wiki/index.php/DFT-D3) page, `VDW_RADIUS` and `VDW_CNRADIUS` are `50.2` and `20.0`, respectively (units are Å). But you can check the default value of these in OUTCAR: `50.2022` and `21.1671`, which is same to default values of this code. To check this by yourself, run VASP with D3 using zero damping (BJ does not give such log).
 
 ## Note: To use `pair_d3` with LAMMPS `hybrid`, `hybrid/overlay`
