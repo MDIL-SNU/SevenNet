@@ -97,12 +97,12 @@ cp $SCRIPT_DIR/{pair_e3gnn,pair_e3gnn_parallel,comm_brick}.h $lammps_root/src/
 
 # 2. Patch cmake/CMakeLists.txt
 sed -i "s/set(CMAKE_CXX_STANDARD 11)/set(CMAKE_CXX_STANDARD $cxx_standard)/" $lammps_root/cmake/CMakeLists.txt
-cat >> $lammps_root/cmake/CMakeLists.txt << "EOF2"
+cat >> $lammps_root/cmake/CMakeLists.txt << "EOF"
 
 find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
-EOF2
+EOF
 
 ###########################################
 # Patch LAMMPS source code: d3            #
@@ -117,13 +117,13 @@ cp $SCRIPT_DIR/pair_d3.h $lammps_root/src/
 # 2. Patch cmake/CMakeLists.txt
 sed -i "s/project(lammps CXX)/project(lammps CXX CUDA)/" $lammps_root/cmake/CMakeLists.txt
 sed -i "s/\${LAMMPS_SOURCE_DIR}\/\[\^.\]\*\.cpp/\${LAMMPS_SOURCE_DIR}\/\[\^.\]\*\.cpp  \${LAMMPS_SOURCE_DIR}\/\[\^.\]\*\.cu/" $lammps_root/cmake/CMakeLists.txt
-cat >> $lammps_root/cmake/CMakeLists.txt << "EOF2"
+cat >> $lammps_root/cmake/CMakeLists.txt << "EOF"
 
 find_package(CUDA)
 target_link_libraries(lammps PUBLIC ${CUDA_LIBRARIES} cuda)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -fmad=false -O3")
 set(CMAKE_CUDA_ARCHITECTURES "50;80;86;89;90")
-EOF2
+EOF
 
 fi
 
