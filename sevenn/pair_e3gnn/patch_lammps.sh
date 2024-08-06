@@ -120,9 +120,9 @@ sed -i "s/\${LAMMPS_SOURCE_DIR}\/\[\^.\]\*\.cpp/\${LAMMPS_SOURCE_DIR}\/\[\^.\]\*
 cat >> $lammps_root/cmake/CMakeLists.txt << "EOF"
 
 find_package(CUDA)
-target_link_libraries(lammps PUBLIC ${CUDA_LIBRARIES} cuda)
 set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -fmad=false -O3")
-set(CMAKE_CUDA_ARCHITECTURES "50;80;86;89;90")
+string(REPLACE "-gencode arch=compute_50,code=sm_50" "" CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS}")
+target_link_libraries(lammps PUBLIC ${CUDA_LIBRARIES} cuda)
 EOF
 
 fi

@@ -20,7 +20,9 @@ sevenn_patch_lammps ./lammps_sevenn --d3
 
 You can follow the remaining installation steps in the SevenNet documentation. For detailed installation options, refer to `sevenn/pair_e3gnn/patch_lammps.sh`.
 
-**PLEASE NOTE**: Currently, this installation code sets the target compute capability using `CMAKE_CUDA_ARCHITECTURES="50;80;86;89;90"`, which is the default setting for CUDA 12.1 as used by libtorch. While libtorch can automatically detect and configure your system's compute capability, our D3 code installation code does not support automatic detection. Therefore, if you want to specify a different compute capability for D3 code to optimize performance, you can do so by adding `-D CMAKE_CUDA_ARCHITECTURES="{ARCH}"` at the end of your cmake commands. For your information, you can specify the compute capability for libtorch by setting the environment variable `TORCH_CUDA_ARCH_LIST`.
+**PLEASE NOTE**: In this code, the selection of compute capability for GPUs relies on FindCUDA in libtorch. However, the default CUDA architectures selected in CUDA 12.1 are `"50;80;86;89;90"`. The D3 code, however, requires at least compute capability 6.0. If you compile with the default settings, you may encounter an `atomicAdd` error. To resolve this issue, I have included code in the script to remove the compute capability for 5.0.
+
+If you want to manually specify the compute capability, note that libtorch does not use `CMAKE_CUDA_ARCHITECTURES` or `CUDA_ARCHITECTURE` in CMake (ignore the CMake log). Instead, you can configure it manually by setting the environment variable `TORCH_CUDA_ARCH_LIST="60;71;80;86;89;90"`, which will then be automatically inserted into the nvcc flags, as libtorch does.
 
 **PLEASE NOTE**: Setting `fmad=false` for the NVCC compiler is essential to obtain precise results. This is the default option as described in patch_lammps.sh.
 
