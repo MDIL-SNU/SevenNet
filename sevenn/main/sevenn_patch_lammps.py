@@ -25,7 +25,6 @@ def main(args=None):
         print('Torch version >= 2.0 detected, use CXX STANDARD 17')
     else:
         print('Torch version < 2.0 detected, use CXX STANDARD 14')
-    cxx_standard = args.cxx_standard
     print(f'Use CXX STANDARD {cxx_standard}')
 
     if args.d3:
