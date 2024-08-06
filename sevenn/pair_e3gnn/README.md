@@ -1,4 +1,4 @@
-We support the use of the Grimme's D3 dispersion (van der Waals) correction scheme accelerated by CUDA, which can be used within LAMMPS in conjunction with SevenNet.
+We support the LAMMPS pair style `d3` of the Grimme's D3 dispersion (van der Waals) correction scheme accelerated with CUDA, which can be used within LAMMPS in conjunction with SevenNet.
 
 **PLEASE NOTE:** Currently, this D3 code does not support GPU parallelism yet. So it can only be run on a single GPU.
 
