@@ -20,19 +20,21 @@ def main(args=None):
     args = cmd_parse_main(args)
     lammps_dir = args.lammps_dir
 
+    print('Patching LAMMPS with the following settings:')
+    print('  - LAMMPS source directory:', lammps_dir)
+
     cxx_standard = '17' if __version__.startswith('2') else '14'
     if cxx_standard == '17':
-        print('Torch version >= 2.0 detected, use CXX STANDARD 17')
+        print('  - Torch version >= 2.0 detected, use CXX STANDARD 17')
     else:
-        print('Torch version < 2.0 detected, use CXX STANDARD 14')
-    print(f'Use CXX STANDARD {cxx_standard}')
+        print('  - Torch version < 2.0 detected, use CXX STANDARD 14')
 
     if args.d3:
         d3_support = '1'
-        print('D3 support enabled')
+        print('  - D3 support enabled')
     else:
         d3_support = '0'
-        print('D3 support disabled')
+        print('  - D3 support disabled')
 
     script = f'{pair_e3gnn_dir}/patch_lammps.sh'
     cmd = f'{script} {lammps_dir} {cxx_standard} {d3_support}'

@@ -1,30 +1,38 @@
 #!/bin/bash
 
 lammps_root=$1
-cxx_standard=$2  # 14, 17
-d3_support=$3    # 1, 0
+cxx_standard=$2 # 14, 17
+d3_support=$3 # 1, 0
 SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
-echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support}"
 
 ###########################################
 # Check if the given arguments are valid  #
 ###########################################
 
+# Check the number of arguments
+if [ "$#" -ne 3 ]; then
+    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support}"
+    echo "  {lammps_root}: Root directory of LAMMPS source"
+    echo "  {cxx_standard}: C++ standard (14, 17)"
+    echo "  {d3_support}: Support for pair_d3 (1, 0)"
+    exit 1
+fi
+
 # Check if the lammps_root directory exists
 if [ ! -d "$lammps_root" ]; then
-    echo "No such directory: $lammps_root"
+    echo "Error: No such directory: $lammps_root"
     exit 1
 fi
 
 # Check if the given directory is the root of LAMMPS source
 if [ ! -d "$lammps_root/cmake" ] && [ ! -d "$lammps_root/potentials" ]; then
-    echo "Given $lammps_root is not a root of LAMMPS source"
+    echo "Error: Given $lammps_root is not a root of LAMMPS source"
     exit 1
 fi
 
 # Check if the script is being run from the root of SevenNet
 if [ ! -f "${SCRIPT_DIR}/pair_e3gnn.cpp" ]; then
-    echo "Script executed in a wrong directory"
+    echo "Error: Script executed in a wrong directory"
     exit 1
 fi
 
@@ -38,14 +46,18 @@ if [ -f "$lammps_root/src/pair_e3gnn.cpp" ]; then
     exit 0
 fi
 
-# Check if the OpenMPI is CUDA aware
-cuda_support=$(ompi_info --parsable --all | grep mpi_built_with_cuda_support:value)
-if [[ -z "$cuda_support" ]]; then
-    echo "OpenMPI not found, parallel performance is not optimal"
-elif [[ "$cuda_support" == *"true" ]]; then
-    echo "OpenMPI is CUDA aware"
+# Check if OpenMPI exists and if it is CUDA-aware
+if command -v ompi_info &> /dev/null; then
+    cuda_support=$(ompi_info --parsable --all | grep mpi_built_with_cuda_support:value)
+    if [[ -z "$cuda_support" ]]; then
+        echo "OpenMPI not found, parallel performance is not optimal"
+    elif [[ "$cuda_support" == *"true" ]]; then
+        echo "OpenMPI is CUDA aware"
+    else
+        echo "This system's OpenMPI is not 'CUDA aware', parallel performance is not optimal"
+    fi
 else
-    echo "This system's OpenMPI is not 'CUDA aware', parallel performance is not optimal"
+    echo "OpenMPI not found, parallel performance is not optimal"
 fi
 
 # Extract LAMMPS version and update
@@ -104,7 +116,7 @@ cp $SCRIPT_DIR/pair_d3.h $lammps_root/src/
 
 # 2. Patch cmake/CMakeLists.txt
 sed -i "s/project(lammps CXX)/project(lammps CXX CUDA)/" $lammps_root/cmake/CMakeLists.txt
-sed -i "s/\${LAMMPS_SOURCE_DIR}\/[^.]*.cpp/\${LAMMPS_SOURCE_DIR}\/[^.]*.cpp  \${LAMMPS_SOURCE_DIR}\/[^.]*.cu/" $lammps_root/cmake/CMakeLists.txt
+sed -i "s/\${LAMMPS_SOURCE_DIR}\/\[\^.\]\*\.cpp/\${LAMMPS_SOURCE_DIR}\/\[\^.\]\*\.cpp  \${LAMMPS_SOURCE_DIR}\/\[\^.\]\*\.cu/" $lammps_root/cmake/CMakeLists.txt
 cat >> $lammps_root/cmake/CMakeLists.txt << "EOF2"
 
 find_package(CUDA)
