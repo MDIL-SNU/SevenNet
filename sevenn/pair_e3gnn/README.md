@@ -24,10 +24,10 @@ You can use the D3 dispersion correction in LAMMPS with SevenNet through the `pa
 
 ```txt
 pair_style hybrid/overlay e3gnn d3 {cutoff_d3} {cutoff_d3_CN} {type_of_damping}
-pair_coeff e3gnn * * {path_to_serial_model} {space_separated_chemical_species}
-pair_coeff d3 * * {path_of_r0ab.csv} {path_of_d3_pars.csv} {name_of_functional} {space_separated_chemical_species}
+pair_coeff * * e3gnn {path_to_serial_model} {space_separated_chemical_species}
+pair_coeff * * d3 {path_of_r0ab.csv} {path_of_d3_pars.csv} {name_of_functional} {space_separated_chemical_species}
 
-# Adhoc solution for the invalid pressure calculation. (VIRIAL_PAIR <- VIRIAL_FDOTR by calling compute pressure)
+# Adhoc solution for the invalid pressure calculation. (VIRIAL_FDOTR -> VIRIAL_PAIR by calling compute pressure)
 compute {name_of_your_compute} all pressure NULL virial pair/hybrid d3
 # Adhoc solution for the issue of messed atom order on 3Aug2023. 
 atom_modify sort 0 0 
@@ -37,8 +37,8 @@ for example,
 
 ```txt
 pair_style hybrid/overlay e3gnn d3 9000 1600 d3_damp_bj
-pair_coeff e3gnn * * ./deployed_serial.pt C H O
-pair_coeff d3 * * ./r0ab.csv ./d3_pars.csv pbe C H O
+pair_coeff * * e3gnn ./deployed_serial.pt C H O
+pair_coeff * * d3 ./r0ab.csv ./d3_pars.csv pbe C H O
 compute vp_d3 all pressure NULL virial pair/hybrid d3
 atom_modify sort 0 0
 ```
