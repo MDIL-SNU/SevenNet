@@ -16,7 +16,7 @@ sevenn_patch_lammps ./lammps_sevenn --d3
 
 You can follow the remaining installation steps in the SevenNet documentation. For detailed installation options, refer to `sevenn/pair_e3gnn/patch_lammps.sh`.
 
-Also, this code requires a GPU with a compute capability of **at least 6.0**. If you try to compile it with version 5.0, you may encounter an `atomicAdd` error. The target compute capability of this code follows the setting of LibTorch in SevenNet, except for version 5.0. You can manually select the target capability using the environment variable. For example, you can use: `export TORCH_CUDA_ARCH_LIST="60;71;80;86;89;90"`.
+Also, this code requires a GPU with a compute capability of **at least 6.0**. If you try to compile it with version 5.0, you may encounter an `atomicAdd` error. The target compute capability of this code follows the setting of LibTorch in SevenNet, except for version 5.0. You can manually select the target capability using the environment variable. For example, you can use: `export TORCH_CUDA_ARCH_LIST="61;70;80;86;89;90"`.
 
 # Usage for LAMMPS
 
