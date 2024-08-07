@@ -4,13 +4,9 @@ We support the LAMMPS pair style `d3` of the Grimme's D3 dispersion (van der Waa
 
 # About Grimme's D3 code accelerated with CUDA 
 
-This is LAMMPS implementation of [Grimme's D3 method](https://doi.org/10.1063/1.3382344). We have ported the code from the [original fortran code](https://www.chemie.uni-bonn.de/grimme/de/software/dft-d3) to a LAMMPS pair style written in C++. The D3 method is semi-empirical and significantly faster than DFT, but it runs slower when combined with SevenNet. Therefore, we have adopted CUDA to accelerate the code.
+This is LAMMPS implementation of [Grimme's D3 method](https://doi.org/10.1063/1.3382344). We have ported the code from the [original fortran code](https://www.chemie.uni-bonn.de/grimme/de/software/dft-d3) to a LAMMPS pair style written in C++. The D3 method is semi-empirical and significantly faster than DFT, but it runs slower compared to SevenNet. To address this, we have adopted CUDA and single precision (FP32) operations to accelerate the code.
 
-We tested various implementations using MPI, OpenMP, OpenACC, and CUDA to accelerate the code. Among these, OpenACC and CUDA proved to be the most efficient. However, since OpenACC is not compatible with libtorch, we chose to use the CUDA version.
-
-Initially, we implemented the code using double precision (FP64), similar to the original, but to further speed up the calculations, we transitioned some operations to single precision (FP32). Consequently, this code may introduce minor numerical errors, particularly noticeable in stress calculations. However, these errors are significantly smaller than the numerical errors inherent in SevenNet itself, so we have decided to use FP32-based operations.
-
-# Installation of D3 code for LAMMPS
+# Installation for LAMMPS
 
 We support the installation of D3 code with SevenNet via the `sevenn_patch_lammps` command. You can simply add the `--d3` argument:
 
@@ -20,28 +16,27 @@ sevenn_patch_lammps ./lammps_sevenn --d3
 
 You can follow the remaining installation steps in the SevenNet documentation. For detailed installation options, refer to `sevenn/pair_e3gnn/patch_lammps.sh`.
 
-**PLEASE NOTE**: In this code, the selection of compute capability for GPUs relies on FindCUDA in libtorch. However, the default CUDA architectures selected in CUDA 12.1 are `"50;80;86;89;90"`. The D3 code, however, requires at least compute capability 6.0. If you compile with the default settings, you may encounter an `atomicAdd` error. To resolve this issue, I have included code in the script to remove the compute capability for 5.0.
-
-If you want to manually specify the compute capability, note that libtorch does not use `CMAKE_CUDA_ARCHITECTURES` or `CUDA_ARCHITECTURE` in CMake (ignore the CMake log). Instead, you can configure it manually by setting the environment variable `TORCH_CUDA_ARCH_LIST="60;71;80;86;89;90"`, which will then be automatically inserted into the nvcc flags, as libtorch does.
-
-**PLEASE NOTE**: Setting `fmad=false` for the NVCC compiler is essential to obtain precise results. This is the default option as described in patch_lammps.sh.
+Also, this code requires a GPU with a compute capability of **at least 6.0**. If you try to compile it with version 5.0, you may encounter an `atomicAdd` error. The target compute capability of this code follows the setting of LibTorch in SevenNet, except for version 5.0. You can manually select the target capability using the environment variable. For example, you can use: `export TORCH_CUDA_ARCH_LIST="60;71;80;86;89;90"`.
 
 # Usage for LAMMPS
 
-You can use the D3 dispersion correction in LAMMPS with SevenNet by using the `pair/hybrid` command:
+You can use the D3 dispersion correction in LAMMPS with SevenNet through the `pair/hybrid` command:
 
 ```txt
-pair_style pair/hybrid e3gnn d3 {cutoff_d3} {cutoff_d3_CN} {type_of_damping}
+pair_style hybrid/overlay e3gnn d3 {cutoff_d3} {cutoff_d3_CN} {type_of_damping}
 pair_coeff e3gnn * * {path_to_serial_model} {space_separated_chemical_species}
 pair_coeff d3 * * {path_of_r0ab.csv} {path_of_d3_pars.csv} {name_of_functional} {space_separated_chemical_species}
-compute {name_of_your_compute} all pressure NULL virial pair/hybrid
-atom_modify sort 0 0 # Adhoc solution for the issue on 3Aug2023, which will be resolved soon
+
+# Adhoc solution for the invalid pressure calculation. (VIRIAL_PAIR <- VIRIAL_FDOTR by calling compute pressure)
+compute {name_of_your_compute} all pressure NULL virial pair/hybrid d3
+# Adhoc solution for the issue of messed atom order on 3Aug2023. 
+atom_modify sort 0 0 
 ```
 
 for example,
 
 ```txt
-pair_style pair/hybrid e3gnn d3 9000 1600 d3_damp_bj
+pair_style hybrid/overlay e3gnn d3 9000 1600 d3_damp_bj
 pair_coeff e3gnn * * ./deployed_serial.pt C H O
 pair_coeff d3 * * ./r0ab.csv ./d3_pars.csv pbe C H O
 compute vp_d3 all pressure NULL virial pair/hybrid d3
@@ -50,84 +45,41 @@ atom_modify sort 0 0
 
 You can find `r0ab.csv` and `d3_pars.csv` files in the `pair_e3gnn` directory. These files are necessary to calculate D3 interactions.
 
-`cutoff_d3` and `cutoff_d3_CN` are *square* of cutoff radii for energy/force and coordination number, respectively. Units are Bohr radius: 1 (Bohr radius) = 0.52917721 (Å). Default values are `9000` and `1600`, respectively. this is also the default values used in VASP. check the [note](#note-the-default-cutoff-parameters) for more informaiton.
+`cutoff_d3` and `cutoff_d3_CN` are square of cutoff radii for energy/force and coordination number, respectively. Units are Bohr radius: 1 (Bohr radius) = 0.52917721 (Å). Default values are `9000` and `1600`, respectively. this is also the default values used in VASP.
 
 Available `type_of_damping` are as follows:
 - `d3_damp_zero`: Zero damping
 - `d3_damp_bj`: Becke-Johnson damping
 
-`name_of_functional` should match the exchange-correlation functional of the DFT calculations in the training set for the SevenNet potentials. For instance, SevenNet-0 was trained using the PBE functional, so you should specify `pbe` when using it.
+Available `name_of_functional` options are the same as in the original Fortran code. SevenNet-0 is trained on the 'PBE' functional, so you should specify 'pbe' in the script when using it.
 
-`compute {name_of_your_compute} all pressure NULL virial pair/hybrid` is necesarry option for some simualtions. check the [note](#note-to-use-pair_d3-with-lammps-hybrid-hybridoverlay)
+## Note: Default cutoff parameters
+On the [VASP DFT-D3](https://www.vasp.at/wiki/index.php/DFT-D3) page, the `VDW_RADIUS` and `VDW_CNRADIUS` are `50.2` and `20.0`, respectively (units are Å). However, when running VASP 6.3.2 with D3 using zero damping (BJ does not provide such a log), the default values in the OUTCAR file are `50.2022` and `21.1671`. These values are the same as our defaults.
 
-## Note: Defaults cutoff parameters
-In [VASP DFT-D3](https://www.vasp.at/wiki/index.php/DFT-D3) page, `VDW_RADIUS` and `VDW_CNRADIUS` are `50.2` and `20.0`, respectively (units are Å). But you can check the default value of these in OUTCAR: `50.2022` and `21.1671`, which is same to default values of this code. To check this by yourself, run VASP with D3 using zero damping (BJ does not give such log).
+# Features
+- Selective(or no) periodic boundary condition: implemented, But only PBC/noPBC can be checked through original FORTRAN code; selective PBC cannot
+- 3-body term, n > 8 term: not implemented (as to VASP)
+- Modified versions of zero and bj damping
 
-## Note: To use `pair_d3` with LAMMPS `hybrid`, `hybrid/overlay`
-In case you are doing calculation where pressure also affects simulation (e.g., NPT molecular dynamics simulation, geometry optimization with cell relax): ***you must add `compute (name_of_your_compute) all pressure NULL virial pair/hybrid d3` to your lammps input script.***
-
-In D3, the result of computation (energy, force, stress) will be updated to actual variables in `update` function:
-```cpp
-void PairD3::update(int eflag, int vflag) {
-    int n = atom->natoms;
-    // Energy update
-    if (eflag) { eng_vdwl += disp_total * AU_TO_EV; }
-
-    double** f_local = atom->f;       // Local force of atoms
-    for (int i = 0; i < n; i++) {
-        for (int j = 0; j < 3; j++) {
-            f_local[i][j] += f[i][j] * AU_TO_EV / AU_TO_ANG;
-        }
-    }
-
-    // Stress update
-    if (vflag) {
-        virial[0] += sigma[0][0] * AU_TO_EV;
-        virial[1] += sigma[1][1] * AU_TO_EV;
-        virial[2] += sigma[2][2] * AU_TO_EV;
-        virial[3] += sigma[0][1] * AU_TO_EV;
-        virial[4] += sigma[0][2] * AU_TO_EV;
-        virial[5] += sigma[1][2] * AU_TO_EV;
-    }
-}
-```
-In this code, virial stresses are updated only when `vflag` turned on.
-However, the `pair_hybrid.cpp` in `lammps/src` explains how virial stresses are calculated in hybrid style:
-```cpp
-/* ----------------------------------------------------------------------
-  call each sub-style's compute() or compute_outer() function
-  accumulate sub-style global/peratom energy/virial in hybrid
-  for global vflag = VIRIAL_PAIR:
-    each sub-style computes own virial[6]
-    sum sub-style virial[6] to hybrid's virial[6]
-  for global vflag = VIRIAL_FDOTR:
-    call sub-style with adjusted vflag to prevent it calling
-      virial_fdotr_compute()
-    hybrid calls virial_fdotr_compute() on final accumulated f
-------------------------------------------------------------------------- */
-```
-Here, `compute pressure` with `pair/hybrid` will switch on the `VIRIAL_PAIR` style, so the virial stress will accumulated to `hybrid/overlay`.
-Otherwise, `VIRIAL_FDOTR` may be turned on (which may skip the `vflag` part in `update` function; is it default?) and will give some errorneous value (computed from accumulated forces).   
-The `pair_style` after `compute pressure` can be any pair_style; only the `VIRIAL_PAIR` matters in this case.
+# Cautions
+- It can be slower than the CPU with a small number of atoms.
+- The maximum number of atoms that can be calculated is 46,340 (overflow issue).
+- There can be occured small amounts of numerical error
+  - The introduction of some FP32 operations can lead to minor numerical errors, particularly in pressure calculations, but these are generally smaller than those seen with SevenNet.
+  - If the error is too large, ensure that the `fmad=false` option in `patch_lammps.sh` is correctly applied during build.
 
 # To do
-- Remove atom_modify dependency.
+- Remove atom_modify / compute virial dependency.
 - Add support for ASE as calculator interface.
 - Add support for multi GPUs (with `e3gnn/parallel`).
 - Implement without Unified Memory.
 - Unfix the `threadsPerBlock=128`.
 - Unroll the repetition loop `k` (for small number of atoms).
 
-# Features
-- Selective or no periodic boundary condition: implemented (But only PBC/noPBC can be checked through original FORTRAN code; selective PBC cannot)
-- 3-body term, n > 8 term: not implemented (Same condition to VASP)
-- Modified versions of zero and bj damping
-
-# Cautions
-- It can be slower than the CPU with a small number of atoms.
-- The CUDA math library differs from C, which can lead to numerical errors.
-- The maximum number of atoms that can be calculated is 46,340 (overflow issue).
+OpenACC does not support 
 
 # Contributors
-- Hyungmin An: Ported original Fortran D3 code to C++.
-- Gijin Kim: Ported C++ D3 code to CUDA and currently maintains it.
+- Hyungmin An: Ported the original Fortran D3 code to C++ with OpenMP and MPI.
+- Gijin Kim: Accelerated the C++ D3 code with OpenACC[^1] and CUDA, and currently maintains it.
+
+[^1] Since OpenACC is not compatible with libtorch, we chose to use the CUDA.
