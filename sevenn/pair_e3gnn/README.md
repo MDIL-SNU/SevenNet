@@ -45,16 +45,13 @@ atom_modify sort 0 0
 
 You can find `r0ab.csv` and `d3_pars.csv` files in the `pair_e3gnn` directory. These files are necessary to calculate D3 interactions.
 
-`cutoff_d3` and `cutoff_d3_CN` are square of cutoff radii for energy/force and coordination number, respectively. Units are Bohr radius: 1 (Bohr radius) = 0.52917721 (Å). Default values are `9000` and `1600`, respectively. this is also the default values used in VASP.
+`cutoff_d3` and `cutoff_d3_CN` are square of cutoff radii for energy/force and coordination number, respectively. Units are Bohr radius: 1 (Bohr radius) = 0.52917721 (Å). Default values are `9000` and `1600`, respectively. this is also the default values used in VASP.[^1]
 
 Available `type_of_damping` are as follows:
 - `d3_damp_zero`: Zero damping
 - `d3_damp_bj`: Becke-Johnson damping
 
 Available `name_of_functional` options are the same as in the original Fortran code. SevenNet-0 is trained on the 'PBE' functional, so you should specify 'pbe' in the script when using it.
-
-## Note: Default cutoff parameters
-On the [VASP DFT-D3](https://www.vasp.at/wiki/index.php/DFT-D3) page, the `VDW_RADIUS` and `VDW_CNRADIUS` are `50.2` and `20.0`, respectively (units are Å). However, when running VASP 6.3.2 with D3 using zero damping (BJ does not provide such a log), the default values in the OUTCAR file are `50.2022` and `21.1671`. These values are the same as our defaults.
 
 # Features
 - Selective(or no) periodic boundary condition: implemented, But only PBC/noPBC can be checked through original FORTRAN code; selective PBC cannot
@@ -80,6 +77,7 @@ OpenACC does not support
 
 # Contributors
 - Hyungmin An: Ported the original Fortran D3 code to C++ with OpenMP and MPI.
-- Gijin Kim: Accelerated the C++ D3 code with OpenACC[^1] and CUDA, and currently maintains it.
+- Gijin Kim: Accelerated the C++ D3 code with OpenACC[^2] and CUDA, and currently maintains it.
 
-[^1] Since OpenACC is not compatible with libtorch, we chose to use the CUDA.
+[^1]: On the [VASP DFT-D3](https://www.vasp.at/wiki/index.php/DFT-D3) page, the `VDW_RADIUS` and `VDW_CNRADIUS` are `50.2` and `20.0`, respectively (units are Å). However, when running VASP 6.3.2 with D3 using zero damping (BJ does not provide such a log), the default values in the OUTCAR file are `50.2022` and `21.1671`. These values are the same as our defaults.
+[^2]: Since OpenACC is not compatible with libtorch, we chose to use the CUDA.
