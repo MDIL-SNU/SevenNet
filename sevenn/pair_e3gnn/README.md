@@ -73,8 +73,6 @@ Available `name_of_functional` options are the same as in the original Fortran c
 - Unfix the `threadsPerBlock=128`.
 - Unroll the repetition loop `k` (for small number of atoms).
 
-OpenACC does not support 
-
 # Contributors
 - Hyungmin An: Ported the original Fortran D3 code to C++ with OpenMP and MPI.
 - Gijin Kim: Accelerated the C++ D3 code with OpenACC[^2] and CUDA, and currently maintains it.
