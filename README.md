@@ -9,6 +9,24 @@ The project provides parallel molecular dynamics simulations using graph neural 
 
 The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
+## Features
+ - Pre-trained GNN interatomic potential SevenNet-0, with fine-tuning interface
+ - [ASE calculator support](#sevennet-calculator-for-ase)
+ - Multi-GPU accelerated molecular dynamics with LAMMPS
+ - D3 dispersion (van der Waals) with LAMMPS (not multi-GPU yet)
+
+Supporting MD frameworks and features of SevenNet. While all modes support both CPU and GPU, GPU is much faster.
+| Features        | ASE calculator   | LAMMPS serial   | LAMMPS parallel |
+|-----------------|------------------|-----------------|-----------------|
+| Working?        | ✅ | ✅ | ✅ |
+| Multi-GPU       | ❌ | ❌ | ✅ |
+| Stress compute  | ✅ | ✅ | ⏳ |
+| D3 correction   | ⏳ | ✅ | ⏳ |
+
+✅: Support, ⏳: Planned, ❌: Not planned.
+
+
+## Contents
 - [SevenNet](#sevennet)
   - [Installation](#installation)
   - [Usage](#usage)
@@ -157,6 +175,8 @@ These models can be used as lammps potential to run parallel MD simulations with
 - LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
 - (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 - MKL-include
+
+**For D3 support, click [here](sevenn/pair_e3gnn).**
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
