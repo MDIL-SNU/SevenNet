@@ -39,6 +39,7 @@ PairStyle(d3, PairD3)
 #include "neigh_list.h"
 #include "domain.h"
 #include "math_extra.h"
+#include "pair_d3_pars.h"
 
 namespace LAMMPS_NS {
 
@@ -66,9 +67,9 @@ namespace LAMMPS_NS {
         /* ------- Read parameters ------- */
         int find_atomic_number(std::string&);
         int is_int_in_array(int*, int, int);
-        void read_r0ab(class LAMMPS*, char*, int*, int);
+        void read_r0ab(int*, int);
         void get_limit_in_pars_array(int&, int&, int&, int&);
-        void read_c6ab(class LAMMPS*, char*, int*, int);
+        void read_c6ab(int*, int);
         void setfuncpar(char*);
         /* ------- Read parameters ------- */
 

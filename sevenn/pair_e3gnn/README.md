@@ -21,7 +21,7 @@ Also, this code requires a GPU with a compute capability of **at least 6.0**. If
 
 The target compute capability of this code follows the setting of LibTorch in SevenNet, except for version 5.0. 
 
-You can manually select the target capability using the `TORCH_CUDA_ARCH_LIST` environment variable. For example, you can use: `export TORCH_CUDA_ARCH_LIST="61;70;80;86;89;90"`.
+You can manually select the target capability using the `TORCH_CUDA_ARCH_LIST` environment variable. For example, you can use: `export TORCH_CUDA_ARCH_LIST="6.1;7.0;8.0;8.6;8.9;9.0"`.
 
 ## Usage for LAMMPS
 

@@ -12,9 +12,9 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing authors:
-   - Hyungmin An: Ported original Fortran D3 code to C++.
-   - Gijin Kim: Ported C++ D3 code to CUDA.
+   Contributing author
+   - Hyungmin An: Ported the Fortran D3 code to C++ with OpenMP and MPI.
+   - Gijin Kim: Accelerated the C++ D3 code with OpenACC and CUDA.
 ------------------------------------------------------------------------- */
 
 #include "pair_d3.h"
@@ -93,6 +93,7 @@ PairD3::PairD3(LAMMPS* lmp) : Pair(lmp) {
                             // parameters from a file, so only one
                             // pair_coeff statement is needed.
     manybody_flag = 1;
+    no_virial_fdotr_compute = 1;
 }
 
 /* ----------------------------------------------------------------------
@@ -253,7 +254,6 @@ void PairD3::allocate() {
     cudaMallocManaged(&c6_ij_tot,   n_ij_combination * sizeof(float));
 
     cudaMallocManaged(&atomtype, n * sizeof(int));
-    cudaMemcpy(atomtype, atom->type, n * sizeof(int), cudaMemcpyHostToDevice);
     cudaMallocManaged(&dispall, sizeof(double));
 
     //CHECK_CUDA_ERROR();
@@ -349,33 +349,15 @@ int PairD3::is_int_in_array(int arr[], int size, int value) {
    Read r0ab values from r0ab.csv (used in PairD3::coeff)
 ------------------------------------------------------------------------- */
 
-void PairD3::read_r0ab(LAMMPS* lmp, char* path_r0ab, int* atomic_numbers, int ntypes) {
+void PairD3::read_r0ab(int* atomic_numbers, int ntypes) {
+    const double r0ab_table[94][94] = R0AB_TABLE;
 
-    int nparams_per_line = 94;
-    int row_idx = 1;
-    char* line;
-
-    PotentialFileReader r0ab_reader(lmp, path_r0ab, "d3");
-
-    while ((line = r0ab_reader.next_line(nparams_per_line))) {
-        const int idx_atom_1 = is_int_in_array(atomic_numbers, ntypes, row_idx);
-        // Skip for the other rows
-        if (idx_atom_1 < 0) { row_idx++; continue; }
-        try {
-            ValueTokenizer r0ab_values(line);
-
-            for (int col_idx=1; col_idx <= nparams_per_line; col_idx++) {
-                const double value = r0ab_values.next_double();
-                const int idx_atom_2 = is_int_in_array(atomic_numbers, ntypes, col_idx);
-                if (idx_atom_2 < 0) { continue; }
-                r0ab[idx_atom_1+1][idx_atom_2+1] = value / AU_TO_ANG;
-            } // loop over column
-
-            row_idx++;
-        } catch (TokenizerException& e) {
-            error->one(FLERR, e.what());
-        } // loop over rows
+    for (int i = 1; i <= ntypes; i++) {
+        for (int j = 1; j <= ntypes; j++) {
+            r0ab[i][j] = r0ab_table[atomic_numbers[i-1]-1][atomic_numbers[j-1]-1] / AU_TO_ANG;
+        }
     }
+
 }
 
 /* ----------------------------------------------------------------------
@@ -402,44 +384,33 @@ void PairD3::get_limit_in_pars_array(int& idx_atom_1, int& idx_atom_2, int& idx_
    Read c6ab values from c6ab.csv (used in PairD3::coeff)
 ------------------------------------------------------------------------- */
 
-void PairD3::read_c6ab(LAMMPS* lmp, char* path_c6ab, int* atomic_numbers, int ntypes) {
-
+void PairD3::read_c6ab(int* atomic_numbers, int ntypes) {
     for (int i = 1; i <= ntypes; i++) { mxc[i] = 0; }
-
     int grid_i = 0, grid_j = 0;
-    char* line;
-    int nparams_per_line = 5;
 
-    PotentialFileReader c6ab_reader(lmp, path_c6ab, "d3");
+    const double c6ab_table[32385][5] = C6AB_TABLE;
 
-    while ((line = c6ab_reader.next_line(nparams_per_line))) {
-        try {
-            ValueTokenizer c6ab_values(line);
-            const double ref_c6 = c6ab_values.next_double();
-            int atom_number_1 = static_cast<int>(c6ab_values.next_double());
-            int atom_number_2 = static_cast<int>(c6ab_values.next_double());
-            get_limit_in_pars_array(atom_number_1, atom_number_2, grid_i, grid_j);
-            const int idx_atom_1 = is_int_in_array(atomic_numbers, ntypes, atom_number_1);
-            if ( idx_atom_1 < 0 ) { continue; }
-            const int idx_atom_2 = is_int_in_array(atomic_numbers, ntypes, atom_number_2);
-            if ( idx_atom_2 < 0 ) { continue; }
-            const double ref_cn1 = c6ab_values.next_double();
-            const double ref_cn2 = c6ab_values.next_double();
+    for (int i = 0; i < 32385; i++) {
+        const double ref_c6 = c6ab_table[i][0];
+        int atom_number_1 = static_cast<int>(c6ab_table[i][1]);
+        int atom_number_2 = static_cast<int>(c6ab_table[i][2]);
+        get_limit_in_pars_array(atom_number_1, atom_number_2, grid_i, grid_j);
+        const int idx_atom_1 = is_int_in_array(atomic_numbers, ntypes, atom_number_1);
+        if (idx_atom_1 < 0) { continue; }
+        const int idx_atom_2 = is_int_in_array(atomic_numbers, ntypes, atom_number_2);
+        if (idx_atom_2 < 0) { continue; }
+        const double ref_cn1 = c6ab_table[i][3];
+        const double ref_cn2 = c6ab_table[i][4];
 
-            mxc[idx_atom_1 + 1] = std::max(mxc[idx_atom_1 + 1], grid_i);
-            mxc[idx_atom_2 + 1] = std::max(mxc[idx_atom_2 + 1], grid_j);
-            c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][0] = ref_c6;
-            c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][1] = ref_cn1;
-            c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][2] = ref_cn2;
-            c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][0] = ref_c6;
-            c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][1] = ref_cn2;
-            c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][2] = ref_cn1;
-
-        } catch (TokenizerException& e) {
-            error->one(FLERR, e.what());
-        } // loop over rows
+        mxc[idx_atom_1 + 1] = std::max(mxc[idx_atom_1 + 1], grid_i);
+        mxc[idx_atom_2 + 1] = std::max(mxc[idx_atom_2 + 1], grid_j);
+        c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][0] = ref_c6;
+        c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][1] = ref_cn1;
+        c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][2] = ref_cn2;
+        c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][0] = ref_c6;
+        c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][1] = ref_cn2;
+        c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][2] = ref_cn1;
     }
-
 }
 
 /* ----------------------------------------------------------------------
@@ -682,13 +653,13 @@ void PairD3::setfuncpar(char* functional_name) {
 
 void PairD3::coeff(int narg, char **arg) {
     if (!allocated) allocate();
-    if (narg < 3) { error->all(FLERR, "Pair_coeff * * needs: r0ab.csv c6ab.csv functional element1 element2 ..."); }
+    if (narg < 1) { error->all(FLERR, "Pair_coeff * * needs: functional element1 element2 ..."); }
 
     std::string element;
     int ntypes = atom->ntypes;
     int* atomic_numbers = (int*)malloc(sizeof(int)*ntypes);
     for (int i = 0; i < ntypes; i++) {
-        element = arg[i+5];
+        element = arg[i+3];
         atomic_numbers[i] = find_atomic_number(element);
     }
 
@@ -784,16 +755,15 @@ void PairD3::coeff(int narg, char **arg) {
     }
 
     // set r0ab
-    read_r0ab(lmp, arg[2], atomic_numbers, ntypes);
+    read_r0ab(atomic_numbers, ntypes);
 
     // read c6ab
-    read_c6ab(lmp, arg[3], atomic_numbers, ntypes);
+    read_c6ab(atomic_numbers, ntypes);
 
     // read functional parameters
-    setfuncpar(arg[4]);
+    setfuncpar(arg[2]);
 
     free(atomic_numbers);
-
 }
 
 /* ----------------------------------------------------------------------
@@ -1196,7 +1166,6 @@ void PairD3::reallocate_arrays() {
     cudaMallocManaged(&c6_ij_tot,   n_ij_combination * sizeof(float));
 
     cudaMallocManaged(&atomtype, n * sizeof(int));
-    cudaMemcpy(atomtype, atom->type, n * sizeof(int), cudaMemcpyHostToDevice);
 
     /* -------------- Create new arrays -------------- */
 
@@ -2065,6 +2034,7 @@ void PairD3::compute(int eflag, int vflag) {
     set_lattice_vectors();
     precalculate_tau_array();
     load_atom_info();
+    cudaMemcpy(atomtype, atom->type, atom->natoms * sizeof(int), cudaMemcpyHostToDevice);
 
     get_coordination_number();
 
