@@ -28,33 +28,24 @@ You can manually select the target capability using the `TORCH_CUDA_ARCH_LIST` e
 You can use the D3 dispersion correction in LAMMPS with SevenNet through the `pair/hybrid` command:
 
 ```txt
-pair_style hybrid/overlay e3gnn d3 {cutoff_d3} {cutoff_d3_CN} {type_of_damping}
+pair_style hybrid/overlay e3gnn d3 {cutoff_d3_r} {cutoff_d3_cn} {type_of_damping} {name_of_functional}
 pair_coeff * * e3gnn {path_to_serial_model} {space_separated_chemical_species}
-pair_coeff * * d3 {path_of_r0ab.csv} {path_of_d3_pars.csv} {name_of_functional} {space_separated_chemical_species}
-
-# Adhoc solution for the invalid pressure calculation. (VIRIAL_FDOTR -> VIRIAL_PAIR by calling compute pressure)
-compute {name_of_your_compute} all pressure NULL virial pair/hybrid d3
-# Adhoc solution for the issue of messed atom order on 3Aug2023. 
-atom_modify sort 0 0 
+pair_coeff * * d3 {space_separated_chemical_species}
 ```
 
 for example,
 
 ```txt
-pair_style hybrid/overlay e3gnn d3 9000 1600 d3_damp_bj
+pair_style hybrid/overlay e3gnn d3 9000 1600 damp_bj pbe
 pair_coeff * * e3gnn ./deployed_serial.pt C H O
-pair_coeff * * d3 ./r0ab.csv ./d3_pars.csv pbe C H O
-compute vp_d3 all pressure NULL virial pair/hybrid d3
-atom_modify sort 0 0
+pair_coeff * * d3 C H O
 ```
 
-You can find `r0ab.csv` and `d3_pars.csv` files in the `pair_e3gnn` directory. These files are necessary to calculate D3 interactions.
-
-`cutoff_d3` and `cutoff_d3_CN` are square of cutoff radii for energy/force and coordination number, respectively. Units are Bohr radius: 1 (Bohr radius) = 0.52917721 (Å). Default values are `9000` and `1600`, respectively. this is also the default values used in VASP.[^1]
+`cutoff_d3_r` and `cutoff_d3_cn` are square of cutoff radii for energy/force and coordination number, respectively. Units are Bohr radius: 1 (Bohr radius) = 0.52917721 (Å). Default values are `9000` and `1600`, respectively. this is also the default values used in VASP.[^1]
 
 Available `type_of_damping` are as follows:
-- `d3_damp_zero`: Zero damping
-- `d3_damp_bj`: Becke-Johnson damping
+- `damp_zero`: Zero damping
+- `damp_bj`: Becke-Johnson damping
 
 Available `name_of_functional` options are the same as in the original Fortran code. SevenNet-0 is trained on the 'PBE' functional, so you should specify 'pbe' in the script when using it.
 
