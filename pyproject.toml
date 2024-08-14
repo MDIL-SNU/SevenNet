@@ -48,7 +48,6 @@ sevenn = [
     "pair_e3gnn/*.cpp",
     "pair_e3gnn/*.h",
     "pair_e3gnn/*.cu",
-    "pair_e3gnn/*.params",
     "pair_e3gnn/patch_lammps.sh",
     "presets/*.yaml",
     "pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth",
