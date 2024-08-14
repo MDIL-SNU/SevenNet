@@ -4,6 +4,10 @@ import warnings
 import torch
 
 import sevenn._keys as KEY
+from sevenn.scripts.convert_model_modality import (
+    append_modality_to_model_dct,
+    get_single_modal_model_dct,
+)
 import sevenn.util as util
 from sevenn.sevenn_logger import Logger
 
@@ -113,6 +117,21 @@ def processing_continue(config):
     }
     config.update(chem_speices_related)
 
+    if (
+        KEY.USE_MODALITY in config_cp.keys() and config_cp[KEY.USE_MODALITY]
+    ):  # checkpoint model is multimodal
+        config.update({
+            KEY.MODAL_MAP + '_cp': config_cp[KEY.MODAL_MAP],
+            KEY.USE_MODALITY + '_cp': True,
+            KEY.NUM_MODALITIES + '_cp': len(config_cp[KEY.MODAL_MAP]),
+        })
+    else:
+        config.update({
+            KEY.MODAL_MAP + '_cp': {},
+            KEY.USE_MODALITY + '_cp': False,
+            KEY.NUM_MODALITIES + '_cp': 0,
+        })
+
     Logger().write(f'checkpoint previous epoch was: {from_epoch}\n')
 
     # decide start epoch
@@ -144,3 +163,33 @@ def processing_continue(config):
         scheduler_state_dict_cp,
     )
     return state_dicts, start_epoch, init_csv
+
+
+def convert_modality_of_checkpoint_state_dct(config, state_dicts):
+    # TODO: this requires updating model state dict after seeing dataset
+    model_state_dict_cp, optimizer_state_dict_cp, scheduler_state_dict_cp = (
+        state_dicts
+    )
+
+    if config[KEY.USE_MODALITY]:  # current model is multimodal
+        num_modalities_cp = len(config[KEY.MODAL_MAP + '_cp'])
+        append_modal_length = config[KEY.NUM_MODALITIES] - num_modalities_cp
+
+        model_state_dict_cp = append_modality_to_model_dct(
+            model_state_dict_cp, config, num_modalities_cp, append_modal_length
+        )
+
+    else:  # current model is single modal
+        if config[KEY.USE_MODALITY + '_cp']:  # checkpoint model is multimodal
+            # change model state dict to single modal, default = "common"
+            model_state_dict_cp = get_single_modal_model_dct(
+                model_state_dict_cp, config, config[KEY.DEFAULT_MODAL], True
+            )
+
+    state_dicts = (
+        model_state_dict_cp,
+        optimizer_state_dict_cp,
+        scheduler_state_dict_cp,
+    )
+
+    return state_dicts

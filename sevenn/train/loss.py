@@ -10,13 +10,22 @@ class LossDefinition:
     """
 
     def __init__(
-        self, name=None, unit=None, criterion=None, ref_key=None, pred_key=None
+        self,
+        name=None,
+        unit=None,
+        criterion=None,
+        ref_key=None,
+        pred_key=None,
+        use_weight=False,
+        delete_unlabled=True,
     ):
         self.name = name
         self.unit = unit
         self.criterion = criterion
         self.ref_key = ref_key
         self.pred_key = pred_key
+        self.use_weight = use_weight
+        self.delete_unlabled = delete_unlabled
 
     def __repr__(self):
         return self.name
@@ -38,7 +47,34 @@ class LossDefinition:
         Function that return scalar
         """
         pred, ref = self._preprocess(batch_data, model)
-        return self.criterion(pred, ref)
+        if self.use_weight:
+            vdim = {'energy': 1, 'force': 3, 'stress': 6}
+            loss_type = self.name.lower()
+            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
+            weight_tensor = (
+                weight[batch_data[KEY.BATCH]]
+                if loss_type == "force"
+                else weight
+            )
+            weight_tensor = torch.repeat_interleave(weight_tensor, vdim[loss_type])
+
+        if self.delete_unlabled:
+            #  nan in `pred`` should be deleted in other process
+            unlabled_idx = torch.isnan(ref)
+            pred = pred[~unlabled_idx]
+            ref = ref[~unlabled_idx]
+
+            if self.use_weight:
+                weight_tensor = weight_tensor[~unlabled_idx]
+
+        if len(pred) > 0:  # more than one ref value is labelled.
+            loss = self.criterion(pred, ref)
+            if self.use_weight:
+                loss = torch.mean(loss*weight_tensor)
+        else:
+            loss = None
+
+        return loss
 
 
 class PerAtomEnergyLoss(LossDefinition):
@@ -53,9 +89,16 @@ class PerAtomEnergyLoss(LossDefinition):
         criterion=None,
         ref_key=KEY.ENERGY,
         pred_key=KEY.PRED_TOTAL_ENERGY,
+        use_weight=False,
+        delete_unlabled=True,
     ):
         super().__init__(
-            name=name, criterion=criterion, ref_key=ref_key, pred_key=pred_key
+            name=name,
+            criterion=criterion,
+            ref_key=ref_key,
+            pred_key=pred_key,
+            use_weight = use_weight,
+            delete_unlabled = delete_unlabled
         )
 
     def _preprocess(self, batch_data, model=None):
@@ -78,9 +121,16 @@ class ForceLoss(LossDefinition):
         criterion=None,
         ref_key=KEY.FORCE,
         pred_key=KEY.PRED_FORCE,
+        use_weight=False,
+        delete_unlabled=True,
     ):
         super().__init__(
-            name=name, criterion=criterion, ref_key=ref_key, pred_key=pred_key
+            name=name,
+            criterion=criterion,
+            ref_key=ref_key,
+            pred_key=pred_key,
+            use_weight = use_weight,
+            delete_unlabled = delete_unlabled
         )
 
     def _preprocess(self, batch_data, model=None):
@@ -101,9 +151,16 @@ class StressLoss(LossDefinition):
         criterion=None,
         ref_key=KEY.STRESS,
         pred_key=KEY.PRED_STRESS,
+        use_weight=False,
+        delete_unlabled=True,
     ):
         super().__init__(
-            name=name, criterion=criterion, ref_key=ref_key, pred_key=pred_key
+            name=name,
+            criterion=criterion,
+            ref_key=ref_key,
+            pred_key=pred_key,
+            use_weight = use_weight,
+            delete_unlabled = delete_unlabled
         )
 
     def _preprocess(self, batch_data, model=None):
@@ -123,12 +180,16 @@ def get_loss_functions_from_config(config):
         loss_param = config[KEY.LOSS_PARAM]
     except KeyError:
         loss_param = {}
+    if config[KEY.USE_WEIGHT]:
+        loss_param['reduction'] = 'none'
     criterion = loss(**loss_param)
 
-    loss_functions.append((PerAtomEnergyLoss(), 1.0))
-    loss_functions.append((ForceLoss(), config[KEY.FORCE_WEIGHT]))
+    use_weight = config[KEY.USE_WEIGHT]
+
+    loss_functions.append((PerAtomEnergyLoss(use_weight=use_weight), 1.0))
+    loss_functions.append((ForceLoss(use_weight=use_weight), config[KEY.FORCE_WEIGHT]))
     if config[KEY.IS_TRAIN_STRESS]:
-        loss_functions.append((StressLoss(), config[KEY.STRESS_WEIGHT]))
+        loss_functions.append((StressLoss(use_weight=use_weight), config[KEY.STRESS_WEIGHT]))
 
     for loss_function, _ in loss_functions:
         if loss_function.criterion is None:

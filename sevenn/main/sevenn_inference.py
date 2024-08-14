@@ -17,7 +17,8 @@ target_help = 'target files to evaluate. '
 
 
 def main(args=None):
-    checkpoint, target, device, ncores, output, batch = cmd_parse_data(args)
+    checkpoint, target, device, ncores, output, batch, modal, =\
+        cmd_parse_data(args)
     if not os.path.exists(checkpoint):
         print(f'{checkpoint} does not exist')
         sys.exit(1)
@@ -26,7 +27,7 @@ def main(args=None):
     if device == 'auto':
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-    inference_main(checkpoint, target, output, ncores, device, batch)
+    inference_main(checkpoint, target, output, ncores, device, batch, modal)
 
 
 def cmd_parse_data(args=None):
@@ -56,6 +57,14 @@ def cmd_parse_data(args=None):
     )
     ag.add_argument('-b', '--batch', type=int, default='5', help='batch size')
 
+    ag.add_argument(
+        '-m',
+        '--modal',
+        type=str,
+        default='common',
+        help='modality for multi-modal inference',
+    )
+
     args = ag.parse_args()
 
     checkpoint = args.checkpoint
@@ -65,4 +74,5 @@ def cmd_parse_data(args=None):
     ncores = args.ncores
     output = args.output
     batch = args.batch
-    return checkpoint, target, device, ncores, output, batch
+    modal = args.modal
+    return checkpoint, target, device, ncores, output, batch, modal

@@ -105,7 +105,9 @@ def error_recorder_from_loss_functions(loss_functions):
     return ErrorRecorder(metrics)
 
 
-def postprocess_output(output, loss_types):
+def postprocess_output(
+    output, loss_types, use_weight=False, delete_unlabled=True
+):
     from sevenn._const import LossType
 
     """
@@ -115,13 +117,17 @@ def postprocess_output(output, loss_types):
     Args:
         output (dict): output from model
         loss_types (list): list of loss types to be calculated
+        use_weight (bool): if True, trying to multiply weight to output. Used for training only.
+        delete_unlabled (bool): if True, delete unlabled (i.e. nan) data from reference.
 
     Returns:
         results (dict): dictionary of loss type and its corresponding
     """
     TO_KB = 1602.1766208  # eV/A^3 to kbar
     results = {}
+    weight_tensor = None
     for loss_type in loss_types:
+        is_valid = True
         if loss_type is LossType.ENERGY:
             # dim: (num_batch)
             num_atoms = output[KEY.NUM_ATOMS]
@@ -141,11 +147,34 @@ def postprocess_output(output, loss_types):
             vdim = 6
         else:
             raise ValueError(f'Unknown loss type: {loss_type}')
-        results[loss_type] = (pred, ref, vdim)
+
+        if use_weight:
+            weight = output[KEY.DATA_WEIGHT][loss_type.value]
+            weight_tensor = (
+                weight[output[KEY.BATCH]]
+                if loss_type is LossType.FORCE
+                else weight
+            )
+            weight_tensor = torch.repeat_interleave(weight_tensor, vdim)
+
+        if delete_unlabled:
+            #  nan in pred might not be deleted, which is natural.
+            #  This must be done after multiplying weight.
+            unlabeld_idx = torch.isnan(ref)
+            pred = pred[~unlabeld_idx]
+            ref = ref[~unlabeld_idx]
+
+            if len(pred) == 0:
+                is_valid = False  # not a valid error, erase for loss.backward
+
+            if use_weight:
+                weight_tensor = weight_tensor[~unlabeld_idx]
+
+        results[loss_type] = (pred, ref, vdim, is_valid, weight_tensor)
     return results
 
 
-def squared_error(pred, ref, vdim):
+def squared_error(pred, ref, vdim, *args):
     MSE = torch.nn.MSELoss(reduction='none')
     return torch.reshape(MSE(pred, ref), (-1, vdim)).sum(dim=1)
 

@@ -1,8 +1,12 @@
 import argparse
 import os
 
+import torch
+
 import sevenn._const as _const
 import sevenn.util
+import sevenn._keys as KEY
+from sevenn.scripts.convert_model_modality import get_single_modal_model_dct
 from sevenn.scripts.deploy import deploy, deploy_parallel
 
 description_get_model = (
@@ -18,7 +22,7 @@ get_parallel_help = 'deploy parallel model'
 
 
 def main(args=None):
-    checkpoint, output_prefix, get_parallel = cmd_parse_get_model(args)
+    checkpoint, output_prefix, get_parallel, modal, save_cp = cmd_parse_get_model(args)
     get_serial = not get_parallel
 
     if output_prefix is None:
@@ -35,6 +39,14 @@ def main(args=None):
     model, config = sevenn.util.model_from_checkpoint(checkpoint_path)
     stct_dct = model.state_dict()
 
+    if KEY.USE_MODALITY in config.keys() and config[KEY.USE_MODALITY]:
+        stct_dct = get_single_modal_model_dct(stct_dct, config, modal)
+        output_prefix = modal + '_' + output_prefix
+        if save_cp:
+            cp_file = torch.load(checkpoint_path, map_location='cpu')
+            cp_file.update({'model_state_dict': stct_dct, 'config': config})
+            torch.save(cp_file, checkpoint_path.replace('.', f'_{modal}.'))
+
     if get_serial:
         deploy(stct_dct, config, output_prefix)
     else:
@@ -50,8 +62,23 @@ def cmd_parse_get_model(args=None):
     ag.add_argument(
         '-p', '--get_parallel', help=get_parallel_help, action='store_true'
     )
+    ag.add_argument(
+        '-m',
+        '--modal',
+        help='Modality of multi-modal model',
+        default='common',
+        type=str,
+    )
+    ag.add_argument(
+        '-s',
+        '--save_checkpoint',
+        help='Save converted checkpoint',
+        action='store_true',
+    )
     args = ag.parse_args()
     checkpoint = args.checkpoint
     output_prefix = args.output_prefix
     get_parallel = args.get_parallel
-    return checkpoint, output_prefix, get_parallel
+    modal = args.modal
+    save_cp = args.save_checkpoint
+    return checkpoint, output_prefix, get_parallel, modal, save_cp

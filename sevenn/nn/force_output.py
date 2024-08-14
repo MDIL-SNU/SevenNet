@@ -27,10 +27,17 @@ class ForceOutput(nn.Module):
         pos_tensor = [data[self.key_pos]]
         energy = [(data[self.key_energy]).sum()]
 
+        # `materialize_grads` not supported in low version of pytorch
+        # Also can not be deployed when using it.
+        # But not using it makes problem in
+        # force/stress inference in sparse systems
+        # TODO: use it only in sevennet_calculator?
         grad = torch.autograd.grad(
             energy,
             pos_tensor,
             create_graph=self.training,
+            allow_unused=True,
+            # materialize_grads=True,
         )[0]
 
         # For torchscript
@@ -62,10 +69,17 @@ class ForceStressOutput(nn.Module):
         pos_tensor = data[self.key_pos]
         energy = [(data[self.key_energy]).sum()]
 
+        # `materialize_grads` not supported in low version of pytorch
+        # Also can not be deployed when using it.
+        # But not using it makes problem in
+        # force/stress inference in sparse systems
+        # TODO: use it only in sevennet_calculator?
         grad = torch.autograd.grad(
             energy,
             [pos_tensor, data['_strain']],
             create_graph=self.training,
+            allow_unused = True,
+            # materialize_grads=True,
         )
 
         # make grad is not Optional[Tensor]
@@ -75,6 +89,12 @@ class ForceStressOutput(nn.Module):
 
         sgrad = grad[1]
         volume = data[self.key_cell_volume]
+        vlim = 1e-3  # for cell volume = 0 for non PBC structures
+        if self._is_batch_data:
+            volume[volume < vlim] = vlim
+        elif volume < vlim:
+            volume = torch.tensor(vlim)
+
         if sgrad is not None:
             if self._is_batch_data:
                 stress = sgrad / volume.view(-1, 1, 1)

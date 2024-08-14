@@ -1,6 +1,7 @@
 import warnings
 from collections import OrderedDict
 
+import torch
 from e3nn.o3 import Irreps
 
 import sevenn._const as _const
@@ -19,7 +20,7 @@ from sevenn.nn.equivariant_gate import EquivariantGate
 from sevenn.nn.force_output import ForceStressOutput
 from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
 from sevenn.nn.node_embedding import OnehotEmbedding
-from sevenn.nn.scale import Rescale, SpeciesWiseRescale
+from sevenn.nn.scale import Rescale, SpeciesWiseRescale, ModalWiseRescale
 from sevenn.nn.self_connection import (
     SelfConnectionIntro,
     SelfConnectionLinearIntro,
@@ -94,6 +95,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     num_convolution_layer = config[KEY.NUM_CONVOLUTION]
 
     is_parity = config[KEY.IS_PARITY]  # boolean
+    use_modality = config[KEY.USE_MODALITY]  # boolean
 
     irreps_spherical_harm = Irreps.spherical_harmonics(
         lmax_edge, -1 if is_parity else 1
@@ -165,12 +167,19 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         if irreps_manual is None
         else irreps_manual[0]
     )
+
+    num_modalities = (
+        config[KEY.NUM_MODALITIES]
+        if use_modality and config[KEY.USE_MODAL_NODE_EMBEDDING]
+        else 1
+    )
     layers.update({
         'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
         'onehot_to_feature_x': IrrepsLinear(
             irreps_in=one_hot_irreps,
             irreps_out=irreps_x,
             data_key_in=KEY.NODE_FEATURE,
+            num_modalities=num_modalities,
             biases=use_bias_in_linear,
         ),
     })
@@ -188,6 +197,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
                 irreps_in=one_hot_irreps,
                 irreps_out=irreps_x,
                 data_key_in=KEY.NODE_FEATURE_GHOST,
+                num_modalities=num_modalities,
                 biases=use_bias_in_linear,
             ),
         })
@@ -240,10 +250,17 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             irreps_out=irreps_for_gate_in,
         )
 
+        num_modalities = (
+            config[KEY.NUM_MODALITIES]
+            if use_modality and config[KEY.USE_MODAL_SELF_INTER_INTRO]
+            else 1
+        )
+
         interaction_block[f'{i}_self_interaction_1'] = IrrepsLinear(
             irreps_x,
             irreps_x,
             data_key_in=KEY.NODE_FEATURE,
+            num_modalities=num_modalities,
             biases=use_bias_in_linear,
         )
 
@@ -253,6 +270,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
                 irreps_x,
                 irreps_x,
                 data_key_in=KEY.NODE_FEATURE_GHOST,
+                num_modalities=num_modalities,
                 biases=use_bias_in_linear,
             )
         elif parallel and i != 0:
@@ -293,11 +311,17 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             is_parallel=parallel,
         )
 
+        num_modalities = (
+            config[KEY.NUM_MODALITIES]
+            if use_modality and config[KEY.USE_MODAL_SELF_INTER_OUTRO]
+            else 1
+        )
         # irreps of x increase to gate_irreps_in
         interaction_block[f'{i}_self_interaction_2'] = IrrepsLinear(
             tp_irreps_out,
             irreps_for_gate_in,
             data_key_in=KEY.NODE_FEATURE,
+            num_modalities=num_modalities,
             biases=use_bias_in_linear,
         )
 
@@ -319,11 +343,17 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             else irreps_manual[-1].num_irreps
         )
         hidden_irreps = Irreps([(mid_dim // 2, (0, 1))])
+        num_modalities = (
+            config[KEY.NUM_MODALITIES]
+            if use_modality and config[KEY.USE_MODAL_OUTPUT_BLOCK]
+            else 1
+        )
         layers.update({
             'reduce_input_to_hidden': IrrepsLinear(
                 irreps_x,
                 hidden_irreps,
                 data_key_in=KEY.NODE_FEATURE,
+                num_modalities=num_modalities,
                 biases=use_bias_in_linear,
             ),
             'reduce_hidden_to_energy': IrrepsLinear(
@@ -351,11 +381,32 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     shift = config[KEY.SHIFT]
     scale = config[KEY.SCALE]
     train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
-    rescale_module = (
-        SpeciesWiseRescale
-        if config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
-        else Rescale
+    modal_wise_shift_scale = config[KEY.USE_MODALITY] and (
+        config[KEY.USE_MODAL_WISE_SHIFT]
+        or config[KEY.USE_MODAL_WISE_SCALE]
     )
+    rescale_module = (
+        ModalWiseRescale
+        if modal_wise_shift_scale
+        else (
+            SpeciesWiseRescale
+            if config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
+            else Rescale
+        )
+    )
+
+    if not modal_wise_shift_scale:
+        # This is only for tensor size compatibility when deploying single modal model.
+        if not isinstance(shift, torch.Tensor):
+            shift = torch.FloatTensor(shift)
+        if not isinstance(scale, torch.Tensor):
+            scale = torch.FloatTensor(scale)
+
+        if shift.dim() != 1:
+            shift = shift[0]
+        if scale.dim() != 1:
+            scale = scale[0]
+
     layers.update({
         'rescale_atomic_energy': rescale_module(
             shift=shift,
@@ -363,6 +414,8 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             data_key_in=KEY.SCALED_ATOMIC_ENERGY,
             data_key_out=KEY.ATOMIC_ENERGY,
             train_shift_scale=train_shift_scale,
+            use_modal_wise_shift=config[KEY.USE_MODAL_WISE_SHIFT],
+            use_modal_wise_scale=config[KEY.USE_MODAL_WISE_SCALE],
         ),
         'reduce_total_enegy': AtomReduce(
             data_key_in=KEY.ATOMIC_ENERGY,

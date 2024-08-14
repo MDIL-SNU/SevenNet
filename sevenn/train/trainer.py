@@ -54,7 +54,9 @@ class Trainer:
             if is_train:
                 total_loss = torch.tensor([0.0], device=self.device)
                 for loss_def, w in self.loss_functions:
-                    total_loss += loss_def.get_loss(output, self.model) * w
+                    indv_loss = loss_def.get_loss(output, self.model)
+                    if indv_loss is not None:
+                        total_loss += (indv_loss * w)
                 total_loss.backward()
                 self.optimizer.step()
 

@@ -176,7 +176,13 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
 
 
 def inference_main(
-    checkpoint, fnames, output_path, num_cores=1, device='cpu', batch_size=5
+    checkpoint,
+    fnames,
+    output_path,
+    num_cores=1,
+    device='cpu',
+    batch_size=5,
+    modal='common',
 ):
     model, config = model_from_checkpoint(checkpoint)
     model.to(device)
@@ -199,6 +205,18 @@ def inference_main(
             atoms_list = outcars_to_atoms(fnames)
         data_list = graph_build(atoms_list, cutoff, num_cores=num_cores)
         inference_set = AtomGraphDataset(data_list, cutoff)
+
+    if (
+        KEY.USE_MODALITY in config.keys() and config[KEY.USE_MODALITY]
+    ):  # case of multimodal model
+        for data_list in inference_set.dataset.values():
+            for data in data_list:
+                data[KEY.DATA_MODALITY] = modal
+        inference_set.write_modal_attr(
+            config[KEY.MODAL_MAP],
+            config[KEY.USE_MODAL_WISE_SHIFT]
+            or config[KEY.USE_MODAL_WISE_SCALE],
+        )
 
     inference_set.x_to_one_hot_idx(type_map)
     inference_set.toggle_requires_grad_of_data(KEY.POS, True)
