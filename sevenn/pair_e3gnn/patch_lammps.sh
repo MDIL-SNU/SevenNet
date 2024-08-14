@@ -113,6 +113,7 @@ if [ "$d3_support" -ne 0 ]; then
 # 1. Copy pair_d3 files to LAMMPS source
 cp $SCRIPT_DIR/pair_d3.cu $lammps_root/src/
 cp $SCRIPT_DIR/pair_d3.h $lammps_root/src/
+cp $SCRIPT_DIR/pair_d3_pars.h $lammps_root/src/
 
 # 2. Patch cmake/CMakeLists.txt
 sed -i "s/project(lammps CXX)/project(lammps CXX CUDA)/" $lammps_root/cmake/CMakeLists.txt
