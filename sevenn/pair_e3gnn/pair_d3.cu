@@ -12,9 +12,7 @@
 ------------------------------------------------------------------------- */
 
 /* ----------------------------------------------------------------------
-   Contributing author
-   - Hyungmin An: Ported the Fortran D3 code to C++ with OpenMP and MPI.
-   - Gijin Kim: Accelerated the C++ D3 code with OpenACC and CUDA.
+   Contributing author: Gijin Kim, Hyungmin An (SNU)
 ------------------------------------------------------------------------- */
 
 #include "pair_d3.h"
@@ -265,20 +263,21 @@ void PairD3::allocate() {
 ------------------------------------------------------------------------- */
 
 void PairD3::settings(int narg, char **arg) {
-    if (narg != 3) {
+    if (narg != 4) {
         error->all(FLERR,
                 "Pair_style d3 needs Three arguments:\n"
                 "\t rthr : threshold for dispersion interaction\n"
                 "\t cn_thr : threshold for coordination number calculation\n"
                 "\t damping_type : type of damping function\n"
+                "\t functional_name : name of the functional\n"
                 );
     }
     rthr   = utils::numeric(FLERR, arg[0], false, lmp);
     cn_thr = utils::numeric(FLERR, arg[1], false, lmp);
 
     std::unordered_map<std::string, int> commandMap = {
-        { "d3_damp_zero", 1}, { "d3_damp_bj", 2 },
-        { "d3_damp_zerom", 3 }, { "d3_damp_bjm", 4 },
+        { "damp_zero", 1}, { "damp_bj", 2 },
+        { "damp_zerom", 3 }, { "damp_bjm", 4 },
     };
 
     int commandCode = commandMap[arg[2]];
@@ -290,13 +289,16 @@ void PairD3::settings(int narg, char **arg) {
     default:
         error->all(FLERR,
                 "Unknown damping type\n"
-                "\t\t'd3_damp_zero',\n"
-                "\t\t'd3_damp_bj',\n"
-                "\t\t'd3_damp_zerom',\n"
-                "\t\t'd3_damp_bjm'\n"
+                "\t\t'damp_zero',\n"
+                "\t\t'damp_bj',\n"
+                "\t\t'damp_zerom',\n"
+                "\t\t'damp_bjm'\n"
                 );
         break;
     }
+
+    // read functional parameters
+    setfuncpar(arg[3]);
 }
 
 
@@ -414,7 +416,7 @@ void PairD3::read_c6ab(int* atomic_numbers, int ntypes) {
 }
 
 /* ----------------------------------------------------------------------
-   Set functional parameters (used in PairD3::coeff)
+   Set functional parameters (used in PairD3::settings)
 ------------------------------------------------------------------------- */
 
 void PairD3::setfuncpar(char* functional_name) {
@@ -653,19 +655,20 @@ void PairD3::setfuncpar(char* functional_name) {
 
 void PairD3::coeff(int narg, char **arg) {
     if (!allocated) allocate();
-    if (narg < 1) { error->all(FLERR, "Pair_coeff * * needs: functional element1 element2 ..."); }
+
+    int ntypes = atom->ntypes;
+    if (narg != ntypes + 2) { error->all(FLERR, "Pair_coeff * * needs: element1 element2 ..."); }
 
     std::string element;
-    int ntypes = atom->ntypes;
     int* atomic_numbers = (int*)malloc(sizeof(int)*ntypes);
     for (int i = 0; i < ntypes; i++) {
-        element = arg[i+3];
+        element = arg[i+2];
         atomic_numbers[i] = find_atomic_number(element);
     }
 
     int count = 0;
-    for (int i = 1; i <= atom->ntypes; i++) {
-        for (int j = 1; j <= atom->ntypes; j++) {
+    for (int i = 1; i <= ntypes; i++) {
+        for (int j = 1; j <= ntypes; j++) {
             setflag[i][j] = 1;
             count++;
         }
@@ -759,9 +762,6 @@ void PairD3::coeff(int narg, char **arg) {
 
     // read c6ab
     read_c6ab(atomic_numbers, ntypes);
-
-    // read functional parameters
-    setfuncpar(arg[2]);
 
     free(atomic_numbers);
 }
