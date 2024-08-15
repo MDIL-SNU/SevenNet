@@ -159,7 +159,7 @@ def processing_dataset(config, working_dir):
     dataset.group_by_key()  # apply labels inside original datapoint
     dataset.unify_dtypes()  # unify dtypes of all data points
 
-    dataset.toggle_requires_grad_of_data(KEY.POS, True)
+    dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
     # TODO: I think manual chemical species input is redundant
     chem_in_db = dataset.get_species()

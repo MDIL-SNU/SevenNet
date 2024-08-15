@@ -7,9 +7,8 @@ import torch.jit
 from ase.calculators.calculator import Calculator, all_changes
 from ase.data import chemical_symbols
 
-import sevenn._const
 import sevenn._keys as KEY
-import sevenn.util
+import sevenn.util as util
 
 torch_script_type = torch.jit._script.RecursiveScriptModule
 
@@ -68,14 +67,15 @@ class SevenNetCalculator(Calculator):
             if os.path.isfile(model):
                 checkpoint = model
             else:
-                checkpoint = sevenn.util.pretrained_name_to_path(model)
-            model_loaded, config = sevenn.util.model_from_checkpoint(
+                checkpoint = util.pretrained_name_to_path(model)
+            model_loaded, config = util.model_from_checkpoint(
                 checkpoint
             )
             model_loaded.set_is_batch_data(False)
             self.type_map = config[KEY.TYPE_MAP]
             self.cutoff = config[KEY.CUTOFF]
             self.sevennet_config = config
+            self.grad_key = KEY.EDGE_VEC
         elif file_type == 'torchscript':
             extra_dict = {
                 'chemical_symbols_to_index': b'',
@@ -98,6 +98,7 @@ class SevenNetCalculator(Calculator):
                 for i, sym in enumerate(chem_symbols.split())
             }
             self.cutoff = float(extra_dict['cutoff'].decode('utf-8'))
+            self.grad_key = KEY.POS
         else:
             raise ValueError('Unknown file type')
 
@@ -119,7 +120,7 @@ class SevenNetCalculator(Calculator):
     ):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
-        data = sevenn.util.unlabeled_atoms_to_input(atoms, self.cutoff)
+        data = util.unlabeled_atoms_to_input(atoms, self.cutoff, self.grad_key)
 
         data[KEY.NODE_FEATURE] = torch.LongTensor(
             [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]

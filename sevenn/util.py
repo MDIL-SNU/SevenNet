@@ -115,7 +115,6 @@ def postprocess_output(output, loss_types):
     Args:
         output (dict): output from model
         loss_types (list): list of loss types to be calculated
-
     Returns:
         results (dict): dictionary of loss type and its corresponding
     """
@@ -260,14 +259,14 @@ def model_from_checkpoint(checkpoint):
     return model, config
 
 
-def unlabeled_atoms_to_input(atoms, cutoff):
+def unlabeled_atoms_to_input(atoms, cutoff, grad_key=KEY.EDGE_VEC):
     from sevenn.atom_graph_data import AtomGraphData
     from sevenn.train.dataload import unlabeled_atoms_to_graph
 
     atom_graph = AtomGraphData.from_numpy_dict(
         unlabeled_atoms_to_graph(atoms, cutoff)
     )
-    atom_graph[KEY.POS].requires_grad_(True)
+    atom_graph[grad_key].requires_grad_(True)
     atom_graph[KEY.BATCH] = torch.zeros([0])
     return atom_graph
 

@@ -12,7 +12,7 @@ See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-PairStyle(e3gnn/parallel, PairE3GNNParallel)
+PairStyle(e3gnn / parallel, PairE3GNNParallel)
 
 #else
 
@@ -36,7 +36,7 @@ private:
   bool use_cuda_mpi;
 
   // for communication
-  // Most of these varaibles for communication is temporary and valid for only
+  // Most of these variables for communication is temporary and valid for only
   // one MD step.
   int x_dim; // to determine per atom data size
   int graph_size;
@@ -60,8 +60,6 @@ private:
 
   // to use tag_to_graph_idx inside comm methods
   int *tag_to_graph_idx_ptr = nullptr;
-
-  void warning_pressure();
 
 public:
   PairE3GNNParallel(class LAMMPS *);

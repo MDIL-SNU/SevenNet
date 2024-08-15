@@ -38,8 +38,8 @@ def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
     if full_dataset.x_is_one_hot_idx and full_dataset.type_map != type_map:
         raise ValueError(
             "loaded dataset's x is not atomic numbers.                 this is"
-            " deprecated. Create dataset from structure list                "
-            " with the newest version of sevenn"
+            ' deprecated. Create dataset from structure list                '
+            ' with the newest version of sevenn'
         )
     return full_dataset
 
@@ -201,7 +201,7 @@ def inference_main(
         inference_set = AtomGraphDataset(data_list, cutoff)
 
     inference_set.x_to_one_hot_idx(type_map)
-    inference_set.toggle_requires_grad_of_data(KEY.POS, True)
+    inference_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
     loss_types = [LossType.ENERGY, LossType.FORCE, LossType.STRESS]
 

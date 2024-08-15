@@ -10,13 +10,12 @@ from sevenn.nn.convolution import IrrepsConvolution
 from sevenn.nn.edge_embedding import (
     BesselBasis,
     EdgeEmbedding,
-    EdgePreprocess,
     PolynomialCutoff,
     SphericalEncoding,
     XPLORCutoff,
 )
 from sevenn.nn.equivariant_gate import EquivariantGate
-from sevenn.nn.force_output import ForceStressOutput
+from sevenn.nn.force_output import ForceStressOutputFromEdge
 from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.nn.scale import Rescale, SpeciesWiseRescale
@@ -146,10 +145,6 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             lmax_edge, -1 if is_parity else 1, normalize=_normalize_sph
         ),
     )
-    layers.update({
-        # simple edge preprocessor module with no param
-        'edge_preprocess': EdgePreprocess(is_stress=True),
-    })
 
     layers.update({
         # 'Not' simple edge embedding module
@@ -370,7 +365,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             constant=1.0,
         ),
     })
-    gradient_module = ForceStressOutput(
+    gradient_module = ForceStressOutputFromEdge(
         data_key_energy=KEY.PRED_TOTAL_ENERGY,
         data_key_force=KEY.PRED_FORCE,
         data_key_stress=KEY.PRED_STRESS,
@@ -380,8 +375,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     # output extraction part
     type_map = config[KEY.TYPE_MAP]
     if parallel:
-        del layers_list[0]['edge_preprocess']  # done in LAMMPS
-        del layers_list[-1]['force_output']  # done in LAMMPS
+        del layers_list[-1]['force_output']
         return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
     else:
         return AtomGraphSequential(layers, cutoff, type_map)

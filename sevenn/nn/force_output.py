@@ -6,6 +6,22 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 
+def _broadcast(
+    src: torch.Tensor,
+    other: torch.Tensor,
+    dim: int
+):
+    if dim < 0:
+        dim = other.dim() + dim
+    if src.dim() == 1:
+        for _ in range(0, dim):
+            src = src.unsqueeze(0)
+    for _ in range(src.dim(), other.dim()):
+        src = src.unsqueeze(-1)
+    src = src.expand_as(other)
+    return src
+
+
 @compile_mode('script')
 class ForceOutput(nn.Module):
     """
@@ -15,8 +31,8 @@ class ForceOutput(nn.Module):
     def __init__(
         self,
         data_key_pos: str = KEY.POS,
-        data_key_energy: str = KEY.SCALED_ENERGY,
-        data_key_force: str = KEY.SCALED_FORCE,
+        data_key_energy: str = KEY.PRED_TOTAL_ENERGY,
+        data_key_force: str = KEY.PRED_FORCE,
     ):
         super().__init__()
         self.key_pos = data_key_pos
@@ -41,12 +57,16 @@ class ForceOutput(nn.Module):
 
 @compile_mode('script')
 class ForceStressOutput(nn.Module):
+    """
+    Compute stress and force from positions.
+    Used in serial torchscipt models
+    """
     def __init__(
         self,
         data_key_pos: str = KEY.POS,
-        data_key_energy: str = KEY.SCALED_ENERGY,
-        data_key_force: str = KEY.SCALED_FORCE,
-        data_key_stress: str = KEY.SCALED_STRESS,
+        data_key_energy: str = KEY.PRED_TOTAL_ENERGY,
+        data_key_force: str = KEY.PRED_FORCE,
+        data_key_stress: str = KEY.PRED_STRESS,
         data_key_cell_volume: str = KEY.CELL_VOLUME,
     ):
 
@@ -100,5 +120,90 @@ class ForceStressOutput(nn.Module):
                     stress[0, 2],
                 ))
                 data[self.key_stress] = voigt_stress
+
+        return data
+
+
+@compile_mode('script')
+class ForceStressOutputFromEdge(nn.Module):
+    """
+    Compute stress and force from edge.
+    Used in parallel torchscipt models, and training
+    """
+    def __init__(
+        self,
+        data_key_edge: str = KEY.EDGE_VEC,
+        data_key_edge_idx: str = KEY.EDGE_IDX,
+        data_key_energy: str = KEY.PRED_TOTAL_ENERGY,
+        data_key_force: str = KEY.PRED_FORCE,
+        data_key_stress: str = KEY.PRED_STRESS,
+        data_key_cell_volume: str = KEY.CELL_VOLUME,
+    ):
+
+        super().__init__()
+        self.key_edge = data_key_edge
+        self.key_edge_idx = data_key_edge_idx
+        self.key_energy = data_key_energy
+        self.key_force = data_key_force
+        self.key_stress = data_key_stress
+        self.key_cell_volume = data_key_cell_volume
+        self._is_batch_data = True
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        tot_num = torch.sum(data[KEY.NUM_ATOMS])  # ? item?
+        batch = data[KEY.BATCH]  # for deploy, must be defined first
+        rij = data[self.key_edge]
+        energy = [(data[self.key_energy]).sum()]
+        edge_idx = data[self.key_edge_idx]
+
+        grad = torch.autograd.grad(
+            energy,
+            [rij],
+            create_graph=self.training,
+            allow_unused=True
+        )
+
+        # make grad is not Optional[Tensor]
+        fij = grad[0]
+
+        if fij is not None:
+            # compute force
+            pf = torch.zeros(tot_num, 3, dtype=fij.dtype, device=fij.device)
+            nf = torch.zeros(tot_num, 3, dtype=fij.dtype, device=fij.device)
+            _edge_src = _broadcast(edge_idx[0], fij, 0)
+            _edge_dst = _broadcast(edge_idx[1], fij, 0)
+            pf.scatter_reduce_(0, _edge_src, fij, reduce='sum')
+            nf.scatter_reduce_(0, _edge_dst, fij, reduce='sum')
+            data[self.key_force] = pf - nf
+
+            # compute virial
+            diag = rij * fij
+            s12 = rij[..., 0] * fij[..., 1]
+            s23 = rij[..., 1] * fij[..., 2]
+            s31 = rij[..., 2] * fij[..., 0]
+            # cat last dimension
+            _voigt = torch.cat([
+                diag,
+                s12.unsqueeze(-1),
+                s23.unsqueeze(-1),
+                s31.unsqueeze(-1)
+            ], dim=-1)
+
+            _s = torch.zeros(tot_num, 6, dtype=fij.dtype, device=fij.device)
+            _edge_dst6 = _broadcast(edge_idx[1], _voigt, 0)
+            _s.scatter_reduce_(0, _edge_dst6, _voigt, reduce='sum')
+
+            if self._is_batch_data:
+                nbatch = int(batch.max().cpu().item()) + 1
+                sout = torch.zeros(
+                    (nbatch, 6), dtype=_voigt.dtype, device=_voigt.device
+                )
+                _batch = _broadcast(batch, _s, 0)
+                sout.scatter_reduce_(0, _batch, _s, reduce='sum')
+            else:
+                sout = torch.sum(_s, dim=0)
+
+            data[self.key_stress] =\
+                torch.neg(sout) / data[self.key_cell_volume].unsqueeze(-1)
 
         return data

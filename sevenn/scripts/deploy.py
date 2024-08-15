@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 
 import e3nn.util.jit
@@ -11,9 +12,13 @@ from sevenn.model_build import build_E3_equivariant_model
 
 # TODO: this is E3_equivariant specific
 def deploy(model_state_dct, config, fname):
+    from sevenn.nn.edge_embedding import EdgePreprocess
+    from sevenn.nn.force_output import ForceStressOutput
     config[KEY.IS_TRACE_STRESS] = True
     config[KEY.IS_TRAIN_STRESS] = True
     model = build_E3_equivariant_model(config)
+    model.prepand_module('edge_preprocess', EdgePreprocess(True))
+    model.replace_module('force_output', ForceStressOutput())
     missing, not_used = model.load_state_dict(model_state_dct, strict=False)
     assert len(missing) == 0, f'missing keys: {missing}'
     assert len(not_used) == 0, f'not used keys: {not_used}'
@@ -97,8 +102,9 @@ def deploy_parallel(model_state_dct, config, fname):
     md_configs.update({'dtype': config[KEY.DTYPE]})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
+    os.makedirs(fname)
     for idx, model in enumerate(model_list):
-        fname_full = f'{fname}_{idx}.pt'
+        fname_full = f'{fname}/deployed_parallel_{idx}.pt'
         model.set_is_batch_data(False)
         model.eval()
 
