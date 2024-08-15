@@ -4,6 +4,8 @@ version = "0.9.4"
 authors = [
   { name="Yutack Park", email="parkyutack@snu.ac.kr" },
   { name="Jaesun Kim" },
+  { name="Gijin Kim" },
+  { name="Hyungmin An" },
 ]
 description = "Scalable EquiVariance Enabled Neural Network"
 readme = "README.md"
