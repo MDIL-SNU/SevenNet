@@ -38,8 +38,11 @@ fi
 
 # Check if the patch is already applied
 if [ -f "$lammps_root/src/pair_e3gnn.cpp" ]; then
+    echo "----------------------------------------------------------"
     echo "Seems like given LAMMPS is already patched."
-    echo "Example build commends, under LAMMPS root"
+    echo "Try again after removing src/pair_e3gnn.cpp to force patch"
+    echo "----------------------------------------------------------"
+    echo "Example build commands, under LAMMPS root"
     echo "  mkdir build; cd build"
     echo "  cmake ../cmake -DCMAKE_PREFIX_PATH=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)')"
     echo "  make -j 4"
@@ -143,7 +146,7 @@ if [ "$d3_support" -ne 0 ]; then
 fi
 
 # Provide example cmake command to the user
-echo "Example build commends, under LAMMPS root"
+echo "Example build commands, under LAMMPS root"
 echo "  mkdir build; cd build"
 echo "  cmake ../cmake -DCMAKE_PREFIX_PATH=$(python -c 'import torch;print(torch.utils.cmake_prefix_path)')"
 echo "  make -j 4"

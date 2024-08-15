@@ -18,7 +18,7 @@ description = (
 
 def main(args=None):
     args = cmd_parse_main(args)
-    lammps_dir = args.lammps_dir
+    lammps_dir = os.path.abspath(args.lammps_dir)
 
     print('Patching LAMMPS with the following settings:')
     print('  - LAMMPS source directory:', lammps_dir)
