@@ -1,9 +1,11 @@
 [project]
 name = "sevenn"
-version = "0.9.3"
+version = "0.9.4"
 authors = [
   { name="Yutack Park", email="parkyutack@snu.ac.kr" },
   { name="Jaesun Kim" },
+  { name="Gijin Kim" },
+  { name="Hyungmin An" },
 ]
 description = "Scalable EquiVariance Enabled Neural Network"
 readme = "README.md"
@@ -47,6 +49,7 @@ sevenn = [
     "logo_ascii",
     "pair_e3gnn/*.cpp",
     "pair_e3gnn/*.h",
+    "pair_e3gnn/*.cu",
     "pair_e3gnn/patch_lammps.sh",
     "presets/*.yaml",
     "pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth",
