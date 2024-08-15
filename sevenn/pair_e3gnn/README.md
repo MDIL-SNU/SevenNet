@@ -47,7 +47,7 @@ Available `type_of_damping` are as follows:
 - `damp_zero`: Zero damping
 - `damp_bj`: Becke-Johnson damping
 
-Available `name_of_functional` options are the same as in the original Fortran code. SevenNet-0 is trained on the 'PBE' functional, so you should specify 'pbe' in the script when using it.
+Available `name_of_functional` options are the same as in the original Fortran code. SevenNet-0 is trained on the 'PBE' functional, so you should specify 'pbe' in the script when using it. For other supporting functionals, check 'List of parametrized functionals' in [here](https://www.chemie.uni-bonn.de/grimme/de/software/dft-d3).
 
 ## Features
 - Selective(or no) periodic boundary condition: implemented, But only PBC/noPBC can be checked through original FORTRAN code; selective PBC cannot
@@ -75,3 +75,5 @@ Available `name_of_functional` options are the same as in the original Fortran c
 
 [^1]: On the [VASP DFT-D3](https://www.vasp.at/wiki/index.php/DFT-D3) page, the `VDW_RADIUS` and `VDW_CNRADIUS` are `50.2` and `20.0`, respectively (units are Å). However, when running VASP 6.3.2 with D3 using zero damping (BJ does not provide such a log), the default values in the OUTCAR file are `50.2022` and `21.1671`. These values are the same as our defaults.
 [^2]: Since OpenACC is not compatible with libtorch, we chose to use the CUDA.
+
+
