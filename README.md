@@ -11,11 +11,11 @@ The installation and usage of SevenNet are split into two parts: training + comm
 
 ## Features
  - Pre-trained GNN interatomic potential SevenNet-0, with fine-tuning interface
- - [ASE calculator support](#sevennet-calculator-for-ase)
+ - ASE calculator support
  - Multi-GPU accelerated molecular dynamics with LAMMPS
- - D3 dispersion (van der Waals) with LAMMPS (not multi-GPU yet)
+ - D3 dispersion (van der Waals) with LAMMPS (for LAMMPS serial)
 
-Supporting MD frameworks and features of SevenNet. While all modes support both CPU and GPU, GPU is much faster.
+Supporting MD frameworks and its features. While all modes support both CPU and GPU, GPU is much faster.
 | Features        | ASE calculator   | LAMMPS serial   | LAMMPS parallel |
 |-----------------|------------------|-----------------|-----------------|
 | Working?        | ✅ | ✅ | ✅ |
@@ -176,7 +176,6 @@ These models can be used as lammps potential to run parallel MD simulations with
 - (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 - MKL-include
 
-**For D3 support, click [here](sevenn/pair_e3gnn).**
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
@@ -188,8 +187,10 @@ Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the v
 
 ```bash
 git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Aug2023_update3 --depth=1
-sevenn_patch_lammps ./lammps_sevenn
+sevenn_patch_lammps ./lammps_sevenn {--d3}
 ```
+
+**Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style. For its usage and details, click [here](sevenn/pair_e3gnn).**
 
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
@@ -203,7 +204,7 @@ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cm
 make -j4
 ```
 
-If the compilation is successful, you will find the executable at `{path_to_lammps_dir}/build/lmp`. To use this binary easily, for example, create a soft link in your bin directory (which should be included in your $PATH).
+If the compilation is successful, you will find the executable at `{path_to_lammps_dir}/build/lmp`. To use this binary easily, for example, create a soft link in your bin directory (which should be included in your `$PATH`).
 
 ```bash
 ln -s {absolute_path_to_lammps_dir}/build/lmp $HOME/.local/bin/lmp
@@ -279,8 +280,8 @@ One GPU per MPI process is expected. The simulation may run inefficiently if the
 ## Future Works
 
 - Notebook examples and improved interface for non-command line usage
-- Implementation of pressure output in parallel MD simulations.
-- Development of support for a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
+- Virial stress output in parallel MD simulations.
+- Development of a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
 - Easy use of parallel models
 
 ## Citation
