@@ -197,6 +197,10 @@ def inference_main(
             no_ref = True  # poscar has no y value
         elif head.startswith('OUTCAR'):
             atoms_list = outcars_to_atoms(fnames)
+        else:
+            atoms_list = []
+            for fname in fnames:
+                atoms_list.extend(io.read(fname, index=':'))
         data_list = graph_build(atoms_list, cutoff, num_cores=num_cores)
         inference_set = AtomGraphDataset(data_list, cutoff)
 

@@ -9,7 +9,7 @@ from sevenn.scripts.inference import inference_main
 
 description = (
     f'sevenn version={__version__}, sevenn_inference. '
-    + 'Evaluate sevenn_data/POSCARs/OUTCARs '
+    + 'Evaluate sevenn_data/POSCARs/OUTCARs/ase readable '
     + 'using the model stored in a checkpoint.'
 )
 checkpoint_help = 'checkpoint'
