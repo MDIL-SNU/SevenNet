@@ -17,6 +17,7 @@ from sevenn.util import (
     AverageNumber,
     model_from_checkpoint,
     postprocess_output,
+    pretrained_name_to_path,
     squared_error,
     to_atom_graph_list,
 )
@@ -178,6 +179,10 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
 def inference_main(
     checkpoint, fnames, output_path, num_cores=1, device='cpu', batch_size=5
 ):
+    if os.path.isfile(checkpoint):
+        pass
+    else:
+        checkpoint = pretrained_name_to_path(checkpoint)
     model, config = model_from_checkpoint(checkpoint)
     model.to(device)
     model.set_is_batch_data(True)
