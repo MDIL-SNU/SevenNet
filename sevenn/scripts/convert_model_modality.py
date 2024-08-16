@@ -8,7 +8,6 @@ from e3nn.o3 import Irreps, Linear
 import sevenn._keys as KEY
 from sevenn.model_build import build_E3_equivariant_model
 
-
 modal_module_dict = {
     KEY.USE_MODAL_NODE_EMBEDDING: 'onehot_to_feature_x',
     KEY.USE_MODAL_SELF_INTER_INTRO: 'self_interaction_1',
@@ -172,7 +171,8 @@ def get_single_modal_model_dct(
             modal_module_name,
         ) in modal_module_dict.items():
             irreps_out = Irreps(model.get_irreps_in(module_key, 'irreps_out'))
-            # TODO: directly using "irreps_in" might not be compatible when changing `nn/linear.py`
+            # TODO: directly using "irreps_in" might not be compatible
+            # when changing `nn/linear.py`
             output_dim = irreps_out.count('0e')
             if (
                 config[use_modal_module_key]
@@ -258,7 +258,9 @@ def append_modality_to_model_dct(
             ):  # this module is used for giving modality
                 irreps_in = model.get_irreps_in(
                     module_key, 'irreps_in'
-                )  # TODO: directly using "irreps_in" might not be compatible when changing `nn/linear.py`
+                )
+                # TODO: directly using "irreps_in" might not be compatible
+                # when changing `nn/linear.py`
                 irreps_out = model.get_irreps_in(module_key, 'irreps_out')
                 irreps_in, irreps_out = Irreps(irreps_in), Irreps(irreps_out)
 

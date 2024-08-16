@@ -4,8 +4,8 @@ import os
 import torch
 
 import sevenn._const as _const
-import sevenn.util
 import sevenn._keys as KEY
+import sevenn.util
 from sevenn.scripts.convert_model_modality import get_single_modal_model_dct
 from sevenn.scripts.deploy import deploy, deploy_parallel
 
@@ -22,7 +22,8 @@ get_parallel_help = 'deploy parallel model'
 
 
 def main(args=None):
-    checkpoint, output_prefix, get_parallel, modal, save_cp = cmd_parse_get_model(args)
+    checkpoint, output_prefix, get_parallel, modal, save_cp =\
+        cmd_parse_get_model(args)
     get_serial = not get_parallel
 
     if output_prefix is None:

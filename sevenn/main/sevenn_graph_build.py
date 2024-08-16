@@ -9,7 +9,7 @@ from sevenn.sevenn_logger import Logger
 description = (
     f'sevenn version={SEVENN_VERSION}, sevenn_graph_build.\n'
     + "Create '.sevenn_data' from ase readable or VASP OUTCARs (by"
-    " structure_list).\n"
+    ' structure_list).\n'
 )
 
 source_help = 'source data to build graph'

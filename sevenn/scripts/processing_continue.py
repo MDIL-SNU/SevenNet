@@ -4,11 +4,11 @@ import warnings
 import torch
 
 import sevenn._keys as KEY
+import sevenn.util as util
 from sevenn.scripts.convert_model_modality import (
     append_modality_to_model_dct,
     get_single_modal_model_dct,
 )
-import sevenn.util as util
 from sevenn.sevenn_logger import Logger
 
 

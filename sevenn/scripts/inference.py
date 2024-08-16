@@ -38,8 +38,8 @@ def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
     if full_dataset.x_is_one_hot_idx and full_dataset.type_map != type_map:
         raise ValueError(
             "loaded dataset's x is not atomic numbers.                 this is"
-            " deprecated. Create dataset from structure list                "
-            " with the newest version of sevenn"
+            ' deprecated. Create dataset from structure list                '
+            ' with the newest version of sevenn'
         )
     return full_dataset
 

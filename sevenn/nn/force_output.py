@@ -78,7 +78,7 @@ class ForceStressOutput(nn.Module):
             energy,
             [pos_tensor, data['_strain']],
             create_graph=self.training,
-            allow_unused = True,
+            allow_unused=True,
             # materialize_grads=True,
         )
 

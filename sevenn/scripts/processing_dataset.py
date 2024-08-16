@@ -4,8 +4,8 @@ import random
 import torch
 import torch.distributed as dist
 
-import sevenn._keys as KEY
 import sevenn._const as CONST
+import sevenn._keys as KEY
 from sevenn.sevenn_logger import Logger
 from sevenn.train.dataload import file_to_dataset, match_reader
 from sevenn.train.dataset import AtomGraphDataset
@@ -52,7 +52,8 @@ def calculate_shift_or_scale_from_key(train_set: AtomGraphDataset, key_given, n_
     elif key_given == 'force_rms':
         shift_or_scale = train_set.get_force_rms()
     elif key_given == 'per_atom_energy_std':
-        shift_or_scale = train_set.get_statistics(KEY.PER_ATOM_ENERGY)['Total']['std']
+        shift_or_scale =\
+            train_set.get_statistics(KEY.PER_ATOM_ENERGY)['Total']['std']
     elif key_given == 'elemwise_force_rms':
         shift_or_scale = train_set.get_species_wise_force_rms(n_chem)
         _expand = False
@@ -134,7 +135,7 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
                     scale[modal_map[modal_key]] = modal_scale
                 elif scale_given in CONST.IMPLEMENTED_SCALE:
                     raise NotImplementedError(
-                        'Currently, modal-wise scale implemented for'   
+                        'Currently, modal-wise scale implemented for'
                         'species-dependent case only.'
                     )
 
@@ -243,7 +244,8 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
     if isinstance(conv_denominator, float):
         conv_denominator = [conv_denominator] * config[KEY.NUM_CONVOLUTION]
 
-    use_species_wise_shift_scale = use_species_wise_shift or use_species_wise_scale
+    use_species_wise_shift_scale =\
+        use_species_wise_shift or use_species_wise_scale
     if use_species_wise_shift_scale:
         chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
         if _expand_shift:

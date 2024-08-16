@@ -53,10 +53,11 @@ class LossDefinition:
             weight = batch_data[KEY.DATA_WEIGHT][loss_type]
             weight_tensor = (
                 weight[batch_data[KEY.BATCH]]
-                if loss_type == "force"
+                if loss_type == 'force'
                 else weight
             )
-            weight_tensor = torch.repeat_interleave(weight_tensor, vdim[loss_type])
+            weight_tensor =\
+                torch.repeat_interleave(weight_tensor, vdim[loss_type])
 
         if self.delete_unlabled:
             #  nan in `pred`` should be deleted in other process
@@ -70,7 +71,7 @@ class LossDefinition:
         if len(pred) > 0:  # more than one ref value is labelled.
             loss = self.criterion(pred, ref)
             if self.use_weight:
-                loss = torch.mean(loss*weight_tensor)
+                loss = torch.mean(loss * weight_tensor)
         else:
             loss = None
 
@@ -97,8 +98,8 @@ class PerAtomEnergyLoss(LossDefinition):
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            use_weight = use_weight,
-            delete_unlabled = delete_unlabled
+            use_weight=use_weight,
+            delete_unlabled=delete_unlabled
         )
 
     def _preprocess(self, batch_data, model=None):
@@ -129,8 +130,8 @@ class ForceLoss(LossDefinition):
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            use_weight = use_weight,
-            delete_unlabled = delete_unlabled
+            use_weight=use_weight,
+            delete_unlabled=delete_unlabled
         )
 
     def _preprocess(self, batch_data, model=None):
@@ -159,8 +160,8 @@ class StressLoss(LossDefinition):
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            use_weight = use_weight,
-            delete_unlabled = delete_unlabled
+            use_weight=use_weight,
+            delete_unlabled=delete_unlabled
         )
 
     def _preprocess(self, batch_data, model=None):
