@@ -69,6 +69,11 @@ After the PyTorch installation, run
 pip install sevenn
 ```
 
+To download the latest version of SevenNet(not fully stable), run
+```bash
+pip install https://github.com/MDIL-SNU/SevenNet.git
+```
+
 ## Usage
 
 ### SevenNet-0
@@ -190,7 +195,7 @@ git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Au
 sevenn_patch_lammps ./lammps_sevenn {--d3}
 ```
 
-**Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style. For its usage and details, click [here](sevenn/pair_e3gnn).**
+**Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).**
 
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
