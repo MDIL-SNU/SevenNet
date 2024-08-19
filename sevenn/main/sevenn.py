@@ -5,13 +5,13 @@ import sys
 import torch.distributed as dist
 
 import sevenn._keys as KEY
-from sevenn._const import SEVENN_VERSION
+from sevenn import __version__
 from sevenn.parse_input import read_config_yaml
 from sevenn.scripts.train import train
 from sevenn.sevenn_logger import Logger
 
 description = (
-    f'sevenn version={SEVENN_VERSION}, train model based on the input.yaml'
+    f'sevenn version={__version__}, train model based on the input.yaml'
 )
 
 input_yaml_help = 'input.yaml for training'
@@ -21,7 +21,7 @@ distributed_help = 'set this flag if it is distributed training'
 
 # TODO: do something for model type (it is not printed on log)
 global_config = {
-    'version': SEVENN_VERSION,
+    'version': __version__,
     KEY.MODEL_TYPE: 'E3_equivariant_model',
 }
 

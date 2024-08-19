@@ -4,8 +4,8 @@ import e3nn.util.jit
 import torch
 from ase.data import chemical_symbols
 
-import sevenn._const as _const
 import sevenn._keys as KEY
+from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
 
 
@@ -35,7 +35,7 @@ def deploy(model_state_dct, config, fname):
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
     md_configs.update({'model_type': config[KEY.MODEL_TYPE]})
-    md_configs.update({'version': _const.SEVENN_VERSION})
+    md_configs.update({'version': __version__})
     md_configs.update({'dtype': config[KEY.DTYPE]})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
@@ -93,7 +93,7 @@ def deploy_parallel(model_state_dct, config, fname):
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
     md_configs.update({'comm_size': str(comm_size)})
     md_configs.update({'model_type': config[KEY.MODEL_TYPE]})
-    md_configs.update({'version': _const.SEVENN_VERSION})
+    md_configs.update({'version': __version__})
     md_configs.update({'dtype': config[KEY.DTYPE]})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
