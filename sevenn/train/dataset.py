@@ -100,7 +100,7 @@ class AtomGraphDataset:
             self.dataset[key].append(datum)
         self.user_labels = list(self.dataset.keys())
 
-    def seperate_info(self, data_key=KEY.INFO):
+    def separate_info(self, data_key=KEY.INFO):
         """
         Separate info from data and save it as list of dict
         to make it compatible with torch_geometric and later training

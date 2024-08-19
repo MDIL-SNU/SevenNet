@@ -215,7 +215,7 @@ def processing_dataset(config, working_dir):
         valid_set.group_by_key()
         valid_set.unify_dtypes()
 
-        valid_set.toggle_requires_grad_of_data(KEY.POS, True)
+        valid_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
         # condition: validset labels should be subset of trainset labels
         valid_labels = valid_set.user_labels
@@ -283,8 +283,8 @@ def processing_dataset(config, working_dir):
         )
 
     # inconsistent .info dict give error when collate
-    _, _ = train_set.seperate_info()
-    _, _ = valid_set.seperate_info()
+    _, _ = train_set.separate_info()
+    _, _ = valid_set.separate_info()
 
     # make sure x is one hot index
     if train_set.x_is_one_hot_idx is False:
