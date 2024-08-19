@@ -3,14 +3,14 @@ import os
 
 import torch
 
-import sevenn._const as _const
 import sevenn._keys as KEY
 import sevenn.util
+from sevenn import __version__
 from sevenn.scripts.convert_model_modality import get_single_modal_model_dct
 from sevenn.scripts.deploy import deploy, deploy_parallel
 
 description_get_model = (
-    f'sevenn version={_const.SEVENN_VERSION}, sevenn_get_model.'
+    f'sevenn version={__version__}, sevenn_get_model.'
     + ' Deploy model for LAMMPS from the checkpoint'
 )
 checkpoint_help = (

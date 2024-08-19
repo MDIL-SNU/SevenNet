@@ -1,10 +1,10 @@
 import argparse
 import os
 
-import sevenn._const as _const
+from sevenn import __version__
 
 description_preset = (
-    f'sevenn version={_const.SEVENN_VERSION}, sevenn_preset.'
+    f'sevenn version={__version__}, sevenn_preset.'
     + ' copy paste preset training yaml file to current directory'
     + ' ex) sevennet_preset fine_tune > my_input.yaml'
 )

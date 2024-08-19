@@ -3,11 +3,11 @@ import os
 from datetime import datetime
 
 import sevenn.scripts.graph_build as graph_build
-from sevenn._const import SEVENN_VERSION
+from sevenn import __version__
 from sevenn.sevenn_logger import Logger
 
 description = (
-    f'sevenn version={SEVENN_VERSION}, sevenn_graph_build.\n'
+    f'sevenn version={__version__}, sevenn_graph_build.\n'
     + "Create '.sevenn_data' from ase readable or VASP OUTCARs (by"
     ' structure_list).\n'
 )
@@ -40,7 +40,7 @@ def main(args=None):
         fmt_kwargs,
     ) = cmd_parse_data(args)
     metadata = {
-        'sevenn_version': SEVENN_VERSION,
+        'sevenn_version': __version__,
         'when': now,
         'cutoff': cutoff,
     }
