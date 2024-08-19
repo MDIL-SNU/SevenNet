@@ -1,12 +1,12 @@
 import argparse
 import os
 
-import sevenn._const as _const
 import sevenn.util
+from sevenn import __version__
 from sevenn.scripts.deploy import deploy, deploy_parallel
 
 description_get_model = (
-    f'sevenn version={_const.SEVENN_VERSION}, sevenn_get_model.'
+    f'sevenn version={__version__}, sevenn_get_model.'
     + ' Deploy model for LAMMPS from the checkpoint'
 )
 checkpoint_help = (
