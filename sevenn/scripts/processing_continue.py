@@ -183,7 +183,10 @@ def convert_modality_of_checkpoint_state_dct(config, state_dicts):
         if config[KEY.USE_MODALITY + '_cp']:  # checkpoint model is multimodal
             # change model state dict to single modal, default = "common"
             model_state_dict_cp = get_single_modal_model_dct(
-                model_state_dict_cp, config, config[KEY.DEFAULT_MODAL], True
+                model_state_dict_cp,
+                config,
+                config[KEY.DEFAULT_MODAL],
+                from_processing_cp=True,
             )
 
     state_dicts = (

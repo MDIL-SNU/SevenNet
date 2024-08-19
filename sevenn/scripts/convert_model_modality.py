@@ -143,6 +143,7 @@ def get_single_modal_model_dct(
     config: dict,
     ref_modal: str,
     from_processing_cp: bool = False,
+    is_deploy: bool = False,
 ):
     if (
         not from_processing_cp and not config[KEY.USE_MODALITY]
@@ -150,8 +151,10 @@ def get_single_modal_model_dct(
         return model_state_dct
 
     config[KEY.USE_BIAS_IN_LINEAR] = True
+    config['_deploy'] = is_deploy
 
     model = build_E3_equivariant_model(config)
+    del config['_deploy']
     key_add = '_cp' if from_processing_cp else ''
     modal_type_dict = config[KEY.MODAL_MAP + key_add]
     erase_modal_indices = range(len(modal_type_dict.keys()))  # starts with 0

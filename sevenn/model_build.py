@@ -395,7 +395,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         )
     )
 
-    if not modal_wise_shift_scale:
+    if not modal_wise_shift_scale and '_deploy' in config.keys() and config['_deploy']:
         # This is only for tensor size compatibility when deploying single modal model.
         if not isinstance(shift, torch.Tensor):
             shift = torch.FloatTensor(shift)

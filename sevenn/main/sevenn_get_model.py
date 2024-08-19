@@ -41,7 +41,7 @@ def main(args=None):
     stct_dct = model.state_dict()
 
     if KEY.USE_MODALITY in config.keys() and config[KEY.USE_MODALITY]:
-        stct_dct = get_single_modal_model_dct(stct_dct, config, modal)
+        stct_dct = get_single_modal_model_dct(stct_dct, config, modal, is_deploy=True)
         output_prefix = modal + '_' + output_prefix
         if save_cp:
             cp_file = torch.load(checkpoint_path, map_location='cpu')
