@@ -287,7 +287,7 @@ def inference_main(
     errors = recorder.epoch_forward()
 
     if not no_ref:
-        with open(f'{output_path}/errors.txt', 'w') as f:
+        with open(f'{output_path}/errors.txt', 'w', encoding='utf-8') as f:
             for key, val in errors.items():
                 f.write(f'{key}: {val}\n')
 
