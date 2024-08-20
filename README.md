@@ -104,7 +104,7 @@ For pre-trained models,
 
 ```python
 from sevenn.sevennet_calculator import SevenNetCalculator
-sevenet_0_cal = SevenNetCalculator("7net-0", device='cpu')  # 7net-0, SevenNet-0, 7net-0_22May2024, 7net-0_11July2024 ...
+sevennet_0_cal = SevenNetCalculator("7net-0", device='cpu')  # 7net-0, SevenNet-0, 7net-0_22May2024, 7net-0_11July2024 ...
 ```
 
 For user trained models,
@@ -112,7 +112,7 @@ For user trained models,
 ```python
 from sevenn.sevennet_calculator import SevenNetCalculator
 checkpoint_path = ### PATH TO CHECKPOINT ###
-sevenet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
+sevennet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
 ```
 
 ### Training
