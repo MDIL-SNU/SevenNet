@@ -12,7 +12,7 @@ See the README file in the top-level LAMMPS directory.
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-PairStyle(e3gnn / parallel, PairE3GNNParallel)
+PairStyle(e3gnn/parallel, PairE3GNNParallel)
 
 #else
 
