@@ -13,14 +13,14 @@ The installation and usage of SevenNet are split into two parts: training + comm
  - Pre-trained GNN interatomic potential SevenNet-0, with fine-tuning interface
  - ASE calculator support
  - Multi-GPU accelerated molecular dynamics with LAMMPS
- - D3 dispersion (van der Waals) with LAMMPS (for LAMMPS serial)
+ - Accelerated D3 (van der Waals) dispersion, written in CUDA.
 
 Supporting MD frameworks and its features. While all modes support both CPU and GPU, GPU is much faster.
 | Features        | ASE calculator   | LAMMPS serial   | LAMMPS parallel |
 |-----------------|------------------|-----------------|-----------------|
 | Working?        | ✅ | ✅ | ✅ |
 | Multi-GPU       | ❌ | ❌ | ✅ |
-| Stress compute  | ✅ | ✅ | ⏳ |
+| Stress          | ✅ | ✅ | ⏳ |
 | D3 correction   | ⏳ | ✅ | ⏳ |
 
 ✅: Support, ⏳: Planned, ❌: Not planned.
