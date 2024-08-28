@@ -84,18 +84,32 @@ void PairE3GNN::compute(int eflag, int vflag) {
     error->all(FLERR, "atomic stress is not supported\n");
   }
 
+  int nlocal = list->inum; // same as nlocal
+  int *ilist = list->ilist;
+  tagint *tag = atom->tag;
+  std::unordered_map<int, int> tag_map; 
+
   if (atom->tag_consecutive() == 0) {
-    error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
+    for (int ii = 0; ii < nlocal; ii++) {
+      const int i = ilist[ii];
+      int itag = tag[i];
+      tag_map[itag] = ii+1;
+      // printf("MODIFY setting %i => %i \n",itag, tag_map[itag] );
+    }
+  } else {
+    //Ordered which mappling required
+    for (int ii = 0; ii < nlocal; ii++) {
+        const int itag = ilist[ii]+1;
+        tag_map[itag] = ii+1;
+        // printf("normal setting %i => %i \n",itag, tag_map[itag] );
+    }
   }
 
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
-  int nlocal = list->inum; // same as nlocal
   long num_atoms[1] = {nlocal};
-  int *ilist = list->ilist;
 
-  tagint *tag = atom->tag;
   int tag2i[nlocal];
 
   int *numneigh = list->numneigh;      // j loop cond
@@ -143,7 +157,7 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   for (int ii = 0; ii < nlocal; ii++) {
     const int i = ilist[ii];
-    int itag = tag[i];
+    int itag = tag_map[tag[i]];
     tag2i[itag - 1] = i;
     const int itype = type[i];
     node_type[itag - 1] = map[itype];
@@ -154,13 +168,13 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   for (int ii = 0; ii < nlocal; ii++) {
     const int i = ilist[ii];
-    int itag = tag[i];
+    int itag = tag_map[tag[i]];
     const int *jlist = firstneigh[i];
     const int jnum = numneigh[i];
 
     for (int jj = 0; jj < jnum; jj++) {
       int j = jlist[jj]; // atom over pbc is different atom
-      int jtag = tag[j]; // atom over pbs is same atom (it starts from 1)
+      int jtag = tag_map[tag[j]]; // atom over pbs is same atom (it starts from 1)
       j &= NEIGHMASK;
       const int jtype = type[j];
 
@@ -236,9 +250,9 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   for (int itag = 0; itag < nlocal; itag++) {
     int i = tag2i[itag];
-    f[i][0] = forces[itag][0];
-    f[i][1] = forces[itag][1];
-    f[i][2] = forces[itag][2];
+    f[i][0] += forces[itag][0];
+    f[i][1] += forces[itag][1];
+    f[i][2] += forces[itag][2];
   }
 
   if (vflag) {
@@ -247,12 +261,12 @@ void PairE3GNN::compute(int eflag, int vflag) {
     auto virial_stress_tensor = stress_tensor * inp_cell_volume;
     // xy yz zx order in vasp (voigt is xx yy zz yz xz xy)
     auto virial_stress = virial_stress_tensor.accessor<float, 1>();
-    virial[0] = virial_stress[0];
-    virial[1] = virial_stress[1];
-    virial[2] = virial_stress[2];
-    virial[3] = virial_stress[3];
-    virial[4] = virial_stress[5];
-    virial[5] = virial_stress[4];
+    virial[0] += virial_stress[0];
+    virial[1] += virial_stress[1];
+    virial[2] += virial_stress[2];
+    virial[3] += virial_stress[3];
+    virial[4] += virial_stress[5];
+    virial[5] += virial_stress[4];
   }
 
   if (eflag_atom) {

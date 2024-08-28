@@ -504,9 +504,9 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
   for (int graph_idx = 0; graph_idx < graph_indexer; graph_idx++) {
     int i = graph_index_to_i[graph_idx];
-    f[i][0] = forces[graph_idx][0];
-    f[i][1] = forces[graph_idx][1];
-    f[i][2] = forces[graph_idx][2];
+    f[i][0] += forces[graph_idx][0];
+    f[i][1] += forces[graph_idx][1];
+    f[i][2] += forces[graph_idx][2];
   }
 
   if (eflag_atom) {
