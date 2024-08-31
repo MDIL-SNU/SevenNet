@@ -149,7 +149,7 @@ See `sevenn_graph_build --help` for more information.
 ### sevenn_inference
 
 ```bash
-sevenn_inference checkpoint_best.pt path_to_my_structures/*
+sevenn_inference checkpoint_best.pth path_to_my_structures/*
 ```
 
 This will create dir `sevenn_infer_result`. It includes .csv files that enumerate prediction/reference results of energy and force.
