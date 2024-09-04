@@ -22,6 +22,7 @@ class IrrepsLinear(nn.Module):
         irreps_out: Irreps,
         data_key_in: str,
         data_key_out: Optional[str] = None,
+        num_modalities: int = 0,
         **e3nn_linear_params,
     ):
         super().__init__()
@@ -31,9 +32,37 @@ class IrrepsLinear(nn.Module):
         else:
             self.key_output = data_key_out
 
+        self.num_modalities = num_modalities
+        if num_modalities > 1:  # in case of multi-modal
+            irreps_in = irreps_in + Irreps(f'{num_modalities}x0e')
+
         self.linear = Linear(irreps_in, irreps_out, **e3nn_linear_params)
+        self._is_batch_data = True
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        if self.num_modalities > 1:
+            if self._is_batch_data:
+                batch = data[KEY.BATCH]
+                batch_modality_onehot = data[KEY.MODAL_ATTR].reshape(
+                    -1, self.num_modalities
+                )
+                batch_modality_onehot = batch_modality_onehot.type(
+                    data[self.key_input].dtype
+                )
+                data[self.key_input] = torch.cat(
+                    [data[self.key_input], batch_modality_onehot[batch]], dim=1
+                )
+            else:
+                modality_onehot = data[KEY.MODAL_ATTR].expand(
+                    len(data[self.key_input]), -1
+                )
+                modality_onehot = modality_onehot.type(
+                    data[self.key_input].dtype
+                )
+                data[self.key_input] = torch.cat(
+                    [data[self.key_input], modality_onehot], dim=1
+                )
+
         data[self.key_output] = self.linear(data[self.key_input])
         return data
 

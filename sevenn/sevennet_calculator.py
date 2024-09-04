@@ -34,6 +34,7 @@ class SevenNetCalculator(Calculator):
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
         sevennet_config=None,
+        modal_selection=None,
         **kwargs,
     ):
         """Initialize the calculator
@@ -106,6 +107,8 @@ class SevenNetCalculator(Calculator):
         self.model.to(self.device)
         self.model.eval()
 
+        self.modal_selection = modal_selection
+
         self.implemented_properties = [
             'free_energy',
             'energy',
@@ -124,6 +127,15 @@ class SevenNetCalculator(Calculator):
         data[KEY.NODE_FEATURE] = torch.LongTensor(
             [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
         )
+        if self.modal_selection is not None:
+            modal_type_mapper = self.sevennet_config[KEY.MODAL_MAP]
+            num_modalities = len(modal_type_mapper)
+            modal_idx = modal_type_mapper[self.modal_selection]
+            tmp_tensor = torch.zeros(num_modalities)
+            tmp_tensor[modal_idx] = 1.0
+            data[KEY.MODAL_ATTR] = tmp_tensor
+            data[KEY.MODAL_TYPE] = torch.tensor([modal_idx])
+            data[KEY.BATCH] = [0] * len(atoms)
         data.to(self.device)
 
         if isinstance(self.model, torch_script_type):

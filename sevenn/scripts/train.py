@@ -7,7 +7,10 @@ from torch_geometric.loader import DataLoader
 
 import sevenn._keys as KEY
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.scripts.processing_continue import processing_continue
+from sevenn.scripts.processing_continue import (
+    convert_modality_of_checkpoint_state_dct,
+    processing_continue,
+)
 from sevenn.scripts.processing_dataset import processing_dataset
 from sevenn.scripts.processing_epoch import processing_epoch
 from sevenn.sevenn_logger import Logger
@@ -70,10 +73,17 @@ def train(config, working_dir: str):
 
     trainer = Trainer(model, config)
     if state_dicts is not None:
+        state_dicts = convert_modality_of_checkpoint_state_dct(
+            config, state_dicts
+        )
         trainer.load_state_dicts(*state_dicts, strict=False)
 
     Logger().print_model_info(model, config)
     # log_model_info(model, config)
+
+    # ckd = trainer.get_checkpoint_dict()
+    # ckd.update({'config': config, 'epoch': 0})
+    # torch.save(ckd, 'initial_model.pth')
 
     Logger().write('Trainer initialized, ready to training\n')
     Logger().bar()

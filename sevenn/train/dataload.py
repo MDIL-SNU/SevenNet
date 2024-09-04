@@ -23,6 +23,7 @@ from ase.neighborlist import primitive_neighbor_list
 from braceexpand import braceexpand
 
 import sevenn._keys as KEY
+from sevenn._const import LossType
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataset import AtomGraphDataset
 
@@ -103,7 +104,7 @@ def atoms_to_graph(
         y_stress = -1 * atoms.get_stress()
         y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
     except RuntimeError:
-        y_stress = None
+        y_stress = np.full((1, 6), np.nan)
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -209,7 +210,7 @@ def pkl_atoms_reader(fname):
 
 
 # Reader
-def structure_list_reader(filename: str, format_outputs='vasp-out'):
+def structure_list_reader(filename: str, format_outputs='extxyz'):
     parsers = DefaultParsersContainer(
         PositionsAndForces, Stress, Energy, Cell
     ).make_parsers()
@@ -269,32 +270,42 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
             files_expr, index_expr = file_line
             index = string2index(index_expr)
             for expanded_filename in list(braceexpand(files_expr)):
-                f_stream = open(expanded_filename, 'r')
-                # generator of all outcar ionic steps
-                gen_all = outcarchunks(f_stream, ocp)
-                try:
-                    it_atoms = islice(
-                        gen_all, index.start, index.stop, index.step
-                    )
-                except ValueError:
-                    # TODO: support
-                    # negative index
-                    raise ValueError('Negative index is not supported yet')
-
-                info_dct_f = {
-                    **info_dct,
-                    'file': os.path.abspath(expanded_filename),
-                }
-                for idx, o in enumerate(it_atoms):
+                #  TODO: this is crude way of handling data
+                #  Using .sevenn_data file: use sevenn_graph_build
+                if 'OUTCAR' in expanded_filename:
+                    f_stream = open(expanded_filename, 'r')
+                    # generator of all outcar ionic steps
+                    gen_all = outcarchunks(f_stream, ocp)
                     try:
-                        istep = index.start + idx * index.step
-                        atoms = o.build()
-                        atoms.info = {**info_dct_f, 'ionic_step': istep}
-                    except TypeError:  # it is not slice of ionic steps
-                        atoms = o.build()
-                        atoms.info = info_dct_f
-                    stct_lists.append(atoms)
-                f_stream.close()
+                        it_atoms = islice(
+                            gen_all, index.start, index.stop, index.step
+                        )
+                    except ValueError:
+                        # TODO: support
+                        # negative index
+                        raise ValueError('Negative index is not supported yet')
+
+                    info_dct_f = {
+                        **info_dct,
+                        'file': os.path.abspath(expanded_filename),
+                    }
+                    for idx, o in enumerate(it_atoms):
+                        try:
+                            istep = index.start + idx * index.step
+                            atoms = o.build()
+                            atoms.info = {**info_dct_f, 'ionic_step': istep}
+                        except TypeError:  # it is not slice of ionic steps
+                            atoms = o.build()
+                            atoms.info = info_dct_f
+                        stct_lists.append(atoms)
+                    f_stream.close()
+                else:
+                    stct_lists += ase.io.read(
+                        expanded_filename,
+                        index=index_expr,
+                        format=format_outputs,
+                        parallel=False,
+                    )
         structures_dict[title] = stct_lists
     return structures_dict
 
@@ -321,6 +332,8 @@ def file_to_dataset(
     reader=None,
     label: str = None,
     transfer_info: bool = True,
+    use_weight: bool = False,
+    use_modality: bool = False,
 ):
     """
     Read file by reader > get list of atoms or dict of atoms
@@ -347,8 +360,52 @@ def file_to_dataset(
         graph_list = graph_build(
             atoms_list, cutoff, cores, transfer_info=transfer_info
         )
+
+        label_info = label.split(':')
         for graph in graph_list:
-            graph[KEY.USER_LABEL] = label
-        graph_dct[label] = graph_list
+            graph[KEY.USER_LABEL] = label_info[0].strip()
+            if use_weight:
+                find_weight = False
+                for info in label_info[1:]:
+                    if 'w=' in info.lower():
+                        weights = info.split('=')[1]
+                        try:
+                            if ',' in weights:
+                                weight_list = list(
+                                    map(float, weights.split(','))
+                                )
+                            else:
+                                weight_list = [float(weights)] * 3
+                            weight_dict = {}
+                            for idx, loss_type in enumerate(LossType):
+                                weight_dict[loss_type.value] = (
+                                    weight_list[idx]
+                                    if idx < len(weight_list)
+                                    else 1
+                                )
+                            graph[KEY.DATA_WEIGHT] = weight_dict
+                            find_weight = True
+                            break
+                        except:
+                            raise ValueError(
+                                'Weight must be a real number, but'
+                                f' {weights} is given for {label}'
+                            )
+                if not find_weight:
+                    weight_dict = {}
+                    for loss_type in LossType:
+                        weight_dict[loss_type.value] = 1
+                    graph[KEY.DATA_WEIGHT] = weight_dict
+            if use_modality:
+                find_modality = False
+                for info in label_info[1:]:
+                    if 'm=' in info.lower():
+                        graph[KEY.DATA_MODALITY] = (info.split('=')[1]).strip()
+                        find_modality = True
+                        break
+                if not find_modality:
+                    raise ValueError(f'Modality not given for {label}')
+
+        graph_dct[label_info[0].strip()] = graph_list
     db = AtomGraphDataset(graph_dct, cutoff)
     return db

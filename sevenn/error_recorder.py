@@ -67,6 +67,7 @@ class ErrorMetric:
         coeff: float = 1.0,
         unit: str = None,
         per_atom: bool = False,
+        delete_unlabled: bool = True,
         **kwargs,
     ):
         self.name = name
@@ -75,6 +76,7 @@ class ErrorMetric:
         self.ref_key = ref_key
         self.pred_key = pred_key
         self.per_atom = per_atom
+        self.delete_unlabled = delete_unlabled
         self.value = AverageNumber()
 
     def update(self, output: AtomGraphData):
@@ -87,6 +89,10 @@ class ErrorMetric:
             natoms = output[KEY.NUM_ATOMS]
             y_ref = y_ref / natoms
             y_pred = y_pred / natoms
+        if self.delete_unlabled:
+            unlabelled_idx = torch.isnan(y_ref)
+            y_ref = y_ref[~unlabelled_idx]
+            y_pred = y_pred[~unlabelled_idx]
         return y_ref, y_pred
 
     def ddp_reduce(self, device):
@@ -187,7 +193,7 @@ class CustomError(ErrorMetric):
 
     def update(self, output: AtomGraphData):
         y_ref, y_pred = self._retrieve(output)
-        se = self.func(y_ref, y_pred)
+        se = self.func(y_ref, y_pred) if len(y_ref) > 0 else torch.tensor([])
         self.value.update(se)
 
 
