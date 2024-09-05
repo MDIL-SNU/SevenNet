@@ -161,7 +161,8 @@ def _patch_old_config(config):
     # Fixing my old mistakes
     if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
         config[KEY.CUTOFF_FUNCTION].pop('poly_cut_p_value', None)
-    config[KEY.TRAIN_DENOMINTAOR] = config.pop('train_avg_num_neigh', False)
+    if KEY.TRAIN_DENOMINTAOR not in config:
+        config[KEY.TRAIN_DENOMINTAOR] = config.pop('train_avg_num_neigh', False)
     _opt = config.pop('optimize_by_reduce', None)
     if _opt is False:
         raise ValueError(
