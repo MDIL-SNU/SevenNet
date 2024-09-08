@@ -132,6 +132,8 @@ def handle_shift_scale(config, train_set, checkpoint_given):
             'shift, scale', f'{shift:.6f}, {scale:.6f}', write=True
         )
 
+    assert isinstance(conv_denominator, list) \
+        and all(isinstance(deno, float) for deno in conv_denominator)
     Logger().format_k_v(
         '(1st) conv_denominator is', f'{conv_denominator[0]:.6f}', write=True
     )

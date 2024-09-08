@@ -158,7 +158,7 @@ def graph_build(
     atoms_list: List,
     cutoff: float,
     num_cores: int = 1,
-    transfer_info: Optional[bool] = True,
+    transfer_info: bool = True,
 ) -> List[AtomGraphData]:
     """
     parallel version of graph_build
@@ -273,7 +273,7 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                 f_stream = open(expanded_filename, 'r')
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
-                try:
+                try:  # TODO: index may not slice, it can be integer
                     it_atoms = islice(
                         gen_all, index.start, index.stop, index.step
                     )

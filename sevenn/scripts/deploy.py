@@ -3,6 +3,7 @@ from datetime import datetime
 
 import e3nn.util.jit
 import torch
+import torch.nn
 from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
@@ -17,6 +18,7 @@ def deploy(model_state_dct, config, fname):
     config[KEY.IS_TRACE_STRESS] = True
     config[KEY.IS_TRAIN_STRESS] = True
     model = build_E3_equivariant_model(config)
+    assert isinstance(model, torch.nn.Module)
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
     model.replace_module('force_output', ForceStressOutput())
     missing, not_used = model.load_state_dict(model_state_dct, strict=False)
@@ -58,6 +60,7 @@ def deploy_parallel(model_state_dct, config, fname):
     config[KEY.IS_TRACE_STRESS] = False
     config[KEY.IS_TRAIN_STRESS] = False
     model_list = build_E3_equivariant_model(config, parallel=True)
+    assert isinstance(model_list, list)
     dct_temp = {}
     copy_counter = {gk: 0 for gk in GHOST_LAYERS_KEYS}
     for ghost_layer_key in GHOST_LAYERS_KEYS:

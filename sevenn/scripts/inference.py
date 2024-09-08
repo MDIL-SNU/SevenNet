@@ -184,7 +184,7 @@ def write_inference_csv(output_list, out):
                 writer.writerow(data)
 
 
-def inference_main(
+def inference_main(  # TODO: re-write
     checkpoint,
     fnames,
     output_path,

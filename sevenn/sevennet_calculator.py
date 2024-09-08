@@ -1,11 +1,10 @@
 import os
-from typing import Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
 import torch.jit
 import torch.jit._script
-from ase.atoms import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 from ase.data import chemical_symbols
 
@@ -34,7 +33,7 @@ class SevenNetCalculator(Calculator):
         model: str = 'SevenNet-0',
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
-        sevennet_config=None,
+        sevennet_config: Optional[Any] = None,
         **kwargs,
     ):
         """Initialize the calculator
@@ -122,12 +121,14 @@ class SevenNetCalculator(Calculator):
     ):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
+        if atoms is None:
+            raise ValueError('No atoms to evaluate')
         data = util.unlabeled_atoms_to_input(atoms, self.cutoff, self.grad_key)
 
         data[KEY.NODE_FEATURE] = torch.LongTensor(
             [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
         )
-        data.to(self.device)
+        data.to(self.device)  # why PyG uses Union[int, str]?
 
         if isinstance(self.model, torch_script_type):
             data = data.to_dict()

@@ -1,8 +1,9 @@
 import warnings
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Tuple, Union
 
 import numpy as np
 import torch
+import torch.nn
 from e3nn.o3 import FullTensorProduct, Irreps
 
 import sevenn._keys as KEY
@@ -30,6 +31,7 @@ def to_atom_graph_list(atom_graph_batch):
         atom_graph_batch[KEY.PRED_FORCE], indices
     )
 
+    inferred_stress_list = None
     if is_stress:
         inferred_stress_list = torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
 
@@ -38,7 +40,7 @@ def to_atom_graph_list(atom_graph_batch):
         data[KEY.PRED_TOTAL_ENERGY] = inferred_total_energy_list[i]
         data[KEY.PRED_FORCE] = inferred_force_list[i]
         # To fit with KEY.STRESS (ref) format
-        if is_stress:
+        if is_stress and inferred_stress_list is not None:
             data[KEY.PRED_STRESS] = torch.unsqueeze(inferred_stress_list[i], 0)
     return data_list
 
@@ -179,7 +181,7 @@ def _map_old_model(old_model_state_dict):
     return new_model_state_dict
 
 
-def model_from_checkpoint(checkpoint):
+def model_from_checkpoint(checkpoint) -> Tuple[torch.nn.Module, Dict]:
     from ._const import model_defaults
     from .model_build import build_E3_equivariant_model
 
@@ -212,6 +214,7 @@ def model_from_checkpoint(checkpoint):
             config[k] = v.cpu()
 
     model = build_E3_equivariant_model(config)
+    assert isinstance(model, torch.nn.Module)
     missing, _ = model.load_state_dict(model_state_dict, strict=False)
     if len(missing) > 0:
         updated = _map_old_model(model_state_dict)
@@ -285,7 +288,7 @@ def infer_irreps_out(
     drop_l: Union[bool, int] = False,
     parity_mode: str = 'full',
     fix_multiplicity: Union[bool, int] = False,
-) -> Irreps:
+):
     assert parity_mode in ['full', 'even', 'sph']
     # (mul, (ir, p))
     irreps_out = FullTensorProduct(

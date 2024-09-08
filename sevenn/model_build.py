@@ -89,7 +89,7 @@ def _to_parallel_model(layers: OrderedDict, config):
     one_hot_irreps = Irreps(f'{num_classes}x0e')
     irreps_node_zero = layers['onehot_to_feature_x'].linear.irreps_out
 
-    layers = list(layers.items())
+    _layers = list(layers.items())
     layers_list = []
 
     num_convolution_layer = config[KEY.NUM_CONVOLUTION]
@@ -115,7 +115,7 @@ def _to_parallel_model(layers: OrderedDict, config):
         remain = layers[idx + 1 :]
         return first_to, remain
 
-    layers = insert_after(
+    _layers = insert_after(
         'onehot_to_feature_x',
         (
             'one_hot_ghost',
@@ -126,9 +126,9 @@ def _to_parallel_model(layers: OrderedDict, config):
                 data_key_additional=None,
             ),
         ),
-        layers,
+        _layers,
     )
-    layers = insert_after(
+    _layers = insert_after(
         'one_hot_ghost',
         (
             'ghost_onehot_to_feature_x',
@@ -139,9 +139,9 @@ def _to_parallel_model(layers: OrderedDict, config):
                 biases=config[KEY.USE_BIAS_IN_LINEAR],
             ),
         ),
-        layers,
+        _layers,
     )
-    layers = insert_after(
+    _layers = insert_after(
         '0_self_interaction_1',
         (
             'ghost_0_self_interaction_1',
@@ -152,16 +152,16 @@ def _to_parallel_model(layers: OrderedDict, config):
                 biases=config[KEY.USE_BIAS_IN_LINEAR],
             ),
         ),
-        layers,
+        _layers,
     )
     # assign modules (before first communications)
     # initialize edge related to retain position gradients
     for i in range(1, num_convolution_layer):
-        sliced, layers = slice_until_this(f'{i}_self_interaction_1', layers)
+        sliced, _layers = slice_until_this(f'{i}_self_interaction_1', _layers)
         layers_list.append(OrderedDict(sliced))
-        layers.insert(0, ('edge_embedding', init_edge_embedding(config)))
+        _layers.insert(0, ('edge_embedding', init_edge_embedding(config)))
 
-    layers_list.append(OrderedDict(layers))
+    layers_list.append(OrderedDict(_layers))
     del layers_list[-1]['force_output']  # done in LAMMPS
     return layers_list
 
@@ -211,7 +211,6 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         if irreps_manual is None
         else irreps_manual[0]
     )
-    irreps_x: Irreps
     layers.update({
         'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
         'onehot_to_feature_x': IrrepsLinear(

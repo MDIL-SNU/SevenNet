@@ -1,4 +1,4 @@
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import torch
 import torch.distributed as dist
@@ -89,7 +89,7 @@ class ErrorMetric:
         ref_key: str,
         pred_key: str,
         coeff: float = 1.0,
-        unit: str = None,
+        unit: Optional[str] = None,
         per_atom: bool = False,
         **kwargs,
     ):
@@ -175,7 +175,7 @@ class ComponentRMSError(ErrorMetric):
         self.value.update(se)
 
     def get(self):
-        return torch.sqrt(self.value.get())
+        return self.value.get() ** 0.5
 
 
 class MAError(ErrorMetric):
