@@ -192,7 +192,7 @@ def inference_main(  # TODO: re-write
     num_workers=1,
     device='cpu',
     batch_size=5,
-    on_the_fly_graph_build=True,
+    on_the_fly_graph_build=False,
 ):
     if os.path.isfile(checkpoint):
         pass
@@ -232,7 +232,6 @@ def inference_main(  # TODO: re-write
         assert inference_set is not None
 
         inference_set.x_to_one_hot_idx(type_map)
-        inference_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
         infer_list = inference_set.to_list()
         loader = DataLoader(
             infer_list,
