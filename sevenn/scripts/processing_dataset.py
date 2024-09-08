@@ -19,7 +19,7 @@ def dataset_load(file: str, config):
     Logger().timer_start('loading dataset')
 
     if file.endswith('.sevenn_data'):
-        dataset = torch.load(file, map_location='cpu')
+        dataset = torch.load(file, map_location='cpu', weights_only=False)
     else:
         reader, _ = match_reader(
             config[KEY.DATA_FORMAT], **config[KEY.DATA_FORMAT_ARGS]
