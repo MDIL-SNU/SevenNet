@@ -2,7 +2,7 @@ import argparse
 import os
 import subprocess
 
-from sevenn import __version__ as sevenn_version
+from sevenn import __version__
 
 # python wrapper of patch_lammps.sh script
 # importlib.resources is correct way to do these things
@@ -10,7 +10,7 @@ from sevenn import __version__ as sevenn_version
 pair_e3gnn_dir = os.path.abspath(f'{os.path.dirname(__file__)}/../pair_e3gnn')
 
 description = (
-    f'sevenn version={sevenn_version}, patch LAMMPS for pair_e3gnn styles'
+    f'sevenn version={__version__}, patch LAMMPS for pair_e3gnn styles'
 )
 
 

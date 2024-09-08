@@ -9,7 +9,6 @@ import ase.io
 import numpy as np
 import torch.multiprocessing as mp
 import tqdm
-from ase.io.utils import string2index
 from ase.io.vasp_parsers.vasp_outcar_parsers import (
     Cell,
     DefaultParsersContainer,
@@ -20,11 +19,13 @@ from ase.io.vasp_parsers.vasp_outcar_parsers import (
     outcarchunks,
 )
 from ase.neighborlist import primitive_neighbor_list
+from ase.utils import string2index
 from braceexpand import braceexpand
 
 import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.train.dataset import AtomGraphDataset
+
+from .dataset import AtomGraphDataset
 
 
 def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):

@@ -7,11 +7,12 @@ from torch_geometric.loader import DataLoader
 
 import sevenn._keys as KEY
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.scripts.processing_continue import processing_continue
-from sevenn.scripts.processing_dataset import processing_dataset
-from sevenn.scripts.processing_epoch import processing_epoch
 from sevenn.sevenn_logger import Logger
 from sevenn.train.trainer import Trainer
+
+from .processing_continue import processing_continue
+from .processing_dataset import processing_dataset
+from .processing_epoch import processing_epoch
 
 
 def init_loaders(train, valid, _, config):

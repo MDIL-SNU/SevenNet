@@ -69,13 +69,8 @@ def to_atom_graph_list(atom_graph_batch):
 def error_recorder_from_loss_functions(loss_functions):
     from copy import deepcopy
 
-    from sevenn.error_recorder import (
-        ERROR_TYPES,
-        ErrorRecorder,
-        MAError,
-        RMSError,
-    )
-    from sevenn.train.loss import ForceLoss, PerAtomEnergyLoss, StressLoss
+    from .error_recorder import ERROR_TYPES, ErrorRecorder, MAError, RMSError
+    from .train.loss import ForceLoss, PerAtomEnergyLoss, StressLoss
 
     metrics = []
     BASE = deepcopy(ERROR_TYPES)
@@ -106,7 +101,7 @@ def error_recorder_from_loss_functions(loss_functions):
 
 
 def postprocess_output(output, loss_types):
-    from sevenn._const import LossType
+    from ._const import LossType
 
     """
     Postprocess output from model to be used for loss calculation
@@ -213,8 +208,8 @@ def _map_old_model(old_model_state_dict):
 
 
 def model_from_checkpoint(checkpoint):
-    from sevenn._const import model_defaults
-    from sevenn.model_build import build_E3_equivariant_model
+    from ._const import model_defaults
+    from .model_build import build_E3_equivariant_model
 
     if isinstance(checkpoint, str):
         checkpoint = torch.load(
@@ -258,8 +253,8 @@ def model_from_checkpoint(checkpoint):
 
 
 def unlabeled_atoms_to_input(atoms, cutoff, grad_key=KEY.EDGE_VEC):
-    from sevenn.atom_graph_data import AtomGraphData
-    from sevenn.train.dataload import unlabeled_atoms_to_graph
+    from .atom_graph_data import AtomGraphData
+    from .train.dataload import unlabeled_atoms_to_graph
 
     atom_graph = AtomGraphData.from_numpy_dict(
         unlabeled_atoms_to_graph(atoms, cutoff)
@@ -272,7 +267,7 @@ def unlabeled_atoms_to_input(atoms, cutoff, grad_key=KEY.EDGE_VEC):
 def chemical_species_preprocess(input_chem):
     from ase.data import atomic_numbers
 
-    from sevenn.nn.node_embedding import get_type_mapper_from_specie
+    from .nn.node_embedding import get_type_mapper_from_specie
 
     config = {}
     chemical_specie = sorted([x.strip() for x in input_chem])

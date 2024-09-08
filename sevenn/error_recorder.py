@@ -3,9 +3,10 @@ from typing import Callable, List, Tuple
 import torch
 
 import sevenn._keys as KEY
-from sevenn.atom_graph_data import AtomGraphData
-from sevenn.train.optim import loss_dict
-from sevenn.util import AverageNumber
+
+from .atom_graph_data import AtomGraphData
+from .train.optim import loss_dict
+from .util import AverageNumber
 
 ERROR_TYPES = {
     'TotalEnergy': {

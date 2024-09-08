@@ -8,7 +8,8 @@ from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
-from sevenn.nn.activation import ShiftedSoftPlus
+
+from .activation import ShiftedSoftPlus
 
 
 def _broadcast(
@@ -46,7 +47,7 @@ def message_gather(
 @compile_mode('script')
 class IrrepsConvolution(nn.Module):
     """
-    same as nequips convolution part (fig 1.d)
+    convolution of (fig 2.b), comm. in LAMMPS
     """
 
     def __init__(

@@ -7,24 +7,25 @@ from e3nn.o3 import Irreps
 import sevenn._const as _const
 import sevenn._keys as KEY
 import sevenn.util as util
-from sevenn.nn.edge_embedding import (
+
+from .nn.edge_embedding import (
     BesselBasis,
     EdgeEmbedding,
     PolynomialCutoff,
     SphericalEncoding,
     XPLORCutoff,
 )
-from sevenn.nn.force_output import ForceStressOutputFromEdge
-from sevenn.nn.interaction_blocks import NequIP_interaction_block
-from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
-from sevenn.nn.node_embedding import OnehotEmbedding
-from sevenn.nn.scale import Rescale, SpeciesWiseRescale
-from sevenn.nn.self_connection import (
+from .nn.force_output import ForceStressOutputFromEdge
+from .nn.interaction_blocks import NequIP_interaction_block
+from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
+from .nn.node_embedding import OnehotEmbedding
+from .nn.scale import Rescale, SpeciesWiseRescale
+from .nn.self_connection import (
     SelfConnectionIntro,
     SelfConnectionLinearIntro,
     SelfConnectionOutro,
 )
-from sevenn.nn.sequential import AtomGraphSequential
+from .nn.sequential import AtomGraphSequential
 
 # warning from PyTorch, about e3nn type annotations
 warnings.filterwarnings(
