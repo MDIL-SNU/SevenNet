@@ -1,7 +1,7 @@
 import glob
 import os
 import warnings
-from typing import Any, Callable
+from typing import Any, Callable, Dict
 
 import torch
 import yaml
@@ -13,9 +13,9 @@ import sevenn.util as util
 
 def config_initialize(
     key: str,
-    config: dict,
+    config: Dict,
     default: Any,
-    conditions,
+    conditions: Dict,
 ):
     # default value exist & no user input -> return default
     if key not in config.keys():
@@ -52,7 +52,7 @@ def config_initialize(
         )
 
 
-def init_model_config(config: dict):
+def init_model_config(config: Dict):
     # defaults = _const.model_defaults(config)
     model_meta = {}
 
@@ -121,7 +121,7 @@ def init_model_config(config: dict):
     return model_meta
 
 
-def init_train_config(config: dict):
+def init_train_config(config: Dict):
     train_meta = {}
     # defaults = _const.train_defaults(config)
 
@@ -163,7 +163,7 @@ def init_train_config(config: dict):
     return train_meta
 
 
-def init_data_config(config: dict):
+def init_data_config(config: Dict):
     data_meta = {}
     # defaults = _const.data_defaults(config)
 
@@ -206,7 +206,7 @@ def init_data_config(config: dict):
     return data_meta
 
 
-def read_config_yaml(filename):
+def read_config_yaml(filename: str):
     with open(filename, 'r') as fstream:
         inputs = yaml.safe_load(fstream)
 

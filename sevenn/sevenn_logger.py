@@ -1,6 +1,7 @@
 import os
 import traceback
 from datetime import datetime
+from typing import Any, Dict, List
 
 from ase.data import atomic_numbers
 
@@ -26,7 +27,10 @@ class Logger(metaclass=Singleton):
     SCREEN_WIDTH = 120  # half size of my screen / changed due to stress output
 
     def __init__(
-        self, filename: str = 'log.sevenn', screen: bool = False, rank: int = 0
+        self,
+        filename: str = 'log.sevenn',
+        screen: bool = False,
+        rank: int = 0
     ):
         self.rank = rank
         if rank == 0:
@@ -81,7 +85,7 @@ class Logger(metaclass=Singleton):
         else:
             pass
 
-    def natoms_write(self, natoms):
+    def natoms_write(self, natoms: Dict[str, Dict]):
         content = ''
         total_natom = {}
         for label, natom in natoms.items():
@@ -95,20 +99,13 @@ class Logger(metaclass=Singleton):
         content += self.format_k_v('Total', sum(total_natom.values()))
         self.write(content)
 
-    def statistic_write(self, statistic: dict):
+    def statistic_write(self, statistic: Dict[str, Dict]):
         content = ''
         for label, dct in statistic.items():
             dct_new = {}
             for k, v in dct.items():
                 dct_new[k] = f'{v:.3f}'
             content += self.format_k_v(label, dct_new)
-        self.write(content)
-
-    def epoch_write_train_loss(self, loss):
-        content = ''
-        for label, val in loss.items():
-            content += self.format_k_v(str(label), f'{val:.6f}')
-        content += self.format_k_v('Total loss', f'{sum(loss.values()):.6f}')
         self.write(content)
 
     # TODO : refactoring!!!, this is not loss, rmse
@@ -162,7 +159,12 @@ class Logger(metaclass=Singleton):
         Logger().writeline(separator)
 
     @staticmethod
-    def write_full_table(dict_list, row_labels, decimal_places=6, pad=2):
+    def write_full_table(
+        dict_list: List[Dict],
+        row_labels: List[str],
+        decimal_places: int = 6,
+        pad: int = 2
+    ):
         """
         Assume data_list is list of dict with same keys
         """
@@ -205,11 +207,15 @@ class Logger(metaclass=Singleton):
             Logger().writeline(f'{row_label.ljust(label_len)}{data_row}')
 
     @staticmethod
-    def format_k_v(key, val, write=False):
+    def format_k_v(key: Any, val: Any, write: bool = False):
+        """
+        key and val should be str convertible
+        """
         MAX_KEY_SIZE = 20
         SEPARATOR = ', '
         EMPTY_PADDING = ' ' * (MAX_KEY_SIZE + 3)
         NEW_LINE_LEN = Logger.SCREEN_WIDTH - 5
+        key = str(key)
         val = str(val)
         content = f'{key:<{MAX_KEY_SIZE}}: {val}'
         if len(content) > NEW_LINE_LEN:
@@ -250,7 +256,12 @@ class Logger(metaclass=Singleton):
         content = '-' * Logger.SCREEN_WIDTH + '\n'
         self.write(content)
 
-    def print_config(self, model_config, data_config, train_config):
+    def print_config(
+        self,
+        model_config: Dict[str, Any],
+        data_config: Dict[str, Any],
+        train_config: Dict[str, Any],
+    ):
         """
         print some important information from config
         """
@@ -258,13 +269,13 @@ class Logger(metaclass=Singleton):
             'successfully read yaml config!\n\n' + 'from model configuration\n'
         )
         for k, v in model_config.items():
-            content += Logger.format_k_v(k, v)
+            content += Logger.format_k_v(k, str(v))
         content += '\nfrom train configuration\n'
         for k, v in train_config.items():
-            content += Logger.format_k_v(k, v)
+            content += Logger.format_k_v(k, str(v))
         content += '\nfrom data configuration\n'
         for k, v in data_config.items():
-            content += Logger.format_k_v(k, v)
+            content += Logger.format_k_v(k, str(v))
         self.write(content)
 
     # TODO: This is not good make own exception
@@ -281,7 +292,7 @@ class Logger(metaclass=Singleton):
     def timer_start(self, name: str):
         self.timer_dct[name] = datetime.now()
 
-    def timer_end(self, name: str, message: str, remove=True):
+    def timer_end(self, name: str, message: str, remove: bool = True):
         """
         print f"{message}: {elapsed}"
         """
@@ -290,35 +301,6 @@ class Logger(metaclass=Singleton):
         if remove:
             del self.timer_dct[name]
         self.write(f'{message}: {elapsed[:-4]}\n')
-
-    def dict_of_counter(self, counter_dict):
-        # Find the Counter with the most keys and use it as a reference
-        ref_counter = max(counter_dict.values(), key=lambda x: len(x))
-
-        # Find the longest name and value length for formatting
-        max_name_length = max(len(name) for name in counter_dict.keys())
-        max_value_length = max(
-            len(str(value))
-            for counter in counter_dict.values()
-            for value in counter.values()
-        )
-
-        # Create the header
-        header_parts = ['Name'.ljust(max_name_length)] + [
-            key.rjust(max_value_length) for key in ref_counter.keys()
-        ]
-        header = ' '.join(header_parts)
-        table_output = [header, '-' * len(header)]
-
-        # Create each row
-        for name, counter in counter_dict.items():
-            row_parts = [name.ljust(max_name_length)] + [
-                str(counter.get(key, '')).rjust(max_value_length)
-                for key in ref_counter.keys()
-            ]
-            table_output.append(' '.join(row_parts))
-
-        self.writeline('\n'.join(table_output))
 
     # TODO: print it without config
     # TODO: refactoring, readout part name :(
@@ -335,6 +317,7 @@ class Logger(metaclass=Singleton):
                 f'{i}th node',
                 model.get_irreps_in(f'{i}_self_interaction_1'),
             )
+        i = config[KEY.NUM_CONVOLUTION] - 1
         kv_write(
             'readout irreps',
             model.get_irreps_in(f'{i}_equivariant_gate', 'irreps_out'),

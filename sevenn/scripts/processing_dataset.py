@@ -28,7 +28,7 @@ def dataset_load(file: str, config):
             file,
             config[KEY.CUTOFF],
             config[KEY.PREPROCESS_NUM_CORES],
-            reader=reader,
+            reader,
         )
     Logger().format_k_v('loaded dataset size is', dataset.len(), write=True)
     Logger().timer_end('loading dataset', 'data set loading time')

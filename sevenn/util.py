@@ -1,5 +1,5 @@
 import warnings
-from typing import Union
+from typing import Any, Dict, List, Union
 
 import numpy as np
 import torch
@@ -116,19 +116,14 @@ def postprocess_output(output, loss_types):
     return results
 
 
-def squared_error(pred, ref, vdim):
-    MSE = torch.nn.MSELoss(reduction='none')
-    return torch.reshape(MSE(pred, ref), (-1, vdim)).sum(dim=1)
-
-
-def onehot_to_chem(one_hot_indices, type_map):
+def onehot_to_chem(one_hot_indices: List[int], type_map: Dict[int, int]):
     from ase.data import chemical_symbols
 
     type_map_rev = {v: k for k, v in type_map.items()}
     return [chemical_symbols[type_map_rev[x]] for x in one_hot_indices]
 
 
-def _patch_old_config(config):
+def _patch_old_config(config: Dict[str, Any]):
     # Fixing my old mistakes
     if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
         config[KEY.CUTOFF_FUNCTION].pop('poly_cut_p_value', None)
@@ -229,7 +224,9 @@ def model_from_checkpoint(checkpoint):
     return model, config
 
 
-def unlabeled_atoms_to_input(atoms, cutoff, grad_key=KEY.EDGE_VEC):
+def unlabeled_atoms_to_input(
+    atoms, cutoff: float, grad_key: str = KEY.EDGE_VEC
+):
     from .atom_graph_data import AtomGraphData
     from .train.dataload import unlabeled_atoms_to_graph
 
@@ -241,7 +238,7 @@ def unlabeled_atoms_to_input(atoms, cutoff, grad_key=KEY.EDGE_VEC):
     return atom_graph
 
 
-def chemical_species_preprocess(input_chem):
+def chemical_species_preprocess(input_chem: List[str]):
     from ase.data import atomic_numbers
 
     from .nn.node_embedding import get_type_mapper_from_specie
@@ -257,7 +254,11 @@ def chemical_species_preprocess(input_chem):
     return config
 
 
-def dtype_correct(v, float_dtype=torch.float32, int_dtype=torch.int64):
+def dtype_correct(
+    v: Union[np.ndarray, torch.Tensor, int, float],
+    float_dtype: torch.dtype = torch.float32,
+    int_dtype: torch.dtype = torch.int64
+):
     if isinstance(v, np.ndarray):
         if np.issubdtype(v.dtype, np.floating):
             return torch.from_numpy(v).to(float_dtype)

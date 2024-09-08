@@ -1,5 +1,8 @@
+from typing import Any, Dict, Iterable, Optional
+
 import torch
 import torch.distributed as dist
+import torch.nn
 from torch.nn.parallel import DistributedDataParallel as DDP
 
 import sevenn._keys as KEY
@@ -10,7 +13,7 @@ from .optim import optim_dict, scheduler_dict
 
 
 class Trainer:
-    def __init__(self, model, config: dict):
+    def __init__(self, model: torch.nn.Module, config: Dict[str, Any]):
         self.distributed = config[KEY.IS_DDP]
 
         if self.distributed:
@@ -39,19 +42,23 @@ class Trainer:
         self.loss_functions = get_loss_functions_from_config(config)
 
     def run_one_epoch(
-        self, loader, is_train=False, error_recorder: ErrorRecorder = None
+        self,
+        loader: Iterable,
+        is_train: bool = False,
+        error_recorder: Optional[ErrorRecorder] = None,
     ):
         if is_train:
             self.model.train()
         else:
             self.model.eval()
 
-        for step, batch in enumerate(loader):
+        for _, batch in enumerate(loader):
             if is_train:
                 self.optimizer.zero_grad()
             batch = batch.to(self.device, non_blocking=True)
             output = self.model(batch)
-            error_recorder.update(output)
+            if error_recorder is not None:
+                error_recorder.update(output)
             if is_train:
                 total_loss = torch.tensor([0.0], device=self.device)
                 for loss_def, w in self.loss_functions:
@@ -59,15 +66,16 @@ class Trainer:
                 total_loss.backward()
                 self.optimizer.step()
 
-        if self.distributed:
+        if self.distributed and error_recorder is not None:
             self.recorder_all_reduce(error_recorder)
 
-    def scheduler_step(self, metric=None):
+    def scheduler_step(self, metric: Optional[float] = None):
         if self.scheduler is None:
             return
         if isinstance(
             self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau
         ):
+            assert isinstance(metric, float)
             self.scheduler.step(metric)
         else:
             self.scheduler.step()
@@ -79,13 +87,6 @@ class Trainer:
         for metric in recorder.metrics:
             # metric.value._ddp_reduce(self.device)
             metric.ddp_reduce(self.device)
-
-    # Not used, ddp automatically averages gradients
-    def average_gradient(self):
-        size = float(dist.get_world_size())
-        for param in self.model.parameters():
-            dist.all_reduce(param.grad.data, op=dist.reduce_op.SUM)
-            param.grad.data /= size
 
     def get_checkpoint_dict(self):
         if self.distributed:
@@ -100,10 +101,10 @@ class Trainer:
 
     def load_state_dicts(
         self,
-        model_state_dict,
-        optimizer_state_dict,
-        scheduler_state_dict,
-        strict=True,
+        model_state_dict: Dict,
+        optimizer_state_dict: Dict,
+        scheduler_state_dict: Dict,
+        strict: bool = True,
     ):
         if self.distributed:
             self.model.module.load_state_dict(model_state_dict, strict=strict)

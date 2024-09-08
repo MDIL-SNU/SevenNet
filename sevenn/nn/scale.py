@@ -18,8 +18,8 @@ class Rescale(nn.Module):
         self,
         shift: float,
         scale: float,
-        data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-        data_key_out=KEY.ATOMIC_ENERGY,
+        data_key_in: str = KEY.SCALED_ATOMIC_ENERGY,
+        data_key_out: str = KEY.ATOMIC_ENERGY,
         train_shift_scale: bool = False,
     ):
         super().__init__()
@@ -48,9 +48,9 @@ class SpeciesWiseRescale(nn.Module):
         self,
         shift: List[float],
         scale: List[float],
-        data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-        data_key_out=KEY.ATOMIC_ENERGY,
-        data_key_indices=KEY.ATOM_TYPE,
+        data_key_in: str = KEY.SCALED_ATOMIC_ENERGY,
+        data_key_out: str = KEY.ATOMIC_ENERGY,
+        data_key_indices: str = KEY.ATOM_TYPE,
         train_shift_scale: bool = False,
     ):
         super().__init__()

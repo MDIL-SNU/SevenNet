@@ -4,6 +4,8 @@ from typing import Union
 import numpy as np
 import torch
 import torch.jit
+import torch.jit._script
+from ase.atoms import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 from ase.data import chemical_symbols
 

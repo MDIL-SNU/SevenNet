@@ -2,7 +2,7 @@ import os.path
 import pickle
 from functools import partial
 from itertools import islice
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import ase
 import ase.io
@@ -318,9 +318,9 @@ def match_reader(reader_name: str, **kwargs):
 def file_to_dataset(
     file: str,
     cutoff: float,
-    cores=1,
-    reader=None,
-    label: str = None,
+    cores: int = 1,
+    reader: Callable = ase_reader,
+    label: Optional[str] = None,
     transfer_info: bool = True,
 ):
     """
