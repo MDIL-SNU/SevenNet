@@ -21,6 +21,7 @@
 #include <c10/core/Scalar.h>
 #include <c10/core/TensorOptions.h>
 #include <cstdlib>
+#include <filesystem>
 #include <numeric>
 #include <string>
 
@@ -203,23 +204,6 @@ bool PairE3GNNParallel::is_comm_preprocess_done() {
   return comm_preprocess_done;
 }
 
-void PairE3GNNParallel::warning_pressure() {
-  static bool already_did = false;
-  if (!already_did && comm->me == 0) {
-    if (lmp->screen)
-      fprintf(
-          lmp->screen,
-          "WARNING: PairE3GNNParallel does not support pressure calculation. "
-          "Pressure on log is wrong. Use serial version if you needed\n");
-    if (lmp->logfile)
-      fprintf(
-          lmp->logfile,
-          "WARNING: PairE3GNNParallel does not support pressure calculation. "
-          "Pressure on log is wrong. Use serial version if you needed\n");
-    already_did = true;
-  }
-}
-
 void PairE3GNNParallel::compute(int eflag, int vflag) {
   /*
      Graph build on cpu
@@ -229,10 +213,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   else
     evflag = vflag_fdotr = 0;
   if (vflag_atom) {
-    error->all(FLERR, "atomic stress related feature is not supported\n");
-  }
-  if (vflag) {
-    warning_pressure();
+    error->all(FLERR, "atomic stress is not supported\n");
   }
 
   if (atom->tag_consecutive() == 0) {
@@ -332,7 +313,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     } // j loop end
   }   // i loop end
 
-  // memeber variable
+  // member variable
   graph_size = graph_indexer;
   const int ghost_node_num = graph_size - nlocal;
 
@@ -431,7 +412,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   std::vector<torch::Tensor> grads;
   std::vector<torch::Tensor> of_tensor;
 
-  // TODO: most values of self_conn_grads were zero becuase we use only scalars
+  // TODO: most values of self_conn_grads were zero because we use only scalars
   // for energy
   for (auto rit = wrt_tensors.rbegin(); rit != wrt_tensors.rend(); ++rit) {
     // edge_vec, x, x_ghost order
@@ -493,12 +474,14 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   dE_dr = dE_dr.to(torch::kCPU);
   torch::Tensor force_tensor = torch::zeros({graph_indexer, 3});
 
-  force_tensor.scatter_reduce_(
-      0, edge_idx_src_tensor.repeat_interleave(3).view({nedges, 3}), dE_dr,
-      "sum");
-  force_tensor.scatter_reduce_(
-      0, edge_idx_dst_tensor.repeat_interleave(3).view({nedges, 3}),
-      torch::neg(dE_dr), "sum");
+  auto _edge_idx_src_tensor =
+      edge_idx_src_tensor.repeat_interleave(3).view({nedges, 3});
+  auto _edge_idx_dst_tensor =
+      edge_idx_dst_tensor.repeat_interleave(3).view({nedges, 3});
+
+  force_tensor.scatter_reduce_(0, _edge_idx_src_tensor, dE_dr, "sum");
+  force_tensor.scatter_reduce_(0, _edge_idx_dst_tensor, torch::neg(dE_dr),
+                               "sum");
 
   auto forces = force_tensor.accessor<float, 2>();
 
@@ -507,6 +490,32 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     f[i][0] = forces[graph_idx][0];
     f[i][1] = forces[graph_idx][1];
     f[i][2] = forces[graph_idx][2];
+  }
+
+  if (vflag) {
+    auto diag = inp_edge_vec * dE_dr;
+    auto s12 = inp_edge_vec.select(1, 0) * dE_dr.select(1, 1);
+    auto s23 = inp_edge_vec.select(1, 1) * dE_dr.select(1, 2);
+    auto s31 = inp_edge_vec.select(1, 2) * dE_dr.select(1, 0);
+    std::vector<torch::Tensor> voigt_list = {
+        diag, s12.unsqueeze(-1), s23.unsqueeze(-1), s31.unsqueeze(-1)};
+    auto voigt = torch::cat(voigt_list, 1);
+
+    torch::Tensor per_atom_stress_tensor = torch::zeros({graph_indexer, 6});
+    auto _edge_idx_dst6_tensor =
+        edge_idx_dst_tensor.repeat_interleave(6).view({nedges, 6});
+    per_atom_stress_tensor.scatter_reduce_(0, _edge_idx_dst6_tensor, voigt,
+                                           "sum");
+    auto virial_stress_tensor =
+        torch::neg(torch::sum(per_atom_stress_tensor, 0));
+    auto virial_stress = virial_stress_tensor.accessor<float, 1>();
+
+    virial[0] = virial_stress[0];
+    virial[1] = virial_stress[1];
+    virial[2] = virial_stress[2];
+    virial[3] = virial_stress[3];
+    virial[4] = virial_stress[5];
+    virial[5] = virial_stress[4];
   }
 
   if (eflag_atom) {
@@ -526,13 +535,6 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     comm_index_pack_forward[i].clear();
     comm_index_unpack_forward[i].clear();
     comm_index_unpack_reverse[i].clear();
-    /*
-    if(use_cuda_mpi) {
-      comm_index_pack_forward_tensor[i].clear();
-      comm_index_unpack_forward_tensor[i].clear();
-      comm_index_unpack_reverse_tensor[i].clear();
-    }
-    */
   }
 
   extra_graph_idx_map.clear();
@@ -563,7 +565,7 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
 
   if (strcmp(arg[0], "*") != 0 || strcmp(arg[1], "*") != 0) {
     error->all(FLERR,
-               "e3gnn: firt and second input of pair_coeff should be '*'");
+               "e3gnn: first and second input of pair_coeff should be '*'");
   }
   // expected input : pair_coeff * * pot.pth type_name1 type_name2 ...
 
@@ -579,13 +581,30 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
 
   // model loading from input
   int n_model = std::stoi(arg[2]);
-  try {
-    for (int i = 3; i < n_model + 3; i++) {
-      model_list.push_back(
-          torch::jit::load(std::string(arg[i]), device, meta_dict));
+  int chem_arg_i = 4;
+  std::vector<std::string> model_fnames;
+  if (std::filesystem::exists(arg[3])) {
+    if (std::filesystem::is_directory(arg[3])) {
+      auto headf = std::string(arg[3]);
+      for (int i = 0; i < n_model; i++) {
+        auto stri = std::to_string(i);
+        model_fnames.push_back(headf + "/deployed_parallel_" + stri + ".pt");
+      }
+    } else if (std::filesystem::is_regular_file(arg[3])) {
+      for (int i = 3; i < n_model + 3; i++) {
+        model_fnames.push_back(std::string(arg[i]));
+      }
+      chem_arg_i = n_model + 3;
+    } else {
+      error->all(FLERR, "No such file or directory:" + std::string(arg[3]));
     }
-  } catch (const c10::Error &e) {
-    error->all(FLERR, "error loading the model, check the path of the model");
+  }
+
+  for (const auto &modelf : model_fnames) {
+    if (!std::filesystem::is_regular_file(modelf)) {
+      error->all(FLERR, "Expected this is a regular file:" + modelf);
+    }
+    model_list.push_back(torch::jit::load(modelf, device, meta_dict));
   }
 
   torch::jit::setGraphExecutorOptimize(false);
@@ -620,18 +639,19 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
     tok = std::strtok(nullptr, delim);
   }
 
-  // what if unkown chemical specie is in arg? should I abort? is there any use
+  // what if unknown chemical specie is in arg? should I abort? is there any use
   // case for that?
   bool found_flag = false;
-  for (int i = 3 + n_model; i < narg; i++) {
+  int n_chem = narg - chem_arg_i;
+  for (int i = 0; i < n_chem; i++) {
     found_flag = false;
     for (int j = 0; j < chem_vec.size(); j++) {
-      if (chem_vec[j].compare(arg[i]) == 0) {
-        map[i - 2 - n_model] = j; // store from 1, (not 0)
+      if (chem_vec[j].compare(arg[i + chem_arg_i]) == 0) {
+        map[i + 1] = j; // store from 1, (not 0)
         found_flag = true;
         if (lmp->logfile) {
           fprintf(lmp->logfile, "Chemical specie '%s' is assigned to type %d\n",
-                  arg[i], i - 2 - n_model);
+                  arg[i + chem_arg_i], i + 1);
           break;
         }
       }
@@ -796,7 +816,7 @@ int PairE3GNNParallel::pack_forward_comm_gnn(float *buf, int comm_phase) {
     // Code below produce wrong results. But if I change {n, x_dim} to {x_dim,
     // n}, get correct result. Instead, it raises a warning that the dimension
     // is not correct so they implicitly changed resulting tensor shape to fit
-    // out_tensor(buf_tensor)'s dimension. How can I sovle this?
+    // out_tensor(buf_tensor)'s dimension. How can I solve this?
 
     // auto buf_tensor = torch::from_blob(buf, {n, x_dim},
     // FLOAT_TYPE.device(device)); // tensor wrapping of buf
@@ -831,7 +851,7 @@ void PairE3GNNParallel::unpack_forward_comm_gnn(float *buf, int comm_phase) {
   if (use_cuda_mpi) {
     torch::Tensor &idx_map_tensor =
         comm_index_unpack_forward_tensor[comm_phase];
-    // share same memory space with exisitng device buffer just wrapping to
+    // share same memory space with existing device buffer just wrapping to
     // troch::Tensor
     auto buf_tensor =
         torch::from_blob(buf, {n, x_dim}, FLOAT_TYPE.device(device));

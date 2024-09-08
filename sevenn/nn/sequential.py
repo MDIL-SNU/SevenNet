@@ -79,10 +79,11 @@ class AtomGraphSequential(nn.Sequential):
 
         return data
 
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+    def forward(self, input: AtomGraphDataType) -> AtomGraphDataType:
         """
         type_map is a dict of {atomic_number: one_hot_idx}
         """
+        data = input
         for module in self:
             data = module(data)
         return data

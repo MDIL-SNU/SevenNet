@@ -8,23 +8,9 @@ from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
-from sevenn.nn.activation import ShiftedSoftPlus
 
-
-def _broadcast(
-    src: torch.Tensor,
-    other: torch.Tensor,
-    dim: int
-):
-    if dim < 0:
-        dim = other.dim() + dim
-    if src.dim() == 1:
-        for _ in range(0, dim):
-            src = src.unsqueeze(0)
-    for _ in range(src.dim(), other.dim()):
-        src = src.unsqueeze(-1)
-    src = src.expand_as(other)
-    return src
+from .activation import ShiftedSoftPlus
+from .util import _broadcast
 
 
 def message_gather(
@@ -46,7 +32,7 @@ def message_gather(
 @compile_mode('script')
 class IrrepsConvolution(nn.Module):
     """
-    same as nequips convolution part (fig 1.d)
+    convolution of (fig 2.b), comm. in LAMMPS
     """
 
     def __init__(

@@ -11,6 +11,7 @@ IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of parallel model
 IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
+IMPLEMENTED_INTERACTION_TYPE = ['nequip']
 
 IMPLEMENTED_SHIFT = ['per_atom_energy_mean', 'elemwise_reference_energies']
 IMPLEMENTED_SCALE = ['force_rms', 'per_atom_energy_std', 'elemwise_force_rms']
@@ -110,6 +111,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.READOUT_FCN_HIDDEN_NEURONS: [30, 30],
     KEY.READOUT_FCN_ACTIVATION: 'relu',
     KEY.SELF_CONNECTION_TYPE: 'nequip',
+    KEY.INTERACTION_TYPE: 'nequip',
     KEY._NORMALIZE_SPH: True,
 }
 
@@ -142,6 +144,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.READOUT_FCN_ACTIVATION: str,
     KEY.ACTIVATION_RADIAL: str,
     KEY.SELF_CONNECTION_TYPE: lambda x: x in IMPLEMENTED_SELF_CONNECTION_TYPE,
+    KEY.INTERACTION_TYPE: lambda x: x in IMPLEMENTED_INTERACTION_TYPE,
     KEY._NORMALIZE_SPH: bool,
 }
 

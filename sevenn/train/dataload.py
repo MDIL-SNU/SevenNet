@@ -2,14 +2,13 @@ import os.path
 import pickle
 from functools import partial
 from itertools import islice
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import ase
 import ase.io
 import numpy as np
 import torch.multiprocessing as mp
 import tqdm
-from ase.io.utils import string2index
 from ase.io.vasp_parsers.vasp_outcar_parsers import (
     Cell,
     DefaultParsersContainer,
@@ -20,11 +19,13 @@ from ase.io.vasp_parsers.vasp_outcar_parsers import (
     outcarchunks,
 )
 from ase.neighborlist import primitive_neighbor_list
+from ase.utils import string2index
 from braceexpand import braceexpand
 
 import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.train.dataset import AtomGraphDataset
+
+from .dataset import AtomGraphDataset
 
 
 def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
@@ -157,7 +158,7 @@ def graph_build(
     atoms_list: List,
     cutoff: float,
     num_cores: int = 1,
-    transfer_info: Optional[bool] = True,
+    transfer_info: bool = True,
 ) -> List[AtomGraphData]:
     """
     parallel version of graph_build
@@ -272,7 +273,7 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                 f_stream = open(expanded_filename, 'r')
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
-                try:
+                try:  # TODO: index may not slice, it can be integer
                     it_atoms = islice(
                         gen_all, index.start, index.stop, index.step
                     )
@@ -317,9 +318,9 @@ def match_reader(reader_name: str, **kwargs):
 def file_to_dataset(
     file: str,
     cutoff: float,
-    cores=1,
-    reader=None,
-    label: str = None,
+    cores: int = 1,
+    reader: Callable = ase_reader,
+    label: Optional[str] = None,
     transfer_info: bool = True,
 ):
     """

@@ -23,7 +23,7 @@
   pair_style       e3gnn/parallel  # Note that calculated pressure is wrong (it does not include virial part)
   # The order of element should be the same as the order of elements in the data file (type)
   # * * {number of deployed parallel models} {path to deployed parallel models} {elements}
-  pair_coeff       * * 4 ./deployed_parallel_0.pt ./deployed_parallel_1.pt ./deployed_parallel_2.pt ./deployed_parallel_3.pt Hf O
+  pair_coeff       * * 4 ./deployed_parallel Hf O
 
   timestep         0.002
 
@@ -31,7 +31,7 @@
 
     # Setup output
     thermo          ${output}
-    thermo_style    custom step tpcpu pe ke vol temp
+    thermo_style    custom step tpcpu pe ke vol press temp
     dump            mydump all custom 1 dump.traj id type x y z fx fy fz
     dump_modify     mydump sort id
 

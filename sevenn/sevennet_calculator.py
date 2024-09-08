@@ -1,15 +1,15 @@
 import os
-from typing import Union
+from typing import Any, Optional, Union
 
 import numpy as np
 import torch
 import torch.jit
+import torch.jit._script
 from ase.calculators.calculator import Calculator, all_changes
 from ase.data import chemical_symbols
 
-import sevenn._const
 import sevenn._keys as KEY
-import sevenn.util
+import sevenn.util as util
 
 torch_script_type = torch.jit._script.RecursiveScriptModule
 
@@ -33,7 +33,7 @@ class SevenNetCalculator(Calculator):
         model: str = 'SevenNet-0',
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
-        sevennet_config=None,
+        sevennet_config: Optional[Any] = None,
         **kwargs,
     ):
         """Initialize the calculator
@@ -68,14 +68,15 @@ class SevenNetCalculator(Calculator):
             if os.path.isfile(model):
                 checkpoint = model
             else:
-                checkpoint = sevenn.util.pretrained_name_to_path(model)
-            model_loaded, config = sevenn.util.model_from_checkpoint(
+                checkpoint = util.pretrained_name_to_path(model)
+            model_loaded, config = util.model_from_checkpoint(
                 checkpoint
             )
             model_loaded.set_is_batch_data(False)
             self.type_map = config[KEY.TYPE_MAP]
             self.cutoff = config[KEY.CUTOFF]
             self.sevennet_config = config
+            self.grad_key = KEY.EDGE_VEC
         elif file_type == 'torchscript':
             extra_dict = {
                 'chemical_symbols_to_index': b'',
@@ -98,6 +99,7 @@ class SevenNetCalculator(Calculator):
                 for i, sym in enumerate(chem_symbols.split())
             }
             self.cutoff = float(extra_dict['cutoff'].decode('utf-8'))
+            self.grad_key = KEY.POS
         else:
             raise ValueError('Unknown file type')
 
@@ -119,12 +121,14 @@ class SevenNetCalculator(Calculator):
     ):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
-        data = sevenn.util.unlabeled_atoms_to_input(atoms, self.cutoff)
+        if atoms is None:
+            raise ValueError('No atoms to evaluate')
+        data = util.unlabeled_atoms_to_input(atoms, self.cutoff, self.grad_key)
 
         data[KEY.NODE_FEATURE] = torch.LongTensor(
             [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
         )
-        data.to(self.device)
+        data.to(self.device)  # why PyG uses Union[int, str]?
 
         if isinstance(self.model, torch_script_type):
             data = data.to_dict()
