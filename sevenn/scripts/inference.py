@@ -25,7 +25,7 @@ def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
     full_dataset = None
     for sevenn_data in sevenn_datas:
         with open(sevenn_data, 'rb') as f:
-            dataset = torch.load(f)
+            dataset = torch.load(f, weights_only=False)
         if full_dataset is None:
             full_dataset = dataset
         else:

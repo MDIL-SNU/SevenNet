@@ -217,7 +217,9 @@ def model_from_checkpoint(checkpoint):
     from sevenn.model_build import build_E3_equivariant_model
 
     if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint, map_location='cpu')
+        checkpoint = torch.load(
+            checkpoint, map_location='cpu', weights_only=False
+        )
     elif isinstance(checkpoint, dict):
         pass
     else:
@@ -302,57 +304,6 @@ def dtype_correct(v, float_dtype=torch.float32, int_dtype=torch.int64):
         else:
             # non-number
             return v
-
-
-def load_model_from_checkpoint(checkpoint):
-    """
-    Deprecated
-    """
-    from sevenn._const import (
-        DEFAULT_DATA_CONFIG,
-        DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
-        DEFAULT_TRAINING_CONFIG,
-    )
-    from sevenn.model_build import build_E3_equivariant_model
-
-    warnings.warn(
-        'This method is deprecated, use model_from_checkpoint instead',
-        DeprecationWarning,
-    )
-
-    if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint, map_location='cpu')
-    elif isinstance(checkpoint, dict):
-        pass
-    else:
-        raise ValueError('checkpoint must be either str or dict')
-
-    defaults = {
-        **DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
-        **DEFAULT_DATA_CONFIG,
-        **DEFAULT_TRAINING_CONFIG,
-    }
-
-    model_state_dict = checkpoint['model_state_dict']
-    config = checkpoint['config']
-
-    for k, v in defaults.items():
-        if k not in config:
-            print(f'Warning: {k} not in config, using default value {v}')
-            config[k] = v
-
-    # expect only non-tensor values in config, if exists, move to cpu
-    # This can be happen if config has torch tensor as value (shift, scale)
-    # TODO: putting only non-tensors at first place is better
-    for k, v in config.items():
-        if isinstance(v, torch.Tensor):
-            config[k] = v.cpu()
-
-    model = build_E3_equivariant_model(config)
-
-    model.load_state_dict(model_state_dict, strict=False)
-
-    return model
 
 
 def infer_irreps_out(
