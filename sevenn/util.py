@@ -8,29 +8,6 @@ from e3nn.o3 import FullTensorProduct, Irreps
 import sevenn._keys as KEY
 
 
-class AverageNumber:
-    def __init__(self):
-        self._sum = 0.0
-        self._count = 0
-
-    def update(self, values: torch.Tensor):
-        self._sum += values.sum().item()
-        self._count += values.numel()
-
-    def _ddp_reduce(self, device):
-        _sum = torch.tensor(self._sum, device=device)
-        _count = torch.tensor(self._count, device=device)
-        torch.distributed.all_reduce(_sum, op=torch.distributed.ReduceOp.SUM)
-        torch.distributed.all_reduce(_count, op=torch.distributed.ReduceOp.SUM)
-        self._sum = _sum.item()
-        self._count = _count.item()
-
-    def get(self):
-        if self._count == 0:
-            return np.nan
-        return self._sum / self._count
-
-
 def to_atom_graph_list(atom_graph_batch):
     """
     torch_geometric batched data to separate list

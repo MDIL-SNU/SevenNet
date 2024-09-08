@@ -1,12 +1,12 @@
 from typing import Callable, List, Tuple
 
 import torch
+import torch.distributed as dist
 
 import sevenn._keys as KEY
 
 from .atom_graph_data import AtomGraphData
 from .train.optim import loss_dict
-from .util import AverageNumber
 
 ERROR_TYPES = {
     'TotalEnergy': {
@@ -52,6 +52,29 @@ ERROR_TYPES = {
         'unit': None,
     },
 }
+
+
+class AverageNumber:
+    def __init__(self):
+        self._sum = 0.0
+        self._count = 0
+
+    def update(self, values: torch.Tensor):
+        self._sum += values.sum().item()
+        self._count += values.numel()
+
+    def _ddp_reduce(self, device):
+        _sum = torch.tensor(self._sum, device=device)
+        _count = torch.tensor(self._count, device=device)
+        dist.all_reduce(_sum, op=dist.ReduceOp.SUM)
+        dist.all_reduce(_count, op=dist.ReduceOp.SUM)
+        self._sum = _sum.item()
+        self._count = _count.item()
+
+    def get(self):
+        if self._count == 0:
+            return torch.nan
+        return self._sum / self._count
 
 
 class ErrorMetric:
