@@ -213,7 +213,7 @@ def _map_old_model(old_model_state_dict):
 
 
 def model_from_checkpoint(checkpoint):
-    from sevenn._const import data_defaults, model_defaults, train_defaults
+    from sevenn._const import model_defaults
     from sevenn.model_build import build_E3_equivariant_model
 
     if isinstance(checkpoint, str):
@@ -225,11 +225,7 @@ def model_from_checkpoint(checkpoint):
 
     model_state_dict = checkpoint['model_state_dict']
     config = checkpoint['config']
-    defaults = {
-        **model_defaults(config),
-        **train_defaults(config),
-        **data_defaults(config),
-    }
+    defaults = {**model_defaults(config)}
     config = _patch_old_config(config)
 
     for k, v in defaults.items():
