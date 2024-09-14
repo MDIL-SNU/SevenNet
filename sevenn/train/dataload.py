@@ -173,22 +173,21 @@ def graph_build(
     return graph_list
 
 
-def ase_reader(
-    filename: str,
+def set_atoms_y(
+    atoms_list: list[ase.Atoms],
     energy_key: Optional[str] = None,
     force_key: Optional[str] = None,
     stress_key: Optional[str] = None,
-    index: str = ':',
-    **kwargs,
 ) -> list[ase.Atoms]:
-    """Allow options to get energy, force, stress from extxyz dataset.
+    """
+    Define how SevenNet reads ASE.atoms object for its y label
     If energy_key, force_key, or stress_key is given, the corresponding
     label is obtained from .info dict of Atoms object. These values should
     have eV, eV/Angstrom, and eV/Angstrom^3 for energy, force, and stress,
     respectively. (stress in Voigt notation)
 
     Args:
-        filename (str): path to file. Adapt all ASE supported formats.
+        atoms_list (list[ase.Atoms]): target atoms to set y_labels
         energy_key (str, optional): key to get energy. Defaults to None.
         force_key (str, optional): key to get force. Defaults to None.
         stress_key (str, optional): key to get stress. Defaults to None.
@@ -204,10 +203,6 @@ def ase_reader(
     If stress is available, initialize stress tensor
     Ignore constraints like selective dynamics
     """
-    atoms_list = ase.io.read(filename, index=index, **kwargs)
-    if not isinstance(atoms_list, list):
-        atoms_list = [atoms_list]
-
     for atoms in atoms_list:
         # access energy
         if energy_key is not None:
@@ -240,6 +235,25 @@ def ase_reader(
     return atoms_list
 
 
+def ase_reader(
+    filename: str,
+    energy_key: Optional[str] = None,
+    force_key: Optional[str] = None,
+    stress_key: Optional[str] = None,
+    index: str = ':',
+    **kwargs,
+) -> list[ase.Atoms]:
+    """
+    Wrapper of ase.io.read
+    """
+    atoms_list = ase.io.read(filename, index=index, **kwargs)
+    if not isinstance(atoms_list, list):
+        atoms_list = [atoms_list]
+
+    return set_atoms_y(atoms_list, energy_key, force_key, stress_key)
+
+
+# deprecated
 def pkl_atoms_reader(fname):
     """
     Assume the content is plane list of ase.Atoms
@@ -339,7 +353,7 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                     stct_lists.append(atoms)
                 f_stream.close()
         structures_dict[title] = stct_lists
-    return structures_dict
+    return {k: set_atoms_y(v) for k, v in structures_dict.items()}
 
 
 def match_reader(reader_name: str, **kwargs):
