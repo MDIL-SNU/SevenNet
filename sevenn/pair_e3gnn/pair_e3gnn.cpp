@@ -33,7 +33,6 @@
 #include "neighbor.h"
 
 #include "pair_e3gnn.h"
-#include <cuda_runtime.h>
 
 using namespace LAMMPS_NS;
 
@@ -87,7 +86,7 @@ void PairE3GNN::compute(int eflag, int vflag) {
   int nlocal = list->inum; // same as nlocal
   int *ilist = list->ilist;
   tagint *tag = atom->tag;
-  std::unordered_map<int, int> tag_map; 
+  std::unordered_map<int, int> tag_map;
 
   if (atom->tag_consecutive() == 0) {
     for (int ii = 0; ii < nlocal; ii++) {
@@ -228,20 +227,6 @@ void PairE3GNN::compute(int eflag, int vflag) {
   std::vector<torch::IValue> input(1, input_dict);
   auto output = model.forward(input).toGenericDict();
 
-  if (print_info) {
-    size_t free, tot;
-    cudaMemGetInfo(&free, &tot);
-    std::cout << "MEM use after model(MB)" << std::endl;
-    double Mfree = static_cast<double>(free) / (1024 * 1024);
-    double Mtot = static_cast<double>(tot) / (1024 * 1024);
-    std::cout << "Total: " << Mtot << std::endl;
-    std::cout << "Free: " << Mfree << std::endl;
-    std::cout << "Used: " << Mtot - Mfree << std::endl;
-    double Mused = Mtot - Mfree;
-    std::cout << "Used/Nedges: " << Mused / nedges << std::endl;
-    std::cout << "Used/Nlocal: " << Mused / nlocal << std::endl;
-  }
-
   torch::Tensor total_energy_tensor =
       output.at("inferred_total_energy").toTensor().cpu();
   torch::Tensor force_tensor = output.at("inferred_force").toTensor().cpu();
@@ -314,7 +299,7 @@ void PairE3GNN::coeff(int narg, char **arg) {
 
   if (strcmp(arg[0], "*") != 0 || strcmp(arg[1], "*") != 0) {
     error->all(FLERR,
-               "e3gnn: firt and second input of pair_coeff should be '*'");
+               "e3gnn: first and second input of pair_coeff should be '*'");
   }
   // expected input : pair_coeff * * pot.pth type_name1 type_name2 ...
 
