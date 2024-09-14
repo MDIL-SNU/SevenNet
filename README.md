@@ -9,6 +9,9 @@ The project provides parallel molecular dynamics simulations using graph neural 
 
 The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
+**PLEASE NOTE:** SevenNet+LAMMPS parallel after this commit: 14851ef (v0.9.3 ~ 0.9.5) has a serious bug:
+it gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug has been fixed in the main branch, and I'll release the corrected version ASAP.
+
 
 ## Features
  - Pre-trained GNN interatomic potential SevenNet-0, with fine-tuning interface
