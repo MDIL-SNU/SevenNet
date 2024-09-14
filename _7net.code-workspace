@@ -1,0 +1,26 @@
+{
+	"folders": [
+		{
+			"path": "."
+		}
+	],
+
+	"settings": {
+		"ltex.enabled": false,
+		"python.defaultInterpreterPath": "C:/DevProgram/miniconda3/envs/py11/python.exe",
+		"files.exclude": {
+			"*.egg-info": true,
+			"**/__pycache__": true,
+			"**/build": true,
+		},
+		"ruff.lineLength": 85,
+		"ruff.lint.ignore": [
+			"D300", // single quotes
+		],
+	},
+
+	"extensions": {
+		"recommendations": [ "charliermarsh.ruff" ] // "ms-python.black-formatter"
+	}
+
+}
