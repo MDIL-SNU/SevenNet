@@ -21,7 +21,7 @@ Supporting MD frameworks and its features. While all modes support both CPU and 
 |-----------------|------------------|-----------------|-----------------|
 | Working?        | ✅ | ✅ | ✅ |
 | Multi-GPU       | ❌ | ❌ | ✅ |
-| Stress          | ✅ | ✅ | ✅ |
+| Stress          | ✅ | ✅ | ⏳ |
 | D3 correction   | ⏳ | ✅ | ⏳ |
 
 ✅: Support, ⏳: Planned, ❌: Not planned.
@@ -186,6 +186,8 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
+
+**PLEASE NOTE:** Virial stress (pressure) outputs of SevenNet parallel are not correct! Work in progress...
 
 If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module. If it is unavailable, read the 'Note for MKL' section before running cmake.
 
