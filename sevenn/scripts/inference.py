@@ -232,7 +232,6 @@ def inference_main(  # TODO: re-write
         assert inference_set is not None
 
         inference_set.x_to_one_hot_idx(type_map)
-        inference_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
         infer_list = inference_set.to_list()
         loader = DataLoader(
             infer_list,

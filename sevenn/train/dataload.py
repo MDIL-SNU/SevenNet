@@ -1,4 +1,5 @@
 import os.path
+import pickle
 from functools import partial
 from itertools import islice
 from typing import Callable, List, Optional
@@ -71,6 +72,7 @@ def atoms_to_graph(
     atoms: ase.Atoms,
     cutoff: float,
     transfer_info: bool = True,
+    y_from_calc: bool = False,
 ):
     """
     From ase atoms, return AtomGraphData as graph based on cutoff radius
@@ -79,15 +81,28 @@ def atoms_to_graph(
         atoms (Atoms): ase atoms
         cutoff (float): cutoff radius
         transfer_info (bool): if True, transfer ".info" from atoms to graph
+        y_from_calc: if True, get ref values from calculator
     Returns:
         numpy dict that can be used to initialize AtomGraphData
         by AtomGraphData(**atoms_to_graph(atoms, cutoff))
 
     Requires grad is handled by 'dataset' not here.
     """
-    y_energy = atoms.info['y_energy']
-    y_force = atoms.arrays['y_force']
-    y_stress = atoms.info['y_stress']
+    if not y_from_calc:
+        y_energy = atoms.info['y_energy']
+        y_force = atoms.arrays['y_force']
+        y_stress = atoms.info.get('y_stress', None)
+    else:
+        try:
+            y_energy = atoms.get_potential_energy(force_consistent=True)
+        except NotImplementedError:
+            y_energy = atoms.get_potential_energy()
+        y_force = atoms.get_forces(apply_constraint=False)
+        try:
+            y_stress = -1 * atoms.get_stress()
+            y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
+        except RuntimeError:
+            y_stress = None
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -142,6 +157,7 @@ def graph_build(
     cutoff: float,
     num_cores: int = 1,
     transfer_info: bool = True,
+    init_atoms_y: bool = True,
 ) -> List[AtomGraphData]:
     """
     parallel version of graph_build
@@ -154,6 +170,8 @@ def graph_build(
     Returns:
         List[AtomGraphData]: list of AtomGraphData
     """
+    if init_atoms_y:
+        atoms_list = set_atoms_y(atoms_list)
     serial = num_cores == 1
     inputs = [(atoms, cutoff, transfer_info) for atoms in atoms_list]
 
@@ -384,7 +402,13 @@ def file_to_dataset(
     graph_dct = {}
     for label, atoms_list in atoms_dct.items():
         graph_list =\
-            graph_build(atoms_list, cutoff, cores, transfer_info=transfer_info)
+            graph_build(
+                atoms_list=atoms_list,
+                cutoff=cutoff,
+                num_cores=cores,
+                transfer_info=transfer_info,
+                init_atoms_y=False
+            )
         for graph in graph_list:
             graph[KEY.USER_LABEL] = label
         graph_dct[label] = graph_list

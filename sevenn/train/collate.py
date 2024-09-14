@@ -22,6 +22,7 @@ class AtomsToGraphCollater(Collater):
         transfer_info: bool = False,
         follow_batch: Optional[List[str]] = None,
         exclude_keys: Optional[List[str]] = None,
+        y_from_calc: bool = True,
     ):
         # quite original collator's type mismatch with []
         super().__init__([], follow_batch, exclude_keys)
@@ -30,6 +31,7 @@ class AtomsToGraphCollater(Collater):
         self.type_map = type_map
         self.requires_grad_key = requires_grad_key
         self.transfer_info = transfer_info
+        self.y_from_calc = y_from_calc
         self.key_x = key_x
 
     def _Z_to_onehot(self, Z):
@@ -42,7 +44,10 @@ class AtomsToGraphCollater(Collater):
         graph_list = []
         for stct in batch:
             graph = atoms_to_graph(
-                stct, self.cutoff, transfer_info=self.transfer_info
+                stct,
+                self.cutoff,
+                transfer_info=self.transfer_info,
+                y_from_calc=self.y_from_calc,
             )
             graph = AtomGraphData.from_numpy_dict(graph)
             graph[self.key_x] = self._Z_to_onehot(graph[self.key_x])
