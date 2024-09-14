@@ -23,6 +23,7 @@ distributed_help = 'set this flag if it is distributed training'
 global_config = {
     'version': __version__,
     KEY.MODEL_TYPE: 'E3_equivariant_model',
+    KEY.DDP_BACKEND: 'nccl',
 }
 
 

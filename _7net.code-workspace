@@ -14,9 +14,13 @@
 			"**/build": true,
 		},
 		"ruff.lineLength": 85,
+		"ruff.format.args": [ "--quote_style='preseve'" ],
+		"ruff.lint.args": [ "--unfixable=F401,F841" ],
 		"ruff.lint.ignore": [
-			"D300", // single quotes
+			// "Q000", // prevent replace single quote with double quote
+			// "Q001"
 		],
+
 	},
 
 	"extensions": {

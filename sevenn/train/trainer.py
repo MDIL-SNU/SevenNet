@@ -15,15 +15,19 @@ from .optim import optim_dict, scheduler_dict
 class Trainer:
     def __init__(self, model: torch.nn.Module, config: Dict[str, Any]):
         self.distributed = config[KEY.IS_DDP]
+        device = config[KEY.DEVICE]
 
         if self.distributed:
-            device = torch.device('cuda', config[KEY.LOCAL_RANK])
             dist.barrier()
-            self.model = DDP(model.to(device), device_ids=[device])
+            backend = config[KEY.DDP_BACKEND]
+            if backend == "nccl":
+                device = torch.device("cuda", config[KEY.LOCAL_RANK])
+                self.model = DDP(model.to(device), device_ids=[device])
+            elif backend == "mpi":
+                self.model = DDP(model.to(device))
             self.model.module.set_is_batch_data(True)
             self.rank = config[KEY.LOCAL_RANK]
         else:
-            device = config[KEY.DEVICE]
             self.model = model.to(device)
             self.model.set_is_batch_data(True)
         self.device = device

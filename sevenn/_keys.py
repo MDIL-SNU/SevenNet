@@ -131,7 +131,7 @@ RANK = 'rank'
 LOCAL_RANK = 'local_rank'
 WORLD_SIZE = 'world_size'
 IS_DDP = 'is_ddp'
-
+DDP_BACKEND = "nccl"
 PER_EPOCH = 'per_epoch'
 
 
