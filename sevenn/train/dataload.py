@@ -34,7 +34,7 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
 
     # building neighbor list
     edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
-        "ijDS", atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
+        'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
     )
 
     is_zero_idx = np.all(edge_vec == 0, axis=1)
@@ -59,7 +59,9 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
         KEY.EDGE_VEC: edge_vec,
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
-        KEY.CELL_VOLUME: np.einsum("i,i", cell[0, :], np.cross(cell[1, :], cell[2, :])),
+        KEY.CELL_VOLUME: np.einsum(
+            'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
+        ),
         KEY.NUM_ATOMS: len(atomic_numbers),
     }
     data[KEY.INFO] = {}
@@ -84,16 +86,16 @@ def atoms_to_graph(
 
     Requires grad is handled by 'dataset' not here.
     """
-    y_energy = atoms.info["y_energy"]
-    y_force = atoms.arrays["y_force"]
-    y_stress = atoms.info["y_stress"]
+    y_energy = atoms.info['y_energy']
+    y_force = atoms.arrays['y_force']
+    y_stress = atoms.info['y_stress']
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
 
     # building neighbor list
     edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
-        "ijDS", atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
+        'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
     )
 
     is_zero_idx = np.all(edge_vec == 0, axis=1)
@@ -121,7 +123,9 @@ def atoms_to_graph(
         KEY.STRESS: y_stress,
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
-        KEY.CELL_VOLUME: np.einsum("i,i", cell[0, :], np.cross(cell[1, :], cell[2, :])),
+        KEY.CELL_VOLUME: np.einsum(
+            'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
+        ),
         KEY.NUM_ATOMS: len(atomic_numbers),
         KEY.PER_ATOM_ENERGY: y_energy / len(pos),
     }
@@ -171,19 +175,23 @@ def graph_build(
 
 def ase_reader(
     filename: str,
-    energy_key: str = None,
-    force_key: str = None,
-    stress_key: str = None,
-    index: str = ":",
+    energy_key: Optional[str] = None,
+    force_key: Optional[str] = None,
+    stress_key: Optional[str] = None,
+    index: str = ':',
     **kwargs,
 ) -> list[ase.Atoms]:
     """Allow options to get energy, force, stress from extxyz dataset.
+    If energy_key, force_key, or stress_key is given, the corresponding
+    label is obtained from .info dict of Atoms object. These values should
+    have eV, eV/Angstrom, and eV/Angstrom^3 for energy, force, and stress,
+    respectively. (stress in Voigt notation)
 
     Args:
         filename (str): path to file. Adapt all ASE supported formats.
         energy_key (str, optional): key to get energy. Defaults to None.
         force_key (str, optional): key to get force. Defaults to None.
-        stress_key (str, optional): key to get stress (should be in Voit notation). Defaults to None.
+        stress_key (str, optional): key to get stress. Defaults to None.
 
     Returns:
         list[ase.Atoms]: list of ase.Atoms
@@ -197,26 +205,28 @@ def ase_reader(
     Ignore constraints like selective dynamics
     """
     atoms_list = ase.io.read(filename, index=index, **kwargs)
+    if not isinstance(atoms_list, list):
+        atoms_list = [atoms_list]
 
     for atoms in atoms_list:
-        ### access energy
+        # access energy
         if energy_key is not None:
-            atoms.info["y_energy"] = atoms.info[energy_key]
+            atoms.info['y_energy'] = atoms.info[energy_key]
         else:
             try:
-                atoms.info["y_energy"] = atoms.get_potential_energy(
+                atoms.info['y_energy'] = atoms.get_potential_energy(
                     force_consistent=True
                 )
             except NotImplementedError:
-                atoms.info["y_energy"] = atoms.get_potential_energy()
-        ### access force
+                atoms.info['y_energy'] = atoms.get_potential_energy()
+        # access force
         if force_key is not None:
-            atoms.arrays["y_force"] = atoms.arrays[force_key]
+            atoms.arrays['y_force'] = atoms.arrays[force_key]
         else:
-            atoms.arrays["y_force"] = atoms.get_forces(apply_constraint=False)
-        ### access stress
+            atoms.arrays['y_force'] = atoms.get_forces(apply_constraint=False)
+        # access stress
         if stress_key is not None:
-            atoms.info["y_stress"] = atoms.info[stress_key]
+            atoms.info['y_stress'] = atoms.info[stress_key]
         else:
             try:
                 # xx yy zz xy yz zx order
@@ -224,9 +234,9 @@ def ase_reader(
                 # (ASE automatically converts vasp kB to eV/A^3)
                 # So we restore it
                 y_stress = -1 * atoms.get_stress()
-                atoms.info["y_stress"] = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
+                atoms.info['y_stress'] = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
             except RuntimeError:
-                atoms.info["y_stress"] = np.full((1, 6), np.nan)
+                atoms.info['y_stress'] = np.full((1, 6), np.nan)
     return atoms_list
 
 
@@ -234,17 +244,17 @@ def pkl_atoms_reader(fname):
     """
     Assume the content is plane list of ase.Atoms
     """
-    with open(fname, "rb") as f:
+    with open(fname, 'rb') as f:
         atoms_list = pickle.load(f)
     if not isinstance(atoms_list, list):
-        raise TypeError("The content of the pkl is not list")
+        raise TypeError('The content of the pkl is not list')
     if not isinstance(atoms_list[0], ase.Atoms):
-        raise TypeError("The content of the pkl is not list of ase.Atoms")
+        raise TypeError('The content of the pkl is not list of ase.Atoms')
     return atoms_list
 
 
 # Reader
-def structure_list_reader(filename: str, format_outputs="vasp-out"):
+def structure_list_reader(filename: str, format_outputs='vasp-out'):
     parsers = DefaultParsersContainer(
         PositionsAndForces, Stress, Energy, Cell
     ).make_parsers()
@@ -262,27 +272,27 @@ def structure_list_reader(filename: str, format_outputs="vasp-out"):
 
     def parse_label(line):
         line = line.strip()
-        if line.startswith("[") is False:
+        if line.startswith('[') is False:
             return False
-        elif line.endswith("]") is False:
-            raise ValueError("wrong structure_list title format")
+        elif line.endswith(']') is False:
+            raise ValueError('wrong structure_list title format')
         return line[1:-1]
 
     def parse_fileline(line):
         line = line.strip().split()
         if len(line) == 1:
-            line.append(":")
+            line.append(':')
         elif len(line) != 2:
-            raise ValueError("wrong structure_list format")
+            raise ValueError('wrong structure_list format')
         return line[0], line[1]
 
-    structure_list_file = open(filename, "r")
+    structure_list_file = open(filename, 'r')
     lines = structure_list_file.readlines()
 
     raw_str_dict = {}
-    label = "Default"
+    label = 'Default'
     for line in lines:
-        if line.strip() == "":
+        if line.strip() == '':
             continue
         tmp_label = parse_label(line)
         if tmp_label:
@@ -293,18 +303,18 @@ def structure_list_reader(filename: str, format_outputs="vasp-out"):
             files_expr, index_expr = parse_fileline(line)
             raw_str_dict[label].append((files_expr, index_expr))
         else:
-            raise ValueError("wrong structure_list format")
+            raise ValueError('wrong structure_list format')
     structure_list_file.close()
 
     structures_dict = {}
-    info_dct = {"data_from": "user_OUTCAR"}
+    info_dct = {'data_from': 'user_OUTCAR'}
     for title, file_lines in raw_str_dict.items():
         stct_lists = []
         for file_line in file_lines:
             files_expr, index_expr = file_line
             index = string2index(index_expr)
             for expanded_filename in list(braceexpand(files_expr)):
-                f_stream = open(expanded_filename, "r")
+                f_stream = open(expanded_filename, 'r')
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
                 try:  # TODO: index may not slice, it can be integer
@@ -312,17 +322,17 @@ def structure_list_reader(filename: str, format_outputs="vasp-out"):
                 except ValueError:
                     # TODO: support
                     # negative index
-                    raise ValueError("Negative index is not supported yet")
+                    raise ValueError('Negative index is not supported yet')
 
                 info_dct_f = {
                     **info_dct,
-                    "file": os.path.abspath(expanded_filename),
+                    'file': os.path.abspath(expanded_filename),
                 }
                 for idx, o in enumerate(it_atoms):
                     try:
                         istep = index.start + idx * index.step
                         atoms = o.build()
-                        atoms.info = {**info_dct_f, "ionic_step": istep}
+                        atoms.info = {**info_dct_f, 'ionic_step': istep}
                     except TypeError:  # it is not slice of ionic steps
                         atoms = o.build()
                         atoms.info = info_dct_f
@@ -335,15 +345,15 @@ def structure_list_reader(filename: str, format_outputs="vasp-out"):
 def match_reader(reader_name: str, **kwargs):
     reader = None
     metadata = {}
-    if reader_name == "pkl" or reader_name == "pickle":
+    if reader_name == 'pkl' or reader_name == 'pickle':
         reader = partial(pkl_atoms_reader, **kwargs)
-        metadata.update({"origin": "atoms_pkl"})
-    elif reader_name == "structure_list":
+        metadata.update({'origin': 'atoms_pkl'})
+    elif reader_name == 'structure_list':
         reader = partial(structure_list_reader, **kwargs)
-        metadata.update({"origin": "structure_list"})
+        metadata.update({'origin': 'structure_list'})
     else:
         reader = partial(ase_reader, **kwargs)
-        metadata.update({"origin": "ase_reader"})
+        metadata.update({'origin': 'ase_reader'})
     return reader, metadata
 
 
@@ -373,11 +383,12 @@ def file_to_dataset(
     elif isinstance(atoms, dict):
         atoms_dct = atoms
     else:
-        raise TypeError("The return of reader is not list or dict")
+        raise TypeError('The return of reader is not list or dict')
 
     graph_dct = {}
     for label, atoms_list in atoms_dct.items():
-        graph_list = graph_build(atoms_list, cutoff, cores, transfer_info=transfer_info)
+        graph_list =\
+            graph_build(atoms_list, cutoff, cores, transfer_info=transfer_info)
         for graph in graph_list:
             graph[KEY.USER_LABEL] = label
         graph_dct[label] = graph_list
