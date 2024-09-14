@@ -253,20 +253,6 @@ def ase_reader(
     return set_atoms_y(atoms_list, energy_key, force_key, stress_key)
 
 
-# deprecated
-def pkl_atoms_reader(fname):
-    """
-    Assume the content is plane list of ase.Atoms
-    """
-    with open(fname, 'rb') as f:
-        atoms_list = pickle.load(f)
-    if not isinstance(atoms_list, list):
-        raise TypeError('The content of the pkl is not list')
-    if not isinstance(atoms_list[0], ase.Atoms):
-        raise TypeError('The content of the pkl is not list of ase.Atoms')
-    return atoms_list
-
-
 # Reader
 def structure_list_reader(filename: str, format_outputs='vasp-out'):
     parsers = DefaultParsersContainer(
@@ -359,10 +345,7 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
 def match_reader(reader_name: str, **kwargs):
     reader = None
     metadata = {}
-    if reader_name == 'pkl' or reader_name == 'pickle':
-        reader = partial(pkl_atoms_reader, **kwargs)
-        metadata.update({'origin': 'atoms_pkl'})
-    elif reader_name == 'structure_list':
+    if reader_name == 'structure_list':
         reader = partial(structure_list_reader, **kwargs)
         metadata.update({'origin': 'structure_list'})
     else:
