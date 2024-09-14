@@ -6,18 +6,15 @@ import numpy as np
 import torch
 from ase import io
 from ase.calculators.singlepoint import SinglePointCalculator
-from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 import sevenn._keys as KEY
-from sevenn._const import LossType
+import sevenn.error_recorder as error_recorder
 from sevenn.train.dataload import graph_build
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import (
-    AverageNumber,
     model_from_checkpoint,
-    postprocess_output,
-    squared_error,
+    pretrained_name_to_path,
     to_atom_graph_list,
 )
 
@@ -28,7 +25,7 @@ def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
     full_dataset = None
     for sevenn_data in sevenn_datas:
         with open(sevenn_data, 'rb') as f:
-            dataset = torch.load(f)
+            dataset = torch.load(f, weights_only=False)
         if full_dataset is None:
             full_dataset = dataset
         else:
@@ -38,8 +35,8 @@ def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
     if full_dataset.x_is_one_hot_idx and full_dataset.type_map != type_map:
         raise ValueError(
             "loaded dataset's x is not atomic numbers.                 this is"
-            " deprecated. Create dataset from structure list                "
-            " with the newest version of sevenn"
+            ' deprecated. Create dataset from structure list                '
+            ' with the newest version of sevenn'
         )
     return full_dataset
 
@@ -79,7 +76,25 @@ def poscars_to_atoms(poscars: List[str]):
     return atoms_list
 
 
-def write_inference_csv(output_list, rmse_dct, out, no_ref):
+def get_error_recorder():
+    config = [
+        ('Energy', 'RMSE'),
+        ('Force', 'RMSE'),
+        ('Stress', 'RMSE'),
+        ('Energy', 'MAE'),
+        ('Force', 'MAE'),
+        ('Stress', 'MAE'),
+    ]
+    err_metrics = []
+    for err_type, metric_name in config:
+        metric_kwargs = error_recorder.ERROR_TYPES[err_type].copy()
+        metric_kwargs['name'] += f'_{metric_name}'
+        metric_cls = error_recorder.ErrorRecorder.METRIC_DICT[metric_name]
+        err_metrics.append(metric_cls(**metric_kwargs))
+    return error_recorder.ErrorRecorder(err_metrics)
+
+
+def write_inference_csv(output_list, out):
     for i, output in enumerate(output_list):
         output = output.fit_dimension()
         output[KEY.STRESS] = output[KEY.STRESS] * 1602.1766208
@@ -130,12 +145,6 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
             res.append(per_atom_dct)
         return res
 
-    if not no_ref:
-        with open(f'{out}/rmse.txt', 'w') as f:
-            f.write(f"Energy rmse (eV/atom): {rmse_dct['ENERGY']}\n")
-            f.write(f"Force rmse (eV/A): {rmse_dct['FORCE']}\n")
-            f.write(f"Stress rmse (kbar): {rmse_dct['STRESS']}\n")
-
     try:
         with open(f'{out}/info.csv', 'w', newline='') as f:
             header = output_list[0][KEY.INFO].keys()
@@ -175,9 +184,20 @@ def write_inference_csv(output_list, rmse_dct, out, no_ref):
                 writer.writerow(data)
 
 
-def inference_main(
-    checkpoint, fnames, output_path, num_cores=1, device='cpu', batch_size=5
+def inference_main(  # TODO: re-write
+    checkpoint,
+    fnames,
+    output_path,
+    num_cores=1,
+    num_workers=1,
+    device='cpu',
+    batch_size=5,
+    on_the_fly_graph_build=True,
 ):
+    if os.path.isfile(checkpoint):
+        pass
+    else:
+        checkpoint = pretrained_name_to_path(checkpoint)
     model, config = model_from_checkpoint(checkpoint)
     model.to(device)
     model.set_is_batch_data(True)
@@ -188,52 +208,86 @@ def inference_main(
 
     head = os.path.basename(fnames[0])
     atoms_list = None
+    inference_set = None
     no_ref = False
     if head.endswith('sevenn_data'):
         inference_set = load_sevenn_data(fnames, cutoff, type_map)
+        on_the_fly_graph_build = False
     else:
         if head.startswith('POSCAR'):
             atoms_list = poscars_to_atoms(fnames)
             no_ref = True  # poscar has no y value
         elif head.startswith('OUTCAR'):
             atoms_list = outcars_to_atoms(fnames)
-        data_list = graph_build(atoms_list, cutoff, num_cores=num_cores)
-        inference_set = AtomGraphDataset(data_list, cutoff)
+        else:
+            atoms_list = []
+            for fname in fnames:
+                atoms_list.extend(io.read(fname, index=':'))
 
-    inference_set.x_to_one_hot_idx(type_map)
-    inference_set.toggle_requires_grad_of_data(KEY.POS, True)
+    if not on_the_fly_graph_build:  # old code
+        from torch_geometric.loader import DataLoader
+        if atoms_list is not None:
+            data_list = graph_build(atoms_list, cutoff, num_cores=num_cores)
+            inference_set = AtomGraphDataset(data_list, cutoff)
+        assert inference_set is not None
 
-    loss_types = [LossType.ENERGY, LossType.FORCE, LossType.STRESS]
-
-    l2_err = {k: AverageNumber() for k in loss_types}
-    infer_list = inference_set.to_list()
-
-    try:
-        loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
+        inference_set.x_to_one_hot_idx(type_map)
+        infer_list = inference_set.to_list()
+        loader = DataLoader(
+            infer_list,
+            batch_size=batch_size,
+            num_workers=num_workers,
+            shuffle=False
+        )
         output_list = []
+    else:  # new
+        from torch.utils.data.dataloader import DataLoader
+
+        from sevenn.train.collate import AtomsToGraphCollater
+        collate = AtomsToGraphCollater(
+            atoms_list,
+            cutoff,
+            type_map,
+            transfer_info=True
+        )
+        loader = DataLoader(
+            atoms_list,
+            collate_fn=collate,
+            batch_size=batch_size,
+            shuffle=False,
+            num_workers=num_workers
+        )
+
+    recorder = get_error_recorder()
+    output_list = []
+    try:
         for batch in tqdm(loader):
             batch = batch.to(device, non_blocking=True)
+            batch[KEY.EDGE_VEC].requires_grad_(True)
             output = model(batch)
             output.detach().to('cpu')
-            results = postprocess_output(output, loss_types)
-            for loss_type in loss_types:
-                l2_err[loss_type].update(squared_error(*results[loss_type]))
+            recorder.update(output)
             output_list.extend(to_atom_graph_list(output))  # unroll batch data
     except Exception as e:
         print(e)
         print("Keeping 'info' failed. Try with separated info")
-        infer_list, info_list = inference_set.seperate_info()
+        recorder.epoch_forward()
+        infer_list, _ = inference_set.separate_info()
         loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
         output_list = []
         for batch in tqdm(loader):
             batch = batch.to(device, non_blocking=True)
+            batch[KEY.EDGE_VEC].requires_grad_(True)
             output = model(batch)
             output.detach().to('cpu')
-            results = postprocess_output(output, loss_types)
-            for loss_type in loss_types:
-                l2_err[loss_type].update(squared_error(*results[loss_type]))
+            recorder.update(output)
             output_list.extend(to_atom_graph_list(output))  # unroll batch data
 
-    # to more readable format
-    rmse_dct = {k.name: np.sqrt(v.get()) for k, v in l2_err.items()}
-    write_inference_csv(output_list, rmse_dct, output_path, no_ref=no_ref)
+    errors = recorder.epoch_forward()
+
+    if not no_ref:
+        with open(f'{output_path}/errors.txt', 'w', encoding='utf-8') as f:
+            for key, val in errors.items():
+                f.write(f'{key}: {val}\n')
+
+    write_inference_csv(output_list, output_path)

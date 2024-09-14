@@ -1,5 +1,3 @@
-from typing import Final
-
 """
 How to add new feature?
 
@@ -11,6 +9,8 @@ How to add new feature?
     you must add your own input validation code to
     parse_input.py
 """
+
+from typing import Final
 
 # see
 # https://github.com/pytorch/pytorch/issues/52312
@@ -188,6 +188,7 @@ USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
 
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_DENOMINTAOR = 'train_denominator'
+INTERACTION_TYPE = 'interaction_type'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 _NORMALIZE_SPH = '_normalize_sph'

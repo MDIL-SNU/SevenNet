@@ -2,16 +2,18 @@ import random
 
 import torch
 import torch.distributed as dist
+import torch.nn
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
 import sevenn._keys as KEY
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.scripts.processing_continue import processing_continue
-from sevenn.scripts.processing_dataset import processing_dataset
-from sevenn.scripts.processing_epoch import processing_epoch
 from sevenn.sevenn_logger import Logger
 from sevenn.train.trainer import Trainer
+
+from .processing_continue import processing_continue
+from .processing_dataset import processing_dataset
+from .processing_epoch import processing_epoch
 
 
 def init_loaders(train, valid, _, config):
@@ -60,16 +62,18 @@ def train(config, working_dir: str):
 
     # config updated
     # Note that continue and dataset cannot be separated completely
-    data_lists = processing_dataset(config, working_dir)
-    loaders = init_loaders(*data_lists, config)
+    train, valid, _ = processing_dataset(config, working_dir)
+    loaders = init_loaders(train, valid, _, config)
 
     Logger().write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
+    assert isinstance(model, torch.nn.Module)
 
     Logger().write('Model building was successful\n')
 
     trainer = Trainer(model, config)
     if state_dicts is not None:
+        assert isinstance(state_dicts, tuple)
         trainer.load_state_dicts(*state_dicts, strict=False)
 
     Logger().print_model_info(model, config)

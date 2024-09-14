@@ -1,11 +1,12 @@
-from typing import Callable, List, Tuple
+from typing import Callable, List, Optional, Tuple
 
 import torch
+import torch.distributed as dist
 
 import sevenn._keys as KEY
-from sevenn.atom_graph_data import AtomGraphData
-from sevenn.train.optim import loss_dict
-from sevenn.util import AverageNumber
+
+from .atom_graph_data import AtomGraphData
+from .train.optim import loss_dict
 
 ERROR_TYPES = {
     'TotalEnergy': {
@@ -53,6 +54,29 @@ ERROR_TYPES = {
 }
 
 
+class AverageNumber:
+    def __init__(self):
+        self._sum = 0.0
+        self._count = 0
+
+    def update(self, values: torch.Tensor):
+        self._sum += values.sum().item()
+        self._count += values.numel()
+
+    def _ddp_reduce(self, device):
+        _sum = torch.tensor(self._sum, device=device)
+        _count = torch.tensor(self._count, device=device)
+        dist.all_reduce(_sum, op=dist.ReduceOp.SUM)
+        dist.all_reduce(_count, op=dist.ReduceOp.SUM)
+        self._sum = _sum.item()
+        self._count = _count.item()
+
+    def get(self):
+        if self._count == 0:
+            return torch.nan
+        return self._sum / self._count
+
+
 class ErrorMetric:
     """
     Base class for error metrics We always average error by # of structures,
@@ -65,7 +89,7 @@ class ErrorMetric:
         ref_key: str,
         pred_key: str,
         coeff: float = 1.0,
-        unit: str = None,
+        unit: Optional[str] = None,
         per_atom: bool = False,
         **kwargs,
     ):
@@ -151,7 +175,7 @@ class ComponentRMSError(ErrorMetric):
         self.value.update(se)
 
     def get(self):
-        return torch.sqrt(self.value.get())
+        return self.value.get() ** 0.5
 
 
 class MAError(ErrorMetric):

@@ -19,7 +19,6 @@ suffix_help = 'when source is dir, suffix of the files.'
 copy_info_help = 'copy ase.Atoms.info to output dataset'
 format_help = (
     'type of the source, default is structure_list. '
-    + 'If it is pkl/pickle, assume they are list of ase.Atoms. '
     + 'Otherwise, it is directly passed to ase.io.read'
 )
 
@@ -109,7 +108,7 @@ def cmd_parse_data(args=None):
     ag.add_argument(
         '--kwargs',
         nargs=argparse.REMAINDER,
-        help='kwargs to pass to file reader (format)',
+        help='will be passed to ase.io.read, or can be used to specify EFS key',
     )
 
     args = ag.parse_args()

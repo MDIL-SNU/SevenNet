@@ -58,7 +58,9 @@ def processing_continue(config):
     continue_dct = config[KEY.CONTINUE]
     Logger().write('\nContinue found, loading checkpoint\n')
 
-    checkpoint = torch.load(continue_dct[KEY.CHECKPOINT], map_location='cpu')
+    checkpoint = torch.load(
+        continue_dct[KEY.CHECKPOINT], map_location='cpu', weights_only=False
+    )
     config_cp = checkpoint['config']
 
     model_cp, config_cp = util.model_from_checkpoint(checkpoint)

@@ -1,5 +1,7 @@
+from typing import Optional
+
 import torch
-import torch_geometric
+import torch_geometric.data
 
 import sevenn._keys as KEY
 import sevenn.util
@@ -11,8 +13,8 @@ class AtomGraphData(torch_geometric.data.Data):
     Args:
         x (Tensor, optional): atomic numbers with shape :obj:`[num_nodes,
             atomic_numbers]`. (default: :obj:`None`)
-        edge_index (LongTensor, optional): Graph connectivity in COO format
-            with shape :obj:`[2, num_edges]`. (default: :obj:`None`)
+        edge_index (LongTensor, optional): Graph connectivity in coordinate
+            format with shape :obj:`[2, num_edges]`. (default: :obj:`None`)
         edge_attr (Tensor, optional): Edge feature matrix with shape
             :obj:`[num_edges, num_edge_features]`. (default: :obj:`None`)
         y_energy: scalar # unit of eV (VASP raw)
@@ -26,10 +28,15 @@ class AtomGraphData(torch_geometric.data.Data):
     """
 
     def __init__(
-        self, x=None, edge_index=None, pos=None, edge_attr=None, **kwargs
+        self,
+        x: Optional[torch.Tensor] = None,
+        edge_index: Optional[torch.Tensor] = None,
+        pos: Optional[torch.Tensor] = None,
+        edge_attr: Optional[torch.Tensor] = None,
+        **kwargs
     ):
         super(AtomGraphData, self).__init__(x, edge_index, edge_attr, pos=pos)
-        self[KEY.NODE_ATTR] = x
+        self[KEY.NODE_ATTR] = x  # ?
         for k, v in kwargs.items():
             self[k] = v
 

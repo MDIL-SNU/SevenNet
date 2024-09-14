@@ -9,6 +9,7 @@ The project provides parallel molecular dynamics simulations using graph neural 
 
 The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
+
 ## Features
  - Pre-trained GNN interatomic potential SevenNet-0, with fine-tuning interface
  - ASE calculator support
@@ -20,7 +21,7 @@ Supporting MD frameworks and its features. While all modes support both CPU and 
 |-----------------|------------------|-----------------|-----------------|
 | Working?        | ✅ | ✅ | ✅ |
 | Multi-GPU       | ❌ | ❌ | ✅ |
-| Stress          | ✅ | ✅ | ⏳ |
+| Stress          | ✅ | ✅ | ✅ |
 | D3 correction   | ⏳ | ✅ | ⏳ |
 
 ✅: Support, ⏳: Planned, ❌: Not planned.
@@ -63,13 +64,15 @@ Using the newer versions of CUDA with PyTorch is usually not a problem. For exam
 
 **PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version.
 
+**PLEASE NOTE:** Currently backward compatibility is ensured for only `checkpoint` files.
+
 After the PyTorch installation, run
 
 ```bash
 pip install sevenn
 ```
 
-To download the latest version of SevenNet(not fully stable), run
+To download the latest version of SevenNet(not stable!), run
 ```bash
 pip install https://github.com/MDIL-SNU/SevenNet.git
 ```
@@ -149,7 +152,7 @@ See `sevenn_graph_build --help` for more information.
 ### sevenn_inference
 
 ```bash
-sevenn_inference checkpoint_best.pt path_to_my_structures/*
+sevenn_inference checkpoint_best.pth path_to_my_structures/*
 ```
 
 This will create dir `sevenn_infer_result`. It includes .csv files that enumerate prediction/reference results of energy and force.
@@ -171,7 +174,7 @@ The parallel model can be obtained in a similar way
 sevenn_get_model 7net-0 -p
 ```
 
-This will create multiple `deployed_parallel_*.pt` files. The number of deployed models equals the number of message-passing layers.
+This will create a directory with multiple `deployed_parallel_*.pt` files. The directory path itself is an argument for the lammps script. Please do not modify or remove files under the directory.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
 ## Installation for LAMMPS
@@ -264,19 +267,18 @@ pair_coeff * * {path to serial model} {space separated chemical species}
 units         metal
 atom_style    atomic
 pair_style e3gnn/parallel
-pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {space separated chemical species}
+pair_coeff * * {number of message-passing layers} {path to the directory containing parallel model} {space separated chemical species}
 ```
 
 For example,
 
 ```txt
 pair_style e3gnn/parallel
-pair_coeff * * 4 ./deployed_parallel_0.pt ./deployed_parallel_1.pt ./deployed_parallel_2.pt ./deployed_parallel_3.pt Hf O
+pair_coeff * * 4 ./deployed_parallel Hf O
 ```
+The number of message-passing layers is equal to the number of `*.pt` files in the `./deployed_parallel` directory.
 
-The number of segmented `*.pt` files is same as the number of message-passing layers of the model.
-
-Check [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
+Use [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
 
 One GPU per MPI process is expected. The simulation may run inefficiently if the available GPUs are fewer than the MPI processes.
 
@@ -285,9 +287,7 @@ One GPU per MPI process is expected. The simulation may run inefficiently if the
 ## Future Works
 
 - Notebook examples and improved interface for non-command line usage
-- Virial stress output in parallel MD simulations.
 - Development of a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
-- Easy use of parallel models
 
 ## Citation
 

@@ -19,7 +19,7 @@ def dataset_load(file: str, config):
     Logger().timer_start('loading dataset')
 
     if file.endswith('.sevenn_data'):
-        dataset = torch.load(file, map_location='cpu')
+        dataset = torch.load(file, map_location='cpu', weights_only=False)
     else:
         reader, _ = match_reader(
             config[KEY.DATA_FORMAT], **config[KEY.DATA_FORMAT_ARGS]
@@ -28,7 +28,7 @@ def dataset_load(file: str, config):
             file,
             config[KEY.CUTOFF],
             config[KEY.PREPROCESS_NUM_CORES],
-            reader=reader,
+            reader,
         )
     Logger().format_k_v('loaded dataset size is', dataset.len(), write=True)
     Logger().timer_end('loading dataset', 'data set loading time')
@@ -132,6 +132,8 @@ def handle_shift_scale(config, train_set, checkpoint_given):
             'shift, scale', f'{shift:.6f}, {scale:.6f}', write=True
         )
 
+    assert isinstance(conv_denominator, list) \
+        and all(isinstance(deno, float) for deno in conv_denominator)
     Logger().format_k_v(
         '(1st) conv_denominator is', f'{conv_denominator[0]:.6f}', write=True
     )
@@ -159,7 +161,7 @@ def processing_dataset(config, working_dir):
     dataset.group_by_key()  # apply labels inside original datapoint
     dataset.unify_dtypes()  # unify dtypes of all data points
 
-    dataset.toggle_requires_grad_of_data(KEY.POS, True)
+    dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
     # TODO: I think manual chemical species input is redundant
     chem_in_db = dataset.get_species()
@@ -215,7 +217,7 @@ def processing_dataset(config, working_dir):
         valid_set.group_by_key()
         valid_set.unify_dtypes()
 
-        valid_set.toggle_requires_grad_of_data(KEY.POS, True)
+        valid_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
         # condition: validset labels should be subset of trainset labels
         valid_labels = valid_set.user_labels
@@ -283,8 +285,8 @@ def processing_dataset(config, working_dir):
         )
 
     # inconsistent .info dict give error when collate
-    _, _ = train_set.seperate_info()
-    _, _ = valid_set.seperate_info()
+    _, _ = train_set.separate_info()
+    _, _ = valid_set.separate_info()
 
     # make sure x is one hot index
     if train_set.x_is_one_hot_idx is False:
