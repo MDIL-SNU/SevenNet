@@ -69,42 +69,40 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
 
 
 def atoms_to_graph(
-    atoms: ase.Atoms, cutoff: float, transfer_info: bool = True
+    atoms: ase.Atoms,
+    cutoff: float,
+    transfer_info: bool = True,
+    y_from_calc: bool = False,
 ):
     """
     From ase atoms, return AtomGraphData as graph based on cutoff radius
+
     Args:
         atoms (Atoms): ase atoms
         cutoff (float): cutoff radius
         transfer_info (bool): if True, transfer ".info" from atoms to graph
+        y_from_calc: if True, get ref values from calculator
     Returns:
         numpy dict that can be used to initialize AtomGraphData
         by AtomGraphData(**atoms_to_graph(atoms, cutoff))
-    Raises:
-        RuntimeError: if ase atoms are somewhat imperfect
-
-    Use free_energy: atoms.get_potential_energy(force_consistent=True)
-    If it is not available, use atoms.get_potential_energy()
-    If stress is available, initialize stress tensor
-    Ignore constraints like selective dynamics
 
     Requires grad is handled by 'dataset' not here.
     """
-
-    try:
-        y_energy = atoms.get_potential_energy(force_consistent=True)
-    except NotImplementedError:
-        y_energy = atoms.get_potential_energy()
-    y_force = atoms.get_forces(apply_constraint=False)
-    try:
-        # xx yy zz xy yz zx order
-        # We expect this is eV/A^3 unit
-        # (ASE automatically converts vasp kB to eV/A^3)
-        # So we restore it
-        y_stress = -1 * atoms.get_stress()
-        y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
-    except RuntimeError:
-        y_stress = None
+    if not y_from_calc:
+        y_energy = atoms.info['y_energy']
+        y_force = atoms.arrays['y_force']
+        y_stress = atoms.info.get('y_stress', None)
+    else:
+        try:
+            y_energy = atoms.get_potential_energy(force_consistent=True)
+        except NotImplementedError:
+            y_energy = atoms.get_potential_energy()
+        y_force = atoms.get_forces(apply_constraint=False)
+        try:
+            y_stress = -1 * atoms.get_stress()
+            y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
+        except RuntimeError:
+            y_stress = None
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -159,6 +157,7 @@ def graph_build(
     cutoff: float,
     num_cores: int = 1,
     transfer_info: bool = True,
+    init_atoms_y: bool = True,
 ) -> List[AtomGraphData]:
     """
     parallel version of graph_build
@@ -171,6 +170,8 @@ def graph_build(
     Returns:
         List[AtomGraphData]: list of AtomGraphData
     """
+    if init_atoms_y:
+        atoms_list = set_atoms_y(atoms_list)
     serial = num_cores == 1
     inputs = [(atoms, cutoff, transfer_info) for atoms in atoms_list]
 
@@ -189,24 +190,84 @@ def graph_build(
     return graph_list
 
 
-def ase_reader(fname, **kwargs):
-    index = kwargs.pop('index', None)
-    if index is None:
-        index = ':'  # new default for ours
-    return ase.io.read(fname, index=index, **kwargs)
-
-
-def pkl_atoms_reader(fname):
+def set_atoms_y(
+    atoms_list: list[ase.Atoms],
+    energy_key: Optional[str] = None,
+    force_key: Optional[str] = None,
+    stress_key: Optional[str] = None,
+) -> list[ase.Atoms]:
     """
-    Assume the content is plane list of ase.Atoms
+    Define how SevenNet reads ASE.atoms object for its y label
+    If energy_key, force_key, or stress_key is given, the corresponding
+    label is obtained from .info dict of Atoms object. These values should
+    have eV, eV/Angstrom, and eV/Angstrom^3 for energy, force, and stress,
+    respectively. (stress in Voigt notation)
+
+    Args:
+        atoms_list (list[ase.Atoms]): target atoms to set y_labels
+        energy_key (str, optional): key to get energy. Defaults to None.
+        force_key (str, optional): key to get force. Defaults to None.
+        stress_key (str, optional): key to get stress. Defaults to None.
+
+    Returns:
+        list[ase.Atoms]: list of ase.Atoms
+
+    Raises:
+        RuntimeError: if ase atoms are somewhat imperfect
+
+    Use free_energy: atoms.get_potential_energy(force_consistent=True)
+    If it is not available, use atoms.get_potential_energy()
+    If stress is available, initialize stress tensor
+    Ignore constraints like selective dynamics
     """
-    with open(fname, 'rb') as f:
-        atoms_list = pickle.load(f)
-    if not isinstance(atoms_list, list):
-        raise TypeError('The content of the pkl is not list')
-    if not isinstance(atoms_list[0], ase.Atoms):
-        raise TypeError('The content of the pkl is not list of ase.Atoms')
+    for atoms in atoms_list:
+        # access energy
+        if energy_key is not None:
+            atoms.info['y_energy'] = atoms.info[energy_key]
+        else:
+            try:
+                atoms.info['y_energy'] = atoms.get_potential_energy(
+                    force_consistent=True
+                )
+            except NotImplementedError:
+                atoms.info['y_energy'] = atoms.get_potential_energy()
+        # access force
+        if force_key is not None:
+            atoms.arrays['y_force'] = atoms.arrays[force_key]
+        else:
+            atoms.arrays['y_force'] = atoms.get_forces(apply_constraint=False)
+        # access stress
+        if stress_key is not None:
+            atoms.info['y_stress'] = atoms.info[stress_key]
+        else:
+            try:
+                # xx yy zz xy yz zx order
+                # We expect this is eV/A^3 unit
+                # (ASE automatically converts vasp kB to eV/A^3)
+                # So we restore it
+                y_stress = -1 * atoms.get_stress()
+                atoms.info['y_stress'] = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
+            except RuntimeError:
+                atoms.info['y_stress'] = np.full((1, 6), np.nan)
     return atoms_list
+
+
+def ase_reader(
+    filename: str,
+    energy_key: Optional[str] = None,
+    force_key: Optional[str] = None,
+    stress_key: Optional[str] = None,
+    index: str = ':',
+    **kwargs,
+) -> list[ase.Atoms]:
+    """
+    Wrapper of ase.io.read
+    """
+    atoms_list = ase.io.read(filename, index=index, **kwargs)
+    if not isinstance(atoms_list, list):
+        atoms_list = [atoms_list]
+
+    return set_atoms_y(atoms_list, energy_key, force_key, stress_key)
 
 
 # Reader
@@ -274,9 +335,7 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
                 try:  # TODO: index may not slice, it can be integer
-                    it_atoms = islice(
-                        gen_all, index.start, index.stop, index.step
-                    )
+                    it_atoms = islice(gen_all, index.start, index.stop, index.step)
                 except ValueError:
                     # TODO: support
                     # negative index
@@ -297,16 +356,13 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                     stct_lists.append(atoms)
                 f_stream.close()
         structures_dict[title] = stct_lists
-    return structures_dict
+    return {k: set_atoms_y(v) for k, v in structures_dict.items()}
 
 
 def match_reader(reader_name: str, **kwargs):
     reader = None
     metadata = {}
-    if reader_name == 'pkl' or reader_name == 'pickle':
-        reader = partial(pkl_atoms_reader, **kwargs)
-        metadata.update({'origin': 'atoms_pkl'})
-    elif reader_name == 'structure_list':
+    if reader_name == 'structure_list':
         reader = partial(structure_list_reader, **kwargs)
         metadata.update({'origin': 'structure_list'})
     else:
@@ -345,9 +401,14 @@ def file_to_dataset(
 
     graph_dct = {}
     for label, atoms_list in atoms_dct.items():
-        graph_list = graph_build(
-            atoms_list, cutoff, cores, transfer_info=transfer_info
-        )
+        graph_list =\
+            graph_build(
+                atoms_list=atoms_list,
+                cutoff=cutoff,
+                num_cores=cores,
+                transfer_info=transfer_info,
+                init_atoms_y=False
+            )
         for graph in graph_list:
             graph[KEY.USER_LABEL] = label
         graph_dct[label] = graph_list

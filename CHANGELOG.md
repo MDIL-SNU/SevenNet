@@ -1,6 +1,12 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## WIP
+### Added
+- energy_key, force_key, stress_key options for `sevenn_graph_build` @thangckt
+### Changed
+- Read EFS of atoms from y_* keys of .info or .arrays dict, instead of caclculator results
+
 ## [0.9.5]
 ### Note
 This version is not stable, but I tag it as v0.9.5 before making further changes.

@@ -32,6 +32,7 @@ def main(args=None):
         args.nworkers,
         device,
         args.batch,
+        args.on_the_fly_graph_build,
     )
 
 
