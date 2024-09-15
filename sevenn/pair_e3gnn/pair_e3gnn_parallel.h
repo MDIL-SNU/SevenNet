@@ -61,6 +61,9 @@ private:
   // to use tag_to_graph_idx inside comm methods
   int *tag_to_graph_idx_ptr = nullptr;
 
+  int sendproc[6];
+  int recvproc[6];
+
 public:
   PairE3GNNParallel(class LAMMPS *);
   ~PairE3GNNParallel();
@@ -86,6 +89,7 @@ public:
   int get_x_dim();
   bool use_cuda_mpi_();
   bool is_comm_preprocess_done();
+  void notify_proc_ids(const int *sendproc, const int *recvproc);
 
   bool print_info = false;
   int world_rank;
