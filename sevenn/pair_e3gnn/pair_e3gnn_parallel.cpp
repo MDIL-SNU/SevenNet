@@ -690,7 +690,6 @@ void PairE3GNNParallel::comm_preprocess() {
   comm_brick->forward_comm(this);
 
   std::map<int, std::set<int>> already_met_map;
-
   for (int comm_phase = 0; comm_phase < 6; comm_phase++) {
     const int n = comm_index_pack_forward[comm_phase].size();
     int sproc = this->sendproc[comm_phase];
