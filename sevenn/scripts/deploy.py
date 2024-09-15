@@ -56,9 +56,8 @@ def deploy_parallel(model_state_dct, config, fname):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
-    # TODO: stress inference
-    config[KEY.IS_TRACE_STRESS] = False
-    config[KEY.IS_TRAIN_STRESS] = False
+    # config[KEY.IS_TRACE_STRESS] = False
+    # config[KEY.IS_TRAIN_STRESS] = False  #now model_build has no dependency on this
     model_list = build_E3_equivariant_model(config, parallel=True)
     assert isinstance(model_list, list)
     dct_temp = {}
@@ -88,13 +87,10 @@ def deploy_parallel(model_state_dct, config, fname):
         chem_list += chemical_symbols[Z] + ' '
     chem_list.strip()
 
-    # dim of irreps_in of last model convolution is (max)comm_size
-    # TODO: this is error prone
-    comm_size = (
-        model_list[-1][1].convolution.irreps_in1.dim
-        if len(model_list) > 1
-        else 0
-    )
+    comm_size = max([
+        seg._modules[f'{t}_convolution']._comm_size
+        for t, seg in enumerate(model_list)
+    ])
 
     md_configs.update({'chemical_symbols_to_index': chem_list})
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
