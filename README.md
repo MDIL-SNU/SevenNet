@@ -9,6 +9,9 @@ The project provides parallel molecular dynamics simulations using graph neural 
 
 The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
+**PLEASE NOTE:** SevenNet+LAMMPS parallel after this commit: 14851ef (v0.9.3 ~ 0.9.5) has a serious bug:
+it gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug has been fixed in the main branch, and I'll release the corrected version ASAP.
+
 
 ## Features
  - Pre-trained GNN interatomic potential SevenNet-0, with fine-tuning interface
@@ -21,7 +24,7 @@ Supporting MD frameworks and its features. While all modes support both CPU and 
 |-----------------|------------------|-----------------|-----------------|
 | Working?        | ✅ | ✅ | ✅ |
 | Multi-GPU       | ❌ | ❌ | ✅ |
-| Stress          | ✅ | ✅ | ✅ |
+| Stress          | ✅ | ✅ | ⏳ |
 | D3 correction   | ⏳ | ✅ | ⏳ |
 
 ✅: Support, ⏳: Planned, ❌: Not planned.
@@ -186,6 +189,8 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
+
+**PLEASE NOTE:** Virial stress (pressure) outputs of SevenNet parallel are not correct! Work in progress...
 
 If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module. If it is unavailable, read the 'Note for MKL' section before running cmake.
 
