@@ -125,12 +125,12 @@ class SevenNetCalculator(Calculator):
             raise ValueError('No atoms to evaluate')
         data = util.unlabeled_atoms_to_input(atoms, self.cutoff, self.grad_key)
 
-        data[KEY.NODE_FEATURE] = torch.LongTensor(
-            [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
-        )
         data.to(self.device)  # why PyG uses Union[int, str]?
 
         if isinstance(self.model, torch_script_type):
+            data[KEY.NODE_FEATURE] = torch.LongTensor(
+                [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
+            )
             data = data.to_dict()
             del data['data_info']
 

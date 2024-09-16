@@ -24,6 +24,8 @@ def deploy(model_state_dct, config, fname):
     missing, not_used = model.load_state_dict(model_state_dct, strict=False)
     assert len(missing) == 0, f'missing keys: {missing}'
     assert len(not_used) == 0, f'not used keys: {not_used}'
+    if hasattr(model, 'eval_type_map'):
+        setattr(model, 'eval_type_map', False)
 
     model.set_is_batch_data(False)
     model.eval()
@@ -75,6 +77,8 @@ def deploy_parallel(model_state_dct, config, fname):
 
     for model_part in model_list:
         missing, _ = model_part.load_state_dict(model_state_dct, strict=False)
+        if hasattr(model_part, 'eval_type_map'):
+            setattr(model_part, 'eval_type_map', False)
         # Ensure all values are inserted
         assert len(missing) == 0
 

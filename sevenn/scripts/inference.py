@@ -21,7 +21,7 @@ from sevenn.util import (
 # TODO: use updated dataset construction scheme, not directly call graph_build
 
 
-def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
+def load_sevenn_data(sevenn_datas: str, cutoff):
     full_dataset = None
     for sevenn_data in sevenn_datas:
         with open(sevenn_data, 'rb') as f:
@@ -32,12 +32,6 @@ def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
             full_dataset.augment(dataset)
     if full_dataset.cutoff != cutoff:
         raise ValueError(f'cutoff mismatch: {full_dataset.cutoff} != {cutoff}')
-    if full_dataset.x_is_one_hot_idx and full_dataset.type_map != type_map:
-        raise ValueError(
-            "loaded dataset's x is not atomic numbers.                 this is"
-            ' deprecated. Create dataset from structure list                '
-            ' with the newest version of sevenn'
-        )
     return full_dataset
 
 
@@ -231,7 +225,6 @@ def inference_main(  # TODO: re-write
             inference_set = AtomGraphDataset(data_list, cutoff)
         assert inference_set is not None
 
-        inference_set.x_to_one_hot_idx(type_map)
         infer_list = inference_set.to_list()
         loader = DataLoader(
             infer_list,
@@ -247,7 +240,6 @@ def inference_main(  # TODO: re-write
         collate = AtomsToGraphCollater(
             atoms_list,
             cutoff,
-            type_map,
             transfer_info=True
         )
         loader = DataLoader(
