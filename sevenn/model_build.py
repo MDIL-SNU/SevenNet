@@ -356,12 +356,18 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         data_key_force=KEY.PRED_FORCE,
         data_key_stress=KEY.PRED_STRESS,
     )
+    grad_key = gradient_module.get_grad_key()
     layers.update({'force_output': gradient_module})
 
-    # output extraction part
-    type_map = config[KEY.TYPE_MAP]
+    common_args = {
+        'cutoff': cutoff,
+        'type_map': config[KEY.TYPE_MAP],
+        'eval_type_map': True if not parallel else False,
+        'data_key_grad': grad_key,
+    }
+
     if parallel:
         layers_list = _to_parallel_model(layers, config)
-        return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
+        return [AtomGraphSequential(v, **common_args) for v in layers_list]
     else:
-        return AtomGraphSequential(layers, cutoff, type_map)
+        return AtomGraphSequential(layers, **common_args)

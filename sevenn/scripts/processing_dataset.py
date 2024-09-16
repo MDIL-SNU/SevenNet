@@ -161,8 +161,6 @@ def processing_dataset(config, working_dir):
     dataset.group_by_key()  # apply labels inside original datapoint
     dataset.unify_dtypes()  # unify dtypes of all data points
 
-    dataset.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
-
     # TODO: I think manual chemical species input is redundant
     chem_in_db = dataset.get_species()
     if config[KEY.CHEMICAL_SPECIES] == 'auto' and not checkpoint_given:
@@ -216,8 +214,6 @@ def processing_dataset(config, working_dir):
             valid_set.augment(dataset_load(file, config))
         valid_set.group_by_key()
         valid_set.unify_dtypes()
-
-        valid_set.toggle_requires_grad_of_data(KEY.EDGE_VEC, True)
 
         # condition: validset labels should be subset of trainset labels
         valid_labels = valid_set.user_labels

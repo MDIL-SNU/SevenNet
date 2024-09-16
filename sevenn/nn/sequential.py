@@ -22,6 +22,7 @@ class AtomGraphSequential(nn.Sequential):
         eval_type_map: perform index mapping using type_map defaults to True
         data_key_atomic_numbers: used when eval_type_map is True
         data_key_node_feature: used when eval_type_map is True
+        data_key_grad: if given, sets its requires grad True before pred
     """
 
     def __init__(
@@ -32,6 +33,7 @@ class AtomGraphSequential(nn.Sequential):
         eval_type_map: bool = True,
         data_key_atomic_numbers: str = KEY.ATOMIC_NUMBERS,
         data_key_node_feature: str = KEY.NODE_FEATURE,
+        data_key_grad: Optional[str] = None,
     ):
         if not isinstance(modules, OrderedDict):
             modules = OrderedDict(modules)
@@ -45,14 +47,15 @@ class AtomGraphSequential(nn.Sequential):
         if self.type_map is None:
             warnings.warn('type_map is not given', UserWarning)
             self.eval_type_map = False
-        elif self.eval_type_map:
+        else:
             z_to_onehot_tensor = torch.neg(torch.ones(120, dtype=torch.long))
             for z, onehot in self.type_map.items():
                 z_to_onehot_tensor[z] = onehot
             self.z_to_onehot_tensor = z_to_onehot_tensor
 
-        self.data_key_atomic_numbers = data_key_atomic_numbers
-        self.data_key_node_feature = data_key_node_feature
+        self.key_atomic_numbers = data_key_atomic_numbers
+        self.key_node_feature = data_key_node_feature
+        self.key_grad = data_key_grad
 
         super().__init__(modules)
 
@@ -99,9 +102,12 @@ class AtomGraphSequential(nn.Sequential):
     def forward(self, input: AtomGraphDataType) -> AtomGraphDataType:
         data = input
         if self.eval_type_map:
-            atomic_numbers = data[self.data_key_atomic_numbers]
+            atomic_numbers = data[self.key_atomic_numbers]
             onehot = self._atomic_numbers_to_onehot(atomic_numbers)
-            data[self.data_key_node_feature] = onehot
+            data[self.key_node_feature] = onehot
+
+        if self.key_grad is not None:
+            data[self.key_grad].requires_grad_(True)
 
         for module in self:
             data = module(data)

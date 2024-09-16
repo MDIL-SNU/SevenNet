@@ -255,7 +255,6 @@ def inference_main(  # TODO: re-write
     try:
         for batch in tqdm(loader):
             batch = batch.to(device, non_blocking=True)
-            batch[KEY.EDGE_VEC].requires_grad_(True)
             output = model(batch)
             output.detach().to('cpu')
             recorder.update(output)
@@ -269,7 +268,6 @@ def inference_main(  # TODO: re-write
         output_list = []
         for batch in tqdm(loader):
             batch = batch.to(device, non_blocking=True)
-            batch[KEY.EDGE_VEC].requires_grad_(True)
             output = model(batch)
             output.detach().to('cpu')
             recorder.update(output)

@@ -25,6 +25,9 @@ class ForceOutput(nn.Module):
         self.key_energy = data_key_energy
         self.key_force = data_key_force
 
+    def get_grad_key(self):
+        return self.key_pos
+
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         pos_tensor = [data[self.key_pos]]
         energy = [(data[self.key_energy]).sum()]
@@ -63,6 +66,9 @@ class ForceStressOutput(nn.Module):
         self.key_stress = data_key_stress
         self.key_cell_volume = data_key_cell_volume
         self._is_batch_data = True
+
+    def get_grad_key(self):
+        return self.key_pos
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         pos_tensor = data[self.key_pos]
@@ -135,9 +141,11 @@ class ForceStressOutputFromEdge(nn.Module):
         self.key_cell_volume = data_key_cell_volume
         self._is_batch_data = True
 
+    def get_grad_key(self):
+        return self.key_edge
+
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         tot_num = torch.sum(data[KEY.NUM_ATOMS])  # ? item?
-        batch = data[KEY.BATCH]  # for deploy, must be defined first
         rij = data[self.key_edge]
         energy = [(data[self.key_energy]).sum()]
         edge_idx = data[self.key_edge_idx]
@@ -180,6 +188,7 @@ class ForceStressOutputFromEdge(nn.Module):
             _s.scatter_reduce_(0, _edge_dst6, _voigt, reduce='sum')
 
             if self._is_batch_data:
+                batch = data[KEY.BATCH]  # for deploy, must be defined first
                 nbatch = int(batch.max().cpu().item()) + 1
                 sout = torch.zeros(
                     (nbatch, 6), dtype=_voigt.dtype, device=_voigt.device

@@ -10,6 +10,8 @@ from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
 import sevenn.util as util
+from sevenn.atom_graph_data import AtomGraphData
+from sevenn.train.dataload import unlabeled_atoms_to_graph
 
 torch_script_type = torch.jit._script.RecursiveScriptModule
 
@@ -76,7 +78,6 @@ class SevenNetCalculator(Calculator):
             self.type_map = config[KEY.TYPE_MAP]
             self.cutoff = config[KEY.CUTOFF]
             self.sevennet_config = config
-            self.grad_key = KEY.EDGE_VEC
         elif file_type == 'torchscript':
             extra_dict = {
                 'chemical_symbols_to_index': b'',
@@ -99,7 +100,6 @@ class SevenNetCalculator(Calculator):
                 for i, sym in enumerate(chem_symbols.split())
             }
             self.cutoff = float(extra_dict['cutoff'].decode('utf-8'))
-            self.grad_key = KEY.POS
         else:
             raise ValueError('Unknown file type')
 
@@ -123,7 +123,9 @@ class SevenNetCalculator(Calculator):
         Calculator.calculate(self, atoms, properties, system_changes)
         if atoms is None:
             raise ValueError('No atoms to evaluate')
-        data = util.unlabeled_atoms_to_input(atoms, self.cutoff, self.grad_key)
+        data = AtomGraphData.from_numpy_dict(
+            unlabeled_atoms_to_graph(atoms, self.cutoff)
+        )
 
         data.to(self.device)  # why PyG uses Union[int, str]?
 

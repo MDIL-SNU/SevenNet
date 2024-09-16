@@ -1,10 +1,8 @@
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, List, Optional, Sequence
 
-import torch
 from ase.atoms import Atoms
 from torch_geometric.loader.dataloader import Collater
 
-import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
 
 from .dataload import atoms_to_graph
@@ -16,8 +14,6 @@ class AtomsToGraphCollater(Collater):
         self,
         dataset: Sequence[Atoms],
         cutoff: float,
-        requires_grad_key: str = KEY.EDGE_VEC,
-        key_x: str = KEY.NODE_FEATURE,
         transfer_info: bool = False,
         follow_batch: Optional[List[str]] = None,
         exclude_keys: Optional[List[str]] = None,
@@ -27,10 +23,8 @@ class AtomsToGraphCollater(Collater):
         super().__init__([], follow_batch, exclude_keys)
         self.dataset = dataset
         self.cutoff = cutoff
-        self.requires_grad_key = requires_grad_key
         self.transfer_info = transfer_info
         self.y_from_calc = y_from_calc
-        self.key_x = key_x
 
     def __call__(self, batch: List[Any]) -> Any:
         # build list of graph
@@ -43,6 +37,5 @@ class AtomsToGraphCollater(Collater):
                 y_from_calc=self.y_from_calc,
             )
             graph = AtomGraphData.from_numpy_dict(graph)
-            # graph[self.requires_grad_key].requires_grad_(True)
             graph_list.append(graph)
         return super().__call__(graph_list)
