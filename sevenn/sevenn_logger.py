@@ -330,4 +330,4 @@ class Logger(metaclass=Singleton):
         num_weights = sum(
             p.numel() for p in model.parameters() if p.requires_grad
         )
-        self.writeline(f'Total number of weight in model is {num_weights}\n')
+        self.writeline(f'# learnable parameters: {num_weights}\n')

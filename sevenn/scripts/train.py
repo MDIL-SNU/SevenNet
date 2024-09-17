@@ -3,7 +3,7 @@ import random
 
 import torch
 import torch.distributed as dist
-import torch.nn
+from torch.nn import Module
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
@@ -12,37 +12,20 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.sevenn_logger import Logger
 from sevenn.train.trainer import Trainer
 
-from .processing_continue import processing_continue
-from .processing_dataset import processing_dataset
 from .processing_epoch import processing_epoch
 
 
-def init_loaders(train, valid, _, config):
+def loader_from_config(config, dataset, is_train=False):
     batch_size = config[KEY.BATCH_SIZE]
-    is_ddp = config[KEY.IS_DDP]
-    if is_ddp:
+    shuffle = is_train and config[KEY.TRAIN_SHUFFLE]
+    sampler = None
+    if config[KEY.IS_DDP]:
         dist.barrier()
-        train_sampler = DistributedSampler(
-            train,
-            num_replicas=dist.get_world_size(),
-            rank=dist.get_rank(),
-            shuffle=config[KEY.TRAIN_SHUFFLE],
+        sampler = DistributedSampler(
+            dataset, dist.get_world_size(), 
+            dist.get_rank(), shuffle=shuffle
         )
-        valid_sampler = DistributedSampler(
-            valid, num_replicas=dist.get_world_size(), rank=dist.get_rank()
-        )
-        train_loader = DataLoader(
-            train, batch_size=batch_size, sampler=train_sampler
-        )
-        valid_loader = DataLoader(
-            valid, batch_size=batch_size, sampler=valid_sampler
-        )
-    else:
-        train_loader = DataLoader(
-            train, batch_size=batch_size, shuffle=config[KEY.TRAIN_SHUFFLE]
-        )
-        valid_loader = DataLoader(valid, batch_size=batch_size)
-    return train_loader, valid_loader, None
+    return DataLoader(dataset, batch_size, shuffle, sampler=sampler)
 
 
 def train_v2(config, working_dir: str):
@@ -50,25 +33,25 @@ def train_v2(config, working_dir: str):
     Main program flow, since v0.9.6
     """
     from sevenn.train.graph_dataset import from_config
-
+    from .processing_continue import processing_continue_v2
     Logger().timer_start('total')
-    seed = config[KEY.RANDOM_SEED]
-    random.seed(seed)
-    torch.manual_seed(seed)
 
     # config updated
+    start_epoch = 1
     state_dicts: Optional[list[dict]] = None
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
-        state_dicts, start_epoch, init_csv = processing_continue(config)
-    else:
-        start_epoch, init_csv = 1, True
+        state_dicts, start_epoch = processing_continue_v2(config)
 
-    datasets: dict = from_config(config)
+    datasets = from_config(config, working_dir)
+    loaders = {
+        k: loader_from_config(config, v, is_train=(k=='dataset'))
+        for k, v in datasets.items()
+    }
 
     Logger().write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
+    assert isinstance(model, Module)
     Logger().print_model_info(model, config)
-    assert isinstance(model, torch.nn.Module)
 
     trainer = Trainer(model, config)
     if state_dicts:
@@ -84,10 +67,9 @@ def train(config, working_dir: str):
     """
     Main program flow, until v0.9.5
     """
+    from .processing_dataset import processing_dataset
+    from .processing_continue import processing_continue
     Logger().timer_start('total')
-    seed = config[KEY.RANDOM_SEED]
-    random.seed(seed)
-    torch.manual_seed(seed)
 
     # config updated
     state_dicts: Optional[list[dict]] = None
@@ -98,12 +80,16 @@ def train(config, working_dir: str):
 
     # config updated
     train, valid, _ = processing_dataset(config, working_dir)
-    datasets: dict = {'train': train, 'valid': valid}
-    loaders = init_loaders(train, valid, _, config)
+    datasets = {'dataset': train, 'validset': valid}
+    loaders = {
+        k: loader_from_config(config, v, is_train=(k == 'dataset'))
+        for k, v in datasets.items()
+    }
+    loaders = list(loaders.values())
 
     Logger().write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
-    assert isinstance(model, torch.nn.Module)
+    assert isinstance(model, Module)
 
     Logger().write('Model building was successful\n')
 

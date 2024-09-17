@@ -11,7 +11,7 @@ def processing_epoch(
     trainer, config, loaders, start_epoch, init_csv, working_dir
 ):
     prefix = f'{os.path.abspath(working_dir)}/'
-    train_loader, valid_loader, test_loader = loaders
+    train_loader, valid_loader = loaders
 
     is_distributed = config[KEY.IS_DDP]
     rank = config[KEY.RANK]

@@ -1,13 +1,16 @@
+import random
 import argparse
 import os
 import sys
 
+import torch
 import torch.distributed as dist
 
 import sevenn._keys as KEY
 from sevenn import __version__
+from sevenn.util import unique_filepath
 from sevenn.parse_input import read_config_yaml
-from sevenn.scripts.train import train
+from sevenn.scripts.train import train, train_v2
 from sevenn.sevenn_logger import Logger
 
 description = (
@@ -43,15 +46,10 @@ def main(args=None):
             backend='nccl', world_size=world_size, rank=rank
         )
     else:
-        local_rank = 0
-        rank = 0
-        world_size = 1
+        local_rank, rank, world_size = 0, 0, 1
 
-    Logger(
-        filename=f'{os.path.abspath(working_dir)}/log.sevenn',
-        screen=screen,
-        rank=rank,
-    )
+    log_fname = unique_filepath(f'{os.path.abspath(working_dir)}/log.sevenn')
+    Logger(filename=log_fname, screen=screen, rank=rank)
     Logger().greeting()
 
     if distributed:
@@ -81,8 +79,13 @@ def main(args=None):
         raise Exception('double precision is not implemented yet')
         # torch.set_default_dtype(torch.double)
 
+    seed = global_config[KEY.RANDOM_SEED]
+    random.seed(seed)
+    torch.manual_seed(seed)
+
     # run train
-    train(global_config, working_dir)
+    #train(global_config, working_dir)
+    train_v2(global_config, working_dir)
 
 
 def cmd_parse_main(args=None):

@@ -170,7 +170,7 @@ def init_data_config(config: Dict):
     if KEY.LOAD_DATASET not in config.keys():
         raise ValueError('load_dataset_path is not given')
 
-    for load_data_key in [KEY.LOAD_DATASET, KEY.LOAD_VALIDSET]:
+    for load_data_key in [KEY.LOAD_DATASET, KEY.LOAD_VALIDSET, KEY.LOAD_TESTSET]:
         if load_data_key in config.keys():
             inp = config[load_data_key]
             extended = []

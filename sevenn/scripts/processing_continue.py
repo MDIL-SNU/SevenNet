@@ -54,6 +54,55 @@ def check_config_compatible(config, config_cp):
     # TODO add conition for changed optim/scheduler but not reset
 
 
+def processing_continue_v2(config):  # simpler
+    continue_dct = config[KEY.CONTINUE]
+    Logger().write('\nContinue found, loading checkpoint\n')
+
+    checkpoint = torch.load(
+        continue_dct[KEY.CHECKPOINT], 
+        map_location='cpu', weights_only=False
+    )
+    model_cp, config_cp = util.model_from_checkpoint(checkpoint)
+    model_state_dict_cp = model_cp.state_dict()
+
+    optimizer_state_dict_cp = (
+        checkpoint['optimizer_state_dict']
+        if not continue_dct[KEY.RESET_OPTIMIZER]
+        else None
+    )
+    scheduler_state_dict_cp = (
+        checkpoint['scheduler_state_dict']
+        if not continue_dct[KEY.RESET_SCHEDULER]
+        else None
+    )
+
+    if not config[KEY.CONTINUE][KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT]:
+        del model_state_dict_cp['rescale_atomic_energy.shift']
+        del model_state_dict_cp['rescale_atomic_energy.scale']
+        for i in range(config_cp[KEY.NUM_CONVOLUTION]):
+            del model_state_dict_cp[f'{i}_convolution.denominator']
+
+    chem_keys = [
+        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES, 
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
+    ]
+    config.update({k: config_cp[k] for k in chem_keys})
+
+    from_epoch = checkpoint['epoch']
+    Logger().write(f'Checkpoint previous epoch was: {from_epoch}\n')
+    epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
+    Logger().write(f'epoch start from {epoch}\n')
+
+    Logger().writeline('checkpoint loading was successful')
+
+    state_dicts = [
+        model_state_dict_cp,
+        optimizer_state_dict_cp,
+        scheduler_state_dict_cp,
+    ]
+    return state_dicts, epoch
+
+
 def processing_continue(config):
     continue_dct = config[KEY.CONTINUE]
     Logger().write('\nContinue found, loading checkpoint\n')
@@ -105,15 +154,12 @@ def processing_continue(config):
         KEY.CONV_DENOMINATOR + '_cp': conv_denominators,
     })
 
-    chem_speices_related = {
-        KEY.TYPE_MAP: config_cp[KEY.TYPE_MAP],
-        KEY.NUM_SPECIES: config_cp[KEY.NUM_SPECIES],
-        KEY.CHEMICAL_SPECIES: config_cp[KEY.CHEMICAL_SPECIES],
-        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER: config_cp[
-            KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
-        ],
-    }
-    config.update(chem_speices_related)
+    chem_keys = [
+        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES, 
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
+    ]
+    config.update({k: config_cp[k] for k in chem_keys})
+
 
     Logger().write(f'checkpoint previous epoch was: {from_epoch}\n')
 

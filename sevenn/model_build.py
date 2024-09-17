@@ -84,6 +84,75 @@ def init_edge_embedding(config):
     )
 
 
+def init_feature_reduce(config, irreps_x):
+    # features per node to scalar per node
+    layers = OrderedDict()
+    if config[KEY.READOUT_AS_FCN] is False:
+        hidden_irreps = Irreps([(irreps_x.dim // 2, (0, 1))])
+        layers.update({
+            'reduce_input_to_hidden': IrrepsLinear(
+                irreps_x,
+                hidden_irreps,
+                data_key_in=KEY.NODE_FEATURE,
+                biases=config[KEY.USE_BIAS_IN_LINEAR],
+            ),
+            'reduce_hidden_to_energy': IrrepsLinear(
+                hidden_irreps,
+                Irreps([(1, (0, 1))]),
+                data_key_in=KEY.NODE_FEATURE,
+                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                biases=config[KEY.USE_BIAS_IN_LINEAR],
+            ),
+        })
+    else:
+        act = _const.ACTIVATION[config[KEY.READOUT_FCN_ACTIVATION]]
+        hidden_neurons = config[KEY.READOUT_FCN_HIDDEN_NEURONS]
+        layers.update({
+            'readout_FCN': FCN_e3nn(
+                dim_out=1,
+                hidden_neurons=hidden_neurons,
+                activation=act,
+                data_key_in=KEY.NODE_FEATURE,
+                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                irreps_in=irreps_x,
+            )
+        })
+    return layers
+
+
+def init_shift_scale(config):
+    shift_scale = (config[KEY.SHIFT], config[KEY.SCALE])
+    rescale_module = None
+    if all([isinstance(s, float) for s in shift_scale]):
+        rescale_module = Rescale
+        shift, scale = shift_scale
+    else:
+        rescale_module = SpeciesWiseRescale
+        # shift, scale should be list[float] with type_map length
+        type_map = config[KEY.TYPE_MAP]
+        patched = []
+        for ss in shift_scale:
+            try:
+                if isinstance(ss, float):
+                    patched.append([ss] * len(type_map))
+                elif len(ss) == _const.NUM_UNIV_ELEMENT:
+                    patched.append([type_map[z] for z in ss if z in type_map])
+                elif len(ss) == len(type_map):
+                    patched.append(ss)
+                else:
+                    raise ValueError()
+            except (KeyError, ValueError, TypeError):
+                raise ValueError(f'I failed converting {ss} into shift scale :(')
+        shift, scale = patched[0], patched[1]
+
+    return rescale_module(
+        shift=shift, scale=scale,
+        data_key_in=KEY.SCALED_ATOMIC_ENERGY,
+        data_key_out=KEY.ATOMIC_ENERGY,
+        train_shift_scale=config[KEY.TRAIN_SHIFT_SCALE],
+    )
+
+
 def _to_parallel_model(layers: OrderedDict, config):
     num_classes = layers['onehot_idx_to_onehot'].num_classes
     one_hot_irreps = Irreps(f'{num_classes}x0e')
@@ -266,26 +335,20 @@ def build_E3_equivariant_model(config: dict, parallel=False):
                 lmax_node = 0
                 parity_mode = 'even'
             irreps_out_tp = util.infer_irreps_out(
-                irreps_x,
-                irreps_filter,
-                lmax_node,
-                parity_mode,
-                fix_multiplicity,
+                irreps_x, irreps_filter, lmax_node,
+                parity_mode, fix_multiplicity,
             )
         else:
             raise ValueError(f'Unknown interaction type: {interaction_type}')
         # TODO: irreps_manual is applicable to both irreps_out_tp and irreps_out
         irreps_out = (
             util.infer_irreps_out(
-                irreps_x,
-                irreps_filter,
-                lmax_node,
-                parity_mode,
-                fix_multiplicity=feature_multiplicity,
+                irreps_x, irreps_filter, lmax_node,
+                parity_mode, fix_multiplicity=feature_multiplicity,
             )
             if irreps_manual is None
             else irreps_manual[t + 1]
-        )  # customizable part
+        )
         param_interaction_block.update({
             'irreps_out_tp': irreps_out_tp,
             'irreps_out': irreps_out,
@@ -293,64 +356,17 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         layers.update(interaction_builder(**param_interaction_block))
         irreps_x = irreps_out
 
-    if config[KEY.READOUT_AS_FCN] is False:
-        mid_dim = (
-            feature_multiplicity
-            if irreps_manual is None
-            else irreps_manual[-1].num_irreps
-        )
-        hidden_irreps = Irreps([(mid_dim // 2, (0, 1))])
-        layers.update({
-            'reduce_input_to_hidden': IrrepsLinear(
-                irreps_x,
-                hidden_irreps,
-                data_key_in=KEY.NODE_FEATURE,
-                biases=use_bias_in_linear,
-            ),
-            'reduce_hidden_to_energy': IrrepsLinear(
-                hidden_irreps,
-                Irreps([(1, (0, 1))]),
-                data_key_in=KEY.NODE_FEATURE,
-                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
-                biases=use_bias_in_linear,
-            ),
-        })
-    else:
-        act = _const.ACTIVATION[config[KEY.READOUT_FCN_ACTIVATION]]
-        hidden_neurons = config[KEY.READOUT_FCN_HIDDEN_NEURONS]
-        layers.update({
-            'readout_FCN': FCN_e3nn(
-                dim_out=1,
-                hidden_neurons=hidden_neurons,
-                activation=act,
-                data_key_in=KEY.NODE_FEATURE,
-                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
-                irreps_in=irreps_x,
-            )
-        })
+    layers.update(init_feature_reduce(config, irreps_x))
 
-    shift = config[KEY.SHIFT]
-    scale = config[KEY.SCALE]
-    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
-    rescale_module = (
-        SpeciesWiseRescale
-        if config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
-        else Rescale
-    )
     layers.update({
-        'rescale_atomic_energy': rescale_module(
-            shift=shift,
-            scale=scale,
-            data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-            data_key_out=KEY.ATOMIC_ENERGY,
-            train_shift_scale=train_shift_scale,
-        ),
+        'rescale_atomic_energy': init_shift_scale(config),
         'reduce_total_enegy': AtomReduce(
             data_key_in=KEY.ATOMIC_ENERGY,
             data_key_out=KEY.PRED_TOTAL_ENERGY,
             constant=1.0,
         ),
     })
+
     gradient_module = ForceStressOutputFromEdge(
         data_key_energy=KEY.PRED_TOTAL_ENERGY,
         data_key_force=KEY.PRED_FORCE,
