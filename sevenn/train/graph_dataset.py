@@ -1,31 +1,53 @@
 import os
 import warnings
-import random
 from collections import Counter
-from typing import List, Dict, Union, Any
+from typing import List, Dict, Union, Any, Optional, Callable
 
 import numpy as np
 import torch
-import torch.utils.data.dataset as torch_dataset
+from torch.utils.data import random_split
+from torch_geometric.data.in_memory_dataset import InMemoryDataset
 from ase.data import chemical_symbols
 
 import sevenn.util as util
 import sevenn._keys as KEY
 import sevenn.train.dataload as dataload
 from sevenn.atom_graph_data import AtomGraphData
+from sevenn._const import NUM_UNIV_ELEMENT
 
 
-"""
-Replacement of sevenn/train/dataset.py
-"""
+# warning from PyG, for later torch versions
+warnings.filterwarnings(
+    'ignore',
+    message="You are using `torch.load` with `weights_only=False`",
+)
+
 
 def _tag_graphs(graph_list: List[AtomGraphData], tag: str):
+    """
+    WIP: To be used
+    """
     for g in graph_list:
         g[KEY.TAG] = tag
     return graph_list
 
 
-class SevenNetGraphDataset(torch_dataset.Dataset):
+def filename2args(pt_filename: str):
+    """
+    Return arg dict of root and processed_name from path to .pt
+    Usage:
+        dataset = SevenNetGraphDataset(
+            **filename2args({path}/processed_7net/dataset.pt)
+        )
+    """
+    processed_dir, basename = os.path.split(pt_filename)
+    return {
+        'root': os.path.dirname(processed_dir),
+        'processed_name': os.path.basename(basename)
+    }
+
+
+class SevenNetGraphDataset(InMemoryDataset):
     """
     Replacement of AtomGraphDataset.
     Holds list of AtomGraphData, python intatnce of .sevenn_data
@@ -34,65 +56,92 @@ class SevenNetGraphDataset(torch_dataset.Dataset):
     Unnecessary attributed such as x_is_one_hot_idx or toggle grad are removed
 
     Args:
-        dataset: List of AtomGraphData to save
+        root: path to save processed PyG dataset
         cutoff: edge cutoff of given AtomGraphData
-        origin_files: auxilary arguments that explain where thy come from
+        files: list of filenames to load dataset, extxyz, structure_list, .sevenn_data
+        process_num_cores: # of cpu cores to build graph
+        processed_name: combined with root, will be saved as .pt file. Ends with .pt
+        ... some InMemoryDataset callables
+        force_reload: if True, ...
+        **process_kwargs: keyword arguments that will be passed into ase.io.read
     """
 
     def __init__(
         self,
-        dataset: List[AtomGraphData],
         cutoff: float,
-        origin_files: List[str] = [],
+        root: Optional[str] = None,
+        files: Optional[Union[str, List[str]]] = None,
+        process_num_cores: int = 1,
+        processed_name: str = 'graph.pt',
+        transform: Optional[Callable] = None,
+        pre_transform: Optional[Callable] = None,
+        pre_filter: Optional[Callable] = None,
+        log: bool = True,
+        force_reload: bool = False,
+        **process_kwargs,
     ):
         self.cutoff = cutoff
-        self.dataset = dataset
-        self.origin_files = origin_files
+        cutoff_given = cutoff
+        if files is None:
+            files = []
+        elif isinstance(files, str):
+            files = [files]  # user convenience
+        self._files = files
+        if not processed_name.endswith('.pt'):
+            processed_name += '.pt'
+        self._processed_name = processed_name
+        self.process_num_cores = process_num_cores
+        self.process_kwargs = process_kwargs
+
+        super().__init__(
+            root, transform, pre_transform, pre_filter, 
+            log=log, force_reload=force_reload
+        )  # file saved at this moment
+        self.load(self.processed_paths[0])
+
+        if self.cutoff != cutoff_given:
+            warnings.warn(
+                f'!!!This dataset has built with different cutoff: {self.cutoff}!!!',
+                UserWarning
+            )
+
         self.tag_map = {}
         self.statistics = {}
         self.finalized = False
         self.is_shuffled = False
         self._scanned = False
 
-    def __len__(self):
-        return len(self.dataset)
+    @property
+    def raw_file_names(self) -> List[str]:
+        return self._files
 
-    def __getitem__(self, index):
-        return self.dataset[index]
-    
-    def __contains__(self, item):
-        return item in self.dataset
+    @property
+    def processed_file_names(self) -> List[str]:
+        return [self._processed_name]
 
-    def __iter__(self):
-        return iter(self.dataset)
+    @property
+    def processed_dir(self) -> str:
+        return os.path.join(self.root, 'processed_7net')
 
-    def __add__(self, _):
-        raise NotImplementedError("Please use .augment instead")
 
-    def augment(self, other):
-        assert isinstance(other, SevenNetGraphDataset)
-        self._scanned = False
-        self.finalized = False
-        if self.cutoff != other.cutoff:
-            warnings.warn('Augmenting dataset with different cutoff', UserWarning)
-        self.dataset.extend(other.dataset)
-        self.origin_files.extend(other.origin_files)
-
-    def split(self, ratio: float):
-        assert ratio < 1.0
-        random.shuffle(self.dataset)
-        self.is_shuffled = True
-        n_valid = int(len(self) * ratio)
-        n_train = len(self) - n_valid
-        train_list = self.dataset[0: n_train]
-        valid_list = self.dataset[n_train:]
-        train_set = SevenNetGraphDataset(
-            train_list, self.cutoff, self.origin_files
-        )
-        valid_set = SevenNetGraphDataset(
-            valid_list, self.cutoff, self.origin_files
-        )
-        return train_set, valid_set
+    def process(self):
+        graph_list: list[AtomGraphData] = []
+        for file in self.raw_file_names:
+            graph_list.extend(
+                SevenNetGraphDataset._file_to_graph_list(
+                    filename=file,
+                    cutoff=self.cutoff,
+                    num_cores=self.process_num_cores,
+                    **self.process_kwargs,
+                )
+            )
+        for data in graph_list:
+            if self.pre_filter is not None and not self.pre_filter(data):
+                continue
+            if self.pre_transform is not None:
+                data = self.pre_transform(data)
+        
+        self.save(graph_list, self.processed_paths[0])
 
     @property
     def species(self):
@@ -126,7 +175,7 @@ class SevenNetGraphDataset(torch_dataset.Dataset):
         coef_reduced = (  
             Ridge(alpha=0.1, fit_intercept=False).fit(c_reduced, y).coef_
         )
-        full_coeff = np.zeros(120)
+        full_coeff = np.zeros(NUM_UNIV_ELEMENT)
         full_coeff[~zero_indices] = coef_reduced
         return full_coeff
 
@@ -165,12 +214,13 @@ class SevenNetGraphDataset(torch_dataset.Dataset):
         """
         n_neigh = []
         natoms_counter = Counter()
-        composition = torch.zeros((len(self), 120))
+        composition = torch.zeros((len(self), NUM_UNIV_ELEMENT))
         stats: Dict[str, Dict[str, Any]] = {y: {'_array': []} for y in y_keys}
 
-        for i, graph in enumerate(self.dataset):
-            natoms_counter.update(graph[KEY.ATOMIC_NUMBERS].tolist())
-            composition[i] = torch.bincount(graph[KEY.ATOMIC_NUMBERS], minlength=120)
+        for i, graph in enumerate(self):
+            z_tensor = graph[KEY.ATOMIC_NUMBERS]
+            natoms_counter.update(z_tensor.tolist())
+            composition[i] = torch.bincount(z_tensor, minlength=NUM_UNIV_ELEMENT)
             n_neigh.append(
                 torch.unique(graph[KEY.EDGE_IDX][0], return_counts=True)[1]
             )
@@ -202,129 +252,117 @@ class SevenNetGraphDataset(torch_dataset.Dataset):
         self._scanned = True
 
     @staticmethod
-    def _from_sevenn_data(filename: str):
+    def _read_sevenn_data(filename: str) -> tuple[list[AtomGraphData], float]:
+        # backward compatibility
         from sevenn.train.dataset import AtomGraphDataset
         dataset = torch.load(filename, map_location='cpu', weights_only=False)
         if isinstance(dataset, AtomGraphDataset):
-            # backward compatibility
             graph_list = []
             for _, graphs in dataset.dataset.items():
                 # TODO: transfer label to tag (who gonna need this?)
                 graph_list.extend(graphs)
-            return SevenNetGraphDataset(
-                dataset=graph_list, 
-                cutoff=dataset.cutoff, 
-                origin_files=[filename],
-            )
-        elif isinstance(dataset, SevenNetGraphDataset):
-            return dataset
+            return graph_list, dataset.cutoff
         else:
             raise ValueError(f'Not sevenn_data type: {type(dataset)}')
 
     @staticmethod
-    def _from_structure_list(filename: str, cutoff: float, num_cores: int = 1):
+    def _read_structure_list(
+        filename: str, 
+        cutoff: float, 
+        num_cores: int = 1
+    ) -> list[AtomGraphData]:
         datadct = dataload.structure_list_reader(filename)
         graph_list = []
         for tag, atoms_list in datadct.items():
             tmp = dataload.graph_build(atoms_list, cutoff, num_cores)
             graph_list.extend(_tag_graphs(tmp, tag))
-        return SevenNetGraphDataset(graph_list, cutoff, [filename])
+        return graph_list
 
     @staticmethod
-    def _from_ase_readable(
+    def _read_ase_readable(
         filename: str, 
         cutoff: float, 
         num_cores: int = 1, 
         tag: str = '', 
         **ase_kwargs
-    ):
+    ) -> list[AtomGraphData]:
         atoms_list = dataload.ase_reader(filename, **ase_kwargs)
         graph_list = dataload.graph_build(atoms_list, cutoff, num_cores)
         if tag != '':
             graph_list = _tag_graphs(graph_list, tag)
-        return SevenNetGraphDataset(graph_list, cutoff, [filename])
+        return graph_list
 
     @staticmethod
-    def from_file(filename: str, cutoff: float, num_cores: int = 1, **ase_kwargs):
+    def _file_to_graph_list(filename: str, cutoff: float, num_cores: int = 1, **kwargs):
+        """
+        kwargs: if file is ase readable, passed to ase.io.read
+        """
         if not os.path.isfile(filename):
             raise ValueError(f"No such file: {filename}")
+        graph_list: list[AtomGraphData]
         if filename.endswith('.sevenn_data'):
-            return SevenNetGraphDataset._from_sevenn_data(filename)
+            graph_list, cutoff_other = SevenNetGraphDataset._read_sevenn_data(filename)
+            if cutoff_other != cutoff:
+                warnings.warn(
+                    f'Given {filename} has different {cutoff_other}!', UserWarning
+                )
+            cutoff = cutoff_other
         elif 'structure_list' in filename:
-            return SevenNetGraphDataset._from_structure_list(
+            graph_list = SevenNetGraphDataset._read_structure_list(
                 filename, cutoff, num_cores
             )
         else:
-            return SevenNetGraphDataset._from_ase_readable(
-                filename, cutoff, num_cores, **ase_kwargs
+            graph_list = SevenNetGraphDataset._read_ase_readable(
+                filename, cutoff, num_cores, **kwargs
             )
-
-    @staticmethod
-    def from_files(
-        files: Union[str, List[str]], 
-        cutoff: float, 
-        num_cores: int = 1, 
-        **kwargs
-    ):
-        if isinstance(files, str):
-            files = [files]
-        dataset = SevenNetGraphDataset([], cutoff)
-        for file in files:
-            dataset.augment(
-                SevenNetGraphDataset.from_file(
-                    filename=file, 
-                    cutoff=cutoff, 
-                    num_cores=num_cores, 
-                    **kwargs
-                )
-            )
-        ## post
-        return dataset
-
+        return graph_list
 
 # script, return dict of SevenNetGraphDataset
-def from_config(config):
+def from_config(
+    config: dict[str, Any],
+    working_dir: str = os.getcwd(),
+    dataset_keys: list[str] = [
+        KEY.LOAD_DATASET,
+        KEY.LOAD_VALIDSET,
+        KEY.LOAD_TESTSET,
+    ]
+):
     from sevenn.sevenn_logger import Logger
+    if KEY.LOAD_DATASET not in dataset_keys:
+        raise ValueError('KEY.LOAD_DATASET must be given as training set')
 
     # initialize arguments for loading dataset
-    load_dataset = config[KEY.LOAD_DATASET]
-    common = {
+    dataset_args = {
         'cutoff': config[KEY.CUTOFF],
-        'num_cores': config[KEY.PREPROCESS_NUM_CORES],
+        'root': working_dir,
+        'process_num_cores': config[KEY.PREPROCESS_NUM_CORES],
         **config[KEY.DATA_FORMAT_ARGS]
     }
-    dataset_splits = {}
 
-    # load train, valid, and test (if given)
-    train_set = SevenNetGraphDataset.from_files(load_dataset, **common)
-    if load_validset := config[KEY.LOAD_VALIDSET]:
-        valid_set = SevenNetGraphDataset.from_files(load_validset, **common)
-    else:
-        train_set, valid_set = train_set.split(config[KEY.RATIO])
-    dataset_splits.update({'train': train_set, 'valid': valid_set})
+    datasets = {}
+    for dk in dataset_keys:
+        if not (paths := config[dk]):
+            continue
+        name = dk.split('_')[1].strip()
+        if len(paths) == 1 \
+        and 'processed_7net' in paths[0] \
+        and paths[0].endswith('.pt'):
+            dataset_args.update(filename2args(paths[0]))
+        else:
+            dataset_args.update({'files': paths, 'processed_name': name})
+        datasets[name] = SevenNetGraphDataset(**dataset_args)
 
-    if load_testset := config[KEY.LOAD_TESTSET]:
-        test_set = SevenNetGraphDataset.from_files(load_testset, **common)
-        dataset_splits.update({'test': test_set})
-
-    if save_dataset := config[KEY.SAVE_DATASET]:
-        dirname = os.path.dirname(save_dataset)
-        if not os.path.isdir(dirname):
-            os.makedirs(dirname)
-        for name, dataset in dataset_splits.items():
-            fpath = os.path.join(dirname, f'{name}.sevenn_data')
-            fpath = util.unique_filepath(fpath)
-            torch.save(dataset, fpath)
-            Logger().writeline(f'Saved: {fpath}')
+    train_set = datasets['dataset']
 
     # print statistics of each dataset
-    for name, dataset in dataset_splits.items():
+    for name, dataset in datasets.items():
         dataset.run_stat()
         Logger().bar()
-        Logger().writeline(f'{name} statistics')
+        Logger().writeline(f'{name} distribution:')
         Logger().statistic_write(dataset.statistics)
-        Logger().format_k_v('# atoms', dataset.natoms, write=True)
-        Logger().format_k_v('# structures', len(dataset), write=True)
+        Logger().format_k_v('# atoms (node)', dataset.natoms, write=True)
+        Logger().format_k_v('# structures (graph)', len(dataset), write=True)
+    Logger().bar()
 
     # retrieve shift, scale, conv_denominaotrs from user input (keyword)
     init_from_stats = [KEY.SHIFT, KEY.SCALE, KEY.CONV_DENOMINATOR]
@@ -337,11 +375,19 @@ def from_config(config):
         # either: continue training or manually given from yaml
 
     # initialize known species from dataset if 'auto'
-    # sorted as aphabetical order (same as before)
+    # sorted to aphabetical order (which is same as before)
     chem_keys = [KEY.CHEMICAL_SPECIES, KEY.NUM_SPECIES, KEY.TYPE_MAP]
-    if all([ck == 'auto' for ck in chem_keys]):  # see parse_input.py
-        Logger().writeline('Known species are derived from train set')
+    if all([config[ck] == 'auto' for ck in chem_keys]):  # see parse_input.py
+        Logger().writeline('Known species are obtained from the dataset')
         chem_species = sorted(train_set.species)
         config.update(util.chemical_species_preprocess(chem_species))
 
-    return dataset_splits
+    if 'validset' not in dataset_keys:
+        Logger().writeline('As validset is not given, I use random split')
+        Logger().writeline('Note that statistics computed BEFORE the random split!')
+        ratio = float(config[KEY.RATIO])
+        train, valid = random_split(datasets['dataset'], (1.0 - ratio, ratio))
+        datasets['dataset'] = train
+        datasets['validset'] = valid
+
+    return datasets

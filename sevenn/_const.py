@@ -7,6 +7,8 @@ import torch
 import sevenn._keys as KEY
 from sevenn.nn.activation import ShiftedSoftPlus
 
+NUM_UNIV_ELEMENT = 120
+
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of parallel model
