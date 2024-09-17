@@ -284,6 +284,12 @@ def processing_dataset(config, working_dir):
     _, _ = train_set.separate_info()
     _, _ = valid_set.separate_info()
 
+    if train_set.x_is_one_hot_idx is False:
+        train_set.x_to_one_hot_idx(config[KEY.TYPE_MAP])
+        print(train_set.x_is_one_hot_idx)
+    if valid_set.x_is_one_hot_idx is False:
+        valid_set.x_to_one_hot_idx(config[KEY.TYPE_MAP])
+
     Logger().write(Logger.format_k_v('training_set size', train_set.len()))
     Logger().write(Logger.format_k_v('validation_set size', valid_set.len()))
 

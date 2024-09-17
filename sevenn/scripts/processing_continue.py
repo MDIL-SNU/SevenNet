@@ -140,9 +140,9 @@ def processing_continue(config):
         )
     Logger().writeline('checkpoint loading was successful')
 
-    state_dicts = (
+    state_dicts = [
         model_state_dict_cp,
         optimizer_state_dict_cp,
         scheduler_state_dict_cp,
-    )
+    ]
     return state_dicts, start_epoch, init_csv

@@ -102,8 +102,12 @@ class Logger(metaclass=Singleton):
     def statistic_write(self, statistic: Dict[str, Dict]):
         content = ''
         for label, dct in statistic.items():
+            if label.startswith('_'):
+                continue
             dct_new = {}
             for k, v in dct.items():
+                if k.startswith('_'):
+                    continue
                 dct_new[k] = f'{v:.3f}'
             content += self.format_k_v(label, dct_new)
         self.write(content)

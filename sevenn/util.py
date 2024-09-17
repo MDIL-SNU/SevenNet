@@ -1,3 +1,4 @@
+import os
 import warnings
 from typing import Any, Dict, List, Tuple, Union
 
@@ -323,3 +324,21 @@ def pretrained_name_to_path(name: str) -> str:
         raise ValueError('Not a valid potential')
 
     return checkpoint_path
+
+
+def unique_filepath(filepath: str) -> str:
+    if not os.path.isfile(filepath):
+        return filepath
+    else:
+        dirname = os.path.dirname(filepath)
+        fname = os.path.basename(filepath)
+        name, ext = os.path.splitext(fname)
+        cnt = 0
+        new_name = f'{name}{cnt}{ext}'
+        new_path = os.path.join(dirname, new_name)
+        while os.path.exists(new_path):
+            cnt += 1
+            new_name = f'{name}{cnt}{ext}'
+            new_path = os.path.join(dirname, new_name)
+        return new_path
+

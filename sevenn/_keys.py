@@ -67,8 +67,10 @@ SCALED_STRESS: Final[str] = 'scaled_stress'
 NUM_ATOMS: Final[str] = 'num_atoms'  # int
 NUM_GHOSTS: Final[str] = 'num_ghosts'
 NLOCAL: Final[str] = 'nlocal'  # only for lammps parallel, must be on cpu
-USER_LABEL: Final[str] = 'user_label'
+USER_LABEL: Final[str] = 'user_label'  # Deprecated from v0.9.6
 BATCH: Final[str] = 'batch'
+
+TAG = 'tag'  # replace USER_LABEL
 
 # etc
 SELF_CONNECTION_TEMP: Final[str] = 'self_cont_tmp'
@@ -76,20 +78,21 @@ BATCH_SIZE: Final[str] = 'batch_size'
 INFO: Final[str] = 'data_info'
 
 # something special
-LABEL_NONE: Final[str] = 'No_label'
+LABEL_NONE: Final[str] = 'No_label'  # Deprecated from v0.9.6
 
 # ==================================================#
 # ~~~~~~ KEY for train/data configuration ~~~~~~~~ #
 # ==================================================#
 PREPROCESS_NUM_CORES = 'preprocess_num_cores'
 SAVE_DATASET = 'save_dataset_path'
-SAVE_BY_LABEL = 'save_by_label'
+SAVE_BY_LABEL = 'save_by_label'  # Deprecated from v0.9.6
 SAVE_BY_TRAIN_VALID = 'save_by_train_valid'
 DATA_FORMAT = 'data_format'
 DATA_FORMAT_ARGS = 'data_format_args'
 STRUCTURE_LIST = 'structure_list'
 LOAD_DATASET = 'load_dataset_path'
 LOAD_VALIDSET = 'load_validset_path'
+LOAD_TESTSET = 'load_testset_path'
 FORMAT_OUTPUTS = 'format_outputs_for_ase'
 
 RANDOM_SEED = 'random_seed'

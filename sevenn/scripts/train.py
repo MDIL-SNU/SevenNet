@@ -1,3 +1,4 @@
+from typing import Optional
 import random
 
 import torch
@@ -44,10 +45,44 @@ def init_loaders(train, valid, _, config):
     return train_loader, valid_loader, None
 
 
-# TODO: E3_equivariant model assumed
+def train_v2(config, working_dir: str):
+    """
+    Main program flow, since v0.9.6
+    """
+    from sevenn.train.graph_dataset import from_config
+
+    Logger().timer_start('total')
+    seed = config[KEY.RANDOM_SEED]
+    random.seed(seed)
+    torch.manual_seed(seed)
+
+    # config updated
+    state_dicts: Optional[list[dict]] = None
+    if config[KEY.CONTINUE][KEY.CHECKPOINT]:
+        state_dicts, start_epoch, init_csv = processing_continue(config)
+    else:
+        start_epoch, init_csv = 1, True
+
+    datasets: dict = from_config(config)
+
+    Logger().write('\nModel building...\n')
+    model = build_E3_equivariant_model(config)
+    Logger().print_model_info(model, config)
+    assert isinstance(model, torch.nn.Module)
+
+    trainer = Trainer(model, config)
+    if state_dicts:
+        trainer.load_state_dicts(*state_dicts, strict=False)
+
+    processing_epoch(
+        trainer, config, loaders, start_epoch, init_csv, working_dir
+    )
+    Logger().timer_end('total', message='Total wall time')
+
+
 def train(config, working_dir: str):
     """
-    Main program flow
+    Main program flow, until v0.9.5
     """
     Logger().timer_start('total')
     seed = config[KEY.RANDOM_SEED]
@@ -55,14 +90,15 @@ def train(config, working_dir: str):
     torch.manual_seed(seed)
 
     # config updated
-    if config[KEY.CONTINUE][KEY.CHECKPOINT] is not False:
+    state_dicts: Optional[list[dict]] = None
+    if config[KEY.CONTINUE][KEY.CHECKPOINT]:
         state_dicts, start_epoch, init_csv = processing_continue(config)
     else:
-        state_dicts, start_epoch, init_csv = None, 1, True
+        start_epoch, init_csv = 1, True
 
     # config updated
-    # Note that continue and dataset cannot be separated completely
     train, valid, _ = processing_dataset(config, working_dir)
+    datasets: dict = {'train': train, 'valid': valid}
     loaders = init_loaders(train, valid, _, config)
 
     Logger().write('\nModel building...\n')
@@ -72,12 +108,10 @@ def train(config, working_dir: str):
     Logger().write('Model building was successful\n')
 
     trainer = Trainer(model, config)
-    if state_dicts is not None:
-        assert isinstance(state_dicts, tuple)
+    if state_dicts:
         trainer.load_state_dicts(*state_dicts, strict=False)
 
     Logger().print_model_info(model, config)
-    # log_model_info(model, config)
 
     Logger().write('Trainer initialized, ready to training\n')
     Logger().bar()
