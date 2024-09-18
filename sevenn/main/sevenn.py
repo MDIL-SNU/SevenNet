@@ -21,7 +21,7 @@ description = (
 input_yaml_help = 'input.yaml for training'
 mode_help = 'main training script to run. Default is train.'
 working_dir_help = 'Path to write outputs. Default is cwd.'
-log_help = 'Name of logfile. Default is log.sevenn. It never not overwrite.'
+log_help = 'Name of logfile. Default is log.sevenn. It never overwrite.'
 screen_help = 'Print log to stdout'
 distributed_help = 'Set this flag to enable DDP training.'
 

@@ -6,8 +6,8 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import numpy as np
 import torch
 from ase.data import chemical_symbols
-# from torch.utils.data import random_split
 from torch_geometric.data.in_memory_dataset import InMemoryDataset
+from tqdm import tqdm
 
 import sevenn._keys as KEY
 import sevenn.train.dataload as dataload
@@ -206,7 +206,9 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     def run_stat(
         self,
-        y_keys: List[str] = [KEY.ENERGY, KEY.PER_ATOM_ENERGY, KEY.FORCE, KEY.STRESS]
+        y_keys: List[str] = [
+            KEY.ENERGY, KEY.PER_ATOM_ENERGY, KEY.FORCE, KEY.STRESS
+        ]
     ):
         """
         Loop over dataset and init any statistics might need
@@ -216,7 +218,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         composition = torch.zeros((len(self), NUM_UNIV_ELEMENT))
         stats: Dict[str, Dict[str, Any]] = {y: {'_array': []} for y in y_keys}
 
-        for i, graph in enumerate(self):
+        for i, graph in tqdm(enumerate(self), desc='run_stat', total=len(self)):
             z_tensor = graph[KEY.ATOMIC_NUMBERS]
             natoms_counter.update(z_tensor.tolist())
             composition[i] = torch.bincount(z_tensor, minlength=NUM_UNIV_ELEMENT)

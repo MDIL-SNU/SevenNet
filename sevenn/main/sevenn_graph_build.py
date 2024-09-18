@@ -1,10 +1,13 @@
 import argparse
+import glob
 import os
+import sys
 from datetime import datetime
 
 import sevenn.scripts.graph_build as graph_build
 from sevenn import __version__
 from sevenn.sevenn_logger import Logger
+from sevenn.util import unique_filepath
 
 description = (
     f'sevenn version={__version__}, sevenn_graph_build.\n'
@@ -12,62 +15,72 @@ description = (
     ' structure_list).\n'
 )
 
-source_help = 'source data to build graph'
-label_by_help = 'label the output dataset with the given string.'
+source_help = 'source data to build graph, knows *'
 cutoff_help = 'cutoff radius of edges in Angstrom'
-suffix_help = 'when source is dir, suffix of the files.'
-copy_info_help = 'copy ase.Atoms.info to output dataset'
-format_help = (
-    'type of the source, default is structure_list. '
-    + 'Otherwise, it is directly passed to ase.io.read'
-)
+log_help = 'Name of logfile. Default is graph_build_log. It never overwrite.'
+legacy_help = 'build legacy .sevenn_data'
 
 
 def main(args=None):
-    metadata = {}
-    now = datetime.now().strftime('%Y-%m-%d')
-    (
-        source,
-        cutoff,
-        num_cores,
-        label_by,
-        out,
-        save_by_label,
-        fmt,
-        suffix,
-        copy_info,
-        fmt_kwargs,
-    ) = cmd_parse_data(args)
+    args = cmd_parse_data(args)
+    source = glob.glob(args.source)
+    cutoff = args.cutoff
+    num_cores = args.num_cores
+    filename = args.filename
+    log = args.log
+    out = os.path.dirname(args.out)
+    legacy = args.legacy
+    print_statistics = not args.skip_statistics
+    fmt_kwargs = {}
+    if args.kwargs:
+        for kwarg in args.kwargs:
+            k, v = kwarg.split('=')
+            fmt_kwargs[k] = v
+
+    if len(source) == 0:
+        print('Source has zero len, nothing to read')
+        sys.exit(0)
+
+    to_be_written = os.path.join(out, 'processed_7net', filename)
+    if os.path.isfile(to_be_written):
+        print(f'File already exist: {to_be_written}')
+        sys.exit(0)
+
     metadata = {
         'sevenn_version': __version__,
-        'when': now,
+        'when': datetime.now().strftime('%Y-%m-%d'),
         'cutoff': cutoff,
     }
-    with Logger(filename='graph_build_log', screen=True) as logger:
-        logger.writeline(description)
-        if not os.path.exists(source):
-            raise ValueError(f'source {source} does not exist')
 
-        graph_build.build_script(
-            source,
-            cutoff,
-            num_cores,
-            label_by,
-            out,
-            save_by_label,
-            fmt,
-            suffix,
-            copy_info,
-            metadata,
-            **fmt_kwargs,
-        )
+    log_fname = unique_filepath(f'{out}/{log}')
+    with Logger(filename=log_fname, screen=True) as logger:
+        logger.writeline(description)
+
+        if not legacy:
+            graph_build.build_sevennet_graph_dataset(
+                source, cutoff, num_cores,
+                out, filename, metadata,
+                print_statistics, **fmt_kwargs
+            )
+        else:
+            graph_build.build_script(  # build .sevenn_data
+                source, cutoff, num_cores, out, metadata, **fmt_kwargs,
+            )
 
 
 def cmd_parse_data(args=None):
     ag = argparse.ArgumentParser(description=description)
 
-    ag.add_argument('source', help=source_help, type=str)
-    ag.add_argument('cutoff', help=cutoff_help, type=float)
+    ag.add_argument(
+        'source',
+        help=source_help,
+        type=str
+    )
+    ag.add_argument(
+        'cutoff',
+        help=cutoff_help,
+        type=float
+    )
     ag.add_argument(
         '-n',
         '--num_cores',
@@ -76,34 +89,36 @@ def cmd_parse_data(args=None):
         type=int,
     )
     ag.add_argument(
-        '-l', '--label_by', help=label_by_help, default='auto', type=str
-    )
-    ag.add_argument(
-        '-f', '--format', help=format_help, type=str, default='structure_list'
-    )
-    ag.add_argument('-s', '--suffix', help=suffix_help, type=str, default=None)
-    ag.add_argument(
-        '-nc',
-        '--no_copy_info',
-        help=copy_info_help,
-        action='store_true',
-        default=False,
+        '-l',
+        '--log',
+        default='graph_build_log',
+        help=log_help,
+        type=str,
     )
     ag.add_argument(
         '-o',
         '--out',
-        help='path to write outputs',
+        help='Path to write outputs.',
         type=str,
         default='./',
     )
     ag.add_argument(
-        '-sb',
-        '--save_by_label',
-        help=(
-            'if source is structure_list, separate the output dataset by label'
-        ),
+        '-f',
+        '--filename',
+        help='Name of dataset, default is graph.pt',
+        type=str,
+        default='graph.pt',
+    )
+    ag.add_argument(
+        '-ss',
+        '--skip_statistics',
+        help='Skip running & printing statistics',
         action='store_true',
-        default=False,
+    )
+    ag.add_argument(
+        '--legacy',
+        help=legacy_help,
+        action='store_true',
     )
     ag.add_argument(
         '--kwargs',
@@ -112,31 +127,4 @@ def cmd_parse_data(args=None):
     )
 
     args = ag.parse_args()
-    source = args.source
-    cutoff = args.cutoff
-    num_cores = args.num_cores
-    label_by = args.label_by
-    out = args.out
-    fmt = args.format
-    suffix = args.suffix
-    save_by_label = args.save_by_label
-    copy_info = not args.no_copy_info
-
-    fmt_kwargs = {}
-    if args.kwargs:
-        for kwarg in args.kwargs:
-            k, v = kwarg.split('=')
-            fmt_kwargs[k] = v
-
-    return (
-        source,
-        cutoff,
-        num_cores,
-        label_by,
-        out,
-        save_by_label,
-        fmt,
-        suffix,
-        copy_info,
-        fmt_kwargs,
-    )
+    return args
