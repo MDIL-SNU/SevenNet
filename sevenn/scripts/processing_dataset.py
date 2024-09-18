@@ -305,9 +305,5 @@ def processing_dataset(config, working_dir):
     })
 
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
-    if config[KEY.DATA_SHUFFLE]:
-        log.write('Shuffle the train data\n')
-        for data_list in data_lists:
-            random.shuffle(data_list)
 
     return data_lists

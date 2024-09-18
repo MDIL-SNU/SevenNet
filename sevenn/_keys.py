@@ -78,19 +78,19 @@ BATCH_SIZE: Final[str] = 'batch_size'
 INFO: Final[str] = 'data_info'
 
 # something special
-LABEL_NONE: Final[str] = 'No_label'  # Deprecated from v0.9.6
+LABEL_NONE: Final[str] = 'No_label'
 
 # ==================================================#
 # ~~~~~~ KEY for train/data configuration ~~~~~~~~ #
 # ==================================================#
 PREPROCESS_NUM_CORES = 'preprocess_num_cores'
 SAVE_DATASET = 'save_dataset_path'
-SAVE_BY_LABEL = 'save_by_label'  # Deprecated from v0.9.6
+SAVE_BY_LABEL = 'save_by_label'
 SAVE_BY_TRAIN_VALID = 'save_by_train_valid'
 DATA_FORMAT = 'data_format'
 DATA_FORMAT_ARGS = 'data_format_args'
 STRUCTURE_LIST = 'structure_list'
-LOAD_DATASET = 'load_dataset_path'
+LOAD_DATASET = 'load_dataset_path'  # not used in v2
 LOAD_TRAINSET = 'load_trainset_path'
 LOAD_VALIDSET = 'load_validset_path'
 LOAD_TESTSET = 'load_testset_path'
@@ -111,10 +111,8 @@ STRESS_WEIGHT = 'stress_loss_weight'
 DEVICE = 'device'
 DTYPE = 'dtype'
 
-DATA_SHUFFLE = 'data_shuffle'
 TRAIN_SHUFFLE = 'train_shuffle'
 
-IS_TRACE_STRESS = '_is_trace_stress'
 IS_TRAIN_STRESS = 'is_train_stress'
 
 CONTINUE = 'continue'
@@ -197,12 +195,3 @@ TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 _NORMALIZE_SPH = '_normalize_sph'
 OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
-
-# deprecated
-DRAW_PARITY = 'draw_parity'
-MODEL_CHECK_POINT = 'model_check_point'
-DEPLOY_MODEL = 'deploy_model'
-SAVE_DATA_PICKLE = 'save_data_pickle'
-SKIP_OUTPUT_UNTIL = 'skip_output_until'
-DRAW_LC = 'draw_learning_curve'
-OUTPUT_PER_EPOCH = 'output_per_epoch'
