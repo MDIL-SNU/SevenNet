@@ -360,6 +360,8 @@ def from_config(
         else:
             dataset_args.update({'files': paths, 'processed_name': name})
         datasets[name] = SevenNetGraphDataset(**dataset_args)
+        log.writeline(f'{name} is saved or loaded here: '
+                      f'{datasets[name].processed_paths[0]}')
 
     train_set = datasets['trainset']
 
@@ -388,7 +390,8 @@ def from_config(
         input = config[k]  # statistic key or numbers
         if isinstance(input, str) and hasattr(train_set, input):
             var = getattr(train_set, input)
-            if len(var) > 1:  # element-wise var, use type_map to convert Z to node
+            # meaning var is element-wise. use type_map to convert Z to node
+            if not isinstance(var, float) and len(var) > 1:
                 var = [type_map[z] for z in var if z in type_map]
             config.update({k: var})
             log.writeline(f'{k} is obtained from statistics')

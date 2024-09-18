@@ -59,7 +59,7 @@ def main(args=None):
             suffix,
             copy_info,
             metadata,
-            fmt_kwargs,
+            **fmt_kwargs,
         )
 
 
