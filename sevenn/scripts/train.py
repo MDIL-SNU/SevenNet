@@ -36,8 +36,10 @@ def train_v2(config, working_dir: str):
     log.timer_start('total')
 
     if KEY.LOAD_TRAINSET not in config and KEY.LOAD_DATASET in config:
+        log.writeline('***************************************************')
         log.writeline('For train_v2, please use load_trainset_path instead')
         log.writeline('I will assign load_trainset as load_dataset')
+        log.writeline('***************************************************')
         config[KEY.LOAD_TRAINSET] = config.pop(KEY.LOAD_DATASET)
 
     # config updated
