@@ -147,8 +147,6 @@ def init_shift_scale(config):
 
     return rescale_module(
         shift=shift, scale=scale,
-        data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-        data_key_out=KEY.ATOMIC_ENERGY,
         train_shift_scale=config[KEY.TRAIN_SHIFT_SCALE],
     )
 
@@ -335,7 +333,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
                 lmax_node = 0
                 parity_mode = 'even'
             irreps_out_tp = util.infer_irreps_out(
-                irreps_x, irreps_filter, lmax_node,
+                irreps_x, irreps_filter, lmax_node,  # type: ignore
                 parity_mode, fix_multiplicity,
             )
         else:
@@ -343,7 +341,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         # TODO: irreps_manual is applicable to both irreps_out_tp and irreps_out
         irreps_out = (
             util.infer_irreps_out(
-                irreps_x, irreps_filter, lmax_node,
+                irreps_x, irreps_filter, lmax_node,  # type: ignore
                 parity_mode, fix_multiplicity=feature_multiplicity,
             )
             if irreps_manual is None
@@ -363,15 +361,10 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         'reduce_total_enegy': AtomReduce(
             data_key_in=KEY.ATOMIC_ENERGY,
             data_key_out=KEY.PRED_TOTAL_ENERGY,
-            constant=1.0,
         ),
     })
 
-    gradient_module = ForceStressOutputFromEdge(
-        data_key_energy=KEY.PRED_TOTAL_ENERGY,
-        data_key_force=KEY.PRED_FORCE,
-        data_key_stress=KEY.PRED_STRESS,
-    )
+    gradient_module = ForceStressOutputFromEdge()
     grad_key = gradient_module.get_grad_key()
     layers.update({'force_output': gradient_module})
 
