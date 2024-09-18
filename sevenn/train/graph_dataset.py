@@ -1,25 +1,24 @@
 import os
 import warnings
 from collections import Counter
-from typing import List, Dict, Union, Any, Optional, Callable
+from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import torch
+from ase.data import chemical_symbols
 from torch.utils.data import random_split
 from torch_geometric.data.in_memory_dataset import InMemoryDataset
-from ase.data import chemical_symbols
 
-import sevenn.util as util
 import sevenn._keys as KEY
 import sevenn.train.dataload as dataload
-from sevenn.atom_graph_data import AtomGraphData
+import sevenn.util as util
 from sevenn._const import NUM_UNIV_ELEMENT
-
+from sevenn.atom_graph_data import AtomGraphData
 
 # warning from PyG, for later torch versions
 warnings.filterwarnings(
     'ignore',
-    message="You are using `torch.load` with `weights_only=False`",
+    message='You are using `torch.load` with `weights_only=False`',
 )
 
 
@@ -56,13 +55,14 @@ class SevenNetGraphDataset(InMemoryDataset):
     Unnecessary attributed such as x_is_one_hot_idx or toggle grad are removed
 
     Args:
-        root: path to save processed PyG dataset
+        root: path to save/load processed PyG dataset
         cutoff: edge cutoff of given AtomGraphData
-        files: list of filenames to load dataset, extxyz, structure_list, .sevenn_data
+        files: list of filenames, extxyz, structure_list, .sevenn_data
         process_num_cores: # of cpu cores to build graph
-        processed_name: combined with root, will be saved as .pt file. Ends with .pt
+        processed_name: name of .pt file to be saved in {root}/processed_7net
         ... some InMemoryDataset callables
-        force_reload: if True, ...
+        force_reload: if True, reload dataset from files even if there exist
+                      {root}/processed_7net/{processed_name}
         **process_kwargs: keyword arguments that will be passed into ase.io.read
     """
 
@@ -94,7 +94,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         self.process_kwargs = process_kwargs
 
         super().__init__(
-            root, transform, pre_transform, pre_filter, 
+            root, transform, pre_transform, pre_filter,
             log=log, force_reload=force_reload
         )  # file saved at this moment
         self.load(self.processed_paths[0])
@@ -123,7 +123,6 @@ class SevenNetGraphDataset(InMemoryDataset):
     def processed_dir(self) -> str:
         return os.path.join(self.root, 'processed_7net')
 
-
     def process(self):
         graph_list: list[AtomGraphData] = []
         for file in self.raw_file_names:
@@ -140,7 +139,7 @@ class SevenNetGraphDataset(InMemoryDataset):
                 continue
             if self.pre_transform is not None:
                 data = self.pre_transform(data)
-        
+
         self.save(graph_list, self.processed_paths[0])
 
     @property
@@ -148,7 +147,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         if not self._scanned:
             self.run_stat()
         return [z for z in self.statistics['_natoms'].keys() if z != 'total']
-    
+
     @property
     def natoms(self):
         if not self._scanned:
@@ -172,7 +171,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         c_reduced = c[:, ~zero_indices]
         # will not 100% reproduce, as it is sorted by Z
         # train/dataset.py was sorted by alphabets of chemical species
-        coef_reduced = (  
+        coef_reduced = (
             Ridge(alpha=0.1, fit_intercept=False).fit(c_reduced, y).coef_
         )
         full_coeff = np.zeros(NUM_UNIV_ELEMENT)
@@ -206,7 +205,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         return self.avg_num_neigh ** 0.5
 
     def run_stat(
-        self, 
+        self,
         y_keys: List[str] = [KEY.ENERGY, KEY.PER_ATOM_ENERGY, KEY.FORCE, KEY.STRESS]
     ):
         """
@@ -267,8 +266,8 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     @staticmethod
     def _read_structure_list(
-        filename: str, 
-        cutoff: float, 
+        filename: str,
+        cutoff: float,
         num_cores: int = 1
     ) -> list[AtomGraphData]:
         datadct = dataload.structure_list_reader(filename)
@@ -280,10 +279,10 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     @staticmethod
     def _read_ase_readable(
-        filename: str, 
-        cutoff: float, 
-        num_cores: int = 1, 
-        tag: str = '', 
+        filename: str,
+        cutoff: float,
+        num_cores: int = 1,
+        tag: str = '',
         **ase_kwargs
     ) -> list[AtomGraphData]:
         atoms_list = dataload.ase_reader(filename, **ase_kwargs)
@@ -293,15 +292,21 @@ class SevenNetGraphDataset(InMemoryDataset):
         return graph_list
 
     @staticmethod
-    def _file_to_graph_list(filename: str, cutoff: float, num_cores: int = 1, **kwargs):
+    def _file_to_graph_list(
+        filename: str,
+        cutoff: float,
+        num_cores: int = 1,
+        **kwargs
+    ):
         """
         kwargs: if file is ase readable, passed to ase.io.read
         """
         if not os.path.isfile(filename):
-            raise ValueError(f"No such file: {filename}")
+            raise ValueError(f'No such file: {filename}')
         graph_list: list[AtomGraphData]
         if filename.endswith('.sevenn_data'):
-            graph_list, cutoff_other = SevenNetGraphDataset._read_sevenn_data(filename)
+            graph_list, cutoff_other =\
+                SevenNetGraphDataset._read_sevenn_data(filename)
             if cutoff_other != cutoff:
                 warnings.warn(
                     f'Given {filename} has different {cutoff_other}!', UserWarning
@@ -316,6 +321,7 @@ class SevenNetGraphDataset(InMemoryDataset):
                 filename, cutoff, num_cores, **kwargs
             )
         return graph_list
+
 
 # script, return dict of SevenNetGraphDataset
 def from_config(
@@ -344,9 +350,9 @@ def from_config(
         if not (paths := config[dk]):
             continue
         name = dk.split('_')[1].strip()
-        if len(paths) == 1 \
-        and 'processed_7net' in paths[0] \
-        and paths[0].endswith('.pt'):
+        if (len(paths) == 1
+           and 'processed_7net' in paths[0]
+           and paths[0].endswith('.pt')):
             dataset_args.update(filename2args(paths[0]))
         else:
             dataset_args.update({'files': paths, 'processed_name': name})
@@ -375,7 +381,7 @@ def from_config(
         # either: continue training or manually given from yaml
 
     # initialize known species from dataset if 'auto'
-    # sorted to aphabetical order (which is same as before)
+    # sorted to alphabetical order (which is same as before)
     chem_keys = [KEY.CHEMICAL_SPECIES, KEY.NUM_SPECIES, KEY.TYPE_MAP]
     if all([config[ck] == 'auto' for ck in chem_keys]):  # see parse_input.py
         Logger().writeline('Known species are obtained from the dataset')
