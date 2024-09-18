@@ -1,17 +1,18 @@
-import random
 import argparse
 import os
+import random
 import sys
+import time
 
 import torch
 import torch.distributed as dist
 
 import sevenn._keys as KEY
 from sevenn import __version__
-from sevenn.util import unique_filepath
 from sevenn.parse_input import read_config_yaml
 from sevenn.scripts.train import train, train_v2
 from sevenn.sevenn_logger import Logger
+from sevenn.util import unique_filepath
 
 description = (
     f'sevenn version={__version__}, train model based on the input.yaml'
@@ -22,9 +23,10 @@ working_dir_help = 'path to write output. Default is cwd.'
 screen_help = 'print log to stdout'
 distributed_help = 'set this flag if it is distributed training'
 
-# TODO: do something for model type (it is not printed on log)
+# Metainfo will be saved to checkpoint
 global_config = {
     'version': __version__,
+    'when': time.ctime(),
     KEY.MODEL_TYPE: 'E3_equivariant_model',
 }
 
@@ -48,44 +50,45 @@ def main(args=None):
     else:
         local_rank, rank, world_size = 0, 0, 1
 
-    log_fname = unique_filepath(f'{os.path.abspath(working_dir)}/log.sevenn')
-    Logger(filename=log_fname, screen=screen, rank=rank)
-    Logger().greeting()
+    log_fname = f'{os.path.abspath(working_dir)}/log.sevenn'
+    with Logger(filename=log_fname, screen=screen, rank=rank) as logger:
+        logger.greeting()
 
-    if distributed:
-        Logger().writeline(
-            f'Distributed training enabled, total world size is {world_size}'
-        )
+        if distributed:
+            logger.writeline(
+                f'Distributed training enabled, total world size is {world_size}'
+            )
 
-    try:
-        model_config, train_config, data_config = read_config_yaml(input_yaml)
-    except Exception as e:
-        Logger().error(e)
-        sys.exit(1)
+        try:
+            model_config, train_config, data_config = read_config_yaml(input_yaml)
+        except Exception as e:
+            logger.writeline('Failed to parsing input.yaml')
+            logger.error(e)
+            sys.exit(1)
 
-    train_config[KEY.IS_DDP] = distributed
-    train_config[KEY.LOCAL_RANK] = local_rank
-    train_config[KEY.RANK] = rank
-    train_config[KEY.WORLD_SIZE] = world_size
+        train_config[KEY.IS_DDP] = distributed
+        train_config[KEY.LOCAL_RANK] = local_rank
+        train_config[KEY.RANK] = rank
+        train_config[KEY.WORLD_SIZE] = world_size
 
-    Logger().print_config(model_config, data_config, train_config)
-    # don't have to distinguish configs inside program
-    global_config.update(model_config)
-    global_config.update(train_config)
-    global_config.update(data_config)
+        logger.print_config(model_config, data_config, train_config)
+        # don't have to distinguish configs inside program
+        global_config.update(model_config)
+        global_config.update(train_config)
+        global_config.update(data_config)
 
-    # Not implemented
-    if global_config[KEY.DTYPE] == 'double':
-        raise Exception('double precision is not implemented yet')
-        # torch.set_default_dtype(torch.double)
+        # Not implemented
+        if global_config[KEY.DTYPE] == 'double':
+            raise Exception('double precision is not implemented yet')
+            # torch.set_default_dtype(torch.double)
 
-    seed = global_config[KEY.RANDOM_SEED]
-    random.seed(seed)
-    torch.manual_seed(seed)
+        seed = global_config[KEY.RANDOM_SEED]
+        random.seed(seed)
+        torch.manual_seed(seed)
 
-    # run train
-    #train(global_config, working_dir)
-    train_v2(global_config, working_dir)
+        # run train
+        # train(global_config, working_dir)
+        train_v2(global_config, working_dir)
 
 
 def cmd_parse_main(args=None):

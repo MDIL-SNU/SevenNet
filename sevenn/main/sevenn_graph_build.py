@@ -43,24 +43,24 @@ def main(args=None):
         'when': now,
         'cutoff': cutoff,
     }
-    Logger('graph_build_log', screen=True)
-    Logger().writeline(description)
-    if not os.path.exists(source):
-        raise ValueError(f'source {source} does not exist')
+    with Logger(filename='graph_build_log', screen=True) as logger:
+        logger.writeline(description)
+        if not os.path.exists(source):
+            raise ValueError(f'source {source} does not exist')
 
-    graph_build.build_script(
-        source,
-        cutoff,
-        num_cores,
-        label_by,
-        out,
-        save_by_label,
-        fmt,
-        suffix,
-        copy_info,
-        metadata,
-        fmt_kwargs,
-    )
+        graph_build.build_script(
+            source,
+            cutoff,
+            num_cores,
+            label_by,
+            out,
+            save_by_label,
+            fmt,
+            suffix,
+            copy_info,
+            metadata,
+            fmt_kwargs,
+        )
 
 
 def cmd_parse_data(args=None):
