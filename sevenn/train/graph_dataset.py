@@ -6,7 +6,7 @@ from typing import Any, Callable, Dict, List, Optional, Union
 import numpy as np
 import torch
 from ase.data import chemical_symbols
-from torch.utils.data import random_split
+# from torch.utils.data import random_split
 from torch_geometric.data.in_memory_dataset import InMemoryDataset
 
 import sevenn._keys as KEY
@@ -257,7 +257,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         dataset = torch.load(filename, map_location='cpu', weights_only=False)
         if isinstance(dataset, AtomGraphDataset):
             graph_list = []
-            for _, graphs in dataset.dataset.items():
+            for _, graphs in dataset.dataset.items():  # type: ignore
                 # TODO: transfer label to tag (who gonna need this?)
                 graph_list.extend(graphs)
             return graph_list, dataset.cutoff
@@ -327,15 +327,17 @@ class SevenNetGraphDataset(InMemoryDataset):
 def from_config(
     config: dict[str, Any],
     working_dir: str = os.getcwd(),
-    dataset_keys: list[str] = [
-        KEY.LOAD_DATASET,
-        KEY.LOAD_VALIDSET,
-        KEY.LOAD_TESTSET,
-    ]
+    dataset_keys: Optional[list[str]] = None,
 ):
     from sevenn.sevenn_logger import Logger
-    if KEY.LOAD_DATASET not in dataset_keys:
-        raise ValueError('KEY.LOAD_DATASET must be given as training set')
+    if dataset_keys is None:
+        dataset_keys = []
+        for k in config:
+            if k.startswith('load_') and k.endswith('_path'):
+                dataset_keys.append(k)
+
+    if KEY.LOAD_TRAINSET not in dataset_keys:
+        raise ValueError(f'{KEY.LOAD_TRAINSET} must be present in config')
 
     # initialize arguments for loading dataset
     dataset_args = {
@@ -358,7 +360,7 @@ def from_config(
             dataset_args.update({'files': paths, 'processed_name': name})
         datasets[name] = SevenNetGraphDataset(**dataset_args)
 
-    train_set = datasets['dataset']
+    train_set = datasets['trainset']
 
     # print statistics of each dataset
     for name, dataset in datasets.items():
@@ -388,6 +390,7 @@ def from_config(
         chem_species = sorted(train_set.species)
         config.update(util.chemical_species_preprocess(chem_species))
 
+    """
     if 'validset' not in dataset_keys:
         Logger().writeline('As validset is not given, I use random split')
         Logger().writeline('Note that statistics computed BEFORE the random split!')
@@ -395,5 +398,6 @@ def from_config(
         train, valid = random_split(datasets['dataset'], (1.0 - ratio, ratio))
         datasets['dataset'] = train
         datasets['validset'] = valid
+    """
 
     return datasets

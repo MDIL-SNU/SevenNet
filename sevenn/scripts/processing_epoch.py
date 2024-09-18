@@ -15,7 +15,7 @@ def processing_epoch_v2(
     trainer: Trainer,
     loaders: dict,  # dict[str, Dataset]
     start_epoch: int = 1,
-    train_loader_key: str = 'dataset',
+    train_loader_key: str = 'trainset',
     error_recorder: Optional[ErrorRecorder] = None,
     total_epoch: Optional[int] = None,
     per_epoch: Optional[int] = None,
@@ -39,7 +39,7 @@ def processing_epoch_v2(
     if best_metric_loader_key in recorders:
         best_key = recorders[best_metric_loader_key].get_key_str(best_metric)
     if best_key is None:
-        Logger().write(
+        Logger().writeline(
             f'Failed to get error recorder key from: {best_metric} and '
             + f'{best_metric_loader_key}. Best checkpoint will not saved'
         )

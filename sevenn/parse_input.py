@@ -168,10 +168,12 @@ def init_data_config(config: Dict):
     data_meta = {}
     # defaults = _const.data_defaults(config)
 
-    if KEY.LOAD_DATASET not in config.keys():
-        raise ValueError('load_dataset_path is not given')
+    load_data_keys = []
+    for k in config:
+        if k.startswith('load_') and k.endswith('_path'):
+            load_data_keys.append(k)
 
-    for load_data_key in [KEY.LOAD_DATASET, KEY.LOAD_VALIDSET, KEY.LOAD_TESTSET]:
+    for load_data_key in load_data_keys:
         if load_data_key in config.keys():
             inp = config[load_data_key]
             extended = []

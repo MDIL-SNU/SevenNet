@@ -34,6 +34,11 @@ def train_v2(config, working_dir: str):
     from .processing_epoch import processing_epoch_v2
     Logger().timer_start('total')
 
+    if KEY.LOAD_TRAINSET not in config and KEY.LOAD_DATASET in config:
+        Logger().writeline('For train_v2, please use load_trainset_path instead')
+        Logger().writeline('I will assign load_trainset as load_dataset')
+        config[KEY.LOAD_TRAINSET] = config.pop(KEY.LOAD_DATASET)
+
     # config updated
     start_epoch = 1
     state_dicts: Optional[list[dict]] = None
@@ -42,7 +47,7 @@ def train_v2(config, working_dir: str):
 
     datasets = from_config(config, working_dir)
     loaders = {
-        k: loader_from_config(config, v, is_train=(k == 'dataset'))
+        k: loader_from_config(config, v, is_train=(k == 'trainset'))
         for k, v in datasets.items()
     }
 
