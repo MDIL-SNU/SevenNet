@@ -1,7 +1,8 @@
 import os
+import time
 import traceback
 from datetime import datetime
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from ase.data import atomic_numbers
 
@@ -28,37 +29,52 @@ class Logger(metaclass=Singleton):
 
     def __init__(
         self,
-        filename: str = 'log.sevenn',
+        filename: Optional[str] = 'log.sevenn',
         screen: bool = False,
         rank: int = 0
     ):
         self.rank = rank
+        self._filename = filename
         if rank == 0:
-            self.logfile = open(filename, 'w', buffering=1)
+            if filename is not None:
+                self.logfile = open(filename, 'a', buffering=1)
             self.files = {}
             self.screen = screen
         else:
             self.logfile = None
             self.screen = False
         self.timer_dct = {}
-        # self.logfile = open(filename, 'w', buffering=1)
-        # self.screen = screen
-        # self.timer_dct = {}
+        self.active = True
 
-    def __del__(self):
-        if self.logfile is not None:
-            self.logfile.close()
-        for f in self.files.values():
-            f.close()
+    def __enter__(self):
+        if self.logfile is None and self._filename is not None:
+            try:
+                self.logfile = open(self._filename, 'a', buffering=1)
+            except IOError as e:
+                print(f'Failed to re-open log file {self._filename}: {e}')
+                self.logfile = None
+            self.files = {}
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        try:
+            if self.logfile is not None:
+                self.logfile.close()
+                self.logfile = None
+            for f in self.files.values():
+                f.close()
+        except IOError as e:
+            print(f'Failed to close log files: {e}')
+        finally:
+            self.logfile = None
+            self.files = {}
 
     def write(self, content: str):
         # no newline!
-        if self.logfile is not None:
+        if self.logfile is not None and self.active:
             self.logfile.write(content)
-            if self.screen:
-                print(content, end='')
-        else:
-            pass
+        if self.screen and self.active:
+            print(content, end='')
 
     def writeline(self, content: str):
         content = content + '\n'
@@ -139,31 +155,8 @@ class Logger(metaclass=Singleton):
             content += '\n'
         self.write(content)
 
-    @staticmethod
-    def write_table(dct):
-        keys = list(dct.keys())
-        values = [f'{dct[key]:.6f}' for key in keys]
-
-        # Calculate padding
-        padding = [max(len(k), len(v)) + 2 for k, v in zip(keys, values)]
-
-        # Create the key and value rows
-        key_row = '|'.join(key.center(pad) for key, pad in zip(keys, padding))
-        value_row = '|'.join(
-            value.rjust(pad) for value, pad in zip(values, padding)
-        )
-
-        # Create separator
-        separator = '-' * sum(padding) + '-' * (len(padding) - 1)
-
-        # Print the table
-        Logger().writeline(key_row)
-        Logger().writeline(separator)
-        Logger().writeline(value_row)
-        Logger().writeline(separator)
-
-    @staticmethod
     def write_full_table(
+        self,
         dict_list: List[Dict],
         row_labels: List[str],
         decimal_places: int = 6,
@@ -200,18 +193,17 @@ class Logger(metaclass=Singleton):
         )
 
         # Print header and separator
-        Logger().writeline(header)
-        Logger().writeline(separator)
+        self.writeline(header)
+        self.writeline(separator)
 
         # Print the data rows with row labels
         for row_label, row in zip(row_labels, formatted_values):
             data_row = ' '.join(
                 value.rjust(pad) for value, pad in zip(row, max_col_lengths)
             )
-            Logger().writeline(f'{row_label.ljust(label_len)}{data_row}')
+            self.writeline(f'{row_label.ljust(label_len)}{data_row}')
 
-    @staticmethod
-    def format_k_v(key: Any, val: Any, write: bool = False):
+    def format_k_v(self, key: Any, val: Any, write: bool = False):
         """
         key and val should be str convertible
         """
@@ -243,15 +235,15 @@ class Logger(metaclass=Singleton):
         if write is False:
             return content
         else:
-            Logger().write(content)
+            self.write(content)
             return ''
 
     def greeting(self):
         LOGO_ASCII_FILE = f'{os.path.dirname(__file__)}/logo_ascii'
         with open(LOGO_ASCII_FILE, 'r') as logo_f:
             logo_ascii = logo_f.read()
-        content = 'SEVENN: Scalable EquVariance-Enabled Neural Network\n'
-        content += f'sevenn version {__version__}\n'
+        content = 'SevenNet: Scalable EquVariance-Enabled Neural Network\n'
+        content += f'version {__version__}, {time.ctime()}\n'
         content += 'reading yaml config...'
         self.write(content)
         self.write(logo_ascii)
@@ -273,13 +265,13 @@ class Logger(metaclass=Singleton):
             'successfully read yaml config!\n\n' + 'from model configuration\n'
         )
         for k, v in model_config.items():
-            content += Logger.format_k_v(k, str(v))
+            content += self.format_k_v(k, str(v))
         content += '\nfrom train configuration\n'
         for k, v in train_config.items():
-            content += Logger.format_k_v(k, str(v))
+            content += self.format_k_v(k, str(v))
         content += '\nfrom data configuration\n'
         for k, v in data_config.items():
-            content += Logger.format_k_v(k, str(v))
+            content += self.format_k_v(k, str(v))
         self.write(content)
 
     # TODO: This is not good make own exception
