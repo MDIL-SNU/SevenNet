@@ -50,13 +50,7 @@ class SevenNetCalculator(Calculator):
         if file_type not in ['checkpoint', 'torchscript']:
             raise ValueError('file_type should be checkpoint or torchscript')
 
-        if not isinstance(device, torch.device) and not isinstance(
-            device, str
-        ):
-            raise ValueError(
-                'device must be an instance of torch.device or str.'
-            )
-        if isinstance(device, str):
+        if isinstance(device, str):  # TODO: do we really need this?
             if device == 'auto':
                 self.device = torch.device(
                     'cuda' if torch.cuda.is_available() else 'cpu'
@@ -127,12 +121,14 @@ class SevenNetCalculator(Calculator):
             unlabeled_atoms_to_graph(atoms, self.cutoff)
         )
 
-        data.to(self.device)  # why PyG uses Union[int, str]?
+        data.to(self.device)  # type: ignore
 
         if isinstance(self.model, torch_script_type):
             data[KEY.NODE_FEATURE] = torch.LongTensor(
                 [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
             )
+            data[KEY.POS].requires_grad_(True)  # backward compatibility
+            data[KEY.EDGE_VEC].requires_grad_(True)  # backward compatibility
             data = data.to_dict()
             del data['data_info']
 
