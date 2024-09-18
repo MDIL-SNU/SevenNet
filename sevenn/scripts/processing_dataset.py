@@ -148,7 +148,7 @@ def handle_shift_scale(config, train_set, checkpoint_given):
 def processing_dataset(config, working_dir):
     log = Logger()
     prefix = f'{os.path.abspath(working_dir)}/'
-    is_stress = config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS]
+    is_stress = config[KEY.IS_TRAIN_STRESS]
     checkpoint_given = config[KEY.CONTINUE][KEY.CHECKPOINT] is not False
     cutoff = config[KEY.CUTOFF]
 

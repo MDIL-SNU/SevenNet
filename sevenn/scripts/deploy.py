@@ -21,8 +21,6 @@ def deploy(model_state_dct, config, fname):
     """
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
-    config[KEY.IS_TRACE_STRESS] = True
-    config[KEY.IS_TRAIN_STRESS] = True
     model = build_E3_equivariant_model(config)
     assert isinstance(model, torch.nn.Module)
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
