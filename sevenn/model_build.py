@@ -125,25 +125,9 @@ def init_shift_scale(config):
     rescale_module = None
     if all([isinstance(s, float) for s in shift_scale]):
         rescale_module = Rescale
-        shift, scale = shift_scale
     else:
         rescale_module = SpeciesWiseRescale
-        # shift, scale should be list[float] with type_map length
-        type_map = config[KEY.TYPE_MAP]
-        patched = []
-        for ss in shift_scale:
-            try:
-                if isinstance(ss, float):
-                    patched.append([ss] * len(type_map))
-                elif len(ss) == _const.NUM_UNIV_ELEMENT:
-                    patched.append([type_map[z] for z in ss if z in type_map])
-                elif len(ss) == len(type_map):
-                    patched.append(ss)
-                else:
-                    raise ValueError()
-            except (KeyError, ValueError, TypeError):
-                raise ValueError(f'I failed converting {ss} into shift scale :(')
-        shift, scale = patched[0], patched[1]
+    shift, scale = shift_scale
 
     return rescale_module(
         shift=shift, scale=scale,
