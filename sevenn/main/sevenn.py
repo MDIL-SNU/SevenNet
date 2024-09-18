@@ -19,9 +19,11 @@ description = (
 )
 
 input_yaml_help = 'input.yaml for training'
-working_dir_help = 'path to write output. Default is cwd.'
-screen_help = 'print log to stdout'
-distributed_help = 'set this flag if it is distributed training'
+mode_help = 'main training script to run. Default is train.'
+working_dir_help = 'Path to write outputs. Default is cwd.'
+log_help = 'Name of logfile. Default is log.sevenn. It never not overwrite.'
+screen_help = 'Print log to stdout'
+distributed_help = 'Set this flag to enable DDP training.'
 
 # Metainfo will be saved to checkpoint
 global_config = {
@@ -35,10 +37,18 @@ def main(args=None):
     """
     main function of sevenn
     """
-    input_yaml, working_dir, screen, distributed = cmd_parse_main(args)
+    args = cmd_parse_main(args)
+    input_yaml = args.input_yaml
+    mode = args.mode
+    working_dir = args.working_dir
+    log = args.log
+    screen = args.screen
+    distributed = args.distributed
 
     if working_dir is None:
         working_dir = os.getcwd()
+    elif not os.path.isdir(working_dir):
+        os.makedirs(working_dir, exist_ok=True)
 
     if distributed:
         local_rank = int(os.environ['LOCAL_RANK'])
@@ -50,7 +60,7 @@ def main(args=None):
     else:
         local_rank, rank, world_size = 0, 0, 1
 
-    log_fname = f'{os.path.abspath(working_dir)}/log.sevenn'
+    log_fname = unique_filepath(f'{os.path.abspath(working_dir)}/{log}')
     with Logger(filename=log_fname, screen=screen, rank=rank) as logger:
         logger.greeting()
 
@@ -87,13 +97,23 @@ def main(args=None):
         torch.manual_seed(seed)
 
         # run train
-        # train(global_config, working_dir)
-        train_v2(global_config, working_dir)
+        if mode == 'train':
+            train(global_config, working_dir)
+        elif mode == 'train_v2':
+            train_v2(global_config, working_dir)
 
 
 def cmd_parse_main(args=None):
     ag = argparse.ArgumentParser(description=description)
     ag.add_argument('input_yaml', help=input_yaml_help, type=str)
+    ag.add_argument(
+        '-m',
+        '--mode',
+        choices=['train', 'train_v2'],
+        default='train',
+        help=mode_help,
+        type=str,
+    )
     ag.add_argument(
         '-w',
         '--working_dir',
@@ -102,15 +122,27 @@ def cmd_parse_main(args=None):
         help=working_dir_help,
         type=str,
     )
-    ag.add_argument('-s', '--screen', help=screen_help, action='store_true')
     ag.add_argument(
-        '-d', '--distributed', help=distributed_help, action='store_true'
+        '-l',
+        '--log',
+        default='log.sevenn',
+        help=log_help,
+        type=str,
+    )
+    ag.add_argument(
+        '-s',
+        '--screen',
+        help=screen_help,
+        action='store_true'
+    )
+    ag.add_argument(
+        '-d',
+        '--distributed',
+        help=distributed_help,
+        action='store_true'
     )
 
-    args = ag.parse_args()
-    input_yaml = args.input_yaml
-    wd = args.working_dir
-    return input_yaml, wd, args.screen, args.distributed
+    return ag.parse_args()
 
 
 if __name__ == '__main__':

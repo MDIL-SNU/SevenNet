@@ -29,7 +29,7 @@ class Logger(metaclass=Singleton):
 
     def __init__(
         self,
-        filename: Optional[str] = 'log.sevenn',
+        filename: Optional[str] = None,
         screen: bool = False,
         rank: int = 0
     ):
@@ -81,6 +81,9 @@ class Logger(metaclass=Singleton):
         self.write(content)
 
     def init_csv(self, filename: str, header: list):
+        """
+        Deprecated
+        """
         if self.rank == 0:
             self.files[filename] = open(filename, 'w', buffering=1)
             self.files[filename].write(','.join(header) + '\n')
@@ -88,6 +91,9 @@ class Logger(metaclass=Singleton):
             pass
 
     def append_csv(self, filename: str, content: list, decimal: int = 6):
+        """
+        Deprecated
+        """
         if self.rank == 0:
             if filename not in self.files:
                 self.files[filename] = open(filename, 'a', buffering=1)
@@ -244,6 +250,7 @@ class Logger(metaclass=Singleton):
             logo_ascii = logo_f.read()
         content = 'SevenNet: Scalable EquVariance-Enabled Neural Network\n'
         content += f'version {__version__}, {time.ctime()}\n'
+        content += f'this file: {self._filename}\n'
         content += 'reading yaml config...'
         self.write(content)
         self.write(logo_ascii)

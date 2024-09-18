@@ -1,10 +1,90 @@
 import os
+from copy import deepcopy
+from typing import Optional
 
 import torch
 
 import sevenn._keys as KEY
 from sevenn.error_recorder import ErrorRecorder
 from sevenn.sevenn_logger import Logger
+from sevenn.train.trainer import Trainer
+
+
+def processing_epoch_v2(
+    config: dict,
+    trainer: Trainer,
+    loaders: dict,  # dict[str, Dataset]
+    start_epoch: int = 1,
+    train_loader_key: str = 'dataset',
+    error_recorder: Optional[ErrorRecorder] = None,
+    total_epoch: Optional[int] = None,
+    per_epoch: Optional[int] = None,
+    best_metric_loader_key: str = 'validset',
+    best_metric: Optional[str] = None,
+    write_csv: bool = True,
+    working_dir: Optional[str] = None,
+):
+    from sevenn.util import unique_filepath
+    working_dir = working_dir or os.getcwd()
+    prefix = f'{os.path.abspath(working_dir)}/'
+
+    total_epoch = total_epoch or config[KEY.EPOCH]
+    per_epoch = per_epoch or config[KEY.PER_EPOCH]
+    best_metric = best_metric or config[KEY.BEST_METRIC]
+    recorder = error_recorder or ErrorRecorder.from_config(config)
+    recorders = {k: deepcopy(recorder) for k in loaders}
+
+    best_val = float('inf')
+    best_key = None
+    if best_metric_loader_key in recorders:
+        best_key = recorders[best_metric_loader_key].get_key_str(best_metric)
+    if best_key is None:
+        Logger().write(
+            f'Failed to get error recorder key from: {best_metric} and '
+            + f'{best_metric_loader_key}. Best checkpoint will not saved'
+        )
+
+    csv_path = unique_filepath(f'{prefix}/lc.csv')
+    if write_csv:
+        head = ['epoch', 'lr']
+        for k, rec in recorders.items():
+            head.extend(list(rec.get_dct(prefix=k)))
+        with open(csv_path, 'w') as f:
+            f.write(','.join(head) + '\n')
+
+    for epoch in range(start_epoch, total_epoch + 1):  # one indexing
+        Logger().timer_start('epoch')
+        lr = trainer.get_lr()
+        Logger().bar()
+        Logger().write(f'Epoch {epoch}/{total_epoch}  lr: {lr:8f}\n')
+        Logger().bar()
+
+        csv_dct = {'epoch': str(epoch), 'lr': f'{lr:8f}'}
+        errors = {}
+        for k, loader in loaders.items():
+            rec = recorders[k]
+            trainer.run_one_epoch(loader, k == train_loader_key, rec)
+            csv_dct.update(rec.get_dct(prefix=k))
+            errors[k] = rec.epoch_forward()
+        Logger().write_full_table(list(errors.values()), list(errors))
+        trainer.scheduler_step(best_val)
+
+        if write_csv:
+            with open(csv_path, 'a') as f:
+                f.write(','.join(list(csv_dct.values())) + '\n')
+
+        if best_key and errors[best_metric_loader_key][best_key] < best_val:
+            path = f'{prefix}/checkpoint_best.pth'
+            trainer.write_checkpoint(path, config=config, epoch=epoch)
+            best_val = errors[best_metric_loader_key][best_key]
+            Logger().writeline('Best checkpoint written')
+
+        if epoch % per_epoch == 0:
+            path = f'{prefix}/checkpoint_{epoch}.pth'
+            trainer.write_checkpoint(path, config=config, epoch=epoch)
+
+        Logger().timer_end('epoch', message=f'Epoch {epoch} elapsed')
+    return trainer
 
 
 def processing_epoch(
@@ -20,8 +100,8 @@ def processing_epoch(
     train_recorder = ErrorRecorder.from_config(config)
     valid_recorder = ErrorRecorder.from_config(config)
     best_metric = config[KEY.BEST_METRIC]
-    csv_fname = config[KEY.CSV_LOG]
-    current_best = 99999
+    csv_fname = f'{prefix}{config[KEY.CSV_LOG]}'
+    current_best = float('inf')
 
     if init_csv:
         csv_header = ['Epoch', 'Learning_rate']

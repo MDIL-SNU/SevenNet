@@ -99,6 +99,13 @@ class Trainer:
             'scheduler_state_dict': self.scheduler.state_dict(),
         }
 
+    def write_checkpoint(self, path: str, **extra):
+        if self.distributed and self.rank != 0:
+            return
+        cp = self.get_checkpoint_dict()
+        cp.update(**extra)
+        torch.save(cp, path)
+
     def load_state_dicts(
         self,
         model_state_dict: Dict,

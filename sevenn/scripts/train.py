@@ -1,7 +1,5 @@
 from typing import Optional
-import random
 
-import torch
 import torch.distributed as dist
 from torch.nn import Module
 from torch.utils.data.distributed import DistributedSampler
@@ -12,8 +10,6 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.sevenn_logger import Logger
 from sevenn.train.trainer import Trainer
 
-from .processing_epoch import processing_epoch
-
 
 def loader_from_config(config, dataset, is_train=False):
     batch_size = config[KEY.BATCH_SIZE]
@@ -22,7 +18,7 @@ def loader_from_config(config, dataset, is_train=False):
     if config[KEY.IS_DDP]:
         dist.barrier()
         sampler = DistributedSampler(
-            dataset, dist.get_world_size(), 
+            dataset, dist.get_world_size(),
             dist.get_rank(), shuffle=shuffle
         )
     return DataLoader(dataset, batch_size, shuffle, sampler=sampler)
@@ -33,7 +29,9 @@ def train_v2(config, working_dir: str):
     Main program flow, since v0.9.6
     """
     from sevenn.train.graph_dataset import from_config
+
     from .processing_continue import processing_continue_v2
+    from .processing_epoch import processing_epoch_v2
     Logger().timer_start('total')
 
     # config updated
@@ -44,7 +42,7 @@ def train_v2(config, working_dir: str):
 
     datasets = from_config(config, working_dir)
     loaders = {
-        k: loader_from_config(config, v, is_train=(k=='dataset'))
+        k: loader_from_config(config, v, is_train=(k == 'dataset'))
         for k, v in datasets.items()
     }
 
@@ -57,8 +55,8 @@ def train_v2(config, working_dir: str):
     if state_dicts:
         trainer.load_state_dicts(*state_dicts, strict=False)
 
-    processing_epoch(
-        trainer, config, loaders, start_epoch, init_csv, working_dir
+    processing_epoch_v2(
+        config, trainer, loaders, start_epoch, working_dir=working_dir
     )
     Logger().timer_end('total', message='Total wall time')
 
@@ -67,8 +65,9 @@ def train(config, working_dir: str):
     """
     Main program flow, until v0.9.5
     """
-    from .processing_dataset import processing_dataset
     from .processing_continue import processing_continue
+    from .processing_dataset import processing_dataset
+    from .processing_epoch import processing_epoch
     Logger().timer_start('total')
 
     # config updated

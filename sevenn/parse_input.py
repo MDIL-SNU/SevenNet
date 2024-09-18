@@ -134,6 +134,7 @@ def init_train_config(config: Dict):
             if torch.cuda.is_available()
             else torch.device('cpu')
         )
+    train_meta[KEY.DEVICE] = str(train_meta[KEY.DEVICE])
 
     # init simpler ones
     for key, default in _const.DEFAULT_TRAINING_CONFIG.items():
