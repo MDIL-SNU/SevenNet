@@ -55,11 +55,12 @@ def check_config_compatible(config, config_cp):
 
 
 def processing_continue_v2(config):  # simpler
+    log = Logger()
     continue_dct = config[KEY.CONTINUE]
-    Logger().write('\nContinue found, loading checkpoint\n')
+    log.write('\nContinue found, loading checkpoint\n')
 
     checkpoint = torch.load(
-        continue_dct[KEY.CHECKPOINT], 
+        continue_dct[KEY.CHECKPOINT],
         map_location='cpu', weights_only=False
     )
     model_cp, config_cp = util.model_from_checkpoint(checkpoint)
@@ -83,17 +84,17 @@ def processing_continue_v2(config):  # simpler
             del model_state_dict_cp[f'{i}_convolution.denominator']
 
     chem_keys = [
-        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES, 
+        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES,
         KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
     ]
     config.update({k: config_cp[k] for k in chem_keys})
 
     from_epoch = checkpoint['epoch']
-    Logger().write(f'Checkpoint previous epoch was: {from_epoch}\n')
+    log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
     epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
-    Logger().write(f'epoch start from {epoch}\n')
+    log.writeline(f'epoch start from {epoch}')
 
-    Logger().writeline('checkpoint loading was successful')
+    log.writeline('checkpoint loading was successful')
 
     state_dicts = [
         model_state_dict_cp,
@@ -104,8 +105,9 @@ def processing_continue_v2(config):  # simpler
 
 
 def processing_continue(config):
+    log = Logger()
     continue_dct = config[KEY.CONTINUE]
-    Logger().write('\nContinue found, loading checkpoint\n')
+    log.write('\nContinue found, loading checkpoint\n')
 
     checkpoint = torch.load(
         continue_dct[KEY.CHECKPOINT], map_location='cpu', weights_only=False
@@ -117,7 +119,7 @@ def processing_continue(config):
 
     # it will raise error if not compatible
     check_config_compatible(config, config_cp)
-    Logger().write('Checkpoint config is compatible\n')
+    log.write('Checkpoint config is compatible\n')
 
     # for backward compat.
     config.update({KEY._NORMALIZE_SPH: config_cp[KEY._NORMALIZE_SPH]})
@@ -155,22 +157,21 @@ def processing_continue(config):
     })
 
     chem_keys = [
-        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES, 
+        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES,
         KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
     ]
     config.update({k: config_cp[k] for k in chem_keys})
 
-
-    Logger().write(f'checkpoint previous epoch was: {from_epoch}\n')
+    log.write(f'checkpoint previous epoch was: {from_epoch}\n')
 
     # decide start epoch
     reset_epoch = continue_dct[KEY.RESET_EPOCH]
     if reset_epoch:
         start_epoch = 1
-        Logger().write('epoch reset to 1\n')
+        log.write('epoch reset to 1\n')
     else:
         start_epoch = from_epoch + 1
-        Logger().write(f'epoch start from {start_epoch}\n')
+        log.write(f'epoch start from {start_epoch}\n')
 
     # decide csv file to continue
     init_csv = True
@@ -178,13 +179,13 @@ def processing_continue(config):
     if os.path.isfile(csv_fname):
         # I hope python compare dict well
         if config_cp[KEY.ERROR_RECORD] == config[KEY.ERROR_RECORD]:
-            Logger().writeline('Same metric, csv file will be appended')
+            log.writeline('Same metric, csv file will be appended')
             init_csv = False
     else:
-        Logger().writeline(
+        log.writeline(
             f'{csv_fname} file not found, new csv file will be created'
         )
-    Logger().writeline('checkpoint loading was successful')
+    log.writeline('checkpoint loading was successful')
 
     state_dicts = [
         model_state_dict_cp,

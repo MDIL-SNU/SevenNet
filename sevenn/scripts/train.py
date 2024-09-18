@@ -32,11 +32,12 @@ def train_v2(config, working_dir: str):
 
     from .processing_continue import processing_continue_v2
     from .processing_epoch import processing_epoch_v2
-    Logger().timer_start('total')
+    log = Logger()
+    log.timer_start('total')
 
     if KEY.LOAD_TRAINSET not in config and KEY.LOAD_DATASET in config:
-        Logger().writeline('For train_v2, please use load_trainset_path instead')
-        Logger().writeline('I will assign load_trainset as load_dataset')
+        log.writeline('For train_v2, please use load_trainset_path instead')
+        log.writeline('I will assign load_trainset as load_dataset')
         config[KEY.LOAD_TRAINSET] = config.pop(KEY.LOAD_DATASET)
 
     # config updated
@@ -51,10 +52,10 @@ def train_v2(config, working_dir: str):
         for k, v in datasets.items()
     }
 
-    Logger().write('\nModel building...\n')
+    log.write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
     assert isinstance(model, Module)
-    Logger().print_model_info(model, config)
+    log.print_model_info(model, config)
 
     trainer = Trainer(model, config)
     if state_dicts:
@@ -63,7 +64,7 @@ def train_v2(config, working_dir: str):
     processing_epoch_v2(
         config, trainer, loaders, start_epoch, working_dir=working_dir
     )
-    Logger().timer_end('total', message='Total wall time')
+    log.timer_end('total', message='Total wall time')
 
 
 def train(config, working_dir: str):
@@ -73,7 +74,8 @@ def train(config, working_dir: str):
     from .processing_continue import processing_continue
     from .processing_dataset import processing_dataset
     from .processing_epoch import processing_epoch
-    Logger().timer_start('total')
+    log = Logger()
+    log.timer_start('total')
 
     # config updated
     state_dicts: Optional[list[dict]] = None
@@ -91,22 +93,22 @@ def train(config, working_dir: str):
     }
     loaders = list(loaders.values())
 
-    Logger().write('\nModel building...\n')
+    log.write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
     assert isinstance(model, Module)
 
-    Logger().write('Model building was successful\n')
+    log.write('Model building was successful\n')
 
     trainer = Trainer(model, config)
     if state_dicts:
         trainer.load_state_dicts(*state_dicts, strict=False)
 
-    Logger().print_model_info(model, config)
+    log.print_model_info(model, config)
 
-    Logger().write('Trainer initialized, ready to training\n')
-    Logger().bar()
+    log.write('Trainer initialized, ready to training\n')
+    log.bar()
 
     processing_epoch(
         trainer, config, loaders, start_epoch, init_csv, working_dir
     )
-    Logger().timer_end('total', message='Total wall time')
+    log.timer_end('total', message='Total wall time')

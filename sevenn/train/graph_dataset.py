@@ -330,6 +330,7 @@ def from_config(
     dataset_keys: Optional[list[str]] = None,
 ):
     from sevenn.sevenn_logger import Logger
+    log = Logger()
     if dataset_keys is None:
         dataset_keys = []
         for k in config:
@@ -365,19 +366,19 @@ def from_config(
     # print statistics of each dataset
     for name, dataset in datasets.items():
         dataset.run_stat()
-        Logger().bar()
-        Logger().writeline(f'{name} distribution:')
-        Logger().statistic_write(dataset.statistics)
-        Logger().format_k_v('# atoms (node)', dataset.natoms, write=True)
-        Logger().format_k_v('# structures (graph)', len(dataset), write=True)
-    Logger().bar()
+        log.bar()
+        log.writeline(f'{name} distribution:')
+        log.statistic_write(dataset.statistics)
+        log.format_k_v('# atoms (node)', dataset.natoms, write=True)
+        log.format_k_v('# structures (graph)', len(dataset), write=True)
+    log.bar()
 
     # retrieve shift, scale, conv_denominaotrs from user input (keyword)
     init_from_stats = [KEY.SHIFT, KEY.SCALE, KEY.CONV_DENOMINATOR]
     for k in init_from_stats:
         input = config[k]  # statistic key or numbers
         if isinstance(input, str) and hasattr(train_set, input):
-            Logger().writeline(f'{k} is obtained from statistics')
+            log.writeline(f'{k} is obtained from statistics')
             config.update({k: getattr(train_set, input)})
         # else, it should be float or list of float (with idx=Z)
         # either: continue training or manually given from yaml
@@ -386,14 +387,14 @@ def from_config(
     # sorted to alphabetical order (which is same as before)
     chem_keys = [KEY.CHEMICAL_SPECIES, KEY.NUM_SPECIES, KEY.TYPE_MAP]
     if all([config[ck] == 'auto' for ck in chem_keys]):  # see parse_input.py
-        Logger().writeline('Known species are obtained from the dataset')
+        log.writeline('Known species are obtained from the dataset')
         chem_species = sorted(train_set.species)
         config.update(util.chemical_species_preprocess(chem_species))
 
     """
     if 'validset' not in dataset_keys:
-        Logger().writeline('As validset is not given, I use random split')
-        Logger().writeline('Note that statistics computed BEFORE the random split!')
+        log.writeline('As validset is not given, I use random split')
+        log.writeline('Note that statistics computed BEFORE the random split!')
         ratio = float(config[KEY.RATIO])
         train, valid = random_split(datasets['dataset'], (1.0 - ratio, ratio))
         datasets['dataset'] = train

@@ -25,6 +25,7 @@ def processing_epoch_v2(
     working_dir: Optional[str] = None,
 ):
     from sevenn.util import unique_filepath
+    log = Logger()
     working_dir = working_dir or os.getcwd()
     prefix = f'{os.path.abspath(working_dir)}/'
 
@@ -39,9 +40,9 @@ def processing_epoch_v2(
     if best_metric_loader_key in recorders:
         best_key = recorders[best_metric_loader_key].get_key_str(best_metric)
     if best_key is None:
-        Logger().writeline(
-            f'Failed to get error recorder key from: {best_metric} and '
-            + f'{best_metric_loader_key}. Best checkpoint will not saved'
+        log.writeline(
+            f'Failed to get error recorder key: {best_metric} or '
+            + f'{best_metric_loader_key} is missing. Best checkpoint will not saved'
         )
 
     csv_path = unique_filepath(f'{prefix}/lc.csv')
@@ -53,11 +54,11 @@ def processing_epoch_v2(
             f.write(','.join(head) + '\n')
 
     for epoch in range(start_epoch, total_epoch + 1):  # one indexing
-        Logger().timer_start('epoch')
+        log.timer_start('epoch')
         lr = trainer.get_lr()
-        Logger().bar()
-        Logger().write(f'Epoch {epoch}/{total_epoch}  lr: {lr:8f}\n')
-        Logger().bar()
+        log.bar()
+        log.write(f'Epoch {epoch}/{total_epoch}  lr: {lr:8f}\n')
+        log.bar()
 
         csv_dct = {'epoch': str(epoch), 'lr': f'{lr:8f}'}
         errors = {}
@@ -66,7 +67,7 @@ def processing_epoch_v2(
             trainer.run_one_epoch(loader, k == train_loader_key, rec)
             csv_dct.update(rec.get_dct(prefix=k))
             errors[k] = rec.epoch_forward()
-        Logger().write_full_table(list(errors.values()), list(errors))
+        log.write_full_table(list(errors.values()), list(errors))
         trainer.scheduler_step(best_val)
 
         if write_csv:
@@ -77,19 +78,20 @@ def processing_epoch_v2(
             path = f'{prefix}/checkpoint_best.pth'
             trainer.write_checkpoint(path, config=config, epoch=epoch)
             best_val = errors[best_metric_loader_key][best_key]
-            Logger().writeline('Best checkpoint written')
+            log.writeline('Best checkpoint written')
 
         if epoch % per_epoch == 0:
             path = f'{prefix}/checkpoint_{epoch}.pth'
             trainer.write_checkpoint(path, config=config, epoch=epoch)
 
-        Logger().timer_end('epoch', message=f'Epoch {epoch} elapsed')
+        log.timer_end('epoch', message=f'Epoch {epoch} elapsed')
     return trainer
 
 
 def processing_epoch(
     trainer, config, loaders, start_epoch, init_csv, working_dir
 ):
+    log = Logger()
     prefix = f'{os.path.abspath(working_dir)}/'
     train_loader, valid_loader = loaders
 
@@ -109,7 +111,7 @@ def processing_epoch(
         for metric in train_recorder.get_metric_dict().keys():
             csv_header.append(f'Train_{metric}')
             csv_header.append(f'Valid_{metric}')
-        Logger().init_csv(csv_fname, csv_header)
+        log.init_csv(csv_fname, csv_header)
 
     def write_checkpoint(epoch, is_best=False):
         if is_distributed and rank != 0:
@@ -122,10 +124,10 @@ def processing_epoch(
     fin_epoch = total_epoch + start_epoch
     for epoch in range(start_epoch, fin_epoch):
         lr = trainer.get_lr()
-        Logger().timer_start('epoch')
-        Logger().bar()
-        Logger().write(f'Epoch {epoch}/{fin_epoch - 1}  lr: {lr:8f}\n')
-        Logger().bar()
+        log.timer_start('epoch')
+        log.bar()
+        log.write(f'Epoch {epoch}/{fin_epoch - 1}  lr: {lr:8f}\n')
+        log.bar()
 
         trainer.run_one_epoch(
             train_loader, is_train=True, error_recorder=train_recorder
@@ -139,9 +141,9 @@ def processing_epoch(
         for metric in train_err:
             csv_values.append(train_err[metric])
             csv_values.append(valid_err[metric])
-        Logger().append_csv(csv_fname, csv_values)
+        log.append_csv(csv_fname, csv_values)
 
-        Logger().write_full_table([train_err, valid_err], ['Train', 'Valid'])
+        log.write_full_table([train_err, valid_err], ['Train', 'Valid'])
 
         val = None
         for metric in valid_err:
@@ -155,12 +157,11 @@ def processing_epoch(
         ), f'Metric {best_metric} not found in {valid_err}'
         trainer.scheduler_step(val)
 
-        # Logger().epoch_write_loss(train_rmse, valid_rmse)
-        Logger().timer_end('epoch', message=f'Epoch {epoch} elapsed')
+        log.timer_end('epoch', message=f'Epoch {epoch} elapsed')
 
         if val < current_best:
             current_best = val
             write_checkpoint(epoch, is_best=True)
-            Logger().writeline('Best checkpoint written')
+            log.writeline('Best checkpoint written')
         if epoch % per_epoch == 0:
             write_checkpoint(epoch)
