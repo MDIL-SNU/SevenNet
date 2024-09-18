@@ -77,11 +77,15 @@ def processing_continue_v2(config):  # simpler
         else None
     )
 
-    if not config[KEY.CONTINUE][KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT]:
-        del model_state_dict_cp['rescale_atomic_energy.shift']
-        del model_state_dict_cp['rescale_atomic_energy.scale']
-        for i in range(config_cp[KEY.NUM_CONVOLUTION]):
-            del model_state_dict_cp[f'{i}_convolution.denominator']
+    # use_statistic_value_of_checkpoint always True
+    config[KEY.SHIFT] = model_state_dict_cp['rescale_atomic_energy.shift']
+    config[KEY.SCALE] = model_state_dict_cp['rescale_atomic_energy.scale']
+    conv_denom = []
+    for i in range(config_cp[KEY.NUM_CONVOLUTION]):
+        conv_denom.append(
+            model_state_dict_cp[f'{i}_convolution.denominator'].item()
+        )
+    config[KEY.CONV_DENOMINATOR] = conv_denom
 
     chem_keys = [
         KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES,

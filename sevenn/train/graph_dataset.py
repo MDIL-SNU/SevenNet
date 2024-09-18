@@ -373,16 +373,6 @@ def from_config(
         log.format_k_v('# structures (graph)', len(dataset), write=True)
     log.bar()
 
-    # retrieve shift, scale, conv_denominaotrs from user input (keyword)
-    init_from_stats = [KEY.SHIFT, KEY.SCALE, KEY.CONV_DENOMINATOR]
-    for k in init_from_stats:
-        input = config[k]  # statistic key or numbers
-        if isinstance(input, str) and hasattr(train_set, input):
-            log.writeline(f'{k} is obtained from statistics')
-            config.update({k: getattr(train_set, input)})
-        # else, it should be float or list of float (with idx=Z)
-        # either: continue training or manually given from yaml
-
     # initialize known species from dataset if 'auto'
     # sorted to alphabetical order (which is same as before)
     chem_keys = [KEY.CHEMICAL_SPECIES, KEY.NUM_SPECIES, KEY.TYPE_MAP]
@@ -390,6 +380,18 @@ def from_config(
         log.writeline('Known species are obtained from the dataset')
         chem_species = sorted(train_set.species)
         config.update(util.chemical_species_preprocess(chem_species))
+
+    # retrieve shift, scale, conv_denominaotrs from user input (keyword)
+    type_map = config[KEY.TYPE_MAP]
+    init_from_stats = [KEY.SHIFT, KEY.SCALE, KEY.CONV_DENOMINATOR]
+    for k in init_from_stats:
+        input = config[k]  # statistic key or numbers
+        if isinstance(input, str) and hasattr(train_set, input):
+            var = getattr(train_set, input)
+            if len(var) > 1:  # element-wise var, use type_map to convert Z to node
+                var = [type_map[z] for z in var if z in type_map]
+            config.update({k: var})
+            log.writeline(f'{k} is obtained from statistics')
 
     """
     if 'validset' not in dataset_keys:
