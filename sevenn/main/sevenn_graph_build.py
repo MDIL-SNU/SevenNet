@@ -63,6 +63,7 @@ def main(args=None):
                 print_statistics, **fmt_kwargs
             )
         else:
+            out = os.path.join(out, filename.split('.')[0])
             graph_build.build_script(  # build .sevenn_data
                 source, cutoff, num_cores, out, metadata, **fmt_kwargs,
             )
@@ -98,7 +99,7 @@ def cmd_parse_data(args=None):
     ag.add_argument(
         '-o',
         '--out',
-        help='Path to write outputs.',
+        help='Directory to write outputs.',
         type=str,
         default='./',
     )
