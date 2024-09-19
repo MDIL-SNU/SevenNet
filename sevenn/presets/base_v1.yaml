@@ -1,5 +1,6 @@
 # Example input.yaml for training SevenNet.
 # '*' signifies default. You can check log.sevenn for defaults.
+# Use `sevenn -m train_v1` to run this, although -m train_v2 also work.
 
 model:
     chemical_species: 'Auto'                      # Chemical elements present in the dataset, guess them from load_dataset data if 'auto'
@@ -72,21 +73,25 @@ train:
         #checkpoint: 'checkpoint_best.pth'         # Checkpoint of pre-trained model or a model want to continue training.
         #reset_optimizer: False                    # Set True for fine-tuning
         #reset_scheduler: False                    # Set True for fine-tuning
+        #use_statistic_values_of_checkpoint: False # Set True to use shift, scale, and avg_num_neigh from checkpoint or not
 
 data:
     batch_size: 4                                 # Per GPU batch size.
     data_divide_ratio: 0.1                        # Split dataset into training and validation sets by this ratio
 
     shift: 'per_atom_energy_mean'                 # One of 'per_atom_energy_mean*', 'elemwise_reference_energies', float
-    scale: 'force_rms'                            # One of 'force_rms*', 'per_atom_energy_std', float
+    scale: 'force_rms'                            # One of 'force_rms*', 'per_atom_energy_std', 'elemwise_force_rms', float
 
-    # SevenNet automatically matches data format from its filename.
-    # For those not `structure_list` or `.pt` files, assumes it is ASE readable
-    # In this case, below arguments are directly passed to `ase.io.read`
-    data_format_args:
+    # ase.io.read readable data files or structure_list or .sevenn_data files can be used as dataset.
+    # .sevenn_data is preprocessed data set has edges connected (can be obtained by using sevenn_graph_build or by save_** options below)
+    data_format: 'ase'                            # One of 'ase', 'structure_list' (.sevenn_data is always readable)
+    data_format_args:                             # if `data_format` is `ase`, args will be passed to `ase.io.read`
         index: ':'                                # see `https://wiki.fysik.dtu.dk/ase/ase/io/io.html` for more valid arguments
 
-    # validset is needed if you want '_best.pth' during training. If not, both validset and testset is optional.
-    load_trainset_path: ['./train_*.extxyz']  # Example of using ase as data_format, support multiple files and expansion(*)
-    load_validset_path: ['./valid.extxyz']
-    load_testset_path:  ['./processed_7net/mydata.pt']  # Graph can be preprocessed using `sevenn_graph_build` and accessible like this
+    # If only load_dataset_path is provided, train/valid set is automatically decided by splitting dataset by divide ratio
+    # If both load_dataset_path & load_validset_path is provided, use load_dataset_path as training set.
+    load_dataset_path: ['../data/train.extxyz']   # Example of using ase as data_format, support multiple datasets and expansion(*)
+    #load_validset_path: ['./valid.sevenn_data']
+
+    #save_dataset_path: './total'                 # Save the preprocessed (in load_dataset_path) dataset
+    #save_by_train_valid: True                    # Save the preprocessed train.sevenn_data, valid.sevenn_data

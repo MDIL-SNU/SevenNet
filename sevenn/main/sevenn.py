@@ -97,7 +97,7 @@ def main(args=None):
         torch.manual_seed(seed)
 
         # run train
-        if mode == 'train':
+        if mode == 'train_v1':
             train(global_config, working_dir)
         elif mode == 'train_v2':
             train_v2(global_config, working_dir)
@@ -109,7 +109,7 @@ def cmd_parse_main(args=None):
     ag.add_argument(
         '-m',
         '--mode',
-        choices=['train', 'train_v2'],
+        choices=['train_v1', 'train_v2'],
         default='train_v2',
         help=mode_help,
         type=str,

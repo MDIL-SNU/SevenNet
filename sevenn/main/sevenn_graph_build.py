@@ -11,8 +11,8 @@ from sevenn.util import unique_filepath
 
 description = (
     f'sevenn version={__version__}, sevenn_graph_build.\n'
-    + "Create '.sevenn_data' from ase readable or VASP OUTCARs (by"
-    ' structure_list).\n'
+    + 'Create `processed_7net/dataset.pt` or `.sevenn_data` from '
+    + 'ase readable or VASP OUTCARs (by structure_list).\n'
 )
 
 source_help = 'source data to build graph, knows *'
