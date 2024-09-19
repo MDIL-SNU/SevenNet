@@ -242,19 +242,27 @@ def unlabeled_atoms_to_input(
     return atom_graph
 
 
-def chemical_species_preprocess(input_chem: List[str]):
-    from ase.data import atomic_numbers
+def chemical_species_preprocess(input_chem: List[str], universal: bool = False):
+    from ase.data import atomic_numbers, chemical_symbols
 
     from .nn.node_embedding import get_type_mapper_from_specie
 
     config = {}
-    chemical_specie = sorted([x.strip() for x in input_chem])
-    config[KEY.CHEMICAL_SPECIES] = chemical_specie
-    config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
-        atomic_numbers[x] for x in chemical_specie
-    ]
-    config[KEY.NUM_SPECIES] = len(chemical_specie)
-    config[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
+    if not universal:
+        chemical_specie = sorted([x.strip() for x in input_chem])
+        config[KEY.CHEMICAL_SPECIES] = chemical_specie
+        config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
+            atomic_numbers[x] for x in chemical_specie
+        ]
+        config[KEY.NUM_SPECIES] = len(chemical_specie)
+        config[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
+    else:
+        config[KEY.CHEMICAL_SPECIES] = chemical_symbols
+        len_univ = len(chemical_symbols)
+        config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] =\
+            list(range(len_univ))
+        config[KEY.NUM_SPECIES] = len_univ
+        config[KEY.TYPE_MAP] = {z: z for z in range(len_univ)}
     return config
 
 
@@ -341,4 +349,3 @@ def unique_filepath(filepath: str) -> str:
             new_name = f'{name}{cnt}{ext}'
             new_path = os.path.join(dirname, new_name)
         return new_path
-

@@ -2,7 +2,7 @@
 # '*' signifies default. You can check log.sevenn for defaults.
 
 model:
-    chemical_species: 'Auto'                      # Chemical elements present in the dataset, guess them from load_dataset data if 'auto'
+    chemical_species: 'Auto'                      # Elements model should know. [ 'Univ' | 'Auto' | manual_user_input ]
     cutoff: 5.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
     channel: 32                                   # The multiplicity(channel) of node features.
     lmax: 2                                       # Maximum order of irreducible representations (rotation order).
@@ -29,7 +29,7 @@ model:
 
     is_parity: False                              # Pairy True (E(3) group) or False (to SE(3) group)
 
-    self_connection_type: 'nequip'                # Default is 'nequip'. 'linear' is used for SevenNet-0.
+    self_connection_type: 'nequip'                # Default is 'nequip'. 'linear' is used for SevenNet-0. I recommend 'linear' for 'Univ' chemical_species
 
     conv_denominator: "avg_num_neigh"             # Valid options are "avg_num_neigh*", "sqrt_avg_num_neigh", or float
     train_denominator: False                      # Enable training for denominator in convolution layer

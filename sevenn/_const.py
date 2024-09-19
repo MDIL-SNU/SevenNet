@@ -7,7 +7,7 @@ import torch
 import sevenn._keys as KEY
 from sevenn.nn.activation import ShiftedSoftPlus
 
-NUM_UNIV_ELEMENT = 120
+NUM_UNIV_ELEMENT = 119  # Z = 0 ~ 118
 
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']

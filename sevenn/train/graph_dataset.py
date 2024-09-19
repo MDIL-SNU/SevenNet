@@ -367,6 +367,7 @@ def from_config(
 
     train_set = datasets['trainset']
 
+    chem_species = set(train_set.species)
     # print statistics of each dataset
     for name, dataset in datasets.items():
         dataset.run_stat()
@@ -375,6 +376,8 @@ def from_config(
         log.statistic_write(dataset.statistics)
         log.format_k_v('# atoms (node)', dataset.natoms, write=True)
         log.format_k_v('# structures (graph)', len(dataset), write=True)
+
+        chem_species.update(dataset.species)
     log.bar()
 
     # initialize known species from dataset if 'auto'
@@ -382,14 +385,15 @@ def from_config(
     chem_keys = [KEY.CHEMICAL_SPECIES, KEY.NUM_SPECIES, KEY.TYPE_MAP]
     if all([config[ck] == 'auto' for ck in chem_keys]):  # see parse_input.py
         log.writeline('Known species are obtained from the dataset')
-        chem_species = sorted(train_set.species)
-        config.update(util.chemical_species_preprocess(chem_species))
+        config.update(util.chemical_species_preprocess(sorted(list(chem_species))))
 
     # retrieve shift, scale, conv_denominaotrs from user input (keyword)
     type_map = config[KEY.TYPE_MAP]
     init_from_stats = [KEY.SHIFT, KEY.SCALE, KEY.CONV_DENOMINATOR]
     for k in init_from_stats:
         input = config[k]  # statistic key or numbers
+        # If it is not 'str', 1: It is 'continue' training
+        #                     2: User manually inserted numbers
         if isinstance(input, str) and hasattr(train_set, input):
             var = getattr(train_set, input)
             # meaning var is element-wise. use type_map to convert Z to node
