@@ -1,11 +1,16 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## WIP
+## [0.10.0]
 ### Added
+- [train_v2]: train_v2, with lots of refactoring + support `load_testset_path`. Original routine still can be enabled with `sevenn -m train`.
+- [train_v2]: SevenNetGraphDataset, which extends InMemoryDataset of PyG (and replace AtomGraphDataset)
+- [train_v2]: `sevenn_graph_build` for SevenNetGraphDataset. Previous .sevenn_data can be built with --legacy option
 - energy_key, force_key, stress_key options for `sevenn_graph_build` @thangckt
 ### Changed
 - Read EFS of atoms from y_* keys of .info or .arrays dict, instead of caclculator results
+- Now `type_map` and requires_grad is done inside the model `AtomGraphSequential`.
+- [train_v2]: train_v2 loads its training set via `load_trainset_path`, rather than previous `load_dataset_path`.
 ### Fixed
 - [e3gnn_serial]: can continue simulation even when atom tag becomes not consecutive (removing atom dynamically) @gasplant64
 - [e3gnn_parallel]: undefined behavior when there is no atoms to send/recv (for non pbc system)
