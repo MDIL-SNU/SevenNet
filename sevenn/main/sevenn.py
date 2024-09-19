@@ -110,7 +110,7 @@ def cmd_parse_main(args=None):
         '-m',
         '--mode',
         choices=['train', 'train_v2'],
-        default='train',
+        default='train_v2',
         help=mode_help,
         type=str,
     )
