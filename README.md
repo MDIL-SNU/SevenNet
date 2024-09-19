@@ -10,7 +10,7 @@ The project provides parallel molecular dynamics simulations using graph neural 
 The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
 **PLEASE NOTE:** SevenNet+LAMMPS parallel after this commit: 14851ef (v0.9.3 ~ 0.9.5) has a serious bug:
-it gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug has been fixed in the main branch and PyPI.
+it gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug is fixed for the main branch, from v0.10.x, and pip (PyPI: v0.9.3.post0).
 
 
 ## Features
@@ -24,7 +24,7 @@ Supporting MD frameworks and its features. While all modes support both CPU and 
 |-----------------|------------------|-----------------|-----------------|
 | Working?        | ✅ | ✅ | ✅ |
 | Multi-GPU       | ❌ | ❌ | ✅ |
-| Stress          | ✅ | ✅ | ⏳ |
+| Stress          | ✅ | ✅ | ✅ |
 | D3 correction   | ⏳ | ✅ | ⏳ |
 
 ✅: Support, ⏳: Planned, ❌: Not planned.
@@ -67,8 +67,6 @@ Using the newer versions of CUDA with PyTorch is usually not a problem. For exam
 
 **PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version.
 
-**PLEASE NOTE:** Currently backward compatibility is ensured for only `checkpoint` files.
-
 After the PyTorch installation, run
 
 ```bash
@@ -79,12 +77,13 @@ To download the latest version of SevenNet(not stable!), run
 ```bash
 pip install https://github.com/MDIL-SNU/SevenNet.git
 ```
+Note that we have CHANGELOG.md. As SevenNet is under active development (again), I recommend checking it for new features and changes.
 
 ## Usage
 
 ### SevenNet-0
 
-SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). 
+SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
 
 While SevenNet-0 can be applied to downstream tasks as it is, it is recommended to [`fine-tune`](#training) SevenNet-0 before addressing real downstream tasks.
 
@@ -146,7 +145,7 @@ Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 ### sevenn_graph_build
 
 ```bash
-sevenn_graph_build -f ase my_train_data.extxyz 5.0
+sevenn_graph_build my_train_data.extxyz 5.0
 ```
 
 You can preprocess the dataset with `sevenn_graph_build` to obtain `*.sevenn_data` files. The cutoff length should be provided.
@@ -190,7 +189,7 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
-**PLEASE NOTE:** Virial stress (pressure) outputs of SevenNet parallel are not correct! Work in progress...
+**PLEASE NOTE:** Virial stress (pressure) outputs of SevenNet parallel should work correctly! I have validated it several times. However, I recommend testing it by comparing outputs between serial and parallel, as the code is not yet mature.
 
 If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module. If it is unavailable, read the 'Note for MKL' section before running cmake.
 
