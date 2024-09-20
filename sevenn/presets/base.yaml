@@ -89,4 +89,4 @@ data:
     # validset is needed if you want '_best.pth' during training. If not, both validset and testset is optional.
     load_trainset_path: ['./train_*.extxyz']  # Example of using ase as data_format, support multiple files and expansion(*)
     load_validset_path: ['./valid.extxyz']
-    load_testset_path:  ['./processed_7net/mydata.pt']  # Graph can be preprocessed using `sevenn_graph_build` and accessible like this
+    load_testset_path:  ['./sevenn_data/mydata.pt']  # Graph can be preprocessed using `sevenn_graph_build` and accessible like this

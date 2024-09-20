@@ -48,8 +48,8 @@ def filename2args(pt_filename: str):
 
 class SevenNetGraphDataset(InMemoryDataset):
     """
-    Replacement of AtomGraphDataset.
-    Holds list of AtomGraphData, python intatnce of .sevenn_data
+    Replacement of AtomGraphDataset. (and .sevenn_data)
+    TODO: 'tag' is not used yet, but initialized
     'tag' is replacement for 'label', and each datapoint has it as integer
     'tag' is usually parsed from if the structure_list of load_dataset
     Unnecessary attributed such as x_is_one_hot_idx or toggle grad are removed
@@ -96,7 +96,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         super().__init__(
             root, transform, pre_transform, pre_filter,
             log=log, force_reload=force_reload
-        )  # file saved at this moment
+        )  # Internally calls 'process'
         self.load(self.processed_paths[0])
 
         if self.cutoff != cutoff_given:
@@ -121,7 +121,7 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     @property
     def processed_dir(self) -> str:
-        return os.path.join(self.root, 'processed_7net')
+        return os.path.join(self.root, 'sevenn_data')
 
     def process(self):
         graph_list: list[AtomGraphData] = []
@@ -362,7 +362,7 @@ def from_config(
         else:
             dataset_args.update({'files': paths, 'processed_name': name})
         datasets[name] = SevenNetGraphDataset(**dataset_args)
-        log.writeline(f'{name} is saved or loaded here: '
+        log.writeline(f'{name} is saved or loaded from here: '
                       f'{datasets[name].processed_paths[0]}')
 
     train_set = datasets['trainset']
