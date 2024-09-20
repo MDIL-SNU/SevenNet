@@ -42,7 +42,8 @@ def processing_epoch_v2(
     if best_key is None:
         log.writeline(
             f'Failed to get error recorder key: {best_metric} or '
-            + f'{best_metric_loader_key} is missing. Best checkpoint will not saved'
+            + f'{best_metric_loader_key} is missing. There will be no best '
+            + 'checkpoint.'
         )
 
     csv_path = unique_filepath(f'{prefix}/lc.csv')

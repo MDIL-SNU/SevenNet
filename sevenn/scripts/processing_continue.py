@@ -8,6 +8,70 @@ import sevenn.util as util
 from sevenn.sevenn_logger import Logger
 
 
+def processing_continue_v2(config):  # simpler
+    """
+    Replacement of processing_continue,
+    do not check model compatibility
+    """
+    log = Logger()
+    continue_dct = config[KEY.CONTINUE]
+    log.write('\nContinue found, loading checkpoint\n')
+
+    checkpoint = torch.load(
+        continue_dct[KEY.CHECKPOINT],
+        map_location='cpu', weights_only=False
+    )
+    model_cp, config_cp = util.model_from_checkpoint(checkpoint)
+    model_state_dict_cp = model_cp.state_dict()
+
+    optimizer_state_dict_cp = (
+        checkpoint['optimizer_state_dict']
+        if not continue_dct[KEY.RESET_OPTIMIZER]
+        else None
+    )
+    scheduler_state_dict_cp = (
+        checkpoint['scheduler_state_dict']
+        if not continue_dct[KEY.RESET_SCHEDULER]
+        else None
+    )
+
+    # use_statistic_value_of_checkpoint always True
+    # Overwrite config from model state dict, so graph_dataset.from_config
+    # will not put statistic values to shift, scale, and conv_denominator
+    config[KEY.SHIFT] = model_state_dict_cp['rescale_atomic_energy.shift']
+    config[KEY.SCALE] = model_state_dict_cp['rescale_atomic_energy.scale']
+    conv_denom = []
+    for i in range(config_cp[KEY.NUM_CONVOLUTION]):
+        conv_denom.append(
+            model_state_dict_cp[f'{i}_convolution.denominator'].item()
+        )
+    config[KEY.CONV_DENOMINATOR] = conv_denom
+    log.writeline(f'{KEY.SHIFT}, {KEY.SCALE}, and {KEY.CONV_DENOMINATOR} are '
+                  + 'overwritten by model_state_dict of checkpoint')
+
+    chem_keys = [
+        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES,
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
+    ]
+    config.update({k: config_cp[k] for k in chem_keys})
+    log.writeline('chemical_species are overwritten by checkpoint. '
+                  + f'This model knows {KEY.NUM_SPECIES} different species')
+
+    from_epoch = checkpoint['epoch']
+    log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
+    epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
+    log.writeline(f'epoch start from {epoch}')
+
+    log.writeline('checkpoint loading successful')
+
+    state_dicts = [
+        model_state_dict_cp,
+        optimizer_state_dict_cp,
+        scheduler_state_dict_cp,
+    ]
+    return state_dicts, epoch
+
+
 def check_config_compatible(config, config_cp):
     # TODO: check more
     SHOULD_BE_SAME = [
@@ -52,60 +116,6 @@ def check_config_compatible(config, config_cp):
         )
 
     # TODO add conition for changed optim/scheduler but not reset
-
-
-def processing_continue_v2(config):  # simpler
-    log = Logger()
-    continue_dct = config[KEY.CONTINUE]
-    log.write('\nContinue found, loading checkpoint\n')
-
-    checkpoint = torch.load(
-        continue_dct[KEY.CHECKPOINT],
-        map_location='cpu', weights_only=False
-    )
-    model_cp, config_cp = util.model_from_checkpoint(checkpoint)
-    model_state_dict_cp = model_cp.state_dict()
-
-    optimizer_state_dict_cp = (
-        checkpoint['optimizer_state_dict']
-        if not continue_dct[KEY.RESET_OPTIMIZER]
-        else None
-    )
-    scheduler_state_dict_cp = (
-        checkpoint['scheduler_state_dict']
-        if not continue_dct[KEY.RESET_SCHEDULER]
-        else None
-    )
-
-    # use_statistic_value_of_checkpoint always True
-    config[KEY.SHIFT] = model_state_dict_cp['rescale_atomic_energy.shift']
-    config[KEY.SCALE] = model_state_dict_cp['rescale_atomic_energy.scale']
-    conv_denom = []
-    for i in range(config_cp[KEY.NUM_CONVOLUTION]):
-        conv_denom.append(
-            model_state_dict_cp[f'{i}_convolution.denominator'].item()
-        )
-    config[KEY.CONV_DENOMINATOR] = conv_denom
-
-    chem_keys = [
-        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES,
-        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
-    ]
-    config.update({k: config_cp[k] for k in chem_keys})
-
-    from_epoch = checkpoint['epoch']
-    log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
-    epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
-    log.writeline(f'epoch start from {epoch}')
-
-    log.writeline('checkpoint loading was successful')
-
-    state_dicts = [
-        model_state_dict_cp,
-        optimizer_state_dict_cp,
-        scheduler_state_dict_cp,
-    ]
-    return state_dicts, epoch
 
 
 def processing_continue(config):

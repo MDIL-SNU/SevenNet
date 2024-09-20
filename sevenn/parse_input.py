@@ -211,11 +211,11 @@ def init_data_config(config: Dict):
     return data_meta
 
 
-def read_config_yaml(filename: str):
+def read_config_yaml(filename: str, return_separately: bool = False):
     with open(filename, 'r') as fstream:
         inputs = yaml.safe_load(fstream)
 
-    model_meta, train_meta, data_meta = None, None, None
+    model_meta, train_meta, data_meta = {}, {}, {}
     for key, config in inputs.items():
         if key == 'model':
             model_meta = init_model_config(config)
@@ -226,11 +226,12 @@ def read_config_yaml(filename: str):
         else:
             raise ValueError(f'Unexpected input {key} given')
 
-    # how about model_config is None and 'continue_train' is True?
-    if model_meta is None or train_meta is None or data_meta is None:
-        raise ValueError('one of data, train, model is not provided')
-
-    return model_meta, train_meta, data_meta
+    if return_separately:
+        return model_meta, train_meta, data_meta
+    else:
+        model_meta.update(train_meta)
+        model_meta.update(data_meta)
+        return model_meta
 
 
 def main():
