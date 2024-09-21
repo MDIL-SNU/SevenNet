@@ -5,6 +5,7 @@ import torch
 import torch.distributed as dist
 import torch.nn
 from torch.nn.parallel import DistributedDataParallel as DDP
+from tqdm import tqdm
 
 import sevenn._keys as KEY
 from sevenn.error_recorder import ErrorRecorder
@@ -119,12 +120,15 @@ class Trainer:
         loader: Iterable,
         is_train: bool = False,
         error_recorder: Optional[ErrorRecorder] = None,
+        wrap_tqdm: bool = False,
     ) -> None:
         if is_train:
             self.model.train()
         else:
             self.model.eval()
 
+        if wrap_tqdm:
+            loader = tqdm(loader)
         for _, batch in enumerate(loader):
             if is_train:
                 self.optimizer.zero_grad()
