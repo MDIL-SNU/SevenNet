@@ -67,7 +67,7 @@ class _AtomsSQLite3DatabaseLazy(SQLite3Database):
             cur.execute(sql, args)
             # while (shortvalues := cur.fetchone()) is not None:
             buffer = []
-            while (shortvalues_list := cur.fetchmany(batch * 10)) is not None:
+            while shortvalues_list := cur.fetchmany(batch * 10):
                 for shortvalues in shortvalues_list:
                     values[columnindex] = shortvalues
                     row = self._convert_tuple_to_row(tuple(values))
