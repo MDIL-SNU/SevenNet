@@ -65,7 +65,7 @@ class AtomGraphSequential(nn.Sequential):
         # forward function make problem harder when make it into torchscript
         for module in self:
             try:  # Easier to ask for forgiveness than permission.
-                module._is_batch_data = flag
+                module._is_batch_data = flag  # type: ignore
             except AttributeError:
                 pass
 
@@ -80,7 +80,7 @@ class AtomGraphSequential(nn.Sequential):
 
     def prepand_module(self, key: str, module: nn.Module):
         self._modules.update({key: module})
-        self._modules.move_to_end(key, last=False)
+        self._modules.move_to_end(key, last=False)  # type: ignore
 
     def replace_module(self, key: str, module: nn.Module):
         self._modules.update({key: module})
@@ -94,9 +94,7 @@ class AtomGraphSequential(nn.Sequential):
         device = atomic_numbers.device
         z_to_onehot_tensor = self.z_to_onehot_tensor.to(device)
         return torch.index_select(
-            input=z_to_onehot_tensor,
-            dim=0,
-            index=atomic_numbers
+            input=z_to_onehot_tensor, dim=0, index=atomic_numbers
         )
 
     def forward(self, input: AtomGraphDataType) -> AtomGraphDataType:

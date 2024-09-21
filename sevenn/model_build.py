@@ -31,8 +31,7 @@ from .nn.sequential import AtomGraphSequential
 warnings.filterwarnings(
     'ignore',
     message=(
-        "The TorchScript type system doesn't "
-        'support instance-level annotations'
+        "The TorchScript type system doesn't " 'support instance-level annotations'
     ),
 )
 
@@ -77,11 +76,7 @@ def init_edge_embedding(config):
     _normalize_sph = config[KEY._NORMALIZE_SPH]
     sph = SphericalEncoding(lmax_edge, parity, normalize=_normalize_sph)
 
-    return EdgeEmbedding(
-        basis_module=rbf,
-        cutoff_module=env,
-        spherical_module=sph
-    )
+    return EdgeEmbedding(basis_module=rbf, cutoff_module=env, spherical_module=sph)
 
 
 def init_feature_reduce(config, irreps_x):
@@ -130,7 +125,8 @@ def init_shift_scale(config):
     shift, scale = shift_scale
 
     return rescale_module(
-        shift=shift, scale=scale,
+        shift=shift,
+        scale=scale,
         train_shift_scale=config[KEY.TRAIN_SHIFT_SCALE],
     )
 
@@ -307,7 +303,8 @@ def build_E3_equivariant_model(config: dict, parallel=False):
 
     for t in range(num_convolution_layer):
         param_interaction_block.update({
-            'irreps_x': irreps_x, 't': t,
+            'irreps_x': irreps_x,
+            't': t,
             'conv_denominator': conv_denominator[t],
         })
         if interaction_type == 'nequip':
@@ -317,16 +314,22 @@ def build_E3_equivariant_model(config: dict, parallel=False):
                 lmax_node = 0
                 parity_mode = 'even'
             irreps_out_tp = util.infer_irreps_out(
-                irreps_x, irreps_filter, lmax_node,  # type: ignore
-                parity_mode, fix_multiplicity,
+                irreps_x,  # type: ignore
+                irreps_filter,
+                lmax_node,  # type: ignore
+                parity_mode,
+                fix_multiplicity,
             )
         else:
             raise ValueError(f'Unknown interaction type: {interaction_type}')
         # TODO: irreps_manual is applicable to both irreps_out_tp and irreps_out
         irreps_out = (
             util.infer_irreps_out(
-                irreps_x, irreps_filter, lmax_node,  # type: ignore
-                parity_mode, fix_multiplicity=feature_multiplicity,
+                irreps_x,  # type: ignore
+                irreps_filter,
+                lmax_node,  # type: ignore
+                parity_mode,
+                fix_multiplicity=feature_multiplicity,
             )
             if irreps_manual is None
             else irreps_manual[t + 1]

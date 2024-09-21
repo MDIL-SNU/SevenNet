@@ -17,21 +17,15 @@ class Singleton(type):
 
     def __call__(cls, *args, **kwargs):
         if cls not in cls._instances:
-            cls._instances[cls] = super(Singleton, cls).__call__(
-                *args, **kwargs
-            )
+            cls._instances[cls] = super(Singleton, cls).__call__(*args, **kwargs)
         return cls._instances[cls]
 
 
 class Logger(metaclass=Singleton):
-
     SCREEN_WIDTH = 120  # half size of my screen / changed due to stress output
 
     def __init__(
-        self,
-        filename: Optional[str] = None,
-        screen: bool = False,
-        rank: int = 0
+        self, filename: Optional[str] = None, screen: bool = False, rank: int = 0
     ):
         self.rank = rank
         self._filename = filename
@@ -147,13 +141,10 @@ class Logger(metaclass=Singleton):
             t_F = train_loss[at]
             v_F = valid_loss[at]
             at_sym = CHEM_SYMBOLS[at]
-            content += (
-                '{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}'.format(
-                    label=at_sym, t_E=ln, v_E=ln, lb_pad=lb_pad, pad=pad, fs=fs
-                )
-                + '{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}'.format(
-                    t_F=t_F, v_F=v_F, pad=pad, fs=fs
-                )
+            content += '{label:{lb_pad}}{t_E:<{pad}.{fs}s}{v_E:<{pad}.{fs}s}'.format(
+                label=at_sym, t_E=ln, v_E=ln, lb_pad=lb_pad, pad=pad, fs=fs
+            ) + '{t_F:<{pad}.{fs}f}{v_F:<{pad}.{fs}f}'.format(
+                t_F=t_F, v_F=v_F, pad=pad, fs=fs
             )
             content += '{t_S:<{pad}.{fs}s}{v_S:<{pad}.{fs}s}'.format(
                 t_S=ln, v_S=ln, pad=pad, fs=fs
@@ -166,7 +157,7 @@ class Logger(metaclass=Singleton):
         dict_list: List[Dict],
         row_labels: List[str],
         decimal_places: int = 6,
-        pad: int = 2
+        pad: int = 2,
     ):
         """
         Assume data_list is list of dict with same keys
@@ -191,8 +182,7 @@ class Logger(metaclass=Singleton):
 
         # Create header row and separator
         header = ' ' * (label_len + pad) + ' '.join(
-            col_name.ljust(pad)
-            for col_name, pad in zip(col_names, max_col_lengths)
+            col_name.ljust(pad) for col_name, pad in zip(col_names, max_col_lengths)
         )
         separator = '-'.join('-' * pad for pad in max_col_lengths) + '-' * (
             label_len + pad
@@ -268,9 +258,7 @@ class Logger(metaclass=Singleton):
         """
         print some important information from config
         """
-        content = (
-            'successfully read yaml config!\n\n' + 'from model configuration\n'
-        )
+        content = 'successfully read yaml config!\n\n' + 'from model configuration\n'
         for k, v in model_config.items():
             content += self.format_k_v(k, str(v))
         content += '\nfrom train configuration\n'
@@ -312,9 +300,7 @@ class Logger(metaclass=Singleton):
 
         kv_write = partial(self.format_k_v, write=True)
         self.writeline('Irreps of features')
-        kv_write(
-            'edge_feature', model.get_irreps_in('edge_embedding', 'irreps_out')
-        )
+        kv_write('edge_feature', model.get_irreps_in('edge_embedding', 'irreps_out'))
         for i in range(config[KEY.NUM_CONVOLUTION]):
             kv_write(
                 f'{i}th node',
@@ -326,7 +312,5 @@ class Logger(metaclass=Singleton):
             model.get_irreps_in(f'{i}_equivariant_gate', 'irreps_out'),
         )
 
-        num_weights = sum(
-            p.numel() for p in model.parameters() if p.requires_grad
-        )
+        num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
         self.writeline(f'# learnable parameters: {num_weights}\n')

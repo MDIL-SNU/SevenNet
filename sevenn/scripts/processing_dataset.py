@@ -1,5 +1,4 @@
 import os
-import random
 
 import torch
 
@@ -73,9 +72,7 @@ def handle_shift_scale(config, train_set, checkpoint_given):
         use_species_wise_shift_scale = True
 
     avg_num_neigh = train_set.get_avg_num_neigh()
-    log.format_k_v(
-        'Average # of neighbors', f'{avg_num_neigh:.6f}', write=True
-    )
+    log.format_k_v('Average # of neighbors', f'{avg_num_neigh:.6f}', write=True)
 
     if config[KEY.CONV_DENOMINATOR] == 'avg_num_neigh':
         conv_denominator = avg_num_neigh
@@ -130,12 +127,11 @@ def handle_shift_scale(config, train_set, checkpoint_given):
             log.format_k_v(f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True)
     else:
         log.write('Use global shift, scale\n')
-        log.format_k_v(
-            'shift, scale', f'{shift:.6f}, {scale:.6f}', write=True
-        )
+        log.format_k_v('shift, scale', f'{shift:.6f}, {scale:.6f}', write=True)
 
-    assert isinstance(conv_denominator, list) \
-        and all(isinstance(deno, float) for deno in conv_denominator)
+    assert isinstance(conv_denominator, list) and all(
+        isinstance(deno, float) for deno in conv_denominator
+    )
     log.format_k_v(
         '(1st) conv_denominator is', f'{conv_denominator[0]:.6f}', write=True
     )
@@ -181,9 +177,7 @@ def processing_dataset(config, working_dir):
     if checkpoint_given:
         chem_from_cp = config[KEY.CHEMICAL_SPECIES]
         if not all(chem in chem_from_cp for chem in chem_in_db):
-            raise ValueError(
-                'Chemical species in checkpoint is not compatible'
-            )
+            raise ValueError('Chemical species in checkpoint is not compatible')
 
     # --------------- save dataset regardless of train/valid--------------#
     save_dataset = config[KEY.SAVE_DATASET]
@@ -191,12 +185,8 @@ def processing_dataset(config, working_dir):
     if save_dataset:
         if save_dataset.endswith('.sevenn_data') is False:
             save_dataset += '.sevenn_data'
-        if (
-            save_dataset.startswith('.') or save_dataset.startswith('/')
-        ) is False:
-            save_dataset = (
-                prefix + save_dataset
-            )  # save_data set is plain file name
+        if (save_dataset.startswith('.') or save_dataset.startswith('/')) is False:
+            save_dataset = prefix + save_dataset  # save_data set is plain file name
         dataset.save(save_dataset)
         log.format_k_v('Dataset saved to', save_dataset, write=True)
         # log.write(f"Loaded full dataset saved to : {save_dataset}\n")
@@ -226,15 +216,9 @@ def processing_dataset(config, working_dir):
             valid_set.rewrite_labels_to_data()
             train_set = AtomGraphDataset(train_set.to_list(), cutoff)
             train_set.rewrite_labels_to_data()
-            log.write(
-                'WARNING! validset labels is not subset of trainset\n'
-            )
-            log.write(
-                'We overwrite all the train, valid labels to default.\n'
-            )
-            log.write(
-                'Please create validset by sevenn_graph_build with -l\n'
-            )
+            log.write('WARNING! validset labels is not subset of trainset\n')
+            log.write('We overwrite all the train, valid labels to default.\n')
+            log.write('Please create validset by sevenn_graph_build with -l\n')
 
         log.write('the validset loaded, load_dataset is now train_set\n')
         log.write('the ratio will be ignored\n')
@@ -242,16 +226,10 @@ def processing_dataset(config, working_dir):
         train_set, valid_set, test_set = dataset.divide_dataset(
             config[KEY.RATIO], ignore_test=ignore_test
         )
-        log.write(
-            f'The dataset divided into train, valid by {KEY.RATIO}\n'
-        )
+        log.write(f'The dataset divided into train, valid by {KEY.RATIO}\n')
 
-    log.format_k_v(
-        '\nloaded trainset size is', train_set.len(), write=True
-    )
-    log.format_k_v(
-        '\nloaded validset size is', valid_set.len(), write=True
-    )
+    log.format_k_v('\nloaded trainset size is', train_set.len(), write=True)
+    log.format_k_v('\nloaded validset size is', valid_set.len(), write=True)
 
     log.write('Dataset initialization was successful\n')
 
@@ -279,9 +257,7 @@ def processing_dataset(config, working_dir):
     if config[KEY.SAVE_BY_TRAIN_VALID]:
         train_set.save(prefix + 'train')
         valid_set.save(prefix + 'valid')
-        log.format_k_v(
-            'Dataset saved by train, valid', prefix, write=True
-        )
+        log.format_k_v('Dataset saved by train, valid', prefix, write=True)
 
     # inconsistent .info dict give error when collate
     _, _ = train_set.separate_info()
