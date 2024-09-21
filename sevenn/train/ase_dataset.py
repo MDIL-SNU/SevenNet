@@ -71,7 +71,7 @@ class _AtomsSQLite3DatabaseLazy(SQLite3Database):
                 for shortvalues in shortvalues_list:
                     values[columnindex] = shortvalues
                     row = self._convert_tuple_to_row(tuple(values))
-                    if filter_fn is not None and filter_fn(row):
+                    if filter_fn is None or filter_fn(row):
                         buffer.append(row)
                     if len(buffer) == batch:
                         yield buffer
@@ -150,6 +150,7 @@ class AtomsSQLite3Dataset(IterableDataset):
                 atoms_row = next(self.sel)
                 if len(atoms_row) < me + 1:
                     raise StopIteration()
+                atoms_row = atoms_row[me]
 
                 if self.record_ids:
                     self.ids.append(atoms_row.id)
