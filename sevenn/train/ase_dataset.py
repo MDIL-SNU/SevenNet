@@ -98,7 +98,7 @@ class AtomsSQLite3Dataset(IterableDataset):
         selection: ASE db selection
         atoms_to_graph: callable that converts atoms to PyG data (numpy dict)
         atoms_row_transform: callable for atoms_row
-        selection_kwargs:
+        selection_kwargs: keyword arguments for db.lazy_selection
     """
 
     def __init__(
@@ -147,6 +147,7 @@ class AtomsSQLite3Dataset(IterableDataset):
             while True:
                 # TODO: this is naive way to read dataset.
                 # All worker reads data at the same time with redundancy
+                # Queue and data sharing multiprocessing are needed
                 atoms_row = next(self.sel)
                 if len(atoms_row) < me + 1:
                     raise StopIteration()
@@ -167,7 +168,6 @@ class AtomsSQLite3Dataset(IterableDataset):
 
                 yield self.atoms_to_graph(atoms)
         except StopIteration:
-            print('stop called')
             pass
 
     def new_select(self, selection, **selection_kwargs):
