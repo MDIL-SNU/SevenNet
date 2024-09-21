@@ -59,7 +59,7 @@ def train_v2(config, working_dir: str):
     assert isinstance(model, Module)
     log.print_model_info(model, config)
 
-    trainer = Trainer(model, config)
+    trainer = Trainer.from_config(model, config)
     if state_dicts:
         trainer.load_state_dicts(*state_dicts, strict=False)
 
@@ -102,7 +102,7 @@ def train(config, working_dir: str):
 
     log.write('Model building was successful\n')
 
-    trainer = Trainer(model, config)
+    trainer = Trainer.from_config(model, config)
     if state_dicts:
         trainer.load_state_dicts(*state_dicts, strict=False)
 
