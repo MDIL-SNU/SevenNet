@@ -63,7 +63,7 @@ class Trainer:
         self.loss_functions = loss_functions
 
     @staticmethod
-    def from_config(model: torch.nn.Module, config: Dict[str, Any]):
+    def from_config(model: torch.nn.Module, config: Dict[str, Any]) -> 'Trainer':
         trainer = Trainer(
             model,
             loss_functions=get_loss_functions_from_config(config),
@@ -78,7 +78,7 @@ class Trainer:
         return trainer
 
     @staticmethod
-    def args_from_checkpoint(checkpoint: str):
+    def args_from_checkpoint(checkpoint: str) -> Tuple[Dict, Dict, Dict]:
         """
         Usage:
             trainer_args, optim_stct, scheduler_stct = args_from_checkpoint('7net-0')
@@ -119,7 +119,7 @@ class Trainer:
         loader: Iterable,
         is_train: bool = False,
         error_recorder: Optional[ErrorRecorder] = None,
-    ):
+    ) -> None:
         if is_train:
             self.model.train()
         else:
@@ -142,7 +142,7 @@ class Trainer:
         if self.distributed and error_recorder is not None:
             self.recorder_all_reduce(error_recorder)
 
-    def scheduler_step(self, metric: Optional[float] = None):
+    def scheduler_step(self, metric: Optional[float] = None) -> None:
         if self.scheduler is None:
             return
         if isinstance(self.scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
@@ -151,15 +151,15 @@ class Trainer:
         else:
             self.scheduler.step()
 
-    def get_lr(self):
-        return self.optimizer.param_groups[0]['lr']
+    def get_lr(self) -> float:
+        return float(self.optimizer.param_groups[0]['lr'])
 
-    def recorder_all_reduce(self, recorder: ErrorRecorder):
+    def recorder_all_reduce(self, recorder: ErrorRecorder) -> None:
         for metric in recorder.metrics:
             # metric.value._ddp_reduce(self.device)
             metric.ddp_reduce(self.device)
 
-    def get_checkpoint_dict(self):
+    def get_checkpoint_dict(self) -> dict:
         if self.distributed:
             model_state_dct = self.model.module.state_dict()
         else:
@@ -172,7 +172,7 @@ class Trainer:
             else None,
         }
 
-    def write_checkpoint(self, path: str, **extra):
+    def write_checkpoint(self, path: str, **extra) -> None:
         if self.distributed and self.rank != 0:
             return
         cp = self.get_checkpoint_dict()
@@ -185,7 +185,7 @@ class Trainer:
         optimizer_state_dict: Optional[Dict] = None,
         scheduler_state_dict: Optional[Dict] = None,
         strict: bool = True,
-    ):
+    ) -> None:
         if model_state_dict is not None:
             if self.distributed:
                 self.model.module.load_state_dict(model_state_dict, strict=strict)
