@@ -18,8 +18,7 @@ def loader_from_config(config, dataset, is_train=False):
     if config[KEY.IS_DDP]:
         dist.barrier()
         sampler = DistributedSampler(
-            dataset, dist.get_world_size(),
-            dist.get_rank(), shuffle=shuffle
+            dataset, dist.get_world_size(), dist.get_rank(), shuffle=shuffle
         )
     return DataLoader(dataset, batch_size, shuffle, sampler=sampler)
 
@@ -32,6 +31,7 @@ def train_v2(config, working_dir: str):
 
     from .processing_continue import processing_continue_v2
     from .processing_epoch import processing_epoch_v2
+
     log = Logger()
     log.timer_start('total')
 
@@ -76,6 +76,7 @@ def train(config, working_dir: str):
     from .processing_continue import processing_continue
     from .processing_dataset import processing_dataset
     from .processing_epoch import processing_epoch
+
     log = Logger()
     log.timer_start('total')
 
@@ -110,7 +111,5 @@ def train(config, working_dir: str):
     log.write('Trainer initialized, ready to training\n')
     log.bar()
 
-    processing_epoch(
-        trainer, config, loaders, start_epoch, init_csv, working_dir
-    )
+    processing_epoch(trainer, config, loaders, start_epoch, init_csv, working_dir)
     log.timer_end('total', message='Total wall time')

@@ -17,6 +17,7 @@ def build_sevennet_graph_dataset(
     **fmt_kwargs,
 ):
     from sevenn.train.graph_dataset import SevenNetGraphDataset
+
     log = Logger()
     if metadata is None:
         metadata = {}
@@ -86,6 +87,7 @@ def build_script(
     **fmt_kwargs,
 ):
     from sevenn.train.dataload import file_to_dataset, match_reader
+
     if metadata is None:
         metadata = {}
     log = Logger()
@@ -108,10 +110,12 @@ def build_script(
             fmt = 'ase'
         reader, rmeta = match_reader(fmt, **fmt_kwargs)
         metadata.update(**rmeta)
-        dataset.augment(file_to_dataset(
-            file=path,
-            reader=reader,
-            **common_args,
-        ))
+        dataset.augment(
+            file_to_dataset(
+                file=path,
+                reader=reader,
+                **common_args,
+            )
+        )
     log.timer_end('graph_build', 'graph build time')
     dataset_finalize(dataset, metadata, out)

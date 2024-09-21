@@ -18,8 +18,7 @@ def processing_continue_v2(config):  # simpler
     log.write('\nContinue found, loading checkpoint\n')
 
     checkpoint = torch.load(
-        continue_dct[KEY.CHECKPOINT],
-        map_location='cpu', weights_only=False
+        continue_dct[KEY.CHECKPOINT], map_location='cpu', weights_only=False
     )
     model_cp, config_cp = util.model_from_checkpoint(checkpoint)
     model_state_dict_cp = model_cp.state_dict()
@@ -42,20 +41,24 @@ def processing_continue_v2(config):  # simpler
     config[KEY.SCALE] = model_state_dict_cp['rescale_atomic_energy.scale']
     conv_denom = []
     for i in range(config_cp[KEY.NUM_CONVOLUTION]):
-        conv_denom.append(
-            model_state_dict_cp[f'{i}_convolution.denominator'].item()
-        )
+        conv_denom.append(model_state_dict_cp[f'{i}_convolution.denominator'].item())
     config[KEY.CONV_DENOMINATOR] = conv_denom
-    log.writeline(f'{KEY.SHIFT}, {KEY.SCALE}, and {KEY.CONV_DENOMINATOR} are '
-                  + 'overwritten by model_state_dict of checkpoint')
+    log.writeline(
+        f'{KEY.SHIFT}, {KEY.SCALE}, and {KEY.CONV_DENOMINATOR} are '
+        + 'overwritten by model_state_dict of checkpoint'
+    )
 
     chem_keys = [
-        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES,
-        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
+        KEY.TYPE_MAP,
+        KEY.NUM_SPECIES,
+        KEY.CHEMICAL_SPECIES,
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER,
     ]
     config.update({k: config_cp[k] for k in chem_keys})
-    log.writeline('chemical_species are overwritten by checkpoint. '
-                  + f'This model knows {KEY.NUM_SPECIES} different species')
+    log.writeline(
+        'chemical_species are overwritten by checkpoint. '
+        + f'This model knows {KEY.NUM_SPECIES} different species'
+    )
 
     from_epoch = checkpoint['epoch']
     log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
@@ -92,7 +95,7 @@ def check_config_compatible(config, config_cp):
         if sbs == KEY.SELF_CONNECTION_TYPE and config_cp[sbs] == 'MACE':
             warnings.warn(
                 'We do not support this version of checkpoints to continue '
-                'Please use self_connection_type=\'linear\' in input.yaml '
+                "Please use self_connection_type='linear' in input.yaml "
                 'and train from scratch',
                 UserWarning,
             )
@@ -171,8 +174,10 @@ def processing_continue(config):
     })
 
     chem_keys = [
-        KEY.TYPE_MAP, KEY.NUM_SPECIES, KEY.CHEMICAL_SPECIES,
-        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
+        KEY.TYPE_MAP,
+        KEY.NUM_SPECIES,
+        KEY.CHEMICAL_SPECIES,
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER,
     ]
     config.update({k: config_cp[k] for k in chem_keys})
 
@@ -196,9 +201,7 @@ def processing_continue(config):
             log.writeline('Same metric, csv file will be appended')
             init_csv = False
     else:
-        log.writeline(
-            f'{csv_fname} file not found, new csv file will be created'
-        )
+        log.writeline(f'{csv_fname} file not found, new csv file will be created')
     log.writeline('checkpoint loading was successful')
 
     state_dicts = [

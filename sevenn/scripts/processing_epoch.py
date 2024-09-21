@@ -25,6 +25,7 @@ def processing_epoch_v2(
     working_dir: Optional[str] = None,
 ):
     from sevenn.util import unique_filepath
+
     log = Logger()
     working_dir = working_dir or os.getcwd()
     prefix = f'{os.path.abspath(working_dir)}/'
@@ -89,9 +90,7 @@ def processing_epoch_v2(
     return trainer
 
 
-def processing_epoch(
-    trainer, config, loaders, start_epoch, init_csv, working_dir
-):
+def processing_epoch(trainer, config, loaders, start_epoch, init_csv, working_dir):
     log = Logger()
     prefix = f'{os.path.abspath(working_dir)}/'
     train_loader, valid_loader = loaders
@@ -153,9 +152,7 @@ def processing_epoch(
             if best_metric in metric:
                 val = valid_err[metric]
                 break
-        assert (
-            val is not None
-        ), f'Metric {best_metric} not found in {valid_err}'
+        assert val is not None, f'Metric {best_metric} not found in {valid_err}'
         trainer.scheduler_step(val)
 
         log.timer_end('epoch', message=f'Epoch {epoch} elapsed')
