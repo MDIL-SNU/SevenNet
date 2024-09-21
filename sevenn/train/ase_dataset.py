@@ -11,11 +11,11 @@ import sevenn.train.dataload as dataload
 from sevenn.atom_graph_data import AtomGraphData
 
 
-class AtomsSQLite3DatabaseLazy(SQLite3Database):
+class _AtomsSQLite3DatabaseLazy(SQLite3Database):
 
     def lazy_selection(self, selection=None, limit=None, offset=0,
                        sort=None, include_data=True, columns='all',
-                       batch=12, **kwargs):
+                       batch=12, filter_fn=None, **kwargs):
         keys, cmps = parse_selection(selection, **kwargs)
         values = np.array([None for _ in range(27)])
         values[25] = '{}'
@@ -66,12 +66,18 @@ class AtomsSQLite3DatabaseLazy(SQLite3Database):
             cur = con.cursor()
             cur.execute(sql, args)
             # while (shortvalues := cur.fetchone()) is not None:
-            while (shortvalues_list := cur.fetchmany(batch)) is not None:
-                ret = []
+            buffer = []
+            while (shortvalues_list := cur.fetchmany(batch * 10)) is not None:
                 for shortvalues in shortvalues_list:
                     values[columnindex] = shortvalues
-                    ret.append(self._convert_tuple_to_row(tuple(values)))
-                yield ret
+                    row = self._convert_tuple_to_row(tuple(values))
+                    if filter_fn is not None and filter_fn(row):
+                        buffer.append(row)
+                    if len(buffer) == batch:
+                        yield buffer
+                        buffer = []
+            if buffer:
+                yield buffer
 
 
 def _default_atoms_to_graph(atoms, cutoff):
@@ -107,8 +113,10 @@ class AtomsSQLite3Dataset(IterableDataset):
     ):
         super().__init__()
 
-        self.db = AtomsSQLite3DatabaseLazy(db_path)
+        self.db = _AtomsSQLite3DatabaseLazy(db_path)
         self._db_path = db_path
+        if cutoff is None and atoms_to_graph == _default_atoms_to_graph:
+            raise ValueError('Default atoms_to_graph requires cutoff!')
         self.cutoff = cutoff
 
         self.selection = selection
@@ -139,7 +147,9 @@ class AtomsSQLite3Dataset(IterableDataset):
             while True:
                 # TODO: this is naive way to read dataset.
                 # All worker reads data at the same time with redundancy
-                atoms_row = next(self.sel)[me]
+                atoms_row = next(self.sel)
+                if len(atoms_row) < me + 1:
+                    raise StopIteration()
 
                 if self.record_ids:
                     self.ids.append(atoms_row.id)
@@ -165,4 +175,4 @@ class AtomsSQLite3Dataset(IterableDataset):
 
         self.selection = selection
         self.selection_kwargs = selection_kwargs
-        self.sel = self.db.lazy_selection(selection, **selection_kwargs)
+        self.sel = self.db.lazy_selection(selection=selection, **selection_kwargs)
