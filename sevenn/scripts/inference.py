@@ -9,10 +9,10 @@ from ase.calculators.singlepoint import SinglePointCalculator
 from tqdm import tqdm
 
 import sevenn._keys as KEY
-import sevenn.error_recorder as error_recorder
 from sevenn.train.dataload import graph_build
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import (
+    get_error_recorder,
     model_from_checkpoint,
     pretrained_name_to_path,
     to_atom_graph_list,
@@ -68,24 +68,6 @@ def poscars_to_atoms(poscars: List[str]):
         atoms.info = info_dct_f
         atoms_list.append(atoms)
     return atoms_list
-
-
-def get_error_recorder():
-    config = [
-        ('Energy', 'RMSE'),
-        ('Force', 'RMSE'),
-        ('Stress', 'RMSE'),
-        ('Energy', 'MAE'),
-        ('Force', 'MAE'),
-        ('Stress', 'MAE'),
-    ]
-    err_metrics = []
-    for err_type, metric_name in config:
-        metric_kwargs = error_recorder.ERROR_TYPES[err_type].copy()
-        metric_kwargs['name'] += f'_{metric_name}'
-        metric_cls = error_recorder.ErrorRecorder.METRIC_DICT[metric_name]
-        err_metrics.append(metric_cls(**metric_kwargs))
-    return error_recorder.ErrorRecorder(err_metrics)
 
 
 def write_inference_csv(output_list, out):
