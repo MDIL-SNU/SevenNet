@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -22,15 +22,11 @@ def to_atom_graph_list(atom_graph_batch):
 
     indices = atom_graph_batch[KEY.NUM_ATOMS].tolist()
 
-    atomic_energy_list = torch.split(
-        atom_graph_batch[KEY.ATOMIC_ENERGY], indices
-    )
+    atomic_energy_list = torch.split(atom_graph_batch[KEY.ATOMIC_ENERGY], indices)
     inferred_total_energy_list = torch.unbind(
         atom_graph_batch[KEY.PRED_TOTAL_ENERGY]
     )
-    inferred_force_list = torch.split(
-        atom_graph_batch[KEY.PRED_FORCE], indices
-    )
+    inferred_force_list = torch.split(atom_graph_batch[KEY.PRED_FORCE], indices)
 
     inferred_stress_list = None
     if is_stress:
@@ -164,9 +160,7 @@ def _map_old_model(old_model_state_dict):
         _old_module_name_mapping[f'{i} self interaction 2'] = (
             f'{i}_self_interaction_2'
         )
-        _old_module_name_mapping[f'{i} equivariant gate'] = (
-            f'{i}_equivariant_gate'
-        )
+        _old_module_name_mapping[f'{i} equivariant gate'] = f'{i}_equivariant_gate'
 
     new_model_state_dict = {}
     for k, v in old_model_state_dict.items():
@@ -187,9 +181,7 @@ def model_from_checkpoint(checkpoint) -> Tuple[torch.nn.Module, Dict]:
     from .model_build import build_E3_equivariant_model
 
     if isinstance(checkpoint, str):
-        checkpoint = torch.load(
-            checkpoint, map_location='cpu', weights_only=False
-        )
+        checkpoint = torch.load(checkpoint, map_location='cpu', weights_only=False)
     elif isinstance(checkpoint, dict):
         pass
     else:
@@ -202,9 +194,7 @@ def model_from_checkpoint(checkpoint) -> Tuple[torch.nn.Module, Dict]:
 
     for k, v in defaults.items():
         if k not in config:
-            warnings.warn(
-                f'{k} not in config, using default value {v}', UserWarning
-            )
+            warnings.warn(f'{k} not in config, using default value {v}', UserWarning)
             config[k] = v
 
     # expect only non-tensor values in config, if exists, move to cpu
@@ -228,9 +218,7 @@ def model_from_checkpoint(checkpoint) -> Tuple[torch.nn.Module, Dict]:
     return model, config
 
 
-def unlabeled_atoms_to_input(
-    atoms, cutoff: float, grad_key: str = KEY.EDGE_VEC
-):
+def unlabeled_atoms_to_input(atoms, cutoff: float, grad_key: str = KEY.EDGE_VEC):
     from .atom_graph_data import AtomGraphData
     from .train.dataload import unlabeled_atoms_to_graph
 
@@ -259,8 +247,7 @@ def chemical_species_preprocess(input_chem: List[str], universal: bool = False):
     else:
         config[KEY.CHEMICAL_SPECIES] = chemical_symbols
         len_univ = len(chemical_symbols)
-        config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] =\
-            list(range(len_univ))
+        config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = list(range(len_univ))
         config[KEY.NUM_SPECIES] = len_univ
         config[KEY.TYPE_MAP] = {z: z for z in range(len_univ)}
     return config
@@ -269,7 +256,7 @@ def chemical_species_preprocess(input_chem: List[str], universal: bool = False):
 def dtype_correct(
     v: Union[np.ndarray, torch.Tensor, int, float],
     float_dtype: torch.dtype = torch.float32,
-    int_dtype: torch.dtype = torch.int64
+    int_dtype: torch.dtype = torch.int64,
 ):
     if isinstance(v, np.ndarray):
         if np.issubdtype(v.dtype, np.floating):
@@ -300,9 +287,7 @@ def infer_irreps_out(
 ):
     assert parity_mode in ['full', 'even', 'sph']
     # (mul, (ir, p))
-    irreps_out = FullTensorProduct(
-        irreps_x, irreps_operand
-    ).irreps_out.simplify()
+    irreps_out = FullTensorProduct(irreps_x, irreps_operand).irreps_out.simplify()
     new_irreps_elem = []
     for mul, (l, p) in irreps_out:
         elem = (mul, (l, p))
@@ -349,3 +334,27 @@ def unique_filepath(filepath: str) -> str:
             new_name = f'{name}{cnt}{ext}'
             new_path = os.path.join(dirname, new_name)
         return new_path
+
+
+def get_error_recorder(recorder_tuples: Optional[List[Tuple[str, str]]] = None):
+    # TODO add criterion argument and loss recorder selections
+    import sevenn.error_recorder as error_recorder
+
+    if recorder_tuples is None:
+        config = [
+            ('Energy', 'RMSE'),
+            ('Force', 'RMSE'),
+            ('Stress', 'RMSE'),
+            ('Energy', 'MAE'),
+            ('Force', 'MAE'),
+            ('Stress', 'MAE'),
+        ]
+    else:
+        config = recorder_tuples
+    err_metrics = []
+    for err_type, metric_name in config:
+        metric_kwargs = error_recorder.ERROR_TYPES[err_type].copy()
+        metric_kwargs['name'] += f'_{metric_name}'
+        metric_cls = error_recorder.ErrorRecorder.METRIC_DICT[metric_name]
+        err_metrics.append(metric_cls(**metric_kwargs))
+    return error_recorder.ErrorRecorder(err_metrics)

@@ -95,7 +95,7 @@ class Trainer:
         else:
             checkpoint = pretrained_name_to_path(checkpoint)
 
-        cp = torch.load(checkpoint)
+        cp = torch.load(checkpoint, weights_only=False)
         model, config = model_from_checkpoint(cp)
         optimizer_cls = optim_dict[config[KEY.OPTIMIZER].lower()]
         scheduler_cls = scheduler_dict[config[KEY.SCHEDULER].lower()]
