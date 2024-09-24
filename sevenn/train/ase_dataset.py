@@ -1,3 +1,4 @@
+import os
 from functools import partial
 from typing import Any, Callable, Optional
 
@@ -112,6 +113,9 @@ class AtomsSQLite3Dataset(IterableDataset):
         **selection_kwargs,
     ):
         super().__init__()
+
+        if not os.path.isfile(db_path):
+            raise ValueError(f'No such file: {db_path}')
 
         self.db = _AtomsSQLite3DatabaseLazy(db_path)
         self._db_path = db_path
