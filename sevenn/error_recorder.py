@@ -288,8 +288,10 @@ class ErrorRecorder:
 
     def get_dct(self, prefix=''):
         dct = {}
+        if prefix != '':
+            prefix += '_'
         for metric in self.metrics:
-            dct[f'{prefix}_{metric.name}'] = f'{metric.get():6f}'
+            dct[f'{prefix}{metric.name}'] = f'{metric.get():6f}'
         return dct
 
     def get_key_str(self, name: str):
