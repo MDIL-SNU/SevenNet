@@ -17,7 +17,19 @@ from .optim import optim_dict, scheduler_dict
 
 class Trainer:
     """
-    Training routine specialized for this package
+    Training routine specialized for this package. Depends on 'sevenn.train.loss'
+
+    Args:
+        model: model to train
+        loss_functions: List of tuples of [LossDefinition, float]. 'float' is for
+                        loss weight for each Loss function
+        optimizer_cls: torch optimizer class to initialize
+        optimizer_args: optimizer keyword argument except 'param'
+        scheduler_cls: torch scheduler class to initialize, can be None
+        optimizer_args: optimizer keyword argument except 'optimizer'
+        device: device to train model, defaults to 'auto'
+        distributed: whether this is distributed training
+        distributed_backend: torch DDP backend. Should be one of 'nccl', 'mpi'
     """
 
     def __init__(
@@ -120,15 +132,24 @@ class Trainer:
         loader: Iterable,
         is_train: bool = False,
         error_recorder: Optional[ErrorRecorder] = None,
-        wrap_tqdm: bool = False,
+        wrap_tqdm: Union[bool, int] = False,
     ) -> None:
+        """
+        Run single epoch with given dataloader
+        Args:
+            loader: iterable yieds AtomGraphData
+            is_train: if true, do backward() and optimizer step
+            error_recorder: ErrorRecorder instance to compute errors (RMSEm MAE, ..)
+            wrap_tqdm: wrap given dataloader with tqdm for progress bar
+        """
         if is_train:
             self.model.train()
         else:
             self.model.eval()
 
         if wrap_tqdm:
-            loader = tqdm(loader)
+            total_len = wrap_tqdm if isinstance(wrap_tqdm, int) else None
+            loader = tqdm(loader, total=total_len)
         for _, batch in enumerate(loader):
             if is_train:
                 self.optimizer.zero_grad()
