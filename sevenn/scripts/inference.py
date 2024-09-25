@@ -180,14 +180,13 @@ def inference_main(  # TODO: re-write
     model.eval()
 
     cutoff = config[KEY.CUTOFF]
-    type_map = config[KEY.TYPE_MAP]
 
     head = os.path.basename(fnames[0])
     atoms_list = None
     inference_set = None
     no_ref = False
     if head.endswith('sevenn_data'):
-        inference_set = load_sevenn_data(fnames, cutoff, type_map)
+        inference_set = load_sevenn_data(fnames, cutoff)
         on_the_fly_graph_build = False
     else:
         if head.startswith('POSCAR'):

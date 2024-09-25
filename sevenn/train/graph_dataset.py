@@ -36,7 +36,7 @@ def filename2args(pt_filename: str):
     Return arg dict of root and processed_name from path to .pt
     Usage:
         dataset = SevenNetGraphDataset(
-            **filename2args({path}/processed_7net/dataset.pt)
+            **filename2args({path}/sevenn_data/dataset.pt)
         )
     """
     processed_dir, basename = os.path.split(pt_filename)
@@ -49,18 +49,23 @@ def filename2args(pt_filename: str):
 class SevenNetGraphDataset(InMemoryDataset):
     """
     Replacement of AtomGraphDataset. (and .sevenn_data)
+    Extends InMemoryDataset of PyG. From given 'files', and 'cutoff',
+    build graphs for training SevenNet model. Preprocessed graphs are saved to
+    f'{root}/sevenn_data/{processed_name}.pt
+
     TODO: 'tag' is not used yet, but initialized
     'tag' is replacement for 'label', and each datapoint has it as integer
     'tag' is usually parsed from if the structure_list of load_dataset
-    Unnecessary attributed such as x_is_one_hot_idx or toggle grad are removed
 
     Args:
         root: path to save/load processed PyG dataset
         cutoff: edge cutoff of given AtomGraphData
-        files: list of filenames, extxyz, structure_list, .sevenn_data
+        files: list of filenames to initialize dataset:
+               ASE readable (with proper extension), structure_list, .sevenn_data
         process_num_cores: # of cpu cores to build graph
         processed_name: name of .pt file to be saved in {root}/processed_7net
-        ... some InMemoryDataset callables
+        pre_transfrom: optional transform for each graph: def (graph) -> graph
+        pre_filter: optional filtering function for each graph: def (graph) -> graph
         force_reload: if True, reload dataset from files even if there exist
                       {root}/processed_7net/{processed_name}
         **process_kwargs: keyword arguments that will be passed into ase.io.read
@@ -238,22 +243,26 @@ class SevenNetGraphDataset(InMemoryDataset):
             array = torch.cat(dct['_array'])
             if array.dtype == torch.int64:  # because of n_neigh
                 array = array.to(torch.float)
-            dct.update({
-                'mean': float(torch.mean(array)),
-                'std': float(torch.std(array)),
-                'median': float(torch.median(array)),
-                'max': float(torch.max(array)),
-                'min': float(torch.min(array)),
-                '_array': array,
-            })
+            dct.update(
+                {
+                    'mean': float(torch.mean(array)),
+                    'std': float(torch.std(array)),
+                    'median': float(torch.median(array)),
+                    'max': float(torch.max(array)),
+                    'min': float(torch.min(array)),
+                    '_array': array,
+                }
+            )
 
         natoms = {chemical_symbols[int(z)]: cnt for z, cnt in natoms_counter.items()}
         natoms['total'] = sum(list(natoms.values()))
-        self.statistics.update({
-            '_composition': composition,
-            '_natoms': natoms,
-            **stats,
-        })
+        self.statistics.update(
+            {
+                '_composition': composition,
+                '_natoms': natoms,
+                **stats,
+            }
+        )
 
         self._scanned = True
 
