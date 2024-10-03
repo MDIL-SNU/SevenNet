@@ -37,8 +37,8 @@ def processing_continue_v2(config):  # simpler
     # use_statistic_value_of_checkpoint always True
     # Overwrite config from model state dict, so graph_dataset.from_config
     # will not put statistic values to shift, scale, and conv_denominator
-    config[KEY.SHIFT] = model_state_dict_cp['rescale_atomic_energy.shift']
-    config[KEY.SCALE] = model_state_dict_cp['rescale_atomic_energy.scale']
+    config[KEY.SHIFT] = model_state_dict_cp['rescale_atomic_energy.shift'].tolist()
+    config[KEY.SCALE] = model_state_dict_cp['rescale_atomic_energy.scale'].tolist()
     conv_denom = []
     for i in range(config_cp[KEY.NUM_CONVOLUTION]):
         conv_denom.append(model_state_dict_cp[f'{i}_convolution.denominator'].item())
@@ -57,7 +57,7 @@ def processing_continue_v2(config):  # simpler
     config.update({k: config_cp[k] for k in chem_keys})
     log.writeline(
         'chemical_species are overwritten by checkpoint. '
-        + f'This model knows {KEY.NUM_SPECIES} different species'
+        + f'This model knows {config[KEY.NUM_SPECIES]} species'
     )
 
     from_epoch = checkpoint['epoch']

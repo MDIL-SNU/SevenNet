@@ -116,12 +116,23 @@ def init_feature_reduce(config, irreps_x):
 
 
 def init_shift_scale(config):
-    shift_scale = (config[KEY.SHIFT], config[KEY.SCALE])
+    shift_scale = []
+    # correct typing (I really want static python)
+    for s in (config[KEY.SHIFT], config[KEY.SCALE]):
+        if hasattr(s, 'tolist'):  # numpy or torch
+            s = s.tolist()
+        if isinstance(s, list) and len(s) == 1:
+            s = s[0]
+        shift_scale.append(s)
+
     rescale_module = None
     if all([isinstance(s, float) for s in shift_scale]):
         rescale_module = Rescale
-    else:
+    elif any([isinstance(s, list) for s in shift_scale]):
         rescale_module = SpeciesWiseRescale
+    else:
+        raise ValueError('shift, scale should be list of float or float')
+
     shift, scale = shift_scale
 
     return rescale_module(

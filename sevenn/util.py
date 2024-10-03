@@ -273,9 +273,7 @@ def dtype_correct(
             return torch.tensor(v, dtype=int_dtype)
         elif isinstance(v, float):
             return torch.tensor(v, dtype=float_dtype)
-        else:
-            # non-number
-            return v
+    raise ValueError(f'Failed to correct {v}')
 
 
 def infer_irreps_out(

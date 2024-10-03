@@ -53,6 +53,7 @@ class SevenNetGraphDataset(InMemoryDataset):
     build graphs for training SevenNet model. Preprocessed graphs are saved to
     f'{root}/sevenn_data/{processed_name}.pt
 
+    TODO: Save meta info (cutoff) by overriding .save and .load
     TODO: 'tag' is not used yet, but initialized
     'tag' is replacement for 'label', and each datapoint has it as integer
     'tag' is usually parsed from if the structure_list of load_dataset
@@ -86,7 +87,6 @@ class SevenNetGraphDataset(InMemoryDataset):
         **process_kwargs,
     ):
         self.cutoff = cutoff
-        cutoff_given = cutoff
         if files is None:
             files = []
         elif isinstance(files, str):
@@ -107,12 +107,6 @@ class SevenNetGraphDataset(InMemoryDataset):
             force_reload=force_reload,
         )  # Internally calls 'process'
         self.load(self.processed_paths[0])
-
-        if self.cutoff != cutoff_given:
-            warnings.warn(
-                f'!!!This dataset has built with different cutoff: {self.cutoff}!!!',
-                UserWarning,
-            )
 
         self.tag_map = {}
         self.statistics = {}
@@ -410,7 +404,8 @@ def from_config(
             var = getattr(train_set, input)
             # meaning var is element-wise. use type_map to convert Z to node
             if not isinstance(var, float) and len(var) > 1:
-                var = [type_map[z] for z in var if z in type_map]
+                # TODO: this is very hard to comprehend
+                var = [var[z] for z in sorted(type_map, key=type_map.get)]
             config.update({k: var})
             log.writeline(f'{k} is obtained from statistics')
 
