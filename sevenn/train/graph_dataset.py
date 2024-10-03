@@ -410,7 +410,7 @@ def from_config(
             var = getattr(train_set, input)
             # meaning var is element-wise. use type_map to convert Z to node
             if not isinstance(var, float) and len(var) > 1:
-                var = [type_map[z] for z in var if z in type_map]
+                var = [var[z] for z in sorted(type_map, key=type_map.get)]
             config.update({k: var})
             log.writeline(f'{k} is obtained from statistics')
 
