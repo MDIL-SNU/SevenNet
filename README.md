@@ -84,7 +84,7 @@ pip install https://github.com/MDIL-SNU/SevenNet.git
 
 ### SevenNet-0
 
-SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). 
+SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
 
 While SevenNet-0 can be applied to downstream tasks as it is, it is recommended to [`fine-tune`](#training) SevenNet-0 before addressing real downstream tasks.
 

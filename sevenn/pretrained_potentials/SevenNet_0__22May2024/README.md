@@ -30,4 +30,3 @@ $ sevenn_get_model {-p} checkpoint_sevennet_0.pth
 ```
 Refer to example_inputs/md_{serial/parallel}_example/ for their usage in LAMMPS.
 Both serial and parallel model gives the same results but the parallel model enables multi-GPU MD simulation.
-
