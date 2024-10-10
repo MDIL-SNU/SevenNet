@@ -20,7 +20,8 @@ model:
     radial_basis:                                 # Function and its parameters to encode radial distance
         radial_basis_name: 'bessel'               # Only 'bessel' is currently supported
         bessel_basis_num: 8
-    cutoff_function:                              # Envelop function, multiplied to radial_basis functions to init edge features
+
+    cutoff_function:                              # Envelop function, multiplied to radial_basis functions to init edge featrues
         cutoff_function_name: 'poly_cut'          # {'poly_cut' and 'poly_cut_p_value'} or {'XPLOR' and 'cutoff_on'}
         poly_cut_p_value: 6
 
