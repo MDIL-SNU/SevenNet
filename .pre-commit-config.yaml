@@ -78,7 +78,9 @@ repos:
       - id: codespell
         stages: [commit, commit-msg]
         args: ["--ignore-words-list", "Commun"]
-        exclude: 'example_inputs/data/.*'
-        exclude: 'sevenn/pair_e3gnn/comm_brick.h'
-        exclude: 'sevenn/pair_e3gnn/comm_brick.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_d3.cu'
+        exclude: |
+          (?x)(
+              ^example_inputs/data/|
+              ^sevenn/pair_e3gnn/comm_brick.cpp|
+              ^sevenn/pair_e3gnn/pair_d3.cu
+          )
