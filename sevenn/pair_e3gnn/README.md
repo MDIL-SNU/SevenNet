@@ -57,7 +57,7 @@ Available `name_of_functional` options are the same as in the original Fortran c
 ## Cautions
 - It can be slower than the CPU with a small number of atoms.
 - The maximum number of atoms that can be calculated is 46,340 (overflow issue).
-- There can be occured small amounts of numerical error
+- There can be occurred small amounts of numerical error
   - The introduction of some FP32 operations can lead to minor numerical errors, particularly in pressure calculations, but these are generally smaller than those seen with SevenNet.
   - If the error is too large, ensure that the `fmad=false` option in `patch_lammps.sh` is correctly applied during build.
 

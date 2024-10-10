@@ -1,5 +1,4 @@
 import os.path
-import pickle
 from functools import partial
 from itertools import islice
 from typing import Callable, List, Optional
@@ -8,7 +7,6 @@ import ase
 import ase.io
 import numpy as np
 import torch.multiprocessing as mp
-import tqdm
 from ase.io.vasp_parsers.vasp_outcar_parsers import (
     Cell,
     DefaultParsersContainer,
@@ -21,6 +19,7 @@ from ase.io.vasp_parsers.vasp_outcar_parsers import (
 from ase.neighborlist import primitive_neighbor_list
 from ase.utils import string2index
 from braceexpand import braceexpand
+from tqdm import tqdm
 
 import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
@@ -143,6 +142,10 @@ def atoms_to_graph(
         KEY.NUM_ATOMS: len(atomic_numbers),
         KEY.PER_ATOM_ENERGY: y_energy / len(pos),
     }
+    del atoms.info['y_energy']
+    del atoms.arrays['y_force']
+    if 'y_stress' in atoms.info:
+        del atoms.info['y_stress']
 
     if transfer_info and atoms.info is not None:
         data[KEY.INFO] = atoms.info
@@ -178,12 +181,19 @@ def graph_build(
     if not serial:
         pool = mp.Pool(num_cores)
         graph_list = pool.starmap(
-            atoms_to_graph, tqdm.tqdm(inputs, total=len(atoms_list))
+            atoms_to_graph,
+            tqdm(
+                inputs, total=len(atoms_list),
+                desc=f'graph_build ({num_cores})'
+            ),
         )
         pool.close()
         pool.join()
     else:
-        graph_list = [atoms_to_graph(*input_) for input_ in inputs]
+        graph_list = [
+            atoms_to_graph(*input_)
+            for input_ in tqdm(inputs, desc='graph_build (1)')
+        ]
 
     graph_list = [AtomGraphData.from_numpy_dict(g) for g in graph_list]
 

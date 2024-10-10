@@ -89,6 +89,7 @@ class IrrepsConvolution(nn.Module):
             weight_layer_input_to_hidden + [self.convolution.weight_numel],
             weight_layer_act,
         )
+        self._comm_size = self.convolution.irreps_in1.dim  # used in parallel
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         weight = self.weight_nn(data[self.key_weight_input])

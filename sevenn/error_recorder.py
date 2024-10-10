@@ -122,8 +122,8 @@ class ErrorMetric:
     def get(self):
         return self.value.get()
 
-    def key_str(self):
-        if self.unit is None:
+    def key_str(self, with_unit=True):
+        if self.unit is None or not with_unit:
             return self.name
         else:
             return f'{self.name} ({self.unit})'
@@ -272,17 +272,38 @@ class ErrorRecorder:
         else:
             self._update(output)
 
-    def get_metric_dict(self):
-        return {metric.key_str(): metric.get() for metric in self.metrics}
+    def get_metric_dict(self, with_unit=True):
+        return {metric.key_str(with_unit): metric.get() for metric in self.metrics}
+
+    def get_current(self):
+        dct = {}
+        for metric in self.metrics:
+            dct[metric.name] = {
+                'value': metric.get(),
+                'unit': metric.unit,
+                'ref_key': metric.ref_key,
+                'pred_key': metric.pred_key,
+            }
+        return dct
+
+    def get_dct(self, prefix=''):
+        dct = {}
+        for metric in self.metrics:
+            dct[f'{prefix}_{metric.name}'] = f'{metric.get():6f}'
+        return dct
+
+    def get_key_str(self, name: str):
+        for metric in self.metrics:
+            if name == metric.name:
+                return metric.key_str()
+        return None
 
     def epoch_forward(self):
-        self.history.append(self.get_metric_dict())
+        self.history.append(self.get_current())
+        pretty = self.get_metric_dict(with_unit=True)
         for metric in self.metrics:
             metric.reset()
-        return self.history[-1]
-
-    def get_history(self):
-        return self.history
+        return pretty  # for print
 
     @staticmethod
     def init_total_loss_metric(config, criteria):

@@ -64,6 +64,8 @@ def init_model_config(config: Dict):
         model_meta[KEY.CHEMICAL_SPECIES] = 'auto'
         model_meta[KEY.NUM_SPECIES] = 'auto'
         model_meta[KEY.TYPE_MAP] = 'auto'
+    elif 'univ' in input_chem.lower():
+        model_meta.update(util.chemical_species_preprocess([], universal=True))
     else:
         if isinstance(input_chem, list) and all(
             isinstance(x, str) for x in input_chem
@@ -134,6 +136,7 @@ def init_train_config(config: Dict):
             if torch.cuda.is_available()
             else torch.device('cpu')
         )
+    train_meta[KEY.DEVICE] = str(train_meta[KEY.DEVICE])
 
     # init simpler ones
     for key, default in _const.DEFAULT_TRAINING_CONFIG.items():
@@ -167,10 +170,12 @@ def init_data_config(config: Dict):
     data_meta = {}
     # defaults = _const.data_defaults(config)
 
-    if KEY.LOAD_DATASET not in config.keys():
-        raise ValueError('load_dataset_path is not given')
+    load_data_keys = []
+    for k in config:
+        if k.startswith('load_') and k.endswith('_path'):
+            load_data_keys.append(k)
 
-    for load_data_key in [KEY.LOAD_DATASET, KEY.LOAD_VALIDSET]:
+    for load_data_key in load_data_keys:
         if load_data_key in config.keys():
             inp = config[load_data_key]
             extended = []
@@ -206,11 +211,11 @@ def init_data_config(config: Dict):
     return data_meta
 
 
-def read_config_yaml(filename: str):
+def read_config_yaml(filename: str, return_separately: bool = False):
     with open(filename, 'r') as fstream:
         inputs = yaml.safe_load(fstream)
 
-    model_meta, train_meta, data_meta = None, None, None
+    model_meta, train_meta, data_meta = {}, {}, {}
     for key, config in inputs.items():
         if key == 'model':
             model_meta = init_model_config(config)
@@ -221,11 +226,12 @@ def read_config_yaml(filename: str):
         else:
             raise ValueError(f'Unexpected input {key} given')
 
-    # how about model_config is None and 'continue_train' is True?
-    if model_meta is None or train_meta is None or data_meta is None:
-        raise ValueError('one of data, train, model is not provided')
-
-    return model_meta, train_meta, data_meta
+    if return_separately:
+        return model_meta, train_meta, data_meta
+    else:
+        model_meta.update(train_meta)
+        model_meta.update(data_meta)
+        return model_meta
 
 
 def main():

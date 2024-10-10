@@ -31,7 +31,7 @@
 
     # Setup output
     thermo          ${output} 			#because it is realaxation
-    thermo_style    custom step tpcpu pe ke vol press temp #recod these value (custom setting)
+    thermo_style    custom step tpcpu pe ke vol press temp #record these value (custom setting)
     dump            mydump all custom 1 dump.traj id type x y z fx fy fz
     dump_modify     mydump sort id
 
