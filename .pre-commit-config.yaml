@@ -1,6 +1,11 @@
 default_language_version:
   python: python3
 
+ci:
+  autoupdate_schedule: quarterly
+
+default_stages: [commit]
+
 fail_fast: false
 
 repos:
