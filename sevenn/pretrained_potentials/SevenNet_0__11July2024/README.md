@@ -5,7 +5,7 @@ SevenNet-0 (11July2024) is an interatomic potential pre-trained on the [MPTrj(CH
 
 SevenNet-0 (11July2024) has the same architecture and number of parameters as SevenNet-0 (22May2024), but the training process and dataset differ.
 
-We found that this model performs better than the previous SevenNet-0 (22May2024). 
+We found that this model performs better than the previous SevenNet-0 (22May2024).
 
 It can be directly applied to any system without training and fine-tuned with another dataset if accuracy is unsatisfactory.
 
