@@ -14,15 +14,17 @@ jobs:
         with:
           python-version: "3.9"
           cache: "pip"
+          cache-dependency-path: pyproject.toml
 
-      - name: torch install
+      - name: Install dependencies
         run: |
-          pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cu121
+          pip install torch==2.2.2 --index-url https://download.pytorch.org/whl/cpu
+          pip install '.[test]'
 
-      - name: pytest install
+      - name: Pytest install
         run: |
           pip install pytest
 
-      - name: _tmp
+      - name: Running
         run: |
-          pip list
+          pytest
