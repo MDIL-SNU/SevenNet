@@ -1,6 +1,11 @@
 default_language_version:
   python: python3
 
+ci:
+  autoupdate_schedule: quarterly
+
+default_stages: [commit]
+
 fail_fast: false
 
 repos:
@@ -73,3 +78,9 @@ repos:
       - id: codespell
         stages: [commit, commit-msg]
         args: ["--ignore-words-list", "Commun"]
+        exclude: |
+          (?x)(
+              ^example_inputs/data/|
+              ^sevenn/pair_e3gnn/comm_brick.cpp|
+              ^sevenn/pair_e3gnn/pair_d3.cu
+          )

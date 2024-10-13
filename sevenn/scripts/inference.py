@@ -9,10 +9,10 @@ from ase.calculators.singlepoint import SinglePointCalculator
 from tqdm import tqdm
 
 import sevenn._keys as KEY
-import sevenn.error_recorder as error_recorder
 from sevenn.train.dataload import graph_build
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import (
+    get_error_recorder,
     model_from_checkpoint,
     pretrained_name_to_path,
     to_atom_graph_list,
@@ -21,7 +21,7 @@ from sevenn.util import (
 # TODO: use updated dataset construction scheme, not directly call graph_build
 
 
-def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
+def load_sevenn_data(sevenn_datas: str, cutoff):
     full_dataset = None
     for sevenn_data in sevenn_datas:
         with open(sevenn_data, 'rb') as f:
@@ -32,12 +32,6 @@ def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
             full_dataset.augment(dataset)
     if full_dataset.cutoff != cutoff:
         raise ValueError(f'cutoff mismatch: {full_dataset.cutoff} != {cutoff}')
-    if full_dataset.x_is_one_hot_idx and full_dataset.type_map != type_map:
-        raise ValueError(
-            "loaded dataset's x is not atomic numbers.                 this is"
-            ' deprecated. Create dataset from structure list                '
-            ' with the newest version of sevenn'
-        )
     return full_dataset
 
 
@@ -74,24 +68,6 @@ def poscars_to_atoms(poscars: List[str]):
         atoms.info = info_dct_f
         atoms_list.append(atoms)
     return atoms_list
-
-
-def get_error_recorder():
-    config = [
-        ('Energy', 'RMSE'),
-        ('Force', 'RMSE'),
-        ('Stress', 'RMSE'),
-        ('Energy', 'MAE'),
-        ('Force', 'MAE'),
-        ('Stress', 'MAE'),
-    ]
-    err_metrics = []
-    for err_type, metric_name in config:
-        metric_kwargs = error_recorder.ERROR_TYPES[err_type].copy()
-        metric_kwargs['name'] += f'_{metric_name}'
-        metric_cls = error_recorder.ErrorRecorder.METRIC_DICT[metric_name]
-        err_metrics.append(metric_cls(**metric_kwargs))
-    return error_recorder.ErrorRecorder(err_metrics)
 
 
 def write_inference_csv(output_list, out):
@@ -192,7 +168,7 @@ def inference_main(  # TODO: re-write
     num_workers=1,
     device='cpu',
     batch_size=5,
-    on_the_fly_graph_build=True,
+    on_the_fly_graph_build=False,
 ):
     if os.path.isfile(checkpoint):
         pass
@@ -204,14 +180,13 @@ def inference_main(  # TODO: re-write
     model.eval()
 
     cutoff = config[KEY.CUTOFF]
-    type_map = config[KEY.TYPE_MAP]
 
     head = os.path.basename(fnames[0])
     atoms_list = None
     inference_set = None
     no_ref = False
     if head.endswith('sevenn_data'):
-        inference_set = load_sevenn_data(fnames, cutoff, type_map)
+        inference_set = load_sevenn_data(fnames, cutoff)
         on_the_fly_graph_build = False
     else:
         if head.startswith('POSCAR'):
@@ -231,7 +206,6 @@ def inference_main(  # TODO: re-write
             inference_set = AtomGraphDataset(data_list, cutoff)
         assert inference_set is not None
 
-        inference_set.x_to_one_hot_idx(type_map)
         infer_list = inference_set.to_list()
         loader = DataLoader(
             infer_list,
@@ -247,7 +221,6 @@ def inference_main(  # TODO: re-write
         collate = AtomsToGraphCollater(
             atoms_list,
             cutoff,
-            type_map,
             transfer_info=True
         )
         loader = DataLoader(
@@ -263,7 +236,6 @@ def inference_main(  # TODO: re-write
     try:
         for batch in tqdm(loader):
             batch = batch.to(device, non_blocking=True)
-            batch[KEY.EDGE_VEC].requires_grad_(True)
             output = model(batch)
             output.detach().to('cpu')
             recorder.update(output)
@@ -277,7 +249,6 @@ def inference_main(  # TODO: re-write
         output_list = []
         for batch in tqdm(loader):
             batch = batch.to(device, non_blocking=True)
-            batch[KEY.EDGE_VEC].requires_grad_(True)
             output = model(batch)
             output.detach().to('cpu')
             recorder.update(output)

@@ -13,6 +13,7 @@ from sevenn._const import AtomGraphDataType
 class EdgePreprocess(nn.Module):
     """
     preprocessing pos to edge vectors and edge lengths
+    currently used in sevenn/scripts/deploy for lammps serial model
     """
 
     def __init__(self, is_stress: bool):
