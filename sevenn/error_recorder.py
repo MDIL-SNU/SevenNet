@@ -113,6 +113,7 @@ class ErrorMetric:
         y_ref = output[self.ref_key] * self.coeff
         y_pred = output[self.pred_key] * self.coeff
         if self.per_atom:
+            assert y_ref.dim() == 1 and y_pred.dim() == 1
             natoms = output[KEY.NUM_ATOMS]
             y_ref = y_ref / natoms
             y_pred = y_pred / natoms
@@ -162,7 +163,7 @@ class RMSError(ErrorMetric):
 class ComponentRMSError(ErrorMetric):
     """
     Ignore vector dim and just average over components
-    Results in smaller error looking
+    Results smaller error
     """
 
     def __init__(self, **kwargs):
