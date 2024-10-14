@@ -1,4 +1,5 @@
-from typing import Callable, List, Optional, Tuple
+from copy import deepcopy
+from typing import Any, Callable, List, Optional, Tuple
 
 import torch
 import torch.distributed as dist
@@ -8,7 +9,7 @@ import sevenn._keys as KEY
 from .atom_graph_data import AtomGraphData
 from .train.optim import loss_dict
 
-ERROR_TYPES = {
+_ERROR_TYPES = {
     'TotalEnergy': {
         'name': 'Energy',
         'ref_key': KEY.ENERGY,
@@ -52,6 +53,10 @@ ERROR_TYPES = {
         'unit': None,
     },
 }
+
+
+def get_err_type(name: str) -> dict[str, Any]:
+    return deepcopy(_ERROR_TYPES[name])
 
 
 class AverageNumber:
@@ -309,12 +314,12 @@ class ErrorRecorder:
     def init_total_loss_metric(config, criteria):
         is_stress = config[KEY.IS_TRAIN_STRESS]
         metrics = []
-        energy_metric = CustomError(criteria, **ERROR_TYPES['Energy'])
+        energy_metric = CustomError(criteria, **get_err_type('Energy'))
         metrics.append((energy_metric, 1))
-        force_metric = CustomError(criteria, **ERROR_TYPES['Force'])
+        force_metric = CustomError(criteria, **get_err_type('Force'))
         metrics.append((force_metric, config[KEY.FORCE_WEIGHT]))
         if is_stress:
-            stress_metric = CustomError(criteria, **ERROR_TYPES['Stress'])
+            stress_metric = CustomError(criteria, **get_err_type('Stress'))
             metrics.append((stress_metric, config[KEY.STRESS_WEIGHT]))
         total_loss_metric = CombinedError(
             metrics, name='TotalLoss', unit=None, ref_key=None, pred_key=None
@@ -341,13 +346,14 @@ class ErrorRecorder:
 
         err_metrics = []
         for err_type, metric_name in err_config:
-            metric_kwargs = ERROR_TYPES[err_type].copy()
+            metric_kwargs = get_err_type(err_type)
             if err_type == 'TotalLoss':  # special case
                 err_metrics.append(
                     ErrorRecorder.init_total_loss_metric(config, criteria)
                 )
                 continue
             metric_cls = ErrorRecorder.METRIC_DICT[metric_name]
+            assert isinstance(metric_kwargs['name'], str)
             metric_kwargs['name'] += f'_{metric_name}'
             if metric_name == 'Loss':
                 metric_kwargs['func'] = criteria
