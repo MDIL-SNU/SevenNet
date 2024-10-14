@@ -43,13 +43,10 @@ def to_atom_graph_list(atom_graph_batch):
 
 
 def error_recorder_from_loss_functions(loss_functions):
-    from copy import deepcopy
-
-    from .error_recorder import ERROR_TYPES, ErrorRecorder, MAError, RMSError
+    from .error_recorder import ErrorRecorder, MAError, RMSError, get_err_type
     from .train.loss import ForceLoss, PerAtomEnergyLoss, StressLoss
 
     metrics = []
-    BASE = deepcopy(ERROR_TYPES)
     for loss_function, _ in loss_functions:
         ref_key = loss_function.ref_key
         pred_key = loss_function.pred_key
@@ -58,11 +55,11 @@ def error_recorder_from_loss_functions(loss_functions):
         name = loss_function.name
         base = None
         if type(loss_function) is PerAtomEnergyLoss:
-            base = BASE['Energy']
+            base = get_err_type('Energy')
         elif type(loss_function) is ForceLoss:
-            base = BASE['Force']
+            base = get_err_type('Force')
         elif type(loss_function) is StressLoss:
-            base = BASE['Stress']
+            base = get_err_type('Stress')
         else:
             base = {}
         base['name'] = name
@@ -351,7 +348,7 @@ def get_error_recorder(
     config = recorder_tuples
     err_metrics = []
     for err_type, metric_name in config:
-        metric_kwargs = error_recorder.ERROR_TYPES[err_type].copy()
+        metric_kwargs = error_recorder.get_err_type(err_type).copy()
         metric_kwargs['name'] += f'_{metric_name}'
         metric_cls = error_recorder.ErrorRecorder.METRIC_DICT[metric_name]
         err_metrics.append(metric_cls(**metric_kwargs))
