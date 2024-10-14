@@ -335,21 +335,20 @@ def unique_filepath(filepath: str) -> str:
         return new_path
 
 
-def get_error_recorder(recorder_tuples: Optional[List[Tuple[str, str]]] = None):
+def get_error_recorder(
+    recorder_tuples: List[Tuple[str, str]] = [
+        ('Energy', 'RMSE'),
+        ('Force', 'RMSE'),
+        ('Stress', 'RMSE'),
+        ('Energy', 'MAE'),
+        ('Force', 'MAE'),
+        ('Stress', 'MAE'),
+    ],
+):
     # TODO add criterion argument and loss recorder selections
     import sevenn.error_recorder as error_recorder
 
-    if recorder_tuples is None:
-        config = [
-            ('Energy', 'RMSE'),
-            ('Force', 'RMSE'),
-            ('Stress', 'RMSE'),
-            ('Energy', 'MAE'),
-            ('Force', 'MAE'),
-            ('Stress', 'MAE'),
-        ]
-    else:
-        config = recorder_tuples
+    config = recorder_tuples
     err_metrics = []
     for err_type, metric_name in config:
         metric_kwargs = error_recorder.ERROR_TYPES[err_type].copy()
