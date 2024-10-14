@@ -84,8 +84,6 @@ def atoms_to_graph(
     Returns:
         numpy dict that can be used to initialize AtomGraphData
         by AtomGraphData(**atoms_to_graph(atoms, cutoff))
-
-    Requires grad is handled by 'dataset' not here.
     """
     if not y_from_calc:
         y_energy = atoms.info['y_energy']
@@ -370,6 +368,9 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
 
 
 def match_reader(reader_name: str, **kwargs):
+    """
+    Deprecated
+    """
     reader = None
     metadata = {}
     if reader_name == 'structure_list':
@@ -390,6 +391,7 @@ def file_to_dataset(
     transfer_info: bool = True,
 ):
     """
+    Deprecated
     Read file by reader > get list of atoms or dict of atoms
     """
 
