@@ -1,5 +1,6 @@
 # test_pretrained: output consistency for pretrained models
 
+import pytest
 import torch
 from ase.build import bulk, molecule
 from torch_geometric.data.batch import Batch
@@ -13,15 +14,22 @@ def acl(a, b):
     return torch.allclose(a, b, atol=1e-6)
 
 
-atoms1 = bulk('NaCl', 'rocksalt', a=5.63)
-atoms1.set_cell([[1.0, 2.815, 2.815], [2.815, 0.0, 2.815], [2.815, 2.815, 0.0]])
-atoms1.set_positions([[0.0, 0.0, 0.0], [2.815, 0.0, 0.0]])
+@pytest.fixture
+def atoms_pbc():
+    atoms1 = bulk('NaCl', 'rocksalt', a=5.63)
+    atoms1.set_cell([[1.0, 2.815, 2.815], [2.815, 0.0, 2.815], [2.815, 2.815, 0.0]])
+    atoms1.set_positions([[0.0, 0.0, 0.0], [2.815, 0.0, 0.0]])
+    return atoms1
 
-atoms2 = molecule('H2O')
-atoms2.set_positions([[0.0, 0.2, 0.12], [0.0, 0.76, -0.48], [0.0, -0.76, -0.48]])
+
+@pytest.fixture
+def atoms_mol():
+    atoms2 = molecule('H2O')
+    atoms2.set_positions([[0.0, 0.2, 0.12], [0.0, 0.76, -0.48], [0.0, -0.76, -0.48]])
+    return atoms2
 
 
-def test_7net0_22May2024():
+def test_7net0_22May2024(atoms_pbc, atoms_mol):
     """
     Reference from v0.9.3.post1 with sevennet_calculator
     """
@@ -29,8 +37,8 @@ def test_7net0_22May2024():
     model, config = model_from_checkpoint(cp_path)
     cutoff = config['cutoff']
 
-    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms1, cutoff))
-    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms2, cutoff))
+    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_pbc, cutoff))
+    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_mol, cutoff))
 
     model.set_is_batch_data(False)
     g1 = model(g1)
@@ -64,7 +72,7 @@ def test_7net0_22May2024():
     assert acl(g2.inferred_force, g2_ref_f)
 
 
-def test_7net0_11July2024():
+def test_7net0_11July2024(atoms_pbc, atoms_mol):
     """
     Reference from v0.9.3.post1 with sevennet_calculator
     """
@@ -72,8 +80,8 @@ def test_7net0_11July2024():
     model, config = model_from_checkpoint(cp_path)
     cutoff = config['cutoff']
 
-    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms1, cutoff))
-    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms2, cutoff))
+    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_pbc, cutoff))
+    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_mol, cutoff))
     g_batch = Batch.from_data_list([g1, g2])
 
     model.set_is_batch_data(False)
