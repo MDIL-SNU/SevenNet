@@ -150,6 +150,6 @@ class SevenNetCalculator(Calculator):
                 (-output[KEY.PRED_STRESS])
                 .detach()
                 .cpu()
-                .numpy()[[0, 1, 2, 4, 5, 3]]
+                .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
             ),
         }
