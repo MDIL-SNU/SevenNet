@@ -53,6 +53,9 @@ def build_sevennet_graph_dataset(
 
 
 def dataset_finalize(dataset, metadata, out):
+    """
+    Deprecated
+    """
     natoms = dataset.get_natoms()
     species = dataset.get_species()
     metadata = {
@@ -86,6 +89,9 @@ def build_script(
     metadata: Optional[dict] = None,
     **fmt_kwargs,
 ):
+    """
+    Deprecated
+    """
     from sevenn.train.dataload import file_to_dataset, match_reader
 
     if metadata is None:
