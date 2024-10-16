@@ -241,7 +241,7 @@ class SevenNetGraphDataset(InMemoryDataset):
                 {
                     'mean': float(torch.mean(array)),
                     'std': float(torch.std(array, correction=0)),
-                    'median': float(torch.median(array)),
+                    'median': float(torch.quantile(array, q=0.5)),
                     'max': float(torch.max(array)),
                     'min': float(torch.min(array)),
                     '_array': array,
