@@ -95,7 +95,7 @@ def test_atoms_to_graph(atoms_type, init_y_as):
     assert graph['per_atom_energy'] == (graph['total_energy'] / len(atoms))
     assert graph['num_atoms'] == len(atoms)
     if not is_stress:
-        assert graph['cell_volume'] == 0
+        assert graph['cell_volume'] == np.finfo(float).eps
 
 
 @pytest.mark.parametrize('atoms_type', ['bulk', 'mol', 'isolated'])
@@ -123,7 +123,7 @@ def test_unlabeled_atoms_to_graph(atoms_type):
 
     assert graph['num_atoms'] == len(atoms)
     if not atoms.pbc.all():
-        assert graph['cell_volume'] == 0
+        assert graph['cell_volume'] == np.finfo(float).eps
 
 
 @pytest.mark.parametrize('init_y_as', ['calc', 'info'])
@@ -278,8 +278,8 @@ def test_sevenn_graph_dataset_elemwise_energies(graph_dataset_tuple):
             assert ref_e[z] == 0
 
 
-def test_sevenn_graph_dataset_num_neigh(graph_dataset_tuple):
-    pass
+# def test_sevenn_graph_dataset_num_neigh(graph_dataset_tuple):
+#    pass
 
 
 def test_sevenn_graph_dataset_statistics(graph_dataset_tuple):
