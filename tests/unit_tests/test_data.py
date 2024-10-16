@@ -201,7 +201,7 @@ def test_graph_build():
 def graph_dataset_tuple():
     tmpdir = os.getenv('TMPDIR', '/tmp')
     randstr = uuid.uuid4().hex
-    assert os.access(tmpdir, os.W_OK), '$TMPDIR is not writable'
+    assert os.access(tmpdir, os.W_OK), f'{tmpdir} is not writable'
 
     root = tmpdir
     files = f'{root}/{randstr}.extxyz'

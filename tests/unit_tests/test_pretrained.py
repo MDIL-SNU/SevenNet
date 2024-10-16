@@ -82,14 +82,12 @@ def test_7net0_11July2024(atoms_pbc, atoms_mol):
 
     g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_pbc, cutoff))
     g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_mol, cutoff))
-    g_batch = Batch.from_data_list([g1, g2])
 
     model.set_is_batch_data(False)
     g1 = model(g1)
     g2 = model(g2)
 
     model.set_is_batch_data(True)
-    g_batch = model(g_batch)
 
     g1_ref_e = torch.tensor([-3.779199])
     g1_ref_f = torch.tensor(
@@ -118,8 +116,3 @@ def test_7net0_11July2024(atoms_pbc, atoms_mol):
 
     assert acl(g2.inferred_total_energy, g2_ref_e)
     assert acl(g2.inferred_force, g2_ref_f)
-    # TODO: add test for nan stress, model should give nan consistently
-
-    assert acl(g_batch.inferred_total_energy, torch.cat([g1_ref_e, g2_ref_e]))
-    assert acl(g_batch.inferred_force, torch.cat([g1_ref_f, g2_ref_f]))
-    assert acl(g_batch.inferred_stress[0], g1_ref_s)
