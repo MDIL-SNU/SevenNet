@@ -234,6 +234,7 @@ def chemical_species_preprocess(input_chem: List[str], universal: bool = False):
 
     config = {}
     if not universal:
+        input_chem = list(set(input_chem))
         chemical_specie = sorted([x.strip() for x in input_chem])
         config[KEY.CHEMICAL_SPECIES] = chemical_specie
         config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
