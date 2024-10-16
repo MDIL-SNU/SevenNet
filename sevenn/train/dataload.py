@@ -61,6 +61,9 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
     atomic_numbers = atoms.get_atomic_numbers()
 
     cell = np.array(cell)
+    vol = _correct_scalar(atoms.cell.volume)
+    if vol == 0:
+        vol = np.array(np.finfo(float).eps)
 
     data = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -70,9 +73,7 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
         KEY.EDGE_VEC: edge_vec,
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
-        KEY.CELL_VOLUME: _correct_scalar(
-            np.einsum('i,i', cell[0, :], np.cross(cell[1, :], cell[2, :]))
-        ),
+        KEY.CELL_VOLUME: vol,
         KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
     }
     data[KEY.INFO] = {}
@@ -156,6 +157,9 @@ def atoms_to_graph(
     atomic_numbers = atoms.get_atomic_numbers()
 
     cell = np.array(cell)
+    vol = _correct_scalar(atoms.cell.volume)
+    if vol == 0:
+        vol = np.array(np.finfo(float).eps)
 
     data = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -168,9 +172,7 @@ def atoms_to_graph(
         KEY.STRESS: y_stress,
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
-        KEY.CELL_VOLUME: _correct_scalar(
-            np.einsum('i,i', cell[0, :], np.cross(cell[1, :], cell[2, :]))
-        ),
+        KEY.CELL_VOLUME: vol,
         KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
         KEY.PER_ATOM_ENERGY: _correct_scalar(y_energy / len(pos)),
     }
