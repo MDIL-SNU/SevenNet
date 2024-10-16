@@ -240,7 +240,7 @@ class SevenNetGraphDataset(InMemoryDataset):
             dct.update(
                 {
                     'mean': float(torch.mean(array)),
-                    'std': float(torch.std(array)),
+                    'std': float(torch.std(array, correction=0)),
                     'median': float(torch.median(array)),
                     'max': float(torch.max(array)),
                     'min': float(torch.min(array)),
