@@ -64,11 +64,11 @@ class SevenNetGraphDataset(InMemoryDataset):
         files: list of filenames to initialize dataset:
                ASE readable (with proper extension), structure_list, .sevenn_data
         process_num_cores: # of cpu cores to build graph
-        processed_name: name of .pt file to be saved in {root}/processed_7net
+        processed_name: save as {root}/sevenn_data/{processed_name}.pt
         pre_transfrom: optional transform for each graph: def (graph) -> graph
         pre_filter: optional filtering function for each graph: def (graph) -> graph
         force_reload: if True, reload dataset from files even if there exist
-                      {root}/processed_7net/{processed_name}
+                      {root}/sevenn_data/{processed_name}
         **process_kwargs: keyword arguments that will be passed into ase.io.read
     """
 
@@ -240,8 +240,8 @@ class SevenNetGraphDataset(InMemoryDataset):
             dct.update(
                 {
                     'mean': float(torch.mean(array)),
-                    'std': float(torch.std(array)),
-                    'median': float(torch.median(array)),
+                    'std': float(torch.std(array, correction=0)),
+                    'median': float(torch.quantile(array, q=0.5)),
                     'max': float(torch.max(array)),
                     'min': float(torch.min(array)),
                     '_array': array,
@@ -359,7 +359,7 @@ def from_config(
         name = dk.split('_')[1].strip()
         if (
             len(paths) == 1
-            and 'processed_7net' in paths[0]
+            and 'sevenn_data' in paths[0]
             and paths[0].endswith('.pt')
         ):
             dataset_args.update(filename2args(paths[0]))

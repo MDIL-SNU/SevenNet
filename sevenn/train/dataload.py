@@ -1,3 +1,4 @@
+import copy
 import os.path
 from functools import partial
 from itertools import islice
@@ -27,6 +28,17 @@ from sevenn.atom_graph_data import AtomGraphData
 from .dataset import AtomGraphDataset
 
 
+def _correct_scalar(v):
+    if isinstance(v, np.ndarray):
+        v = v.squeeze()
+        assert v.ndim == 0, f'given {v} is not a scalar'
+        return v
+    elif isinstance(v, int) or isinstance(v, float):
+        return np.array(v)
+    else:
+        assert False, f'{type(v)} is not expected'
+
+
 def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -49,6 +61,9 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
     atomic_numbers = atoms.get_atomic_numbers()
 
     cell = np.array(cell)
+    vol = _correct_scalar(atoms.cell.volume)
+    if vol == 0:
+        vol = np.array(np.finfo(float).eps)
 
     data = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -58,10 +73,8 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
         KEY.EDGE_VEC: edge_vec,
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
-        KEY.CELL_VOLUME: np.einsum(
-            'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
-        ),
-        KEY.NUM_ATOMS: len(atomic_numbers),
+        KEY.CELL_VOLUME: vol,
+        KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
     }
     data[KEY.INFO] = {}
     return data
@@ -75,22 +88,42 @@ def atoms_to_graph(
 ):
     """
     From ase atoms, return AtomGraphData as graph based on cutoff radius
+    Except for energy, force and stress labels must be numpy array type
+    as other cases are not tested.
+    Returns 'np.nan' with consistent shape for unlabeled data
+    (ex. stress of non-pbc system)
 
     Args:
         atoms (Atoms): ase atoms
         cutoff (float): cutoff radius
-        transfer_info (bool): if True, transfer ".info" from atoms to graph
-        y_from_calc: if True, get ref values from calculator
+        transfer_info (bool): if True, transfer ".info" from atoms to graph,
+                              defaults to True
+        y_from_calc: if True, get ref values from calculator, defaults to False
     Returns:
         numpy dict that can be used to initialize AtomGraphData
         by AtomGraphData(**atoms_to_graph(atoms, cutoff))
-
+        , for scalar, its shape is (), and types are np.ndarray
     Requires grad is handled by 'dataset' not here.
     """
     if not y_from_calc:
         y_energy = atoms.info['y_energy']
         y_force = atoms.arrays['y_force']
-        y_stress = atoms.info.get('y_stress', None)
+        y_stress = atoms.info.get('y_stress', np.full((6,), np.nan))
+        if y_stress.shape == (3, 3):
+            y_stress = np.array(
+                [
+                    y_stress[0][0],
+                    y_stress[1][1],
+                    y_stress[2][2],
+                    y_stress[0][1],
+                    y_stress[1][2],
+                    y_stress[2][0],
+                ]
+            )
+        else:
+            y_stress = y_stress.squeeze()
+        if y_stress.shape != (6,):
+            raise ValueError('y_stress exists but failed to have correct shape')
     else:
         try:
             y_energy = atoms.get_potential_energy(force_consistent=True)
@@ -98,10 +131,10 @@ def atoms_to_graph(
             y_energy = atoms.get_potential_energy()
         y_force = atoms.get_forces(apply_constraint=False)
         try:
-            y_stress = -1 * atoms.get_stress()
-            y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
+            y_stress = -1 * atoms.get_stress()  # it ensures correct shape
+            y_stress = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
         except RuntimeError:
-            y_stress = None
+            y_stress = np.full((6,), np.nan)
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -124,6 +157,9 @@ def atoms_to_graph(
     atomic_numbers = atoms.get_atomic_numbers()
 
     cell = np.array(cell)
+    vol = _correct_scalar(atoms.cell.volume)
+    if vol == 0:
+        vol = np.array(np.finfo(float).eps)
 
     data = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -131,24 +167,28 @@ def atoms_to_graph(
         KEY.POS: pos,
         KEY.EDGE_IDX: edge_idx,
         KEY.EDGE_VEC: edge_vec,
-        KEY.ENERGY: y_energy,
+        KEY.ENERGY: _correct_scalar(y_energy),
         KEY.FORCE: y_force,
         KEY.STRESS: y_stress,
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
-        KEY.CELL_VOLUME: np.einsum(
-            'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
-        ),
-        KEY.NUM_ATOMS: len(atomic_numbers),
-        KEY.PER_ATOM_ENERGY: y_energy / len(pos),
+        KEY.CELL_VOLUME: vol,
+        KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
+        KEY.PER_ATOM_ENERGY: _correct_scalar(y_energy / len(pos)),
     }
-    del atoms.info['y_energy']
-    del atoms.arrays['y_force']
-    if 'y_stress' in atoms.info:
-        del atoms.info['y_stress']
 
     if transfer_info and atoms.info is not None:
-        data[KEY.INFO] = atoms.info
+        info = copy.deepcopy(atoms.info)
+        # save only metadata
+        # TODO: is it really necessary?
+        if 'y_energy' in info:
+            del info['y_energy']
+        if 'y_force' in info:
+            del info['y_force']
+        if 'y_stress' in info:
+            del info['y_stress']
+        data[KEY.INFO] = info
+
     else:
         data[KEY.INFO] = {}
 
@@ -160,7 +200,7 @@ def graph_build(
     cutoff: float,
     num_cores: int = 1,
     transfer_info: bool = True,
-    init_atoms_y: bool = True,
+    y_from_calc: bool = True,
 ) -> List[AtomGraphData]:
     """
     parallel version of graph_build
@@ -168,12 +208,14 @@ def graph_build(
     Args:
         atoms_list (List): list of ASE atoms
         cutoff (float): cutoff radius of graph
-        num_cores (int, Optional): number of cores to use
-        transfer_info (bool, Optional): if True, copy info from atoms to graph
+        num_cores (int): number of cores to use
+        transfer_info (bool): if True, copy info from atoms to graph,
+                              defaults to True
+        y_from_calc (bool): Get reference y labels from calculator, defaults to True
     Returns:
         List[AtomGraphData]: list of AtomGraphData
     """
-    if init_atoms_y:
+    if y_from_calc:
         atoms_list = set_atoms_y(atoms_list)
     serial = num_cores == 1
     inputs = [(atoms, cutoff, transfer_info) for atoms in atoms_list]
@@ -182,10 +224,7 @@ def graph_build(
         pool = mp.Pool(num_cores)
         graph_list = pool.starmap(
             atoms_to_graph,
-            tqdm(
-                inputs, total=len(atoms_list),
-                desc=f'graph_build ({num_cores})'
-            ),
+            tqdm(inputs, total=len(atoms_list), desc=f'graph_build ({num_cores})'),
         )
         pool.close()
         pool.join()
@@ -258,7 +297,7 @@ def set_atoms_y(
                 y_stress = -1 * atoms.get_stress()
                 atoms.info['y_stress'] = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
             except RuntimeError:
-                atoms.info['y_stress'] = np.full((1, 6), np.nan)
+                atoms.info['y_stress'] = np.full((6,), np.nan)
     return atoms_list
 
 
@@ -282,11 +321,8 @@ def ase_reader(
 
 # Reader
 def structure_list_reader(filename: str, format_outputs='vasp-out'):
-    parsers = DefaultParsersContainer(
-        PositionsAndForces, Stress, Energy, Cell
-    ).make_parsers()
-    ocp = OutcarChunkParser(parsers=parsers)
     """
+    Deprecated
     Read from structure_list using braceexpand and ASE
 
     Args:
@@ -296,6 +332,10 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
         dictionary of lists of ASE structures.
         key is title of training data (user-define)
     """
+    parsers = DefaultParsersContainer(
+        PositionsAndForces, Stress, Energy, Cell
+    ).make_parsers()
+    ocp = OutcarChunkParser(parsers=parsers)
 
     def parse_label(line):
         line = line.strip()
@@ -390,6 +430,7 @@ def file_to_dataset(
     transfer_info: bool = True,
 ):
     """
+    Deprecated
     Read file by reader > get list of atoms or dict of atoms
     """
 
@@ -411,14 +452,13 @@ def file_to_dataset(
 
     graph_dct = {}
     for label, atoms_list in atoms_dct.items():
-        graph_list =\
-            graph_build(
-                atoms_list=atoms_list,
-                cutoff=cutoff,
-                num_cores=cores,
-                transfer_info=transfer_info,
-                init_atoms_y=False
-            )
+        graph_list = graph_build(
+            atoms_list=atoms_list,
+            cutoff=cutoff,
+            num_cores=cores,
+            transfer_info=transfer_info,
+            y_from_calc=False,
+        )
         for graph in graph_list:
             graph[KEY.USER_LABEL] = label
         graph_dct[label] = graph_list

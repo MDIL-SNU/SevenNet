@@ -226,6 +226,16 @@ def _to_parallel_model(layers: OrderedDict, config):
 
 # TODO: it gets bigger and bigger. refactor it
 def build_E3_equivariant_model(config: dict, parallel=False):
+    """
+    output shapes (w/o batch)
+
+    PRED_TOTAL_ENERGY: (),
+    ATOMIC_ENERGY: (natoms, 1),  # intended
+    PRED_FORCE: (natoms, 3),
+    PRED_STRESS: (6,),
+
+    for data w/o shell volume, pred_stress has garbage values
+    """
     layers = OrderedDict()
 
     cutoff = config[KEY.CUTOFF]
