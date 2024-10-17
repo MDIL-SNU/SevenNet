@@ -20,10 +20,10 @@ class Trainer:
         if self.distributed:
             dist.barrier()
             backend = config[KEY.DDP_BACKEND]
-            if backend == "nccl":
-                device = torch.device("cuda", config[KEY.LOCAL_RANK])
+            if backend == 'nccl':
+                device = torch.device('cuda', config[KEY.LOCAL_RANK])
                 self.model = DDP(model.to(device), device_ids=[device])
-            elif backend == "mpi":
+            elif backend == 'mpi':
                 self.model = DDP(model.to(device))
             self.model.module.set_is_batch_data(True)
             self.rank = config[KEY.LOCAL_RANK]
