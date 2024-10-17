@@ -21,10 +21,10 @@ model:
     weight_nn_hidden_neurons: [64, 64]            # Hidden neurons in convolution weight neural network
     radial_basis:                                 # Function and its parameters to encode radial distance
         radial_basis_name: 'bessel'               # Only 'bessel' is currently supported
-        bessel_basis_num: 8                       
+        bessel_basis_num: 8
     cutoff_function:                              # Envelop function, multiplied to radial_basis functions to init edge featrues
         cutoff_function_name: 'poly_cut'          # {'poly_cut' and 'poly_cut_p_value'} or {'XPLOR' and 'cutoff_on'}
-        poly_cut_p_value: 6                       
+        poly_cut_p_value: 6
 
     act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip
     act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip

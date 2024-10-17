@@ -122,6 +122,10 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
     device_name = "CPU";
   }
 
+  if (std::getenv("OFF_E3GNN_PARALLEL_CUDA_MPI")) {
+      use_cuda_mpi = false;
+  }
+
   if (lmp->screen) {
     if (use_gpu && !use_cuda_mpi) {
       device_comm = torch::kCPU;
@@ -160,26 +164,6 @@ torch::Device PairE3GNNParallel::get_cuda_device() {
   if (print_info)
     std::cout << world_rank << " Available # of GPUs found: " << num_gpus
               << std::endl;
-  if (cuda_visible == nullptr) {
-    // assume every gpu in node is avail
-    // believe user did right thing...
-    // idx = rank % num_gpus;
-    // std::cout << world_rank << " use GPU index(No CUDA_VISIBLE_DEVICES set):
-    // " << idx << std::endl;
-  } else {
-    /*
-    auto delim = ",";
-    char *tok = std::strtok(cuda_visible, delim);
-    std::vector<std::string> device_ids;
-    while(tok != nullptr) {
-      device_ids.push_back(std::string(tok));
-      tok = std::strtok(nullptr, delim);
-    }
-    idx = std::stoi(device_ids[rank % device_ids.size()]);
-    std::cout << world_rank << " use GPU index(from CUDA_VISIBLE_DEVICES): " <<
-    idx << std::endl;
-    */
-  }
   cudaError_t cuda_err = cudaSetDevice(idx);
   if (cuda_err != cudaSuccess) {
     std::cerr << "E3GNN: Failed to set CUDA device: "
@@ -487,9 +471,9 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
   for (int graph_idx = 0; graph_idx < graph_indexer; graph_idx++) {
     int i = graph_index_to_i[graph_idx];
-    f[i][0] = forces[graph_idx][0];
-    f[i][1] = forces[graph_idx][1];
-    f[i][2] = forces[graph_idx][2];
+    f[i][0] += forces[graph_idx][0];
+    f[i][1] += forces[graph_idx][1];
+    f[i][2] += forces[graph_idx][2];
   }
 
   if (vflag) {
@@ -510,12 +494,12 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
         torch::neg(torch::sum(per_atom_stress_tensor, 0));
     auto virial_stress = virial_stress_tensor.accessor<float, 1>();
 
-    virial[0] = virial_stress[0];
-    virial[1] = virial_stress[1];
-    virial[2] = virial_stress[2];
-    virial[3] = virial_stress[3];
-    virial[4] = virial_stress[5];
-    virial[5] = virial_stress[4];
+    virial[0] += virial_stress[0];
+    virial[1] += virial_stress[1];
+    virial[2] += virial_stress[2];
+    virial[3] += virial_stress[3];
+    virial[4] += virial_stress[5];
+    virial[5] += virial_stress[4];
   }
 
   if (eflag_atom) {
@@ -690,25 +674,33 @@ void PairE3GNNParallel::init_style() {
 
 double PairE3GNNParallel::init_one(int i, int j) { return cutoff; }
 
+void PairE3GNNParallel::notify_proc_ids(const int *sendproc, const int *recvproc) {
+  for (int iswap = 0; iswap < 6; iswap++) {
+    this->sendproc[iswap] = sendproc[iswap];
+    this->recvproc[iswap]= recvproc[iswap];
+  }
+}
+
 void PairE3GNNParallel::comm_preprocess() {
   assert(!comm_preprocess_done);
   CommBrick *comm_brick = dynamic_cast<CommBrick *>(comm);
 
-  // false communication to preprocess index
-  // result in completed comm_index_pack/unpack_forward & extra_graph_idx_map
+  // fake lammps communication call to preprocess index
+  // gives complete comm_index_pack, unpack_forward, and extra_graph_idx_map
   comm_brick->forward_comm(this);
 
-  std::set<int> already_met;
+  std::map<int, std::set<int>> already_met_map;
   for (int comm_phase = 0; comm_phase < 6; comm_phase++) {
     const int n = comm_index_pack_forward[comm_phase].size();
-    if (n == 0) {
-      // do nothing if self comm
-      continue;
+    int sproc = this->sendproc[comm_phase];
+    if (already_met_map.count(sproc) == 0) {
+      already_met_map.insert({sproc, std::set<int>()});
     }
 
     // for unpack_reverse, Ignore duplicated index by 'already_met'
     std::vector<long> &idx_map_forward = comm_index_pack_forward[comm_phase];
     std::vector<long> &idx_map_reverse = comm_index_unpack_reverse[comm_phase];
+    std::set<int>& already_met = already_met_map[sproc];
     // the last index of x_comm is used to trash unnecessary values
     const int trash_index =
         graph_size + static_cast<int>(extra_graph_idx_map.size()); //+ 1;
@@ -727,19 +719,11 @@ void PairE3GNNParallel::comm_preprocess() {
     }
 
     if (use_cuda_mpi) {
-      comm_index_pack_forward_tensor[comm_phase] =
-          torch::from_blob(idx_map_forward.data(), idx_map_forward.size(),
-                           INTEGER_TYPE)
-              .to(device);
+      comm_index_pack_forward_tensor[comm_phase] = torch::from_blob(idx_map_forward.data(), idx_map_forward.size(), INTEGER_TYPE).to(device);
 
       auto upmap = comm_index_unpack_forward[comm_phase];
-      comm_index_unpack_forward_tensor[comm_phase] =
-          torch::from_blob(upmap.data(), upmap.size(), INTEGER_TYPE).to(device);
-
-      comm_index_unpack_reverse_tensor[comm_phase] =
-          torch::from_blob(idx_map_reverse.data(), idx_map_reverse.size(),
-                           INTEGER_TYPE)
-              .to(device);
+      comm_index_unpack_forward_tensor[comm_phase] = torch::from_blob(upmap.data(), upmap.size(), INTEGER_TYPE).to(device);
+      comm_index_unpack_reverse_tensor[comm_phase] = torch::from_blob(idx_map_reverse.data(), idx_map_reverse.size(), INTEGER_TYPE).to(device);
     }
   }
   comm_preprocess_done = true;
@@ -803,24 +787,12 @@ void PairE3GNNParallel::unpack_forward_init(int n, int first, int comm_phase) {
 int PairE3GNNParallel::pack_forward_comm_gnn(float *buf, int comm_phase) {
   std::vector<long> &idx_map = comm_index_pack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
-
-  if (use_cuda_mpi) {
+  if (use_cuda_mpi && n != 0) {
     torch::Tensor &idx_map_tensor = comm_index_pack_forward_tensor[comm_phase];
-    auto selected =
-        x_comm.index_select(0, idx_map_tensor); // its size is x_dim * n
+    auto selected = x_comm.index_select(0, idx_map_tensor); // its size is x_dim * n
     cudaError_t cuda_err =
         cudaMemcpy(buf, selected.data_ptr<float>(), (x_dim * n) * sizeof(float),
                    cudaMemcpyDeviceToDevice);
-
-    // TODO: I want to remove temporary selected tensor for speed.
-    // Code below produce wrong results. But if I change {n, x_dim} to {x_dim,
-    // n}, get correct result. Instead, it raises a warning that the dimension
-    // is not correct so they implicitly changed resulting tensor shape to fit
-    // out_tensor(buf_tensor)'s dimension. How can I solve this?
-
-    // auto buf_tensor = torch::from_blob(buf, {n, x_dim},
-    // FLOAT_TYPE.device(device)); // tensor wrapping of buf
-    // at::index_select_out(buf_tensor, x_comm, 0, idx_map_tensor);
   } else {
     int i, j, m;
     m = 0;
@@ -848,11 +820,8 @@ void PairE3GNNParallel::unpack_forward_comm_gnn(float *buf, int comm_phase) {
   std::vector<long> &idx_map = comm_index_unpack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-  if (use_cuda_mpi) {
-    torch::Tensor &idx_map_tensor =
-        comm_index_unpack_forward_tensor[comm_phase];
-    // share same memory space with existing device buffer just wrapping to
-    // troch::Tensor
+  if (use_cuda_mpi && n != 0) {
+    torch::Tensor &idx_map_tensor = comm_index_unpack_forward_tensor[comm_phase];
     auto buf_tensor =
         torch::from_blob(buf, {n, x_dim}, FLOAT_TYPE.device(device));
     x_comm.scatter_(0, idx_map_tensor.repeat_interleave(x_dim).view({n, x_dim}),
@@ -874,13 +843,10 @@ int PairE3GNNParallel::pack_reverse_comm_gnn(float *buf, int comm_phase) {
   std::vector<long> &idx_map = comm_index_unpack_forward[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-  if (use_cuda_mpi) {
-    torch::Tensor &idx_map_tensor =
-        comm_index_unpack_forward_tensor[comm_phase];
+  if (use_cuda_mpi && n != 0) {
+    torch::Tensor &idx_map_tensor = comm_index_unpack_forward_tensor[comm_phase];
     auto selected = x_comm.index_select(0, idx_map_tensor);
-    cudaError_t cuda_err =
-        cudaMemcpy(buf, selected.data_ptr<float>(), (x_dim * n) * sizeof(float),
-                   cudaMemcpyDeviceToDevice);
+    cudaError_t cuda_err = cudaMemcpy(buf, selected.data_ptr<float>(), (x_dim * n) * sizeof(float), cudaMemcpyDeviceToDevice);
   } else {
     int i, j, m;
     m = 0;
@@ -899,7 +865,6 @@ int PairE3GNNParallel::pack_reverse_comm_gnn(float *buf, int comm_phase) {
     std::cout << world_rank << " pack_reverse x_dim*n: " << x_dim * n
               << std::endl;
     double Msend = static_cast<double>(x_dim * n * 4) / (1024 * 1024);
-    std::cout << world_rank << " send size(MB): " << Msend << "\n" << std::endl;
   }
   return x_dim * n;
 }
@@ -908,9 +873,8 @@ void PairE3GNNParallel::unpack_reverse_comm_gnn(float *buf, int comm_phase) {
   std::vector<long> &idx_map = comm_index_unpack_reverse[comm_phase];
   const int n = static_cast<int>(idx_map.size());
 
-  if (use_cuda_mpi) {
-    torch::Tensor &idx_map_tensor =
-        comm_index_unpack_reverse_tensor[comm_phase];
+  if (use_cuda_mpi && n != 0) {
+    torch::Tensor &idx_map_tensor = comm_index_unpack_reverse_tensor[comm_phase];
     auto buf_tensor =
         torch::from_blob(buf, {n, x_dim}, FLOAT_TYPE.device(device));
     x_comm.scatter_(0, idx_map_tensor.repeat_interleave(x_dim).view({n, x_dim}),

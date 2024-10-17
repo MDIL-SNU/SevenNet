@@ -47,7 +47,7 @@ public:
   void forward_comm_array(int, double **) override; // forward comm of array
   void *extract(const char *, int &) override;
   double memory_usage() override;
-  
+
   // patched from SevenNet //
   void forward_comm(class PairE3GNNParallel *);
   void reverse_comm(class PairE3GNNParallel *);

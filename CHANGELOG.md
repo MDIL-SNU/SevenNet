@@ -1,6 +1,18 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## WIP
+### Added
+- energy_key, force_key, stress_key options for `sevenn_graph_build` @thangckt
+### Changed
+- Read EFS of atoms from y_* keys of .info or .arrays dict, instead of caclculator results
+### Fixed
+- [e3gnn_serial]: can continue simulation even when atom tag becomes not consecutive (removing atom dynamically) @gasplant64
+- [e3gnn_parallel]: undefined behavior when there is no atoms to send/recv (for non pbc system)
+- [e3gnn_parallel]: incorrect force/stress in some edge cases (too small simulation cell & 2 process)
+- [e3gnn_parallel]: revert commit 14851ef, now e3gnn_parallel is sane.
+- [e3gnn_*]: += instead of = when saving virial stress and forces @gasplant64
+
 ## [0.9.5]
 ### Note
 This version is not stable, but I tag it as v0.9.5 before making further changes.
