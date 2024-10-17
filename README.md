@@ -10,7 +10,7 @@ The project provides parallel molecular dynamics simulations using graph neural 
 The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
 **PLEASE NOTE:** SevenNet+LAMMPS parallel after this commit: 14851ef (v0.9.3 ~ 0.9.5) has a serious bug:
-it gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug has been fixed in the main branch, and I'll release the corrected version ASAP.
+it gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug has been fixed in the main branch and PyPI.
 
 
 ## Features
@@ -84,7 +84,7 @@ pip install https://github.com/MDIL-SNU/SevenNet.git
 
 ### SevenNet-0
 
-SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). 
+SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
 
 While SevenNet-0 can be applied to downstream tasks as it is, it is recommended to [`fine-tune`](#training) SevenNet-0 before addressing real downstream tasks.
 
