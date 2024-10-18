@@ -11,15 +11,21 @@ description = (
     + 'Evaluate sevenn_data/POSCARs/OUTCARs/ase readable '
     + 'using the model stored in a checkpoint.'
 )
-checkpoint_help = 'checkpoint'
-target_help = 'target files to evaluate. '
+checkpoint_help = 'Checkpoint or pre-trained model name (7net-0)'
+target_help = 'Target files to evaluate'
 
 
 def main(args=None):
     args = cmd_parse_data(args)
     torch.set_num_threads(args.nthreads)
-    if not os.path.exists(args.output):
-        os.makedirs(args.output)
+    out = args.output
+
+    if os.path.exists(out):
+        raise FileExistsError(f'Directory {out} already exists')
+
+    if not os.path.exists(out):
+        os.makedirs(out)
+
     device = args.device
     if device == 'auto':
         device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -65,8 +71,8 @@ def cmd_parse_data(args=None):
         '-o',
         '--output',
         type=str,
-        default='sevenn_inference_result',
-        help='path to save the outputs',
+        default='inference_results',
+        help='Directory name to write outputs, should not exist',
     )
     ag.add_argument(
         '-b',

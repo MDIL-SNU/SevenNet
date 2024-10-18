@@ -201,34 +201,31 @@ def inference_main(  # TODO: re-write
 
     if not on_the_fly_graph_build:  # old code
         from torch_geometric.loader import DataLoader
+
         if atoms_list is not None:
-            data_list = graph_build(atoms_list, cutoff, num_cores=num_cores)
+            data_list = graph_build(
+                atoms_list, cutoff, num_cores=num_cores, y_from_calc=True
+            )
             inference_set = AtomGraphDataset(data_list, cutoff)
         assert inference_set is not None
 
         infer_list = inference_set.to_list()
         loader = DataLoader(
-            infer_list,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=False
+            infer_list, batch_size=batch_size, num_workers=num_workers, shuffle=False
         )
         output_list = []
     else:  # new
         from torch.utils.data.dataloader import DataLoader
 
         from sevenn.train.collate import AtomsToGraphCollater
-        collate = AtomsToGraphCollater(
-            atoms_list,
-            cutoff,
-            transfer_info=True
-        )
+
+        collate = AtomsToGraphCollater(atoms_list, cutoff, transfer_info=True)
         loader = DataLoader(
             atoms_list,
             collate_fn=collate,
             batch_size=batch_size,
             shuffle=False,
-            num_workers=num_workers
+            num_workers=num_workers,
         )
 
     recorder = get_error_recorder()

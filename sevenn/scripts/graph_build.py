@@ -25,7 +25,7 @@ def build_sevennet_graph_dataset(
     log.timer_start('graph_build')
     db = SevenNetGraphDataset(
         cutoff=cutoff,
-        root=os.path.dirname(out),
+        root=out,
         files=source,
         processed_name=filename,
         process_num_cores=num_cores,
