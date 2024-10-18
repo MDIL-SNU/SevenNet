@@ -10,6 +10,7 @@ from torch import tensor
 import sevenn.error_recorder as erc
 import sevenn.train.loss as loss
 from sevenn.atom_graph_data import AtomGraphData
+from sevenn.train.optim import loss_dict
 
 _default_config = {
     'loss': 'mse',
@@ -245,3 +246,21 @@ def test_total_loss_metric_from_config(conf):
     assert np.allclose(err.get(), val.item())
     err.update(tmp)
     assert np.allclose(err.get(), val.item())
+
+
+@pytest.mark.parametrize(
+    'conf', [config(), config(is_train_stress=False), config(loss='huber')]
+)
+def test_error_recorder_from_config(conf):
+    recorder = erc.ErrorRecorder.from_config(conf)
+
+    total_loss_flag = False
+    for metric in recorder.metrics:
+        if conf['is_train_stress'] is False:
+            assert 'stress' not in metric.name
+        if metric.name == 'TotalLoss':
+            total_loss_flag = True
+            for loss_metric, _ in metric.metrics:  # type: ignore
+                print(loss_metric.func)
+                assert isinstance(loss_metric.func, loss_dict[conf['loss']])
+    assert total_loss_flag
