@@ -75,7 +75,6 @@ train:
 
 data:
     batch_size: 4                                 # Per GPU batch size.
-    data_divide_ratio: 0.1                        # Split dataset into training and validation sets by this ratio
 
     shift: 'per_atom_energy_mean'                 # One of 'per_atom_energy_mean*', 'elemwise_reference_energies', float
     scale: 'force_rms'                            # One of 'force_rms*', 'per_atom_energy_std', float

@@ -30,8 +30,9 @@ class Logger(metaclass=Singleton):
         self.rank = rank
         self._filename = filename
         if rank == 0:
-            if filename is not None:
-                self.logfile = open(filename, 'a', buffering=1)
+            # if filename is not None:
+            #    self.logfile = open(filename, 'a', buffering=1)
+            self.logfile = None
             self.files = {}
             self.screen = screen
         else:
@@ -43,7 +44,9 @@ class Logger(metaclass=Singleton):
     def __enter__(self):
         if self.logfile is None and self._filename is not None:
             try:
-                self.logfile = open(self._filename, 'a', buffering=1)
+                self.logfile = open(
+                    self._filename, 'a', buffering=1, encoding='utf-8'
+                )
             except IOError as e:
                 print(f'Failed to re-open log file {self._filename}: {e}')
                 self.logfile = None
@@ -62,6 +65,12 @@ class Logger(metaclass=Singleton):
         finally:
             self.logfile = None
             self.files = {}
+
+    def switch_file(self, new_filename: str):
+        if self.logfile is not None:
+            raise ValueError('Current logfile is not yet closed')
+        self._filename = new_filename
+        return self
 
     def write(self, content: str):
         # no newline!
