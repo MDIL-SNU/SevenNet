@@ -149,7 +149,7 @@ class RMSError(ErrorMetric):
         self._se = torch.nn.MSELoss(reduction='none')
 
     def _square_error(self, y_ref, y_pred, vdim: int):
-        return self._se(y_ref, y_pred).view(-1, vdim).sum(dim=1)
+        return self._se(y_ref.view(-1, vdim), y_pred.view(-1, vdim)).sum(dim=1)
 
     def update(self, output: AtomGraphData):
         y_ref, y_pred = self._retrieve(output)
