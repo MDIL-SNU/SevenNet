@@ -122,8 +122,6 @@ def atoms_to_graph(
             )
         else:
             y_stress = y_stress.squeeze()
-        if y_stress.shape != (6,):
-            raise ValueError('y_stress exists but failed to have correct shape')
     else:
         try:
             y_energy = atoms.get_potential_energy(force_consistent=True)
@@ -135,6 +133,7 @@ def atoms_to_graph(
             y_stress = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
         except RuntimeError:
             y_stress = np.full((6,), np.nan)
+    assert y_stress.shape == (6,), 'If you see this, please report to the maintainer'
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -169,7 +168,7 @@ def atoms_to_graph(
         KEY.EDGE_VEC: edge_vec,
         KEY.ENERGY: _correct_scalar(y_energy),
         KEY.FORCE: y_force,
-        KEY.STRESS: y_stress,
+        KEY.STRESS: y_stress.reshape(1, 6),  # to make batch have (n_node, 6)
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
         KEY.CELL_VOLUME: vol,
@@ -200,7 +199,7 @@ def graph_build(
     cutoff: float,
     num_cores: int = 1,
     transfer_info: bool = True,
-    y_from_calc: bool = True,
+    y_from_calc: bool = False,
 ) -> List[AtomGraphData]:
     """
     parallel version of graph_build
@@ -211,14 +210,12 @@ def graph_build(
         num_cores (int): number of cores to use
         transfer_info (bool): if True, copy info from atoms to graph,
                               defaults to True
-        y_from_calc (bool): Get reference y labels from calculator, defaults to True
+        y_from_calc (bool): Get reference y labels from calculator, defaults to False
     Returns:
         List[AtomGraphData]: list of AtomGraphData
     """
-    if y_from_calc:
-        atoms_list = set_atoms_y(atoms_list)
     serial = num_cores == 1
-    inputs = [(atoms, cutoff, transfer_info) for atoms in atoms_list]
+    inputs = [(atoms, cutoff, transfer_info, y_from_calc) for atoms in atoms_list]
 
     if not serial:
         pool = mp.Pool(num_cores)
@@ -239,7 +236,7 @@ def graph_build(
     return graph_list
 
 
-def set_atoms_y(
+def _set_atoms_y(
     atoms_list: list[ase.Atoms],
     energy_key: Optional[str] = None,
     force_key: Optional[str] = None,
@@ -287,7 +284,8 @@ def set_atoms_y(
             atoms.arrays['y_force'] = atoms.get_forces(apply_constraint=False)
         # access stress
         if stress_key is not None:
-            atoms.info['y_stress'] = atoms.info[stress_key]
+            y_stress = -1 * atoms.info[stress_key]
+            atoms.info['y_stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
         else:
             try:
                 # xx yy zz xy yz zx order
@@ -295,7 +293,7 @@ def set_atoms_y(
                 # (ASE automatically converts vasp kB to eV/A^3)
                 # So we restore it
                 y_stress = -1 * atoms.get_stress()
-                atoms.info['y_stress'] = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
+                atoms.info['y_stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
             except RuntimeError:
                 atoms.info['y_stress'] = np.full((6,), np.nan)
     return atoms_list
@@ -316,7 +314,7 @@ def ase_reader(
     if not isinstance(atoms_list, list):
         atoms_list = [atoms_list]
 
-    return set_atoms_y(atoms_list, energy_key, force_key, stress_key)
+    return _set_atoms_y(atoms_list, energy_key, force_key, stress_key)
 
 
 # Reader
@@ -406,7 +404,7 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                     stct_lists.append(atoms)
                 f_stream.close()
         structures_dict[title] = stct_lists
-    return {k: set_atoms_y(v) for k, v in structures_dict.items()}
+    return {k: _set_atoms_y(v) for k, v in structures_dict.items()}
 
 
 def match_reader(reader_name: str, **kwargs):

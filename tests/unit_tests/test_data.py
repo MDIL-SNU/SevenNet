@@ -11,6 +11,7 @@ import numpy as np
 import pytest
 import torch
 from ase.build import bulk, molecule
+from torch_geometric.loader import DataLoader
 
 import sevenn.train.dataload as dl
 import sevenn.train.graph_dataset as ds
@@ -78,7 +79,7 @@ def test_atoms_to_graph(atoms_type, init_y_as):
         'cell_volume': ((), float),
         'num_atoms': ((), int),
         'per_atom_energy': ((), float),
-        'stress': ((6,), float),
+        'stress': ((1, 6), float),
     }
 
     for k, (shape, dtype) in essential.items():
@@ -88,7 +89,7 @@ def test_atoms_to_graph(atoms_type, init_y_as):
         ), f'{k}: {type(graph[k])} is not np.ndarray'
         assert graph[k].shape == shape, f'{k} shape {graph[k].shape} != {shape}'
         if not is_stress and k == 'stress':
-            assert all(np.isnan(graph[k]))
+            assert np.isnan(graph[k]).all()
         else:
             assert graph[k].dtype == dtype, f'{k} dtype {graph[k].dtype} != {dtype}'
 
@@ -148,7 +149,7 @@ def test_atom_graph_data(atoms_type, init_y_as):
         'total_energy': ((), float),
         'per_atom_energy': ((), float),
         'force_of_atoms': ((len(atoms), 3), float),
-        'stress': ((6,), float),
+        'stress': ((1, 6), float),
     }
 
     for k, (shape, dtype) in essential.items():
@@ -167,7 +168,7 @@ def test_atom_graph_data(atoms_type, init_y_as):
         ), f'{k}: {type(graph[k])} is not an tensor'
         assert graph[k].shape == shape, f'{k} shape {graph[k].shape} != {shape}'
         if not is_stress and k == 'stress':
-            assert all(torch.isnan(graph[k]))
+            assert torch.isnan(graph[k]).all()
         else:
             assert graph[k].is_floating_point() == (dtype is float)
 
@@ -180,8 +181,8 @@ def test_graph_build():
         get_atoms(t, 'calc')[0]  # type: ignore
         for t in list(_samples.keys())
     ]
-    one_core = dl.graph_build(atoms_list, cutoff, num_cores=1)
-    two_core = dl.graph_build(atoms_list, cutoff, num_cores=2)
+    one_core = dl.graph_build(atoms_list, cutoff, num_cores=1, y_from_calc=True)
+    two_core = dl.graph_build(atoms_list, cutoff, num_cores=2, y_from_calc=True)
 
     assert len(one_core) == len(two_core)
     for g1, g2 in zip(one_core, two_core):
@@ -191,7 +192,7 @@ def test_graph_build():
                 continue
             if k == 'stress':  # TODO: robust way to test it
                 assert torch.allclose(g1[k], g2[k]) or (
-                    all(torch.isnan(g1[k])) == all(torch.isnan(g2[k]))
+                    torch.isnan(g1[k]).all() == torch.isnan(g2[k]).all()
                 )
             else:
                 assert torch.allclose(g1[k], g2[k])
@@ -270,8 +271,8 @@ def test_sevenn_graph_dataset_elemwise_energies(graph_dataset_tuple):
         for z in atomic_numbers:
             inferred_e += ref_e[z]
         # it never be same, but should be similar
-        logger.warning('elemwise energy should be similar:')
-        logger.warning(f'{inferred_e:4f} {atoms.get_potential_energy()[0]:4f}')
+        logger.info('elemwise energy should be similar:')
+        logger.info(f'{inferred_e:4f} {atoms.get_potential_energy()[0]:4f}')
 
     for z in range(NUM_UNIV_ELEMENT):
         if z not in z_set:
@@ -313,3 +314,46 @@ def test_sevenn_graph_dataset_statistics(graph_dataset_tuple):
         ), key
         assert np.allclose(dataset.statistics[key]['max'], dct[key].max()), key
         assert np.allclose(dataset.statistics[key]['min'], dct[key].min()), key
+
+
+@pytest.mark.parametrize(
+    'a_types,init_ys', [(['bulk', 'mol', 'isolated'], ['calc', 'calc', 'calc'])]
+)
+def test_7net_graph_dataset_batch_shape(a_types, init_ys, tmp_path):
+    assert len(a_types) == len(init_ys)
+    n_graph = len(a_types)
+    atoms_list = []
+    tot_edges = 0
+    tot_atoms = 0
+    for a_type, init_y in zip(a_types, init_ys):
+        atoms, n_edge = get_atoms(a_type, init_y)
+        tot_edges += n_edge
+        tot_atoms += len(atoms)
+        atoms_list.append(atoms)
+    ase.io.write(tmp_path / 'tmp', atoms_list, format='extxyz')
+    dataset = ds.SevenNetGraphDataset(cutoff, tmp_path, str(tmp_path / 'tmp'))
+    loader = DataLoader(dataset, batch_size=n_graph)
+    graph = next(iter(loader))
+
+    essential = {
+        'x': ((tot_atoms,), int),
+        'atomic_numbers': ((tot_atoms,), int),
+        'pos': ((tot_atoms, 3), float),
+        'edge_index': ((2, tot_edges), int),
+        'edge_vec': ((tot_edges, 3), float),
+        'total_energy': ((n_graph,), float),
+        'force_of_atoms': ((tot_atoms, 3), float),
+        'cell_volume': ((n_graph,), float),
+        'num_atoms': ((n_graph,), int),
+        'per_atom_energy': ((n_graph,), float),
+        'stress': ((n_graph, 6), float),
+        'batch': ((tot_atoms,), int),  # from PyG
+    }
+
+    for k, (shape, dtype) in essential.items():
+        assert k in graph, f'{k} missing in graph'
+        assert isinstance(
+            graph[k], torch.Tensor
+        ), f'{k}: {type(graph[k])} is not an tensor'
+        assert graph[k].is_floating_point() == (dtype is float)
+        assert graph[k].shape == shape, f'{k} shape {graph[k].shape} != {shape}'
