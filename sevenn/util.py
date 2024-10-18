@@ -43,13 +43,10 @@ def to_atom_graph_list(atom_graph_batch):
 
 
 def error_recorder_from_loss_functions(loss_functions):
-    from copy import deepcopy
-
-    from .error_recorder import ERROR_TYPES, ErrorRecorder, MAError, RMSError
+    from .error_recorder import ErrorRecorder, MAError, RMSError, get_err_type
     from .train.loss import ForceLoss, PerAtomEnergyLoss, StressLoss
 
     metrics = []
-    BASE = deepcopy(ERROR_TYPES)
     for loss_function, _ in loss_functions:
         ref_key = loss_function.ref_key
         pred_key = loss_function.pred_key
@@ -58,11 +55,11 @@ def error_recorder_from_loss_functions(loss_functions):
         name = loss_function.name
         base = None
         if type(loss_function) is PerAtomEnergyLoss:
-            base = BASE['Energy']
+            base = get_err_type('Energy')
         elif type(loss_function) is ForceLoss:
-            base = BASE['Force']
+            base = get_err_type('Force')
         elif type(loss_function) is StressLoss:
-            base = BASE['Stress']
+            base = get_err_type('Stress')
         else:
             base = {}
         base['name'] = name
@@ -237,6 +234,7 @@ def chemical_species_preprocess(input_chem: List[str], universal: bool = False):
 
     config = {}
     if not universal:
+        input_chem = list(set(input_chem))
         chemical_specie = sorted([x.strip() for x in input_chem])
         config[KEY.CHEMICAL_SPECIES] = chemical_specie
         config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
@@ -335,24 +333,23 @@ def unique_filepath(filepath: str) -> str:
         return new_path
 
 
-def get_error_recorder(recorder_tuples: Optional[List[Tuple[str, str]]] = None):
+def get_error_recorder(
+    recorder_tuples: List[Tuple[str, str]] = [
+        ('Energy', 'RMSE'),
+        ('Force', 'RMSE'),
+        ('Stress', 'RMSE'),
+        ('Energy', 'MAE'),
+        ('Force', 'MAE'),
+        ('Stress', 'MAE'),
+    ],
+):
     # TODO add criterion argument and loss recorder selections
     import sevenn.error_recorder as error_recorder
 
-    if recorder_tuples is None:
-        config = [
-            ('Energy', 'RMSE'),
-            ('Force', 'RMSE'),
-            ('Stress', 'RMSE'),
-            ('Energy', 'MAE'),
-            ('Force', 'MAE'),
-            ('Stress', 'MAE'),
-        ]
-    else:
-        config = recorder_tuples
+    config = recorder_tuples
     err_metrics = []
     for err_type, metric_name in config:
-        metric_kwargs = error_recorder.ERROR_TYPES[err_type].copy()
+        metric_kwargs = error_recorder.get_err_type(err_type).copy()
         metric_kwargs['name'] += f'_{metric_name}'
         metric_cls = error_recorder.ErrorRecorder.METRIC_DICT[metric_name]
         err_metrics.append(metric_cls(**metric_kwargs))

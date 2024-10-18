@@ -91,7 +91,7 @@ class ForceStressOutput(nn.Module):
             if self._is_batch_data:
                 stress = sgrad / volume.view(-1, 1, 1)
                 stress = torch.neg(stress)
-                voigt_stress = torch.vstack((
+                virial_stress = torch.vstack((
                     stress[:, 0, 0],
                     stress[:, 1, 1],
                     stress[:, 2, 2],
@@ -99,11 +99,11 @@ class ForceStressOutput(nn.Module):
                     stress[:, 1, 2],
                     stress[:, 0, 2],
                 ))
-                data[self.key_stress] = voigt_stress.transpose(0, 1)
+                data[self.key_stress] = virial_stress.transpose(0, 1)
             else:
                 stress = sgrad / volume
                 stress = torch.neg(stress)
-                voigt_stress = torch.stack((
+                virial_stress = torch.stack((
                     stress[0, 0],
                     stress[1, 1],
                     stress[2, 2],
@@ -111,7 +111,7 @@ class ForceStressOutput(nn.Module):
                     stress[1, 2],
                     stress[0, 2],
                 ))
-                data[self.key_stress] = voigt_stress
+                data[self.key_stress] = virial_stress
 
         return data
 
@@ -176,7 +176,7 @@ class ForceStressOutputFromEdge(nn.Module):
             s23 = rij[..., 1] * fij[..., 2]
             s31 = rij[..., 2] * fij[..., 0]
             # cat last dimension
-            _voigt = torch.cat([
+            _virial = torch.cat([
                 diag,
                 s12.unsqueeze(-1),
                 s23.unsqueeze(-1),
@@ -184,14 +184,14 @@ class ForceStressOutputFromEdge(nn.Module):
             ], dim=-1)
 
             _s = torch.zeros(tot_num, 6, dtype=fij.dtype, device=fij.device)
-            _edge_dst6 = _broadcast(edge_idx[1], _voigt, 0)
-            _s.scatter_reduce_(0, _edge_dst6, _voigt, reduce='sum')
+            _edge_dst6 = _broadcast(edge_idx[1], _virial, 0)
+            _s.scatter_reduce_(0, _edge_dst6, _virial, reduce='sum')
 
             if self._is_batch_data:
                 batch = data[KEY.BATCH]  # for deploy, must be defined first
                 nbatch = int(batch.max().cpu().item()) + 1
                 sout = torch.zeros(
-                    (nbatch, 6), dtype=_voigt.dtype, device=_voigt.device
+                    (nbatch, 6), dtype=_virial.dtype, device=_virial.device
                 )
                 _batch = _broadcast(batch, _s, 0)
                 sout.scatter_reduce_(0, _batch, _s, reduce='sum')

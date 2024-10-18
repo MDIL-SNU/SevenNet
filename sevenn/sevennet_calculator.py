@@ -124,8 +124,9 @@ class SevenNetCalculator(Calculator):
         data.to(self.device)  # type: ignore
 
         if isinstance(self.model, torch_script_type):
-            data[KEY.NODE_FEATURE] = torch.LongTensor(
-                [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
+            data[KEY.NODE_FEATURE] = torch.tensor(
+                [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]],
+                dtype=torch.int64, device=self.device
             )
             data[KEY.POS].requires_grad_(True)  # backward compatibility
             data[KEY.EDGE_VEC].requires_grad_(True)  # backward compatibility
@@ -150,6 +151,6 @@ class SevenNetCalculator(Calculator):
                 (-output[KEY.PRED_STRESS])
                 .detach()
                 .cpu()
-                .numpy()[[0, 1, 2, 4, 5, 3]]
+                .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
             ),
         }

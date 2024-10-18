@@ -17,7 +17,12 @@ description = (
 
 source_help = 'source data to build graph, knows *'
 cutoff_help = 'cutoff radius of edges in Angstrom'
-log_help = 'Name of logfile. Default is graph_build_log. It never overwrite.'
+log_help = 'Name of logfile. Default is graph_build_log. It never overwrites.'
+filename_help = (
+    'Name of the dataset, default is graph.pt. '
+    + 'The dataset will be written under "sevenn_data", '
+    + 'for example, {out}/sevenn_data/graph.pt.'
+)
 legacy_help = 'build legacy .sevenn_data'
 
 
@@ -28,7 +33,7 @@ def main(args=None):
     num_cores = args.num_cores
     filename = args.filename
     log = args.log
-    out = os.path.dirname(args.out)
+    out = args.out
     legacy = args.legacy
     print_statistics = not args.skip_statistics
     fmt_kwargs = {}
@@ -41,10 +46,12 @@ def main(args=None):
         print('Source has zero len, nothing to read')
         sys.exit(0)
 
-    to_be_written = os.path.join(out, 'processed_7net', filename)
+    if not os.path.isdir(out):
+        raise NotADirectoryError(f'No such directory: {out}')
+
+    to_be_written = os.path.join(out, 'sevenn_data', filename)
     if os.path.isfile(to_be_written):
-        print(f'File already exist: {to_be_written}')
-        sys.exit(0)
+        raise FileExistsError(f'File already exist: {to_be_written}')
 
     metadata = {
         'sevenn_version': __version__,
@@ -58,30 +65,32 @@ def main(args=None):
 
         if not legacy:
             graph_build.build_sevennet_graph_dataset(
-                source, cutoff, num_cores,
-                out, filename, metadata,
-                print_statistics, **fmt_kwargs
+                source,
+                cutoff,
+                num_cores,
+                out,
+                filename,
+                metadata,
+                print_statistics,
+                **fmt_kwargs,
             )
         else:
             out = os.path.join(out, filename.split('.')[0])
             graph_build.build_script(  # build .sevenn_data
-                source, cutoff, num_cores, out, metadata, **fmt_kwargs,
+                source,
+                cutoff,
+                num_cores,
+                out,
+                metadata,
+                **fmt_kwargs,
             )
 
 
 def cmd_parse_data(args=None):
     ag = argparse.ArgumentParser(description=description)
 
-    ag.add_argument(
-        'source',
-        help=source_help,
-        type=str
-    )
-    ag.add_argument(
-        'cutoff',
-        help=cutoff_help,
-        type=float
-    )
+    ag.add_argument('source', help=source_help, type=str)
+    ag.add_argument('cutoff', help=cutoff_help, type=float)
     ag.add_argument(
         '-n',
         '--num_cores',
@@ -99,14 +108,14 @@ def cmd_parse_data(args=None):
     ag.add_argument(
         '-o',
         '--out',
-        help='Directory to write outputs.',
+        help='Existing path to write outputs.',
         type=str,
         default='./',
     )
     ag.add_argument(
         '-f',
         '--filename',
-        help='Name of dataset, default is graph.pt',
+        help=filename_help,
         type=str,
         default='graph.pt',
     )

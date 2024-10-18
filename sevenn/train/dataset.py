@@ -12,8 +12,10 @@ import sevenn._keys as KEY
 import sevenn.util as util
 
 
-class AtomGraphDataset:  # TODO: This class is cursed! please don't use it ;)
+class AtomGraphDataset:
     """
+    Deprecated
+
     class representing dataset of AtomGraphData
     the dataset is handled as dict, {label: data}
     if given data is List, it stores data as {KEY_DEFAULT: data}

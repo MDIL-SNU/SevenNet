@@ -11,7 +11,7 @@ from sevenn.sevenn_logger import Logger
 def processing_continue_v2(config):  # simpler
     """
     Replacement of processing_continue,
-    do not check model compatibility
+    Skips model compatibility
     """
     log = Logger()
     continue_dct = config[KEY.CONTINUE]

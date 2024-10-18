@@ -51,7 +51,7 @@ class OnehotEmbedding(nn.Module):
 def get_type_mapper_from_specie(specie_list: List[str]):
     """
     from ['Hf', 'O']
-    return {72: 0, 16: 1}
+    return {72: 0, 8: 1}
     """
     specie_list = sorted(specie_list)
     type_map = {}
