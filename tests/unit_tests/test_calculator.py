@@ -1,6 +1,4 @@
 import copy
-import os
-import uuid
 
 import numpy as np
 import pytest
@@ -80,18 +78,13 @@ def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
     assert np.allclose(atoms_mol.get_potential_energies(), atoms2_ref['energies'])
 
 
-def test_sevennet_0_cal_deployed(atoms_pbc):
-    tmpdir = os.getenv('TMPDIR', '/tmp')
-    randstr = uuid.uuid4().hex
-    assert os.access(tmpdir, os.W_OK), f'{tmpdir} is not writable'
-
+def test_sevennet_0_cal_deployed(tmp_path, atoms_pbc):
     model, config = model_from_checkpoint(
         pretrained_name_to_path('7net-0_11July2024')
     )
 
-    fname = f'{tmpdir}/{randstr}.pt'
+    fname = str(tmp_path / '7net_0.pt')
     deploy(model.state_dict(), config, fname)
-    assert os.path.isfile(fname)
 
     calc_script = SevenNetCalculator(fname, file_type='torchscript')
     calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
