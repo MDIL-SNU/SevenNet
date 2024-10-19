@@ -270,6 +270,7 @@ def _set_atoms_y(
         # access energy
         if energy_key is not None:
             atoms.info['y_energy'] = atoms.info[energy_key]
+            del atoms.info[energy_key]
         else:
             try:
                 atoms.info['y_energy'] = atoms.get_potential_energy(
@@ -280,12 +281,14 @@ def _set_atoms_y(
         # access force
         if force_key is not None:
             atoms.arrays['y_force'] = atoms.arrays[force_key]
+            del atoms.arrays[force_key]
         else:
             atoms.arrays['y_force'] = atoms.get_forces(apply_constraint=False)
         # access stress
         if stress_key is not None:
             y_stress = -1 * atoms.info[stress_key]
             atoms.info['y_stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
+            del atoms.info[stress_key]
         else:
             try:
                 # xx yy zz xy yz zx order
