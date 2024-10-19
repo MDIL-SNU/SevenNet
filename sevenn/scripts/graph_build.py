@@ -13,7 +13,6 @@ def build_sevennet_graph_dataset(
     out: str,
     filename: str,
     metadata: Optional[dict] = None,
-    print_statistics: bool = False,
     **fmt_kwargs,
 ):
     from sevenn.train.graph_dataset import SevenNetGraphDataset
@@ -38,13 +37,6 @@ def build_sevennet_graph_dataset(
     for k, v in metadata.items():
         log.format_k_v(k, v, write=True)
     log.bar()
-
-    if not print_statistics:
-        return
-
-    log.timer_start('statistics')
-    db.run_stat()
-    log.timer_end('statistics', 'Run statistic time')
 
     log.writeline('Distribution:')
     log.statistic_write(db.statistics)

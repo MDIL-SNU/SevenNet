@@ -7,7 +7,6 @@ from datetime import datetime
 import sevenn.scripts.graph_build as graph_build
 from sevenn import __version__
 from sevenn.sevenn_logger import Logger
-from sevenn.util import unique_filepath
 
 description = (
     f'sevenn version={__version__}, sevenn_graph_build.\n'
@@ -17,7 +16,6 @@ description = (
 
 source_help = 'source data to build graph, knows *'
 cutoff_help = 'cutoff radius of edges in Angstrom'
-log_help = 'Name of logfile. Default is graph_build_log. It never overwrites.'
 filename_help = (
     'Name of the dataset, default is graph.pt. '
     + 'The dataset will be written under "sevenn_data", '
@@ -32,10 +30,8 @@ def main(args=None):
     cutoff = args.cutoff
     num_cores = args.num_cores
     filename = args.filename
-    log = args.log
     out = args.out
     legacy = args.legacy
-    print_statistics = not args.skip_statistics
     fmt_kwargs = {}
     if args.kwargs:
         for kwarg in args.kwargs:
@@ -59,8 +55,7 @@ def main(args=None):
         'cutoff': cutoff,
     }
 
-    log_fname = unique_filepath(f'{out}/{log}')
-    with Logger(filename=log_fname, screen=True) as logger:
+    with Logger(filename=None, screen=args.screen) as logger:
         logger.writeline(description)
 
         if not legacy:
@@ -71,7 +66,6 @@ def main(args=None):
                 out,
                 filename,
                 metadata,
-                print_statistics,
                 **fmt_kwargs,
             )
         else:
@@ -99,13 +93,6 @@ def cmd_parse_data(args=None):
         type=int,
     )
     ag.add_argument(
-        '-l',
-        '--log',
-        default='graph_build_log',
-        help=log_help,
-        type=str,
-    )
-    ag.add_argument(
         '-o',
         '--out',
         help='Existing path to write outputs.',
@@ -120,14 +107,14 @@ def cmd_parse_data(args=None):
         default='graph.pt',
     )
     ag.add_argument(
-        '-ss',
-        '--skip_statistics',
-        help='Skip running & printing statistics',
+        '--legacy',
+        help=legacy_help,
         action='store_true',
     )
     ag.add_argument(
-        '--legacy',
-        help=legacy_help,
+        '-s',
+        '--screen',
+        help='print log to the screen',
         action='store_true',
     )
     ag.add_argument(
