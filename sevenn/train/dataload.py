@@ -33,7 +33,7 @@ def _correct_scalar(v):
         v = v.squeeze()
         assert v.ndim == 0, f'given {v} is not a scalar'
         return v
-    elif isinstance(v, int) or isinstance(v, float):
+    elif isinstance(v, (int, float, np.integer, np.floating)):
         return np.array(v)
     else:
         assert False, f'{type(v)} is not expected'

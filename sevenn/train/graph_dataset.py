@@ -96,6 +96,7 @@ class SevenNetGraphDataset(InMemoryDataset):
             files = [files]  # user convenience
         files = [os.path.abspath(file) for file in files]
         self._files = files
+        self._full_file_list = []
         if not processed_name.endswith('.pt'):
             processed_name += '.pt'
         self._processed_name = processed_name
@@ -105,7 +106,6 @@ class SevenNetGraphDataset(InMemoryDataset):
         self.tag_map = {}
         self.statistics = {}
         self.finalized = False
-        self.is_shuffled = False
         self._scanned = False
 
         super().__init__(
@@ -131,17 +131,21 @@ class SevenNetGraphDataset(InMemoryDataset):
     def processed_dir(self) -> str:
         return os.path.join(self.root, 'sevenn_data')
 
+    @property
+    def full_file_list(self) -> List[str]:
+        return self._full_file_list
+
     def process(self):
         graph_list: list[AtomGraphData] = []
         for file in self.raw_file_names:
-            graph_list.extend(
-                SevenNetGraphDataset._file_to_graph_list(
-                    filename=file,
-                    cutoff=self.cutoff,
-                    num_cores=self.process_num_cores,
-                    **self.process_kwargs,
-                )
+            tmplist = SevenNetGraphDataset._file_to_graph_list(
+                filename=file,
+                cutoff=self.cutoff,
+                num_cores=self.process_num_cores,
+                **self.process_kwargs,
             )
+            self._full_file_list.extend([os.path.abspath(file)] * len(tmplist))
+            graph_list.extend(tmplist)
         for data in graph_list:
             if self.pre_filter is not None and not self.pre_filter(data):
                 continue
@@ -355,7 +359,7 @@ class SevenNetGraphDataset(InMemoryDataset):
     @staticmethod
     def _file_to_graph_list(
         filename: str, cutoff: float, num_cores: int = 1, **kwargs
-    ):
+    ) -> List[AtomGraphData]:
         """
         kwargs: if file is ase readable, passed to ase.io.read
         """
