@@ -88,7 +88,7 @@ class Logger(metaclass=Singleton):
         Deprecated
         """
         if self.rank == 0:
-            self.files[filename] = open(filename, 'w', buffering=1)
+            self.files[filename] = open(filename, 'w', buffering=1, encoding='utf-8')
             self.files[filename].write(','.join(header) + '\n')
         else:
             pass

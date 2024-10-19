@@ -75,7 +75,7 @@ def cmd_parse_data(args=None):
         '--nworkers',
         type=int,
         default=1,
-        help='If given with -ofg, passed to the dataloader',
+        help='Number of cores to build graph, defaults to 1',
     )
     ag.add_argument(
         '-o',
