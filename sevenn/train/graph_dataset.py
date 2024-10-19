@@ -1,10 +1,12 @@
 import os
 import warnings
 from collections import Counter
+from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import torch
+import yaml
 from ase.data import chemical_symbols
 from torch_geometric.data.in_memory_dataset import InMemoryDataset
 from tqdm import tqdm
@@ -12,6 +14,7 @@ from tqdm import tqdm
 import sevenn._keys as KEY
 import sevenn.train.dataload as dataload
 import sevenn.util as util
+from sevenn import __version__
 from sevenn._const import NUM_UNIV_ELEMENT
 from sevenn.atom_graph_data import AtomGraphData
 
@@ -31,12 +34,12 @@ def _tag_graphs(graph_list: List[AtomGraphData], tag: str):
     return graph_list
 
 
-def filename2args(pt_filename: str):
+def pt_to_args(pt_filename: str):
     """
     Return arg dict of root and processed_name from path to .pt
     Usage:
         dataset = SevenNetGraphDataset(
-            **filename2args({path}/sevenn_data/dataset.pt)
+            **pt_to_args({path}/sevenn_data/dataset.pt)
         )
     """
     processed_dir, basename = os.path.split(pt_filename)
@@ -91,12 +94,19 @@ class SevenNetGraphDataset(InMemoryDataset):
             files = []
         elif isinstance(files, str):
             files = [files]  # user convenience
+        files = [os.path.abspath(file) for file in files]
         self._files = files
         if not processed_name.endswith('.pt'):
             processed_name += '.pt'
         self._processed_name = processed_name
         self.process_num_cores = process_num_cores
         self.process_kwargs = process_kwargs
+
+        self.tag_map = {}
+        self.statistics = {}
+        self.finalized = False
+        self.is_shuffled = False
+        self._scanned = False
 
         super().__init__(
             root,
@@ -107,12 +117,7 @@ class SevenNetGraphDataset(InMemoryDataset):
             force_reload=force_reload,
         )  # Internally calls 'process'
         self.load(self.processed_paths[0])
-
-        self.tag_map = {}
-        self.statistics = {}
-        self.finalized = False
-        self.is_shuffled = False
-        self._scanned = False
+        self._save_meta()  # save meta information along with graphs
 
     @property
     def raw_file_names(self) -> List[str]:
@@ -143,7 +148,35 @@ class SevenNetGraphDataset(InMemoryDataset):
             if self.pre_transform is not None:
                 data = self.pre_transform(data)
 
+        # save graphs, handled by torch_geometrics
         self.save(graph_list, self.processed_paths[0])
+
+    def _save_meta(self) -> None:
+        if not self._scanned:
+            self.run_stat()
+        stats_save = {}
+        for label, dct in self.statistics.items():
+            if label.startswith('_'):
+                continue
+            stats_save[label] = {}
+            for k, v in dct.items():
+                if k.startswith('_'):
+                    continue
+                stats_save[label][k] = v
+
+        meta = {
+            'sevennet_version': __version__,
+            'cutoff': self.cutoff,
+            'when': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'files': self._files,
+            'statistics': stats_save,
+            'species': self.species,
+            'num_atoms': self.natoms,
+        }
+
+        name = self._processed_name.split('.')[0].strip() + '.yaml'
+        with open(os.path.join(self.processed_dir, name), 'w') as f:
+            yaml.dump(meta, f, default_flow_style=False)
 
     @property
     def species(self):
@@ -297,6 +330,29 @@ class SevenNetGraphDataset(InMemoryDataset):
         return graph_list
 
     @staticmethod
+    def _read_graph_dataset(
+        filename: str, cutoff: float, **kwargs
+    ) -> list[AtomGraphData]:
+        meta_f = filename.replace('.pt', '.yaml')
+        orig_cutoff = cutoff
+        if not os.path.exists(meta_f):
+            warnings.warn('No meta info found, beware of cutoff...')
+        else:
+            with open(meta_f, 'r') as f:
+                meta = yaml.safe_load(f)
+            orig_cutoff = float(meta['cutoff'])
+            if orig_cutoff != cutoff:
+                warnings.warn(
+                    f'{filename} has different cutoff length: '
+                    + f'{cutoff} != {orig_cutoff}'
+                )
+        ds_args: dict[str, Any] = dict({'cutoff': orig_cutoff})
+        ds_args.update(pt_to_args(filename))
+        ds_args.update(kwargs)
+        dataset = SevenNetGraphDataset(**ds_args)
+        return [g for g in dataset]  # type: ignore
+
+    @staticmethod
     def _file_to_graph_list(
         filename: str, cutoff: float, num_cores: int = 1, **kwargs
     ):
@@ -306,14 +362,14 @@ class SevenNetGraphDataset(InMemoryDataset):
         if not os.path.isfile(filename):
             raise ValueError(f'No such file: {filename}')
         graph_list: list[AtomGraphData]
-        if filename.endswith('.sevenn_data'):
+        if filename.endswith('.pt'):
+            graph_list = SevenNetGraphDataset._read_graph_dataset(filename, cutoff)
+        elif filename.endswith('.sevenn_data'):
             graph_list, cutoff_other = SevenNetGraphDataset._read_sevenn_data(
                 filename
             )
             if cutoff_other != cutoff:
-                warnings.warn(
-                    f'Given {filename} has different {cutoff_other}!', UserWarning
-                )
+                warnings.warn(f'Given {filename} has different {cutoff_other}!')
             cutoff = cutoff_other
         elif 'structure_list' in filename:
             graph_list = SevenNetGraphDataset._read_structure_list(
@@ -356,19 +412,23 @@ def from_config(
     for dk in dataset_keys:
         if not (paths := config[dk]):
             continue
+        if isinstance(paths, str):
+            paths = [paths]
         name = dk.split('_')[1].strip()
+        loaded_or_saved = ''
         if (
             len(paths) == 1
             and 'sevenn_data' in paths[0]
             and paths[0].endswith('.pt')
         ):
-            dataset_args.update(filename2args(paths[0]))
+            dataset_args.update(pt_to_args(paths[0]))
+            loaded_or_saved = 'loaded'
         else:
             dataset_args.update({'files': paths, 'processed_name': name})
+            loaded_or_saved = 'saved'
         datasets[name] = SevenNetGraphDataset(**dataset_args)
         log.writeline(
-            f'{name} is saved or loaded from here: '
-            f'{datasets[name].processed_paths[0]}'
+            f'{name} is {loaded_or_saved}: {datasets[name].processed_paths[0]}'
         )
 
     train_set = datasets['trainset']

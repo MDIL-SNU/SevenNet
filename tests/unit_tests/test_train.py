@@ -6,6 +6,7 @@ import pytest
 import torch
 from torch_geometric.loader import DataLoader
 
+import sevenn.train.graph_dataset as graph_ds
 from sevenn.scripts.processing_continue import processing_continue_v2
 from sevenn.scripts.processing_epoch import processing_epoch_v2
 from sevenn.sevenn_logger import Logger
@@ -43,6 +44,14 @@ def HfO2_loader():
     assert isinstance(atoms, list)
     graphs = graph_build(atoms, cutoff, y_from_calc=True)
     return DataLoader(graphs, batch_size=2)
+
+
+@pytest.fixture()
+def graph_dataset_path(tmp_path):
+    ds = graph_ds.SevenNetGraphDataset(
+        cutoff=cutoff, root=tmp_path, files=[hfo2_path], processed_name='tmp.pt'
+    )
+    return ds.processed_paths[0]
 
 
 def get_model_config():
@@ -176,6 +185,17 @@ def test_dataset_from_config(cfg_overwrite, ds_names, tmp_path):
     assert set(ds_names) == set(datasets.keys())
     for ds_name in ds_names:
         assert (tmp_path / 'sevenn_data' / f'{ds_name}.pt').is_file()
+        assert (tmp_path / 'sevenn_data' / f'{ds_name}.yaml').is_file()
+
+
+def test_dataset_from_config_as_it_is_load(graph_dataset_path, tmp_path):
+    cfg = get_config({'load_trainset_path': graph_dataset_path})
+    print(graph_dataset_path)
+    new_wd = tmp_path / 'tmp_wd'
+    with Logger().switch_file(str(tmp_path / 'log.sevenn')):
+        _ = dataset_from_config(cfg, str(new_wd))
+    print((tmp_path / 'tmp_wd' / 'sevenn_data'))
+    assert not (tmp_path / 'tmp_wd' / 'sevenn_data').is_dir()
 
 
 @pytest.mark.parametrize(
@@ -305,7 +325,7 @@ def test_processing_epoch_v2(HfO2_loader, tmp_path):
             per_epoch=per_epoch,
             best_metric_loader_key=best_metric_loader_key,
             best_metric=best_metric,
-            working_dir=tmp_path
+            working_dir=tmp_path,
         )
     assert (tmp_path / 'checkpoint_10.pth').is_file()
     assert (tmp_path / 'checkpoint_11.pth').is_file()
