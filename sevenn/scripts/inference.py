@@ -142,7 +142,7 @@ def _extract_unlabeled_data(targets: List[str], tmp_file: IO, **data_kwargs):
             atoms_list = ase.io.read(target, index=':')
             for atoms in atoms_list:
                 atoms_patched = assign_dummy_y(atoms)
-                atoms_patched.info.update({'file': target, 'y_is_dummy': 'Yes'})
+                atoms_patched.info.update({'y_is_dummy': 'Yes'})
                 atoms_list_patched.append(atoms_patched)
             unlabeled_file_list.extend([target] * len(atoms_list))
 
@@ -158,7 +158,7 @@ def _patch_data_info(
 ) -> None:
     keys = set()
     for graph, path in zip(graph_list, full_file_list):
-        graph[KEY.INFO].update({'file': path})
+        graph[KEY.INFO].update({'file': os.path.abspath(path)})
         keys.update(graph[KEY.INFO].keys())
 
     for graph in graph_list:
@@ -213,6 +213,7 @@ def inference(
         )
         if save_graph:
             dataset = SevenNetGraphDataset(
+                cutoff=cutoff,
                 root=output_dir,
                 files=targets,
                 process_num_cores=num_workers,
@@ -230,9 +231,11 @@ def inference(
                     **data_kwargs,
                 )
                 dataset.extend(tmplist)
-                full_file_list.extend([file] * len(tmplist))
-        full_file_list = full_file_list[: -len(unlabeled_file_list)]
-        full_file_list.extend(unlabeled_file_list)
+                full_file_list.extend([os.path.abspath(file)] * len(tmplist))
+        if len(unlabeled_file_list) > 0:
+            full_file_list = full_file_list[: -len(unlabeled_file_list)]
+            full_file_list.extend(unlabeled_file_list)
+    assert len(full_file_list) == len(dataset)
     _patch_data_info(dataset, full_file_list)  # type: ignore
     loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
 
