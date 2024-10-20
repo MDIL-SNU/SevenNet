@@ -19,7 +19,7 @@ from sevenn.util import pretrained_name_to_path
 
 main = os.path.abspath(f'{os.path.dirname(__file__)}/../../sevenn/main/')
 preset = os.path.abspath(f'{os.path.dirname(__file__)}/../../sevenn/presets/')
-file_path = pathlib.Path(__file__).resolve().parent
+file_path = pathlib.Path(__file__).parent.resolve()
 
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
 hfo2_path = str(data_root / 'systems' / 'hfo2.extxyz')
