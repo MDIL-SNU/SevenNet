@@ -21,6 +21,7 @@ def deploy(model_state_dct, config, fname):
     """
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
+
     model = build_E3_equivariant_model(config)
     assert isinstance(model, torch.nn.Module)
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
@@ -50,9 +51,11 @@ def deploy(model_state_dct, config, fname):
     md_configs.update({'chemical_symbols_to_index': chem_list})
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
-    md_configs.update({'model_type': config[KEY.MODEL_TYPE]})
+    md_configs.update(
+        {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
+    )
     md_configs.update({'version': __version__})
-    md_configs.update({'dtype': config[KEY.DTYPE]})
+    md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     if fname.endswith('.pt') is False:
@@ -98,18 +101,22 @@ def deploy_parallel(model_state_dct, config, fname):
         chem_list += chemical_symbols[Z] + ' '
     chem_list.strip()
 
-    comm_size = max([
-        seg._modules[f'{t}_convolution']._comm_size
-        for t, seg in enumerate(model_list)
-    ])
+    comm_size = max(
+        [
+            seg._modules[f'{t}_convolution']._comm_size
+            for t, seg in enumerate(model_list)
+        ]
+    )
 
     md_configs.update({'chemical_symbols_to_index': chem_list})
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
     md_configs.update({'comm_size': str(comm_size)})
-    md_configs.update({'model_type': config[KEY.MODEL_TYPE]})
+    md_configs.update(
+        {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
+    )
     md_configs.update({'version': __version__})
-    md_configs.update({'dtype': config[KEY.DTYPE]})
+    md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     os.makedirs(fname)
