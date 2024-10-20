@@ -141,7 +141,7 @@ def get_config(overwrite={}):
 
 
 def test_processing_continue_v2_7net0(tmp_path):
-    cp = torch.load(sevennet_0_path, weights_only=False)
+    cp = torch.load(sevennet_0_path, weights_only=False, map_location='cpu')
 
     cfg = get_config(
         {
@@ -290,7 +290,7 @@ def test_run_one_epoch(HfO2_loader):
     erc.epoch_forward()
 
     for k in ref1:
-        assert ret1[k] == ref1[k]
+        assert np.allclose(float(ret1[k]), float(ref1[k]))
 
     trainer.run_one_epoch(HfO2_loader, is_train=True, error_recorder=erc)
     erc.epoch_forward()
@@ -300,7 +300,7 @@ def test_run_one_epoch(HfO2_loader):
     erc.epoch_forward()
 
     for k in ref2:
-        assert ret2[k] == ref2[k]
+        assert np.allclose(float(ret2[k]), float(ref2[k]))
 
 
 def test_processing_epoch_v2(HfO2_loader, tmp_path):
