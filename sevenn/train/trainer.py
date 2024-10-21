@@ -46,6 +46,8 @@ class Trainer:
     ):
         if device == 'auto':
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            if distributed_backend == 'mpi':
+                device = 'cpu'
 
         if distributed:
             local_rank = int(os.environ['LOCAL_RANK'])
@@ -86,7 +88,7 @@ class Trainer:
             scheduler_args=config[KEY.SCHEDULER_PARAM],
             device=config[KEY.DEVICE],
             distributed=config[KEY.IS_DDP],
-            distributed_backend='nccl',
+            distributed_backend=config[KEY.DDP_BACKEND]
         )
         return trainer
 

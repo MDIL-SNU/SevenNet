@@ -2,10 +2,10 @@
 name = "sevenn"
 version = "0.10.0"
 authors = [
-  { name="Yutack Park", email="parkyutack@snu.ac.kr" },
-  { name="Jaesun Kim" },
-  { name="Gijin Kim" },
-  { name="Hyungmin An" },
+    { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
+    { name = "Jaesun Kim" },
+    { name = "Gijin Kim" },
+    { name = "Hyungmin An" },
 ]
 description = "Scalable EquiVariance Enabled Neural Network"
 readme = "README.md"
@@ -53,7 +53,7 @@ sevenn = [
     "pair_e3gnn/patch_lammps.sh",
     "presets/*.yaml",
     "pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth",
-    "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth"
+    "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth",
 ]
 
 [tool.setuptools.packages.find]

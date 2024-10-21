@@ -12,6 +12,7 @@ Substantial changes in cli apps and some outputs.
 - [train_v2]: Any number of additional datasets will be evaluated and recorded if it is given as 'load_{NAME}set_path' key (input.yaml).
 - 'Univ' keyword for 'chemical_species'
 - energy_key, force_key, stress_key options for `sevenn_graph_build`, @thangckt
+- OpenMPI distributed training @thangckt
 ### Changed
 - Read EFS of atoms from y_* keys of .info or .arrays dict, instead of caclculator results
 - Now `type_map` and requires_grad is hidden inside `AtomGraphSequential`, and don't need to care about it.

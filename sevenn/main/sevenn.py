@@ -7,23 +7,26 @@ import time
 import torch
 import torch.distributed as dist
 
+try:
+    from sevenn import __version__
+except ImportError:
+    __version__ = 'dev'
+
+
 import sevenn._keys as KEY
-from sevenn import __version__
 from sevenn.parse_input import read_config_yaml
 from sevenn.scripts.train import train, train_v2
 from sevenn.sevenn_logger import Logger
 from sevenn.util import unique_filepath
 
-description = (
-    f'sevenn version={__version__}, train model based on the input.yaml'
-)
+description = f'sevenn version={__version__}, train model based on the input.yaml'
 
 input_yaml_help = 'input.yaml for training'
 mode_help = 'main training script to run. Default is train.'
-working_dir_help = 'Path to write outputs. Default is cwd.'
-log_help = 'Name of logfile. Default is log.sevenn. It never overwrite.'
-screen_help = 'Print log to stdout'
-distributed_help = 'Set this flag to enable DDP training.'
+working_dir_help = 'path to write output. Default is cwd.'
+screen_help = 'print log to stdout'
+distributed_help = 'set this flag if it is distributed training'
+distributed_backend_help = 'backend for distributed training. Supported: nccl, mpi'
 
 # Metainfo will be saved to checkpoint
 global_config = {
@@ -44,18 +47,28 @@ def main(args=None):
     log = args.log
     screen = args.screen
     distributed = args.distributed
+    distributed_backend = args.distributed_backend
 
     if working_dir is None:
         working_dir = os.getcwd()
     elif not os.path.isdir(working_dir):
         os.makedirs(working_dir, exist_ok=True)
 
+    world_size = 1
     if distributed:
-        local_rank = int(os.environ['LOCAL_RANK'])
-        rank = int(os.environ['RANK'])
-        world_size = int(os.environ['WORLD_SIZE'])
+        if distributed_backend == 'nccl':
+            local_rank = int(os.environ['LOCAL_RANK'])
+            rank = int(os.environ['RANK'])
+            world_size = int(os.environ['WORLD_SIZE'])
+        elif distributed_backend == 'mpi':
+            local_rank = int(os.environ['OMPI_COMM_WORLD_LOCAL_RANK'])
+            rank = int(os.environ['OMPI_COMM_WORLD_RANK'])
+            world_size = int(os.environ['OMPI_COMM_WORLD_SIZE'])
+        else:
+            raise ValueError(f'Unknown distributed backend: {distributed_backend}')
+
         dist.init_process_group(
-            backend='nccl', world_size=world_size, rank=rank
+            backend=distributed_backend, world_size=world_size, rank=rank
         )
     else:
         local_rank, rank, world_size = 0, 0, 1
@@ -78,6 +91,7 @@ def main(args=None):
             sys.exit(1)
 
         train_config[KEY.IS_DDP] = distributed
+        train_config[KEY.DDP_BACKEND] = distributed_backend
         train_config[KEY.LOCAL_RANK] = local_rank
         train_config[KEY.RANK] = rank
         train_config[KEY.WORLD_SIZE] = world_size
@@ -106,7 +120,11 @@ def main(args=None):
 
 def cmd_parse_main(args=None):
     ag = argparse.ArgumentParser(description=description)
-    ag.add_argument('input_yaml', help=input_yaml_help, type=str)
+    ag.add_argument(
+        'input_yaml',
+        help=input_yaml_help,
+        type=str
+    )
     ag.add_argument(
         '-m',
         '--mode',
@@ -127,7 +145,7 @@ def cmd_parse_main(args=None):
         '-l',
         '--log',
         default='log.sevenn',
-        help=log_help,
+        help='name of logfile, default is log.sevenn',
         type=str,
     )
     ag.add_argument(
@@ -141,6 +159,13 @@ def cmd_parse_main(args=None):
         '--distributed',
         help=distributed_help,
         action='store_true'
+    )
+    ag.add_argument(
+        '--distributed_backend',
+        help=distributed_backend_help,
+        type=str,
+        default='nccl',
+        choices=['nccl', 'mpi'],
     )
 
     return ag.parse_args()
