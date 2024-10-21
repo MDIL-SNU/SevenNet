@@ -99,3 +99,23 @@ def test_sevennet_0_cal_deployed(tmp_path, atoms_pbc):
 
     for k in res_cp:
         assert np.allclose(res_cp[k], res_script[k])
+
+
+def test_sevennet_0_cal_as_instnace(atoms_pbc):
+    model, _ = model_from_checkpoint(
+        pretrained_name_to_path('7net-0_11July2024')
+    )
+
+    calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
+    calc_instance = SevenNetCalculator(model, file_type='model_instance')
+
+    atoms_pbc.calc = calc_cp
+    atoms_pbc.get_potential_energy()
+    res_cp = copy.copy(atoms_pbc.calc.results)
+
+    atoms_pbc.calc = calc_instance
+    atoms_pbc.get_potential_energy()
+    res_script = copy.copy(atoms_pbc.calc.results)
+
+    for k in res_cp:
+        assert np.allclose(res_cp[k], res_script[k])
