@@ -1,15 +1,13 @@
+import copy
 import os.path
-import pickle
 from functools import partial
 from itertools import islice
-from typing import List, Optional
+from typing import Callable, List, Optional
 
 import ase
 import ase.io
 import numpy as np
 import torch.multiprocessing as mp
-import tqdm
-from ase.io.utils import string2index
 from ase.io.vasp_parsers.vasp_outcar_parsers import (
     Cell,
     DefaultParsersContainer,
@@ -20,11 +18,25 @@ from ase.io.vasp_parsers.vasp_outcar_parsers import (
     outcarchunks,
 )
 from ase.neighborlist import primitive_neighbor_list
+from ase.utils import string2index
 from braceexpand import braceexpand
+from tqdm import tqdm
 
 import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.train.dataset import AtomGraphDataset
+
+from .dataset import AtomGraphDataset
+
+
+def _correct_scalar(v):
+    if isinstance(v, np.ndarray):
+        v = v.squeeze()
+        assert v.ndim == 0, f'given {v} is not a scalar'
+        return v
+    elif isinstance(v, (int, float, np.integer, np.floating)):
+        return np.array(v)
+    else:
+        assert False, f'{type(v)} is not expected'
 
 
 def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
@@ -49,6 +61,9 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
     atomic_numbers = atoms.get_atomic_numbers()
 
     cell = np.array(cell)
+    vol = _correct_scalar(atoms.cell.volume)
+    if vol == 0:
+        vol = np.array(np.finfo(float).eps)
 
     data = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -58,52 +73,67 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
         KEY.EDGE_VEC: edge_vec,
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
-        KEY.CELL_VOLUME: np.einsum(
-            'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
-        ),
-        KEY.NUM_ATOMS: len(atomic_numbers),
+        KEY.CELL_VOLUME: vol,
+        KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
     }
     data[KEY.INFO] = {}
     return data
 
 
 def atoms_to_graph(
-    atoms: ase.Atoms, cutoff: float, transfer_info: bool = True
+    atoms: ase.Atoms,
+    cutoff: float,
+    transfer_info: bool = True,
+    y_from_calc: bool = False,
 ):
     """
     From ase atoms, return AtomGraphData as graph based on cutoff radius
+    Except for energy, force and stress labels must be numpy array type
+    as other cases are not tested.
+    Returns 'np.nan' with consistent shape for unlabeled data
+    (ex. stress of non-pbc system)
+
     Args:
         atoms (Atoms): ase atoms
         cutoff (float): cutoff radius
-        transfer_info (bool): if True, transfer ".info" from atoms to graph
+        transfer_info (bool): if True, transfer ".info" from atoms to graph,
+                              defaults to True
+        y_from_calc: if True, get ref values from calculator, defaults to False
     Returns:
         numpy dict that can be used to initialize AtomGraphData
         by AtomGraphData(**atoms_to_graph(atoms, cutoff))
-    Raises:
-        RuntimeError: if ase atoms are somewhat imperfect
-
-    Use free_energy: atoms.get_potential_energy(force_consistent=True)
-    If it is not available, use atoms.get_potential_energy()
-    If stress is available, initialize stress tensor
-    Ignore constraints like selective dynamics
-
+        , for scalar, its shape is (), and types are np.ndarray
     Requires grad is handled by 'dataset' not here.
     """
-
-    try:
-        y_energy = atoms.get_potential_energy(force_consistent=True)
-    except NotImplementedError:
-        y_energy = atoms.get_potential_energy()
-    y_force = atoms.get_forces(apply_constraint=False)
-    try:
-        # xx yy zz xy yz zx order
-        # We expect this is eV/A^3 unit
-        # (ASE automatically converts vasp kB to eV/A^3)
-        # So we restore it
-        y_stress = -1 * atoms.get_stress()
-        y_stress = np.array([y_stress[[0, 1, 2, 5, 3, 4]]])
-    except RuntimeError:
-        y_stress = None
+    if not y_from_calc:
+        y_energy = atoms.info['y_energy']
+        y_force = atoms.arrays['y_force']
+        y_stress = atoms.info.get('y_stress', np.full((6,), np.nan))
+        if y_stress.shape == (3, 3):
+            y_stress = np.array(
+                [
+                    y_stress[0][0],
+                    y_stress[1][1],
+                    y_stress[2][2],
+                    y_stress[0][1],
+                    y_stress[1][2],
+                    y_stress[2][0],
+                ]
+            )
+        else:
+            y_stress = y_stress.squeeze()
+    else:
+        try:
+            y_energy = atoms.get_potential_energy(force_consistent=True)
+        except NotImplementedError:
+            y_energy = atoms.get_potential_energy()
+        y_force = atoms.get_forces(apply_constraint=False)
+        try:
+            y_stress = -1 * atoms.get_stress()  # it ensures correct shape
+            y_stress = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
+        except RuntimeError:
+            y_stress = np.full((6,), np.nan)
+    assert y_stress.shape == (6,), 'If you see this, please report to the maintainer'
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -126,6 +156,9 @@ def atoms_to_graph(
     atomic_numbers = atoms.get_atomic_numbers()
 
     cell = np.array(cell)
+    vol = _correct_scalar(atoms.cell.volume)
+    if vol == 0:
+        vol = np.array(np.finfo(float).eps)
 
     data = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -133,20 +166,28 @@ def atoms_to_graph(
         KEY.POS: pos,
         KEY.EDGE_IDX: edge_idx,
         KEY.EDGE_VEC: edge_vec,
-        KEY.ENERGY: y_energy,
+        KEY.ENERGY: _correct_scalar(y_energy),
         KEY.FORCE: y_force,
-        KEY.STRESS: y_stress,
+        KEY.STRESS: y_stress.reshape(1, 6),  # to make batch have (n_node, 6)
         KEY.CELL: cell,
         KEY.CELL_SHIFT: cell_shift,
-        KEY.CELL_VOLUME: np.einsum(
-            'i,i', cell[0, :], np.cross(cell[1, :], cell[2, :])
-        ),
-        KEY.NUM_ATOMS: len(atomic_numbers),
-        KEY.PER_ATOM_ENERGY: y_energy / len(pos),
+        KEY.CELL_VOLUME: vol,
+        KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
+        KEY.PER_ATOM_ENERGY: _correct_scalar(y_energy / len(pos)),
     }
 
     if transfer_info and atoms.info is not None:
-        data[KEY.INFO] = atoms.info
+        info = copy.deepcopy(atoms.info)
+        # save only metadata
+        # TODO: is it really necessary?
+        if 'y_energy' in info:
+            del info['y_energy']
+        if 'y_force' in info:
+            del info['y_force']
+        if 'y_stress' in info:
+            del info['y_stress']
+        data[KEY.INFO] = info
+
     else:
         data[KEY.INFO] = {}
 
@@ -157,7 +198,8 @@ def graph_build(
     atoms_list: List,
     cutoff: float,
     num_cores: int = 1,
-    transfer_info: Optional[bool] = True,
+    transfer_info: bool = True,
+    y_from_calc: bool = False,
 ) -> List[AtomGraphData]:
     """
     parallel version of graph_build
@@ -165,56 +207,123 @@ def graph_build(
     Args:
         atoms_list (List): list of ASE atoms
         cutoff (float): cutoff radius of graph
-        num_cores (int, Optional): number of cores to use
-        transfer_info (bool, Optional): if True, copy info from atoms to graph
+        num_cores (int): number of cores to use
+        transfer_info (bool): if True, copy info from atoms to graph,
+                              defaults to True
+        y_from_calc (bool): Get reference y labels from calculator, defaults to False
     Returns:
         List[AtomGraphData]: list of AtomGraphData
     """
     serial = num_cores == 1
-    inputs = [(atoms, cutoff, transfer_info) for atoms in atoms_list]
+    inputs = [(atoms, cutoff, transfer_info, y_from_calc) for atoms in atoms_list]
 
     if not serial:
         pool = mp.Pool(num_cores)
         graph_list = pool.starmap(
-            atoms_to_graph, tqdm.tqdm(inputs, total=len(atoms_list))
+            atoms_to_graph,
+            tqdm(inputs, total=len(atoms_list), desc=f'graph_build ({num_cores})'),
         )
         pool.close()
         pool.join()
     else:
-        graph_list = [atoms_to_graph(*input_) for input_ in inputs]
+        graph_list = [
+            atoms_to_graph(*input_)
+            for input_ in tqdm(inputs, desc='graph_build (1)')
+        ]
 
     graph_list = [AtomGraphData.from_numpy_dict(g) for g in graph_list]
 
     return graph_list
 
 
-def ase_reader(fname, **kwargs):
-    index = kwargs.pop('index', None)
-    if index is None:
-        index = ':'  # new default for ours
-    return ase.io.read(fname, index=index, **kwargs)
-
-
-def pkl_atoms_reader(fname):
+def _set_atoms_y(
+    atoms_list: list[ase.Atoms],
+    energy_key: Optional[str] = None,
+    force_key: Optional[str] = None,
+    stress_key: Optional[str] = None,
+) -> list[ase.Atoms]:
     """
-    Assume the content is plane list of ase.Atoms
+    Define how SevenNet reads ASE.atoms object for its y label
+    If energy_key, force_key, or stress_key is given, the corresponding
+    label is obtained from .info dict of Atoms object. These values should
+    have eV, eV/Angstrom, and eV/Angstrom^3 for energy, force, and stress,
+    respectively. (stress in Voigt notation)
+
+    Args:
+        atoms_list (list[ase.Atoms]): target atoms to set y_labels
+        energy_key (str, optional): key to get energy. Defaults to None.
+        force_key (str, optional): key to get force. Defaults to None.
+        stress_key (str, optional): key to get stress. Defaults to None.
+
+    Returns:
+        list[ase.Atoms]: list of ase.Atoms
+
+    Raises:
+        RuntimeError: if ase atoms are somewhat imperfect
+
+    Use free_energy: atoms.get_potential_energy(force_consistent=True)
+    If it is not available, use atoms.get_potential_energy()
+    If stress is available, initialize stress tensor
+    Ignore constraints like selective dynamics
     """
-    with open(fname, 'rb') as f:
-        atoms_list = pickle.load(f)
-    if not isinstance(atoms_list, list):
-        raise TypeError('The content of the pkl is not list')
-    if not isinstance(atoms_list[0], ase.Atoms):
-        raise TypeError('The content of the pkl is not list of ase.Atoms')
+    for atoms in atoms_list:
+        # access energy
+        if energy_key is not None:
+            atoms.info['y_energy'] = atoms.info[energy_key]
+            del atoms.info[energy_key]
+        else:
+            try:
+                atoms.info['y_energy'] = atoms.get_potential_energy(
+                    force_consistent=True
+                )
+            except NotImplementedError:
+                atoms.info['y_energy'] = atoms.get_potential_energy()
+        # access force
+        if force_key is not None:
+            atoms.arrays['y_force'] = atoms.arrays[force_key]
+            del atoms.arrays[force_key]
+        else:
+            atoms.arrays['y_force'] = atoms.get_forces(apply_constraint=False)
+        # access stress
+        if stress_key is not None:
+            y_stress = -1 * atoms.info[stress_key]
+            atoms.info['y_stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
+            del atoms.info[stress_key]
+        else:
+            try:
+                # xx yy zz xy yz zx order
+                # We expect this is eV/A^3 unit
+                # (ASE automatically converts vasp kB to eV/A^3)
+                # So we restore it
+                y_stress = -1 * atoms.get_stress()
+                atoms.info['y_stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
+            except RuntimeError:
+                atoms.info['y_stress'] = np.full((6,), np.nan)
     return atoms_list
+
+
+def ase_reader(
+    filename: str,
+    energy_key: Optional[str] = None,
+    force_key: Optional[str] = None,
+    stress_key: Optional[str] = None,
+    index: str = ':',
+    **kwargs,
+) -> list[ase.Atoms]:
+    """
+    Wrapper of ase.io.read
+    """
+    atoms_list = ase.io.read(filename, index=index, **kwargs)
+    if not isinstance(atoms_list, list):
+        atoms_list = [atoms_list]
+
+    return _set_atoms_y(atoms_list, energy_key, force_key, stress_key)
 
 
 # Reader
 def structure_list_reader(filename: str, format_outputs='vasp-out'):
-    parsers = DefaultParsersContainer(
-        PositionsAndForces, Stress, Energy, Cell
-    ).make_parsers()
-    ocp = OutcarChunkParser(parsers=parsers)
     """
+    Deprecated
     Read from structure_list using braceexpand and ASE
 
     Args:
@@ -224,6 +333,10 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
         dictionary of lists of ASE structures.
         key is title of training data (user-define)
     """
+    parsers = DefaultParsersContainer(
+        PositionsAndForces, Stress, Energy, Cell
+    ).make_parsers()
+    ocp = OutcarChunkParser(parsers=parsers)
 
     def parse_label(line):
         line = line.strip()
@@ -272,10 +385,8 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                 f_stream = open(expanded_filename, 'r')
                 # generator of all outcar ionic steps
                 gen_all = outcarchunks(f_stream, ocp)
-                try:
-                    it_atoms = islice(
-                        gen_all, index.start, index.stop, index.step
-                    )
+                try:  # TODO: index may not slice, it can be integer
+                    it_atoms = islice(gen_all, index.start, index.stop, index.step)
                 except ValueError:
                     # TODO: support
                     # negative index
@@ -296,16 +407,13 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                     stct_lists.append(atoms)
                 f_stream.close()
         structures_dict[title] = stct_lists
-    return structures_dict
+    return {k: _set_atoms_y(v) for k, v in structures_dict.items()}
 
 
 def match_reader(reader_name: str, **kwargs):
     reader = None
     metadata = {}
-    if reader_name == 'pkl' or reader_name == 'pickle':
-        reader = partial(pkl_atoms_reader, **kwargs)
-        metadata.update({'origin': 'atoms_pkl'})
-    elif reader_name == 'structure_list':
+    if reader_name == 'structure_list':
         reader = partial(structure_list_reader, **kwargs)
         metadata.update({'origin': 'structure_list'})
     else:
@@ -317,12 +425,13 @@ def match_reader(reader_name: str, **kwargs):
 def file_to_dataset(
     file: str,
     cutoff: float,
-    cores=1,
-    reader=None,
-    label: str = None,
+    cores: int = 1,
+    reader: Callable = ase_reader,
+    label: Optional[str] = None,
     transfer_info: bool = True,
 ):
     """
+    Deprecated
     Read file by reader > get list of atoms or dict of atoms
     """
 
@@ -345,7 +454,11 @@ def file_to_dataset(
     graph_dct = {}
     for label, atoms_list in atoms_dct.items():
         graph_list = graph_build(
-            atoms_list, cutoff, cores, transfer_info=transfer_info
+            atoms_list=atoms_list,
+            cutoff=cutoff,
+            num_cores=cores,
+            transfer_info=transfer_info,
+            y_from_calc=False,
         )
         for graph in graph_list:
             graph[KEY.USER_LABEL] = label

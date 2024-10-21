@@ -13,9 +13,10 @@ from sevenn._const import AtomGraphDataType
 class EdgePreprocess(nn.Module):
     """
     preprocessing pos to edge vectors and edge lengths
+    currently used in sevenn/scripts/deploy for lammps serial model
     """
 
-    def __init__(self, is_stress):
+    def __init__(self, is_stress: bool):
         super().__init__()
         # controlled by 'AtomGraphSequential'
         self.is_stress = is_stress
@@ -166,7 +167,7 @@ class SphericalEncoding(nn.Module):
         lmax: int,
         parity: int = -1,
         normalization: str = 'component',
-        normalize=True,
+        normalize: bool = True,
     ):
         super().__init__()
         self.lmax = lmax

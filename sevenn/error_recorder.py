@@ -1,13 +1,15 @@
-from typing import Callable, List, Tuple
+from copy import deepcopy
+from typing import Any, Callable, List, Optional, Tuple
 
 import torch
+import torch.distributed as dist
 
 import sevenn._keys as KEY
-from sevenn.atom_graph_data import AtomGraphData
-from sevenn.train.optim import loss_dict
-from sevenn.util import AverageNumber
 
-ERROR_TYPES = {
+from .atom_graph_data import AtomGraphData
+from .train.optim import loss_dict
+
+_ERROR_TYPES = {
     'TotalEnergy': {
         'name': 'Energy',
         'ref_key': KEY.ENERGY,
@@ -53,6 +55,33 @@ ERROR_TYPES = {
 }
 
 
+def get_err_type(name: str) -> dict[str, Any]:
+    return deepcopy(_ERROR_TYPES[name])
+
+
+class AverageNumber:
+    def __init__(self):
+        self._sum = 0.0
+        self._count = 0
+
+    def update(self, values: torch.Tensor):
+        self._sum += values.sum().item()
+        self._count += values.numel()
+
+    def _ddp_reduce(self, device):
+        _sum = torch.tensor(self._sum, device=device)
+        _count = torch.tensor(self._count, device=device)
+        dist.all_reduce(_sum, op=dist.ReduceOp.SUM)
+        dist.all_reduce(_count, op=dist.ReduceOp.SUM)
+        self._sum = _sum.item()
+        self._count = _count.item()
+
+    def get(self):
+        if self._count == 0:
+            return torch.nan
+        return self._sum / self._count
+
+
 class ErrorMetric:
     """
     Base class for error metrics We always average error by # of structures,
@@ -65,7 +94,7 @@ class ErrorMetric:
         ref_key: str,
         pred_key: str,
         coeff: float = 1.0,
-        unit: str = None,
+        unit: Optional[str] = None,
         per_atom: bool = False,
         **kwargs,
     ):
@@ -84,6 +113,7 @@ class ErrorMetric:
         y_ref = output[self.ref_key] * self.coeff
         y_pred = output[self.pred_key] * self.coeff
         if self.per_atom:
+            assert y_ref.dim() == 1 and y_pred.dim() == 1
             natoms = output[KEY.NUM_ATOMS]
             y_ref = y_ref / natoms
             y_pred = y_pred / natoms
@@ -98,8 +128,8 @@ class ErrorMetric:
     def get(self):
         return self.value.get()
 
-    def key_str(self):
-        if self.unit is None:
+    def key_str(self, with_unit=True):
+        if self.unit is None or not with_unit:
             return self.name
         else:
             return f'{self.name} ({self.unit})'
@@ -119,7 +149,7 @@ class RMSError(ErrorMetric):
         self._se = torch.nn.MSELoss(reduction='none')
 
     def _square_error(self, y_ref, y_pred, vdim: int):
-        return self._se(y_ref, y_pred).view(-1, vdim).sum(dim=1)
+        return self._se(y_ref.view(-1, vdim), y_pred.view(-1, vdim)).sum(dim=1)
 
     def update(self, output: AtomGraphData):
         y_ref, y_pred = self._retrieve(output)
@@ -133,7 +163,7 @@ class RMSError(ErrorMetric):
 class ComponentRMSError(ErrorMetric):
     """
     Ignore vector dim and just average over components
-    Results in smaller error looking
+    Results smaller error
     """
 
     def __init__(self, **kwargs):
@@ -151,7 +181,7 @@ class ComponentRMSError(ErrorMetric):
         self.value.update(se)
 
     def get(self):
-        return torch.sqrt(self.value.get())
+        return self.value.get() ** 0.5
 
 
 class MAError(ErrorMetric):
@@ -248,28 +278,51 @@ class ErrorRecorder:
         else:
             self._update(output)
 
-    def get_metric_dict(self):
-        return {metric.key_str(): metric.get() for metric in self.metrics}
+    def get_metric_dict(self, with_unit=True):
+        return {metric.key_str(with_unit): metric.get() for metric in self.metrics}
+
+    def get_current(self):
+        dct = {}
+        for metric in self.metrics:
+            dct[metric.name] = {
+                'value': metric.get(),
+                'unit': metric.unit,
+                'ref_key': metric.ref_key,
+                'pred_key': metric.pred_key,
+            }
+        return dct
+
+    def get_dct(self, prefix=''):
+        dct = {}
+        if prefix.endswith('_') is False and prefix != '':
+            prefix = prefix + '_'
+        for metric in self.metrics:
+            dct[f'{prefix}{metric.name}'] = f'{metric.get():6f}'
+        return dct
+
+    def get_key_str(self, name: str):
+        for metric in self.metrics:
+            if name == metric.name:
+                return metric.key_str()
+        return None
 
     def epoch_forward(self):
-        self.history.append(self.get_metric_dict())
+        self.history.append(self.get_current())
+        pretty = self.get_metric_dict(with_unit=True)
         for metric in self.metrics:
             metric.reset()
-        return self.history[-1]
-
-    def get_history(self):
-        return self.history
+        return pretty  # for print
 
     @staticmethod
     def init_total_loss_metric(config, criteria):
         is_stress = config[KEY.IS_TRAIN_STRESS]
         metrics = []
-        energy_metric = CustomError(criteria, **ERROR_TYPES['Energy'])
+        energy_metric = CustomError(criteria, **get_err_type('Energy'))
         metrics.append((energy_metric, 1))
-        force_metric = CustomError(criteria, **ERROR_TYPES['Force'])
+        force_metric = CustomError(criteria, **get_err_type('Force'))
         metrics.append((force_metric, config[KEY.FORCE_WEIGHT]))
         if is_stress:
-            stress_metric = CustomError(criteria, **ERROR_TYPES['Stress'])
+            stress_metric = CustomError(criteria, **get_err_type('Stress'))
             metrics.append((stress_metric, config[KEY.STRESS_WEIGHT]))
         total_loss_metric = CombinedError(
             metrics, name='TotalLoss', unit=None, ref_key=None, pred_key=None
@@ -296,13 +349,14 @@ class ErrorRecorder:
 
         err_metrics = []
         for err_type, metric_name in err_config:
-            metric_kwargs = ERROR_TYPES[err_type].copy()
+            metric_kwargs = get_err_type(err_type)
             if err_type == 'TotalLoss':  # special case
                 err_metrics.append(
                     ErrorRecorder.init_total_loss_metric(config, criteria)
                 )
                 continue
             metric_cls = ErrorRecorder.METRIC_DICT[metric_name]
+            assert isinstance(metric_kwargs['name'], str)
             metric_kwargs['name'] += f'_{metric_name}'
             if metric_name == 'Loss':
                 metric_kwargs['func'] = criteria

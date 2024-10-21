@@ -22,7 +22,7 @@ model:
         cutoff_on: 4.5
 
     # You can set these to True, if further tuning is needed.
-    train_shift_scale: False 
+    train_shift_scale: False
     train_denominator: False
     self_connection_type: 'linear'
 
@@ -56,14 +56,14 @@ train:
         reset_epoch: True
         checkpoint: './checkpoint_sevennet_0.pth'
         # Set True to use shift, scale, and avg_num_neigh from checkpoint (highly recommended)
-        use_statistic_values_of_checkpoint: True 
+        use_statistic_values_of_checkpoint: True
 
 data:
     batch_size: 4
     data_divide_ratio: 0.1
 
     #data_format: 'ase'                           # Default is 'ase'
-    #data_format_args:                            # Paramaters, will be passed to ase.io.read
+    #data_format_args:                            # Parameters, will be passed to ase.io.read
         #index: '-10:'
 
     # ASE tries to infer its type by extension, in this case, extxyz file is loaded by ase.

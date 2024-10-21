@@ -9,18 +9,22 @@ The project provides parallel molecular dynamics simulations using graph neural 
 
 The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
 
+**PLEASE NOTE:** SevenNet+LAMMPS parallel after this commit: 14851ef (v0.9.3 ~ 0.9.5) has a serious bug:
+it gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug is fixed for the main branch, from v0.10.x, and pip (PyPI: v0.9.3.post0).
+
+
 ## Features
  - Pre-trained GNN interatomic potential SevenNet-0, with fine-tuning interface
  - ASE calculator support
  - Multi-GPU accelerated molecular dynamics with LAMMPS
- - D3 dispersion (van der Waals) with LAMMPS (for LAMMPS serial)
+ - Accelerated D3 (van der Waals) dispersion, written in CUDA.
 
 Supporting MD frameworks and its features. While all modes support both CPU and GPU, GPU is much faster.
 | Features        | ASE calculator   | LAMMPS serial   | LAMMPS parallel |
 |-----------------|------------------|-----------------|-----------------|
 | Working?        | ✅ | ✅ | ✅ |
 | Multi-GPU       | ❌ | ❌ | ✅ |
-| Stress compute  | ✅ | ✅ | ⏳ |
+| Stress          | ✅ | ✅ | ✅ |
 | D3 correction   | ⏳ | ✅ | ⏳ |
 
 ✅: Support, ⏳: Planned, ❌: Not planned.
@@ -69,11 +73,17 @@ After the PyTorch installation, run
 pip install sevenn
 ```
 
+To download the latest version of SevenNet(not stable!), run
+```bash
+pip install https://github.com/MDIL-SNU/SevenNet.git
+```
+Note that we have CHANGELOG.md. As SevenNet is under active development (again), I recommend checking it for new features and changes.
+
 ## Usage
 
 ### SevenNet-0
 
-SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). 
+SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
 
 While SevenNet-0 can be applied to downstream tasks as it is, it is recommended to [`fine-tune`](#training) SevenNet-0 before addressing real downstream tasks.
 
@@ -99,7 +109,7 @@ For pre-trained models,
 
 ```python
 from sevenn.sevennet_calculator import SevenNetCalculator
-sevenet_0_cal = SevenNetCalculator("7net-0", device='cpu')  # 7net-0, SevenNet-0, 7net-0_22May2024, 7net-0_11July2024 ...
+sevennet_0_cal = SevenNetCalculator("7net-0", device='cpu')  # 7net-0, SevenNet-0, 7net-0_22May2024, 7net-0_11July2024 ...
 ```
 
 For user trained models,
@@ -107,7 +117,7 @@ For user trained models,
 ```python
 from sevenn.sevennet_calculator import SevenNetCalculator
 checkpoint_path = ### PATH TO CHECKPOINT ###
-sevenet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
+sevennet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
 ```
 
 ### Training
@@ -135,7 +145,7 @@ Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 ### sevenn_graph_build
 
 ```bash
-sevenn_graph_build -f ase my_train_data.extxyz 5.0
+sevenn_graph_build my_train_data.extxyz 5.0
 ```
 
 You can preprocess the dataset with `sevenn_graph_build` to obtain `*.sevenn_data` files. The cutoff length should be provided.
@@ -144,7 +154,7 @@ See `sevenn_graph_build --help` for more information.
 ### sevenn_inference
 
 ```bash
-sevenn_inference checkpoint_best.pt path_to_my_structures/*
+sevenn_inference checkpoint_best.pth path_to_my_structures/*
 ```
 
 This will create dir `sevenn_infer_result`. It includes .csv files that enumerate prediction/reference results of energy and force.
@@ -166,7 +176,7 @@ The parallel model can be obtained in a similar way
 sevenn_get_model 7net-0 -p
 ```
 
-This will create multiple `deployed_parallel_*.pt` files. The number of deployed models equals the number of message-passing layers.
+This will create a directory with multiple `deployed_parallel_*.pt` files. The directory path itself is an argument for the lammps script. Please do not modify or remove files under the directory.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
 ## Installation for LAMMPS
@@ -179,6 +189,8 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 **PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
+**PLEASE NOTE:** Virial stress (pressure) outputs of SevenNet parallel should work correctly! I have validated it several times. However, I recommend testing it by comparing outputs between serial and parallel, as the code is not yet mature.
+
 If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module. If it is unavailable, read the 'Note for MKL' section before running cmake.
 
 CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
@@ -190,7 +202,7 @@ git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Au
 sevenn_patch_lammps ./lammps_sevenn {--d3}
 ```
 
-**Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style. For its usage and details, click [here](sevenn/pair_e3gnn).**
+**Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).**
 
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
@@ -259,19 +271,18 @@ pair_coeff * * {path to serial model} {space separated chemical species}
 units         metal
 atom_style    atomic
 pair_style e3gnn/parallel
-pair_coeff * * {number of segmented parallel models} {space separated paths of segmented parallel models} {space separated chemical species}
+pair_coeff * * {number of message-passing layers} {path to the directory containing parallel model} {space separated chemical species}
 ```
 
 For example,
 
 ```txt
 pair_style e3gnn/parallel
-pair_coeff * * 4 ./deployed_parallel_0.pt ./deployed_parallel_1.pt ./deployed_parallel_2.pt ./deployed_parallel_3.pt Hf O
+pair_coeff * * 4 ./deployed_parallel Hf O
 ```
+The number of message-passing layers is equal to the number of `*.pt` files in the `./deployed_parallel` directory.
 
-The number of segmented `*.pt` files is same as the number of message-passing layers of the model.
-
-Check [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
+Use [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
 
 One GPU per MPI process is expected. The simulation may run inefficiently if the available GPUs are fewer than the MPI processes.
 
@@ -280,9 +291,7 @@ One GPU per MPI process is expected. The simulation may run inefficiently if the
 ## Future Works
 
 - Notebook examples and improved interface for non-command line usage
-- Virial stress output in parallel MD simulations.
 - Development of a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
-- Easy use of parallel models
 
 ## Citation
 

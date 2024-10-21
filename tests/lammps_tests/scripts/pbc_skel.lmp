@@ -1,0 +1,23 @@
+  units            metal
+  boundary         __BOUNDARY__
+  box tilt large
+  read_data        __LMP_STCT__
+
+  #replicate __REPLICATE__
+
+  mass * 1.0  # do not matter since we don't run MD
+
+  pair_style       __PAIR_STYLE__
+  pair_coeff       * * __POTENTIALS__ __ELEMENT__
+
+  timestep         0.002
+
+  compute pa all pe/atom
+
+  thermo          1
+  fix 1 all nve
+  thermo_style    custom step tpcpu pe ke vol pxx pyy pzz pxy pxz pyz press temp
+  dump            mydump all custom 1 force.dump id type element c_pa x y z fx fy fz
+  dump_modify    mydump sort id element __ELEMENT__
+
+  run 0

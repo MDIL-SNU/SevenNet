@@ -14,6 +14,8 @@ import sevenn.util as util
 
 class AtomGraphDataset:
     """
+    Deprecated
+
     class representing dataset of AtomGraphData
     the dataset is handled as dict, {label: data}
     if given data is List, it stores data as {KEY_DEFAULT: data}
@@ -81,7 +83,7 @@ class AtomGraphDataset:
             for data in data_list:
                 data[KEY.USER_LABEL] = label
 
-    def group_by_key(self, data_key=KEY.USER_LABEL):
+    def group_by_key(self, data_key: str = KEY.USER_LABEL):
         """
         group dataset list by given key and save it as dict
         and change in-place
@@ -100,7 +102,7 @@ class AtomGraphDataset:
             self.dataset[key].append(datum)
         self.user_labels = list(self.dataset.keys())
 
-    def seperate_info(self, data_key=KEY.INFO):
+    def separate_info(self, data_key: str = KEY.INFO):
         """
         Separate info from data and save it as list of dict
         to make it compatible with torch_geometric and later training
@@ -143,7 +145,7 @@ class AtomGraphDataset:
         else:
             return {k: len(v) for k, v in self.dataset.items()}
 
-    def get(self, idx, key=None):
+    def get(self, idx: int, key: Optional[str] = None):
         if key is None:
             key = self.KEY_DEFAULT
         return self.dataset[key][idx]
@@ -184,7 +186,10 @@ class AtomGraphDataset:
                 datum[key].requires_grad_(requires_grad_value)
 
     def divide_dataset(
-        self, ratio: float, constant_ratio_btw_labels=True, ignore_test=True
+        self,
+        ratio: float,
+        constant_ratio_btw_labels: bool = True,
+        ignore_test: bool = True
     ):
         """
         divide dataset into 1-2*ratio : ratio : ratio
@@ -234,7 +239,7 @@ class AtomGraphDataset:
     def to_list(self):
         return list(itertools.chain(*self.dataset.values()))
 
-    def get_natoms(self, type_map=None):
+    def get_natoms(self, type_map: Optional[Dict[int, int]] = None):
         """
         if x_is_one_hot_idx, type_map is required
         type_map: Z->one_hot_index(node_feature)
@@ -245,7 +250,7 @@ class AtomGraphDataset:
         for label, data in self.dataset.items():
             natoms[label] = Counter()
             for datum in data:
-                if self.x_is_one_hot_idx:
+                if self.x_is_one_hot_idx and type_map is not None:
                     Zs = util.onehot_to_chem(datum[self.DATA_KEY_X], type_map)
                 else:
                     Zs = [
@@ -257,7 +262,7 @@ class AtomGraphDataset:
             natoms[label] = dict(natoms[label])
         return natoms
 
-    def get_per_atom_mean(self, key, key_num_atoms=KEY.NUM_ATOMS):
+    def get_per_atom_mean(self, key: str, key_num_atoms: str = KEY.NUM_ATOMS):
         """
         return per_atom mean of given data key
         """
@@ -272,7 +277,7 @@ class AtomGraphDataset:
         """
         return self.get_per_atom_mean(self.DATA_KEY_ENERGY)
 
-    def get_species_ref_energy_by_linear_comb(self, num_chem_species):
+    def get_species_ref_energy_by_linear_comb(self, num_chem_species: int):
         """
         Total energy as y, composition as c_i,
         solve linear regression of y = c_i*X
@@ -317,7 +322,7 @@ class AtomGraphDataset:
         force_list = torch.Tensor(force_list)
         return float(torch.sqrt(torch.mean(torch.pow(force_list, 2))))
 
-    def get_species_wise_force_rms(self, num_chem_species):
+    def get_species_wise_force_rms(self, num_chem_species: int):
         """
         Return force rms for each species
         Averaged by each components (x, y, z)
@@ -351,7 +356,7 @@ class AtomGraphDataset:
         avg_num_neigh = np.average(n_neigh)
         return avg_num_neigh
 
-    def get_statistics(self, key):
+    def get_statistics(self, key: str):
         """
         return dict of statistics of given key (energy, force, stress)
         key of dict is its label and _total for total statistics
@@ -414,18 +419,22 @@ class AtomGraphDataset:
                 self.dataset.update({key: val})
         self.user_labels = list(self.dataset.keys())
 
-    def unify_dtypes(self, float_dtype=torch.float32, int_dtype=torch.int64):
+    def unify_dtypes(
+        self,
+        float_dtype: torch.dtype = torch.float32,
+        int_dtype: torch.dtype = torch.int64
+    ):
         data_list = self.to_list()
         for datum in data_list:
             for k, v in list(datum.items()):
                 datum[k] = util.dtype_correct(v, float_dtype, int_dtype)
 
-    def delete_data_key(self, key):
+    def delete_data_key(self, key: str):
         for data in self.to_list():
             del data[key]
 
     # TODO: this by_label is not straightforward
-    def save(self, path, by_label=False):
+    def save(self, path: str, by_label: bool = False):
         if by_label:
             for label, data in self.dataset.items():
                 torch.save(
