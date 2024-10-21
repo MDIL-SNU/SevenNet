@@ -155,6 +155,10 @@ class SevenNetGraphDataset(InMemoryDataset):
                 data = self.pre_transform(data)
             processed_graph_list.append(data)
 
+        if len(processed_graph_list) == 0:
+            # Can not save at all if there is no graph (error in PyG), raise an error
+            raise ValueError('Zero graph found after filtering')
+
         # save graphs, handled by torch_geometrics
         self.save(processed_graph_list, self.processed_paths[0])
 
