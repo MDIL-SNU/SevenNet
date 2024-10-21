@@ -27,6 +27,7 @@ def processing_epoch_v2(
     from sevenn.util import unique_filepath
 
     log = Logger()
+    write_csv = write_csv and log.rank == 0
     working_dir = working_dir or os.getcwd()
     prefix = f'{os.path.abspath(working_dir)}/'
 
