@@ -1,0 +1,82 @@
+# Example input.yaml for fine-tuning sevennet-0
+# '*' signifies default. You can check log.sevenn for defaults.
+# Use `sevenn -m train_v1` to run this, although -m train_v2 also work.
+
+model:  # model keys should be consistent except for train_* keys
+    chemical_species: 'Auto'
+    cutoff: 5.0
+    channel: 128
+    is_parity: False
+    lmax: 2
+    num_convolution_layer: 5
+    irreps_manual:
+        - "128x0e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e"
+
+    weight_nn_hidden_neurons: [64, 64]
+    radial_basis:
+        radial_basis_name: 'bessel'
+        bessel_basis_num: 8
+    cutoff_function:
+        cutoff_function_name: 'XPLOR'
+        cutoff_on: 4.5
+    self_connection_type: 'linear'
+
+    train_shift_scale: False   # customizable (True | False)
+    train_denominator: False   # customizable (True | False)
+
+train:  # Customizable
+    random_seed: 1
+    is_train_stress: True
+    epoch: 100
+
+    optimizer: 'adam'
+    optim_param:
+        lr: 0.004
+    scheduler: 'exponentiallr'
+    scheduler_param:
+        gamma: 0.99
+
+    force_loss_weight: 0.1
+    stress_loss_weight: 1e-06
+
+    per_epoch: 10  # Generate checkpoints every this epoch
+
+    # ['target y', 'metric']
+    # Target y: TotalEnergy, Energy, Force, Stress, Stress_GPa, TotalLoss
+    # Metric  : RMSE, MAE, or Loss
+    error_record:
+        - ['Energy', 'RMSE']
+        - ['Force', 'RMSE']
+        - ['Stress', 'RMSE']
+        - ['TotalLoss', 'None']
+
+    continue:
+        reset_optimizer: True
+        reset_scheduler: True
+        reset_epoch: True
+        checkpoint: 'SevenNet-0_11July2024'
+        # Set True to use shift, scale, and avg_num_neigh from checkpoint (highly recommended)
+        use_statistic_values_of_checkpoint: True
+
+data:  # Customizable
+    batch_size: 4
+    data_divide_ratio: 0.1
+
+    # ase.io.read readable data files or structure_list or .sevenn_data files can be used as dataset.
+    # .sevenn_data is preprocessed data set has edges connected (can be obtained by using sevenn_graph_build or by save_** options below)
+    data_format: 'ase'                            # One of 'ase', 'structure_list' (.sevenn_data is always readable)
+    data_format_args:                             # if `data_format` is `ase`, args will be passed to `ase.io.read`
+        index: ':'                                # see `https://wiki.fysik.dtu.dk/ase/ase/io/io.html` for more valid arguments
+
+    # If only load_dataset_path is provided, train/valid set is automatically decided by splitting dataset by divide ratio
+    # If both load_dataset_path & load_validset_path is provided, use load_dataset_path as training set.
+    load_dataset_path: ['fine_tune.extxyz']       # Support multiple files and expansion(*)
+    #load_validset_path: ['./valid.sevenn_data']
+
+    #save_dataset_path: './total'                 # Save the preprocessed (in load_dataset_path) dataset
+    #save_by_train_valid: True                    # Save the preprocessed train.sevenn_data, valid.sevenn_data

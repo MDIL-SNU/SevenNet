@@ -1,17 +1,32 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## WIP
+## [0.10.0]
+SevenNet now have CI workflows using pytest and its coverage is 78%!
+Substantial changes in cli apps and some outputs.
+
 ### Added
-- energy_key, force_key, stress_key options for `sevenn_graph_build` @thangckt
+- [train_v2]: train_v2, with lots of refactoring + support `load_testset_path`. Original routine is accessible: `sevenn -m train_v1`.
+- [train_v2]: `SevenNetGraphDataset` replaces old `AtomGrpahDataset`, which extends `InMemoryDataset` of PyG.
+- [train_v2]: `sevenn_graph_build` for SevenNetGraphDataset. Previous .sevenn_data is accessible with --legacy option
+- [train_v2]: Any number of additional datasets will be evaluated and recorded if it is given as 'load_{NAME}set_path' key (input.yaml).
+- 'Univ' keyword for 'chemical_species'
+- energy_key, force_key, stress_key options for `sevenn_graph_build`, @thangckt
+- OpenMPI distributed training @thangckt
 ### Changed
 - Read EFS of atoms from y_* keys of .info or .arrays dict, instead of caclculator results
+- Now `type_map` and requires_grad is hidden inside `AtomGraphSequential`, and don't need to care about it.
+- `log.sevenn` and `lc.csv` automatically find a safe filename (log0.sevenn, log1.sevenn, ...) to avoid overwriting.
+- [train_v2]: train_v2 loads its training set via `load_trainset_path`, rather than previous `load_dataset_path`.
+- [train_v2]: log.csv -> lc.csv, and columns have no units, (easier to postprocess with it) but still on `log.sevenn`.
 ### Fixed
-- [e3gnn_serial]: can continue simulation even when atom tag becomes not consecutive (removing atom dynamically) @gasplant64
+- [e3gnn_serial]: can continue simulation even when atom tag becomes not consecutive (removing atom dynamically), @gasplant64
 - [e3gnn_parallel]: undefined behavior when there is no atoms to send/recv (for non pbc system)
 - [e3gnn_parallel]: incorrect force/stress in some edge cases (too small simulation cell & 2 process)
 - [e3gnn_parallel]: revert commit 14851ef, now e3gnn_parallel is sane.
 - [e3gnn_*]: += instead of = when saving virial stress and forces @gasplant64
+- Now Logger correctly closes a file.
+- ... and lots of small bugs I found during writing `pytest`.
 
 ## [0.9.5]
 ### Note
