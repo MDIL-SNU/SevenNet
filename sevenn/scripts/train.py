@@ -15,12 +15,15 @@ def loader_from_config(config, dataset, is_train=False):
     batch_size = config[KEY.BATCH_SIZE]
     shuffle = is_train and config[KEY.TRAIN_SHUFFLE]
     sampler = None
+    loader_args = {'dataset': dataset, 'batch_size': batch_size, 'shuffle': shuffle}
     if config[KEY.IS_DDP]:
         dist.barrier()
         sampler = DistributedSampler(
             dataset, dist.get_world_size(), dist.get_rank(), shuffle=shuffle
         )
-    return DataLoader(dataset, batch_size, shuffle, sampler=sampler)
+        loader_args.update({'sampler': sampler})
+        loader_args.pop('shuffle')  # sampler is mutually exclusive with shuffle
+    return DataLoader(**loader_args)
 
 
 def train_v2(config, working_dir: str):
