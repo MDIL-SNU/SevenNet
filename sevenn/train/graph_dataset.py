@@ -183,6 +183,7 @@ class SevenNetGraphDataset(InMemoryDataset):
             'statistics': stats_save,
             'species': self.species,
             'num_atoms': self.natoms,
+            'num_graphs': len(self),
         }
 
         name = self._processed_name.split('.')[0].strip() + '.yaml'
