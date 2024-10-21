@@ -42,6 +42,8 @@ class Logger(metaclass=Singleton):
         self.active = True
 
     def __enter__(self):
+        if self.rank != 0:
+            return self
         if self.logfile is None and self._filename is not None:
             try:
                 self.logfile = open(
@@ -54,6 +56,8 @@ class Logger(metaclass=Singleton):
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        if self.rank != 0:
+            return self
         try:
             if self.logfile is not None:
                 self.logfile.close()
@@ -67,12 +71,16 @@ class Logger(metaclass=Singleton):
             self.files = {}
 
     def switch_file(self, new_filename: str):
+        if self.rank != 0:
+            return self
         if self.logfile is not None:
             raise ValueError('Current logfile is not yet closed')
         self._filename = new_filename
         return self
 
     def write(self, content: str):
+        if self.rank != 0:
+            return
         # no newline!
         if self.logfile is not None and self.active:
             self.logfile.write(content)
