@@ -146,14 +146,17 @@ class SevenNetGraphDataset(InMemoryDataset):
             )
             self._full_file_list.extend([os.path.abspath(file)] * len(tmplist))
             graph_list.extend(tmplist)
+
+        processed_graph_list = []
         for data in graph_list:
             if self.pre_filter is not None and not self.pre_filter(data):
                 continue
             if self.pre_transform is not None:
                 data = self.pre_transform(data)
+            processed_graph_list.append(data)
 
         # save graphs, handled by torch_geometrics
-        self.save(graph_list, self.processed_paths[0])
+        self.save(processed_graph_list, self.processed_paths[0])
 
     def _save_meta(self) -> None:
         if not self._scanned:
