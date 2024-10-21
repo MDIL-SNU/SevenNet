@@ -64,7 +64,7 @@ def init_model_config(config: Dict):
         model_meta[KEY.CHEMICAL_SPECIES] = 'auto'
         model_meta[KEY.NUM_SPECIES] = 'auto'
         model_meta[KEY.TYPE_MAP] = 'auto'
-    elif 'univ' in input_chem.lower():
+    elif isinstance(input_chem, str) and 'univ' in input_chem.lower():
         model_meta.update(util.chemical_species_preprocess([], universal=True))
     else:
         if isinstance(input_chem, list) and all(
