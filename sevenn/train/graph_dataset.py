@@ -146,14 +146,21 @@ class SevenNetGraphDataset(InMemoryDataset):
             )
             self._full_file_list.extend([os.path.abspath(file)] * len(tmplist))
             graph_list.extend(tmplist)
+
+        processed_graph_list = []
         for data in graph_list:
             if self.pre_filter is not None and not self.pre_filter(data):
                 continue
             if self.pre_transform is not None:
                 data = self.pre_transform(data)
+            processed_graph_list.append(data)
+
+        if len(processed_graph_list) == 0:
+            # Can not save at all if there is no graph (error in PyG), raise an error
+            raise ValueError('Zero graph found after filtering')
 
         # save graphs, handled by torch_geometrics
-        self.save(graph_list, self.processed_paths[0])
+        self.save(processed_graph_list, self.processed_paths[0])
 
     def _save_meta(self) -> None:
         if not self._scanned:
@@ -176,6 +183,7 @@ class SevenNetGraphDataset(InMemoryDataset):
             'statistics': stats_save,
             'species': self.species,
             'num_atoms': self.natoms,
+            'num_graphs': len(self),
         }
 
         name = self._processed_name.split('.')[0].strip() + '.yaml'
