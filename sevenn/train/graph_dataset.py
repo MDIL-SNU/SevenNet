@@ -184,6 +184,12 @@ class SevenNetGraphDataset(InMemoryDataset):
             'species': self.species,
             'num_atoms': self.natoms,
             'num_graphs': len(self),
+            'per_atom_energy_mean': self.per_atom_energy_mean,
+            'elemwise_reference_energies': self.elemwise_reference_energies,
+            'force_rms': self.force_rms,
+            'per_atom_energy,std': self.per_atom_energy_std,
+            'avg_num_neigh': self.avg_num_neigh,
+            'sqrt_avg_num_neigh': self.sqrt_avg_num_neigh,
         }
 
         name = self._processed_name.split('.')[0].strip() + '.yaml'
@@ -223,7 +229,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         coef_reduced = Ridge(alpha=0.1, fit_intercept=False).fit(c_reduced, y).coef_
         full_coeff = np.zeros(NUM_UNIV_ELEMENT)
         full_coeff[~zero_indices] = coef_reduced
-        return full_coeff
+        return full_coeff.tolist()  # ex: full_coeff[1] = H_reference_energy
 
     @property
     def force_rms(self):
@@ -466,7 +472,6 @@ def from_config(
         config.update(util.chemical_species_preprocess(sorted(list(chem_species))))
 
     # retrieve shift, scale, conv_denominaotrs from user input (keyword)
-    type_map = config[KEY.TYPE_MAP]
     init_from_stats = [KEY.SHIFT, KEY.SCALE, KEY.CONV_DENOMINATOR]
     for k in init_from_stats:
         input = config[k]  # statistic key or numbers
@@ -474,9 +479,6 @@ def from_config(
         #                     2: User manually inserted numbers
         if isinstance(input, str) and hasattr(train_set, input):
             var = getattr(train_set, input)
-            # meaning var is element-wise. use type_map to convert Z to node
-            if not isinstance(var, float) and len(var) > 1:
-                var = [var[z] for z in sorted(type_map, key=type_map.get)]
             config.update({k: var})
             log.writeline(f'{k} is obtained from statistics')
         elif isinstance(input, str) and not hasattr(train_set, input):
