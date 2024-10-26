@@ -357,7 +357,6 @@ class SevenNetGraphDataset(InMemoryDataset):
         for tag, atoms_list in datadct.items():
             tmp = dataload.graph_build(atoms_list, cutoff, num_cores)
             graph_list.extend(_tag_graphs(tmp, tag))
-        print(graph_list[0])
         return graph_list
 
     @staticmethod
@@ -507,7 +506,6 @@ def from_config(
         log.bar()
         log.writeline(f'{name} distribution:')
         log.statistic_write(dataset.statistics)
-        log.format_k_v('# atoms (node)', dataset.natoms, write=True)
         log.format_k_v('# structures (graph)', len(dataset), write=True)
 
         chem_species.update(dataset.species)
