@@ -1,6 +1,17 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.10.1]
+### Added
+- experimental `SevenNetAtomsDataset` which is memory efficient, can be enabled with `dataset_type='atoms'`
+### Changed
+- Save checkpoint_0.pth (model before any training)
+- `SevenNetGraphDataset._file_to_graph_list` -> `SevenNetGraphDataset.file_to_graph_list`
+- Refactoring `SevenNetGraphDataset`, skips computing statistics if it is loaded, more detailed logging
+### Fixed
+- load `SevenNetGraphDataset` with other data without an error
+
+
 ## [0.10.0]
 SevenNet now have CI workflows using pytest and its coverage is 78%!
 Substantial changes in cli apps and some outputs.
