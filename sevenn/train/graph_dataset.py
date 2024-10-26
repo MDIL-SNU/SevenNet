@@ -138,7 +138,7 @@ class SevenNetGraphDataset(InMemoryDataset):
     def process(self):
         graph_list: list[AtomGraphData] = []
         for file in self.raw_file_names:
-            tmplist = SevenNetGraphDataset._file_to_graph_list(
+            tmplist = SevenNetGraphDataset.file_to_graph_list(
                 filename=file,
                 cutoff=self.cutoff,
                 num_cores=self.process_num_cores,
@@ -163,8 +163,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         self.save(processed_graph_list, self.processed_paths[0])
 
     def _save_meta(self) -> None:
-        if not self._scanned:
-            self.run_stat()
+        self.run_stat()
         stats_save = {}
         for label, dct in self.statistics.items():
             if label.startswith('_'):
@@ -198,28 +197,23 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     @property
     def species(self):
-        if not self._scanned:
-            self.run_stat()
+        self.run_stat()
         return [z for z in self.statistics['_natoms'].keys() if z != 'total']
 
     @property
     def natoms(self):
-        if not self._scanned:
-            self.run_stat()
+        self.run_stat()
         return self.statistics['_natoms']
 
     @property
     def per_atom_energy_mean(self):
-        if not self._scanned:
-            self.run_stat()
+        self.run_stat()
         return self.statistics[KEY.PER_ATOM_ENERGY]['mean']
 
     @property
     def elemwise_reference_energies(self):
         from sklearn.linear_model import Ridge
 
-        if not self._scanned:
-            self.run_stat()
         c = self.statistics['_composition'].numpy()
         y = self.statistics[KEY.ENERGY]['_array'].numpy()
         zero_indices = np.all(c == 0, axis=0)
@@ -233,28 +227,24 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     @property
     def force_rms(self):
-        if not self._scanned:
-            self.run_stat()
+        self.run_stat()
         mean = self.statistics[KEY.FORCE]['mean']
         std = self.statistics[KEY.FORCE]['std']
         return float((mean**2 + std**2) ** (0.5))
 
     @property
     def per_atom_energy_std(self):
-        if not self._scanned:
-            self.run_stat()
+        self.run_stat()
         return self.statistics['per_atom_energy']['std']
 
     @property
     def avg_num_neigh(self):
-        if not self._scanned:
-            self.run_stat()
+        self.run_stat()
         return self.statistics['num_neighbor']['mean']
 
     @property
     def sqrt_avg_num_neigh(self):
-        if not self._scanned:
-            self.run_stat()
+        self.run_stat()
         return self.avg_num_neigh**0.5
 
     def run_stat(
@@ -264,6 +254,8 @@ class SevenNetGraphDataset(InMemoryDataset):
         """
         Loop over dataset and init any statistics might need
         """
+        if self._scanned is True:
+            return  # statistics already computed
         n_neigh = []
         natoms_counter = Counter()
         composition = torch.zeros((len(self), NUM_UNIV_ELEMENT))
@@ -371,7 +363,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         return [g for g in dataset]  # type: ignore
 
     @staticmethod
-    def _file_to_graph_list(
+    def file_to_graph_list(
         filename: str, cutoff: float, num_cores: int = 1, **kwargs
     ) -> List[AtomGraphData]:
         """
