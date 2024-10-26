@@ -104,8 +104,8 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
     def elemwise_reference_energies(self):
         from sklearn.linear_model import Ridge
 
-        c = self.statistics['_composition'].numpy()
-        y = self.statistics[KEY.ENERGY]['_array'].numpy()
+        c = self.statistics['_composition']
+        y = self.statistics[KEY.ENERGY]['_array']
         zero_indices = np.all(c == 0, axis=0)
         c_reduced = c[:, ~zero_indices]
         # will not 100% reproduce, as it is sorted by Z
