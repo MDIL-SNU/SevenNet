@@ -42,16 +42,16 @@ class OnehotEmbedding(nn.Module):
         embd = embd.float()
         data[self.key_x] = embd
         if self.key_additional_output is not None:
-            data[self.key_additional_output] = embd
+            data[self.key_additional_output] = embd  # for self-connection
         if self.key_save is not None:
-            data[self.key_save] = inp
+            data[self.key_save] = inp  # for elemwise shift scale
         return data
 
 
 def get_type_mapper_from_specie(specie_list: List[str]):
     """
     from ['Hf', 'O']
-    return {72: 0, 16: 1}
+    return {72: 0, 8: 1}
     """
     specie_list = sorted(specie_list)
     type_map = {}

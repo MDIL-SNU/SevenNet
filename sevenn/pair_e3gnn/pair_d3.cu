@@ -25,7 +25,7 @@ using namespace LAMMPS_NS;
     cudaEvent_t start, stop;  \
     cudaEventCreate(&start);  \
     cudaEventCreate(&stop);   \
-    cudaEventRecord(start);   
+    cudaEventRecord(start);
 
 #define STOP_CUDA_TIMER(tag)                           \
     cudaEventRecord(stop);                             \
@@ -34,7 +34,7 @@ using namespace LAMMPS_NS;
     cudaEventElapsedTime(&msec, start, stop);          \
     printf("Elapsed time for %s: %f ms\n", tag, msec); \
     cudaEventDestroy(start);                           \
-    cudaEventDestroy(stop);                            
+    cudaEventDestroy(stop);
 
 #define CHECK_CUDA(call) do {                                            \
     cudaError_t status_ = call;                                          \
@@ -636,8 +636,8 @@ void PairD3::setfuncpar(char* functional_name) {
         error->all(FLERR, "Unknown damping type");
     }
 
-    rs8 = rs18; 
-    alp6 = alp; 
+    rs8 = rs18;
+    alp6 = alp;
     alp8 = alp + 2.0;
     // rs10 = rs18
     // alp10 = alp + 4.0;
@@ -874,7 +874,7 @@ __global__ void kernel_get_dC6_dCNij(
             //const float unit_frac = numerator * denominator_rc;
             //c6_ij_tot[iter] = unit_frac;
             //dc6_iji_tot[iter] = \
-            static_cast<float>(d_numerator_i * denominator_rc) - static_cast<float>(d_denominator_i * denominator_rc) * unit_frac;            
+            static_cast<float>(d_numerator_i * denominator_rc) - static_cast<float>(d_denominator_i * denominator_rc) * unit_frac;
             //dc6_ijj_tot[iter] = \
             static_cast<float>(d_numerator_j * denominator_rc) - static_cast<float>(d_denominator_j * denominator_rc) * unit_frac;
         }
@@ -1136,7 +1136,7 @@ void PairD3::get_coordination_number() {
 void PairD3::reallocate_arrays() {
 
     /* -------------- Destroy previous arrays -------------- */
-    cudaFree(cn); 
+    cudaFree(cn);
     for (int i = 0; i < n_save; i++) { cudaFree(x[i]); }; cudaFree(x);
     cudaFree(dc6i);
     for (int i = 0; i < n_save; i++) { cudaFree(f[i]); }; cudaFree(f);
@@ -1311,7 +1311,7 @@ __global__ void kernel_get_forces_without_dC6_zero_damping(
         const float c6 = c6_ij_tot[iter];
         const float dc6iji = dc6_iji_tot[iter];
         const float dc6ijj = dc6_ijj_tot[iter];
-        
+
         if (iat == jat) {
             const int atomtype_i = type[iat];
             const float r0 = r0ab[atomtype_i][atomtype_i];
@@ -1355,7 +1355,7 @@ __global__ void kernel_get_forces_without_dC6_zero_damping(
                 const float x1 = 3.0f * c6 * r8_rc * fmaf(r2_rc, s8r42 * damp8 * fmaf(3.0f * alp8 * t8, damp8, -4.0f), s6 * damp6 * fmaf(alp6 * t6, damp6, -1.0f));
                 //const float x1 = 0.5 * 6.0 * c6 * r8_rc * (s6 * damp6 * (14.0 * t6 * damp6 - 1.0) + s8r42 * r2_rc * damp8 * (48.0 * t8 * damp8 - 4.0));
                 //3.0 * alp6 = 48.0
-                
+
                 const float vec[3] = {
                     x1 * rij[0],
                     x1 * rij[1],
@@ -1811,7 +1811,7 @@ void PairD3::get_forces_without_dC6_bj_damping() {
 
 __global__ void kernel_get_forces_with_dC6(
     int maxij, int maxtau, float cn_thr, float K1,
-    double *dc6i, float *rcov, int *rep_cn, float ****tau_cn, int *tau_idx_cn, int *type, float **x, 
+    double *dc6i, float *rcov, int *rep_cn, float ****tau_cn, int *tau_idx_cn, int *type, float **x,
     double **f, double **sigma
 ) {
     int iter = blockIdx.x * blockDim.x + threadIdx.x;
@@ -1850,7 +1850,7 @@ __global__ void kernel_get_forces_with_dC6(
                 const int idx1 = tau_idx_cn[k-2];
                 const int idx2 = tau_idx_cn[k-1];
                 const int idx3 = tau_idx_cn[k];
-    
+
                 if (idx1 == rep_cn[0] && idx2 == rep_cn[1] && idx3 == rep_cn[2]) { continue; }
                 const float rij[3] = {
                     tau_cn[idx1][idx2][idx3][0],
@@ -1883,7 +1883,7 @@ __global__ void kernel_get_forces_with_dC6(
                 sigma_local_22 += vec[2] * rij[2];
             }
         }
-            
+
         else {
             const float rcov_sum = rcov[type[iat]] + rcov[type[jat]];
             const float dc6i_sum = dc6i[iat] + dc6i[jat];
@@ -2002,7 +2002,7 @@ void PairD3::get_forces_with_dC6() {
 
 void PairD3::update(int eflag, int vflag) {
     int n = atom->natoms;
-    
+
     if (eflag) { eng_vdwl += disp_total * AU_TO_EV; } // Energy update
 
     double** f_local = atom->f; // Local force of atoms
@@ -2012,7 +2012,7 @@ void PairD3::update(int eflag, int vflag) {
         }
     }
 
-    
+
     if (vflag) {
         virial[0] += sigma[0][0] * AU_TO_EV;
         virial[1] += sigma[1][1] * AU_TO_EV;
@@ -2052,7 +2052,7 @@ void PairD3::compute(int eflag, int vflag) {
     }
     get_forces_with_dC6();
     update(eflag, vflag);
-    
+
 }
 
 /* ----------------------------------------------------------------------

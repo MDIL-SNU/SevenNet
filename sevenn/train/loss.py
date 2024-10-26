@@ -1,3 +1,5 @@
+from typing import Any, Callable, Dict, Optional
+
 import torch
 
 import sevenn._keys as KEY
@@ -11,13 +13,13 @@ class LossDefinition:
 
     def __init__(
         self,
-        name=None,
-        unit=None,
-        criterion=None,
-        ref_key=None,
-        pred_key=None,
-        use_weight=False,
-        delete_unlabled=True,
+        name: str,
+        unit: Optional[str] = None,
+        criterion: Optional[Callable] = None,
+        ref_key: Optional[str] = None,
+        pred_key: Optional[str] = None,
+        use_weight: bool = False,
+        delete_unlabled: bool = True,
     ):
         self.name = name
         self.unit = unit
@@ -30,22 +32,32 @@ class LossDefinition:
     def __repr__(self):
         return self.name
 
-    def assign_criteria(self, criterion):
+    def assign_criteria(self, criterion: Callable):
         if self.criterion is not None:
             raise ValueError('Loss uses its own criterion.')
         self.criterion = criterion
 
-    def _preprocess(self, batch_data, model=None):
+    def _preprocess(
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None
+    ):
         if self.pred_key is None or self.ref_key is None:
             raise NotImplementedError('LossDefinition is not implemented.')
         return torch.reshape(batch_data[self.pred_key], (-1,)), torch.reshape(
             batch_data[self.ref_key], (-1,)
         )
 
-    def get_loss(self, batch_data, model=None):
+    def get_loss(
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None
+    ):
         """
         Function that return scalar
         """
+        if self.criterion is None:
+            raise NotImplementedError('LossDefinition has no criterion.')
         pred, ref = self._preprocess(batch_data, model)
         if self.use_weight:
             vdim = {'energy': 1, 'force': 3, 'stress': 6}
@@ -85,25 +97,29 @@ class PerAtomEnergyLoss(LossDefinition):
 
     def __init__(
         self,
-        name='Energy',
-        unit='eV/atom',
-        criterion=None,
-        ref_key=KEY.ENERGY,
-        pred_key=KEY.PRED_TOTAL_ENERGY,
-        use_weight=False,
-        delete_unlabled=True,
+        name: str = 'Energy',
+        unit: str = 'eV/atom',
+        criterion: Optional[Callable] = None,
+        ref_key: str = KEY.ENERGY,
+        pred_key: str = KEY.PRED_TOTAL_ENERGY,
+        **kwargs,
     ):
         super().__init__(
             name=name,
+            unit=unit,
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            use_weight=use_weight,
-            delete_unlabled=delete_unlabled
+            **kwargs
         )
 
-    def _preprocess(self, batch_data, model=None):
+    def _preprocess(
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None
+    ):
         num_atoms = batch_data[KEY.NUM_ATOMS]
+        assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
         return (
             batch_data[self.pred_key] / num_atoms,
             batch_data[self.ref_key] / num_atoms,
@@ -117,26 +133,31 @@ class ForceLoss(LossDefinition):
 
     def __init__(
         self,
-        name='Force',
-        unit='eV/A',
-        criterion=None,
-        ref_key=KEY.FORCE,
-        pred_key=KEY.PRED_FORCE,
-        use_weight=False,
-        delete_unlabled=True,
+        name: str = 'Force',
+        unit: str = 'eV/A',
+        criterion: Optional[Callable] = None,
+        ref_key: str = KEY.FORCE,
+        pred_key: str = KEY.PRED_FORCE,
+        **kwargs,
     ):
         super().__init__(
             name=name,
+            unit=unit,
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            use_weight=use_weight,
-            delete_unlabled=delete_unlabled
+            **kwargs
         )
 
-    def _preprocess(self, batch_data, model=None):
-        return torch.reshape(batch_data[self.pred_key], (-1,)), torch.reshape(
-            batch_data[self.ref_key], (-1,)
+    def _preprocess(
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None
+    ):
+        assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
+        return (
+            torch.reshape(batch_data[self.pred_key], (-1,)),
+            torch.reshape(batch_data[self.ref_key], (-1,)),
         )
 
 
@@ -147,31 +168,36 @@ class StressLoss(LossDefinition):
 
     def __init__(
         self,
-        name='Stress',
-        unit='kbar',
-        criterion=None,
-        ref_key=KEY.STRESS,
-        pred_key=KEY.PRED_STRESS,
-        use_weight=False,
-        delete_unlabled=True,
+        name: str = 'Stress',
+        unit: str = 'kbar',
+        criterion: Optional[Callable] = None,
+        ref_key: str = KEY.STRESS,
+        pred_key: str = KEY.PRED_STRESS,
+        **kwargs,
     ):
         super().__init__(
             name=name,
+            unit=unit,
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            use_weight=use_weight,
-            delete_unlabled=delete_unlabled
+            **kwargs
+        )
+        self.TO_KB = 1602.1766208  # eV/A^3 to kbar
+
+    def _preprocess(
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None
+    ):
+        assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
+        return (
+            torch.reshape(batch_data[self.pred_key] * self.TO_KB, (-1,)),
+            torch.reshape(batch_data[self.ref_key] * self.TO_KB, (-1,)),
         )
 
-    def _preprocess(self, batch_data, model=None):
-        TO_KB = 1602.1766208  # eV/A^3 to kbar
-        return torch.reshape(
-            batch_data[self.pred_key] * TO_KB, (-1,)
-        ), torch.reshape(batch_data[self.ref_key] * TO_KB, (-1,))
 
-
-def get_loss_functions_from_config(config):
+def get_loss_functions_from_config(config: Dict[str, Any]):
     from sevenn.train.optim import loss_dict
 
     loss_functions = []  # list of tuples (loss_definition, weight)
@@ -185,12 +211,12 @@ def get_loss_functions_from_config(config):
         loss_param['reduction'] = 'none'
     criterion = loss(**loss_param)
 
-    use_weight = config[KEY.USE_WEIGHT]
+    commons = {'use_weight': config[KEY.USE_WEIGHT]}
 
-    loss_functions.append((PerAtomEnergyLoss(use_weight=use_weight), 1.0))
-    loss_functions.append((ForceLoss(use_weight=use_weight), config[KEY.FORCE_WEIGHT]))
+    loss_functions.append((PerAtomEnergyLoss(**commons), 1.0))
+    loss_functions.append((ForceLoss(**commons), config[KEY.FORCE_WEIGHT]))
     if config[KEY.IS_TRAIN_STRESS]:
-        loss_functions.append((StressLoss(use_weight=use_weight), config[KEY.STRESS_WEIGHT]))
+        loss_functions.append((StressLoss(**commons), config[KEY.STRESS_WEIGHT]))
 
     for loss_function, _ in loss_functions:
         if loss_function.criterion is None:

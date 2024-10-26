@@ -1,21 +1,21 @@
 import glob
 import os
 import warnings
-from typing import Any, Callable
+from typing import Any, Callable, Dict
 
 import torch
 import yaml
 
 import sevenn._const as _const
 import sevenn._keys as KEY
-from sevenn.util import chemical_species_preprocess, pretrained_name_to_path
+import sevenn.util as util
 
 
 def config_initialize(
     key: str,
-    config: dict,
+    config: Dict,
     default: Any,
-    conditions,
+    conditions: Dict,
 ):
     # default value exist & no user input -> return default
     if key not in config.keys():
@@ -52,7 +52,7 @@ def config_initialize(
         )
 
 
-def init_model_config(config: dict):
+def init_model_config(config: Dict):
     # defaults = _const.model_defaults(config)
     model_meta = {}
 
@@ -64,6 +64,8 @@ def init_model_config(config: dict):
         model_meta[KEY.CHEMICAL_SPECIES] = 'auto'
         model_meta[KEY.NUM_SPECIES] = 'auto'
         model_meta[KEY.TYPE_MAP] = 'auto'
+    elif isinstance(input_chem, str) and 'univ' in input_chem.lower():
+        model_meta.update(util.chemical_species_preprocess([], universal=True))
     else:
         if isinstance(input_chem, list) and all(
             isinstance(x, str) for x in input_chem
@@ -76,14 +78,14 @@ def init_model_config(config: dict):
             input_chem = [chem for chem in input_chem if len(chem) != 0]
         else:
             raise ValueError(f'given {KEY.CHEMICAL_SPECIES} input is strange')
-        model_meta.update(chemical_species_preprocess(input_chem))
+        model_meta.update(util.chemical_species_preprocess(input_chem))
 
     # deprecation warnings
     if KEY.AVG_NUM_NEIGH in config:
         warnings.warn(
             "key 'avg_num_neigh' is deprecated. Please use 'conv_denominator'."
-            " We use the default, the average number of neighbors in the"
-            " dataset, if not provided.",
+            ' We use the default, the average number of neighbors in the'
+            ' dataset, if not provided.',
             UserWarning,
         )
         config.pop(KEY.AVG_NUM_NEIGH)
@@ -91,7 +93,7 @@ def init_model_config(config: dict):
         warnings.warn(
             "key 'train_avg_num_neigh' is deprecated. Please use"
             " 'train_denominator'. We overwrite train_denominator as given"
-            " train_avg_num_neigh",
+            ' train_avg_num_neigh',
             UserWarning,
         )
         config[KEY.TRAIN_DENOMINTAOR] = config[KEY.TRAIN_AVG_NUM_NEIGH]
@@ -121,7 +123,7 @@ def init_model_config(config: dict):
     return model_meta
 
 
-def init_train_config(config: dict):
+def init_train_config(config: Dict):
     train_meta = {}
     # defaults = _const.train_defaults(config)
 
@@ -134,6 +136,7 @@ def init_train_config(config: dict):
             if torch.cuda.is_available()
             else torch.device('cpu')
         )
+    train_meta[KEY.DEVICE] = str(train_meta[KEY.DEVICE])
 
     # init simpler ones
     for key, default in _const.DEFAULT_TRAINING_CONFIG.items():
@@ -149,7 +152,7 @@ def init_train_config(config: dict):
         if os.path.isfile(checkpoint):
             checkpoint_file = checkpoint
         else:
-            checkpoint_file = pretrained_name_to_path(checkpoint)
+            checkpoint_file = util.pretrained_name_to_path(checkpoint)
         train_meta[KEY.CONTINUE].update({KEY.CHECKPOINT: checkpoint_file})
 
     unknown_keys = [
@@ -163,14 +166,16 @@ def init_train_config(config: dict):
     return train_meta
 
 
-def init_data_config(config: dict):
+def init_data_config(config: Dict):
     data_meta = {}
     # defaults = _const.data_defaults(config)
 
-    if KEY.LOAD_DATASET not in config.keys():
-        raise ValueError('load_dataset_path is not given')
+    load_data_keys = []
+    for k in config:
+        if k.startswith('load_') and k.endswith('_path'):
+            load_data_keys.append(k)
 
-    for load_data_key in [KEY.LOAD_DATASET, KEY.LOAD_VALIDSET]:
+    for load_data_key in load_data_keys:
         if load_data_key in config.keys():
             inp = config[load_data_key]
             extended = []
@@ -206,11 +211,11 @@ def init_data_config(config: dict):
     return data_meta
 
 
-def read_config_yaml(filename):
+def read_config_yaml(filename: str, return_separately: bool = False):
     with open(filename, 'r') as fstream:
         inputs = yaml.safe_load(fstream)
 
-    model_meta, train_meta, data_meta = None, None, None
+    model_meta, train_meta, data_meta = {}, {}, {}
     for key, config in inputs.items():
         if key == 'model':
             model_meta = init_model_config(config)
@@ -221,11 +226,12 @@ def read_config_yaml(filename):
         else:
             raise ValueError(f'Unexpected input {key} given')
 
-    # how about model_config is None and 'continue_train' is True?
-    if model_meta is None or train_meta is None or data_meta is None:
-        raise ValueError('one of data, train, model is not provided')
-
-    return model_meta, train_meta, data_meta
+    if return_separately:
+        return model_meta, train_meta, data_meta
+    else:
+        model_meta.update(train_meta)
+        model_meta.update(data_meta)
+        return model_meta
 
 
 def main():

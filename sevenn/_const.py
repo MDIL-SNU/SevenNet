@@ -7,10 +7,13 @@ import torch
 import sevenn._keys as KEY
 from sevenn.nn.activation import ShiftedSoftPlus
 
+NUM_UNIV_ELEMENT = 119  # Z = 0 ~ 118
+
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of parallel model
 IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
+IMPLEMENTED_INTERACTION_TYPE = ['nequip']
 
 IMPLEMENTED_SHIFT = ['per_atom_energy_mean', 'elemwise_reference_energies']
 IMPLEMENTED_SCALE = ['force_rms', 'per_atom_energy_std', 'elemwise_force_rms']
@@ -114,6 +117,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.READOUT_FCN_HIDDEN_NEURONS: [30, 30],
     KEY.READOUT_FCN_ACTIVATION: 'relu',
     KEY.SELF_CONNECTION_TYPE: 'nequip',
+    KEY.INTERACTION_TYPE: 'nequip',
     KEY._NORMALIZE_SPH: True,
 }
 
@@ -150,6 +154,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.READOUT_FCN_ACTIVATION: str,
     KEY.ACTIVATION_RADIAL: str,
     KEY.SELF_CONNECTION_TYPE: lambda x: x in IMPLEMENTED_SELF_CONNECTION_TYPE,
+    KEY.INTERACTION_TYPE: lambda x: x in IMPLEMENTED_INTERACTION_TYPE,
     KEY._NORMALIZE_SPH: bool,
 }
 
@@ -176,12 +181,14 @@ DEFAULT_DATA_CONFIG = {
     KEY.RATIO: 0.1,
     KEY.BATCH_SIZE: 6,
     KEY.PREPROCESS_NUM_CORES: 1,
+    KEY.COMPUTE_STATISTICS: True,
+    KEY.DATASET_TYPE: 'graph',
     # KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
     KEY.USE_MODAL_WISE_SHIFT: False,
     KEY.USE_MODAL_WISE_SCALE: False,
     KEY.SHIFT: 'per_atom_energy_mean',
     KEY.SCALE: 'force_rms',
-    KEY.DATA_SHUFFLE: True,
+    # KEY.DATA_SHUFFLE: True,
     # KEY.DATA_WEIGHT: False,
     # KEY.DATA_MODALITY: False,
 }
@@ -196,12 +203,14 @@ DATA_CONFIG_CONDITION = {
     KEY.RATIO: float,
     KEY.BATCH_SIZE: int,
     KEY.PREPROCESS_NUM_CORES: int,
+    KEY.DATASET_TYPE: lambda x: x in ['graph', 'atoms'],
     # KEY.USE_SPECIES_WISE_SHIFT_SCALE: bool,
     KEY.SHIFT: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SHIFT,
     KEY.SCALE: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SCALE,
     KEY.USE_MODAL_WISE_SHIFT: bool,
     KEY.USE_MODAL_WISE_SCALE: bool,
-    KEY.DATA_SHUFFLE: bool,
+    # KEY.DATA_SHUFFLE: bool,
+    KEY.COMPUTE_STATISTICS: bool,
     KEY.SAVE_DATASET: str,
     # KEY.DATA_WEIGHT: bool,
     # KEY.DATA_MODALITY: bool,
@@ -239,7 +248,6 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.DEFAULT_MODAL: 'common',
     KEY.CSV_LOG: 'log.csv',
     KEY.NUM_WORKERS: 0,
-    KEY.IS_TRACE_STRESS: False,
     KEY.IS_TRAIN_STRESS: True,
     KEY.TRAIN_SHUFFLE: True,
     KEY.ERROR_RECORD: [
@@ -260,7 +268,7 @@ TRAINING_CONFIG_CONDITION = {
     KEY.FORCE_WEIGHT: float,
     KEY.STRESS_WEIGHT: float,
     KEY.USE_TESTSET: None,  # Not used
-    KEY.NUM_WORKERS: None,  # Not used
+    KEY.NUM_WORKERS: int,
     KEY.PER_EPOCH: int,
     KEY.CONTINUE: {
         KEY.CHECKPOINT: str,
@@ -271,7 +279,6 @@ TRAINING_CONFIG_CONDITION = {
         KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY: bool,
     },
     KEY.DEFAULT_MODAL: str,
-    KEY.IS_TRACE_STRESS: bool,  # Not used
     KEY.IS_TRAIN_STRESS: bool,
     KEY.TRAIN_SHUFFLE: bool,
     KEY.ERROR_RECORD: error_record_condition,

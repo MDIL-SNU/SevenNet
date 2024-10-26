@@ -1,5 +1,4 @@
 import os
-import random
 
 import torch
 import torch.distributed as dist
@@ -17,11 +16,12 @@ def dataset_load(file: str, config):
     Wrapping of dataload.file_to_dataset to suppert
     graph prebuilt sevenn_data
     """
-    Logger().write(f'Loading {file}\n')
-    Logger().timer_start('loading dataset')
+    log = Logger()
+    log.write(f'Loading {file}\n')
+    log.timer_start('loading dataset')
 
     if file.endswith('.sevenn_data'):
-        dataset = torch.load(file, map_location='cpu')
+        dataset = torch.load(file, map_location='cpu', weights_only=False)
     else:
         reader, _ = match_reader(
             config[KEY.DATA_FORMAT], **config[KEY.DATA_FORMAT_ARGS]
@@ -34,12 +34,14 @@ def dataset_load(file: str, config):
             use_modality=config[KEY.USE_MODALITY],
             use_weight=config[KEY.USE_WEIGHT],
         )
-    Logger().format_k_v('loaded dataset size is', dataset.len(), write=True)
-    Logger().timer_end('loading dataset', 'data set loading time')
+    log.format_k_v('loaded dataset size is', dataset.len(), write=True)
+    log.timer_end('loading dataset', 'data set loading time')
     return dataset
 
 
-def calculate_shift_or_scale_from_key(train_set: AtomGraphDataset, key_given, n_chem):
+def calculate_shift_or_scale_from_key(
+    train_set: AtomGraphDataset, key_given, n_chem
+):
     _expand = True
     use_species_wise_shift_scale = False
     if key_given == 'per_atom_energy_mean':
@@ -52,8 +54,9 @@ def calculate_shift_or_scale_from_key(train_set: AtomGraphDataset, key_given, n_
     elif key_given == 'force_rms':
         shift_or_scale = train_set.get_force_rms()
     elif key_given == 'per_atom_energy_std':
-        shift_or_scale =\
-            train_set.get_statistics(KEY.PER_ATOM_ENERGY)['Total']['std']
+        shift_or_scale = train_set.get_statistics(KEY.PER_ATOM_ENERGY)['Total'][
+            'std'
+        ]
     elif key_given == 'elemwise_force_rms':
         shift_or_scale = train_set.get_species_wise_force_rms(n_chem)
         _expand = False
@@ -69,12 +72,13 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
         2. Use statistic values of checkpoint == True
         3. Plain options (provided as string)
     """
+    log = Logger()
     shift, scale, conv_denominator = None, None, None
     type_map = config[KEY.TYPE_MAP]
     n_chem = len(type_map)
     chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
 
-    Logger().writeline('\nCalculating statistic values from dataset')
+    log.writeline('\nCalculating statistic values from dataset')
 
     shift_given = config[KEY.SHIFT]
     scale_given = config[KEY.SCALE]
@@ -87,12 +91,14 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
     use_modal_wise_scale = config[KEY.USE_MODAL_WISE_SCALE]
 
     if shift_given in CONST.IMPLEMENTED_SHIFT:
-        shift, _expand_shift, use_species_wise_shift =\
+        shift, _expand_shift, use_species_wise_shift = (
             calculate_shift_or_scale_from_key(train_set, shift_given, n_chem)
+        )
 
     if scale_given in CONST.IMPLEMENTED_SCALE:
-        scale, _expand_scale, use_species_wise_scale =\
+        scale, _expand_scale, use_species_wise_scale = (
             calculate_shift_or_scale_from_key(train_set, scale_given, n_chem)
+        )
 
     if use_modal_wise_shift or use_modal_wise_scale:
         atomdata_dict_sort_by_modal = train_set.get_dict_sort_by_modality()
@@ -107,16 +113,15 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
             scale = torch.zeros((n_modal, n_chem))
 
         for modal_key, data_list in atomdata_dict_sort_by_modal.items():
-            modal_set = AtomGraphDataset(
-                data_list, cutoff, x_is_one_hot_idx=True
-            )
+            modal_set = AtomGraphDataset(data_list, cutoff, x_is_one_hot_idx=True)
 
             if use_modal_wise_shift:
                 if shift_given == 'elemwise_reference_energies':
-                    modal_shift, _expand_shift, use_species_wise_shift =\
+                    modal_shift, _expand_shift, use_species_wise_shift = (
                         calculate_shift_or_scale_from_key(
                             modal_set, shift_given, n_chem
                         )
+                    )
                     shift[modal_map[modal_key]] = torch.tensor(
                         modal_shift
                     )  # this is np.array
@@ -128,10 +133,11 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
 
             if use_modal_wise_scale:
                 if scale_given == 'elemwise_force_rms':
-                    modal_scale, _expand_scale, use_species_wise_scale =\
+                    modal_scale, _expand_scale, use_species_wise_scale = (
                         calculate_shift_or_scale_from_key(
                             modal_set, scale_given, n_chem
                         )
+                    )
                     scale[modal_map[modal_key]] = modal_scale
                 elif scale_given in CONST.IMPLEMENTED_SCALE:
                     raise NotImplementedError(
@@ -140,9 +146,7 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
                     )
 
     avg_num_neigh = train_set.get_avg_num_neigh()
-    Logger().format_k_v(
-        'Average # of neighbors', f'{avg_num_neigh:.6f}', write=True
-    )
+    log.format_k_v('Average # of neighbors', f'{avg_num_neigh:.6f}', write=True)
 
     if config[KEY.CONV_DENOMINATOR] == 'avg_num_neigh':
         conv_denominator = avg_num_neigh
@@ -153,14 +157,12 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
         checkpoint_given
         and config[KEY.CONTINUE][KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT]
     ):
-        Logger().writeline(
+        log.writeline(
             'Overwrite shift, scale, conv_denominator from model checkpoint'
         )
         # TODO: This needs refactoring
         conv_denominator = config[KEY.CONV_DENOMINATOR + '_cp']
-        if not (
-            use_modal_wise_shift or use_modal_wise_scale
-        ):
+        if not (use_modal_wise_shift or use_modal_wise_scale):
             # Values extracted from checkpoint in processing_continue.py
             if len(list(shift)) > 1:
                 use_species_wise_shift = True
@@ -202,9 +204,7 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
                 if use_modal_wise_scale:
                     scale[modal_idx] = torch.tensor(scale_cp)
 
-            if not config[KEY.CONTINUE][
-                KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY
-            ]:
+            if not config[KEY.CONTINUE][KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY]:
                 # Also overwrite values of new modal to reference value
                 # For multimodal, set reference modal with KEY.DEFAULT_MODAL
                 shift_ref = shift_cp
@@ -229,23 +229,22 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
 
     # overwrite shift scale anyway if defined in yaml.
     if type(shift_given) in [list, float]:
-        Logger().writeline('Overwrite shift to value(s) given in yaml')
+        log.writeline('Overwrite shift to value(s) given in yaml')
         _expand_shift = isinstance(shift_given, float)
         shift = shift_given
     if type(scale_given) in [list, float]:
-        Logger().writeline('Overwrite scale to value(s) given in yaml')
+        log.writeline('Overwrite scale to value(s) given in yaml')
         _expand_scale = isinstance(scale_given, float)
         scale = scale_given
 
     if isinstance(config[KEY.CONV_DENOMINATOR], float):
-        Logger().writeline('Overwrite conv_denominator to value given in yaml')
+        log.writeline('Overwrite conv_denominator to value given in yaml')
         conv_denominator = config[KEY.CONV_DENOMINATOR]
 
     if isinstance(conv_denominator, float):
         conv_denominator = [conv_denominator] * config[KEY.NUM_CONVOLUTION]
 
-    use_species_wise_shift_scale =\
-        use_species_wise_shift or use_species_wise_scale
+    use_species_wise_shift_scale = use_species_wise_shift or use_species_wise_scale
     if use_species_wise_shift_scale:
         chem_strs = onehot_to_chem(list(range(n_chem)), type_map)
         if _expand_shift:
@@ -271,12 +270,13 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
             for cstr, sh, sc in zip(chem_strs, shift, scale):
                 Logger().format_k_v(f'{cstr}', f'{sh:.6f}, {sc:.6f}', write=True)
     else:
-        Logger().write('Use global shift, scale\n')
-        Logger().format_k_v(
-            'shift, scale', f'{shift:.6f}, {scale:.6f}', write=True
-        )
+        log.write('Use global shift, scale\n')
+        log.format_k_v('shift, scale', f'{shift:.6f}, {scale:.6f}', write=True)
 
-    Logger().format_k_v(
+    assert isinstance(conv_denominator, list) and all(
+        isinstance(deno, float) for deno in conv_denominator
+    )
+    log.format_k_v(
         '(1st) conv_denominator is', f'{conv_denominator[0]:.6f}', write=True
     )
 
@@ -286,12 +286,13 @@ def handle_shift_scale(config, train_set: AtomGraphDataset, checkpoint_given):
 
 # TODO: This is too long
 def processing_dataset(config, working_dir):
+    log = Logger()
     prefix = f'{os.path.abspath(working_dir)}/'
-    is_stress = config[KEY.IS_TRACE_STRESS] or config[KEY.IS_TRAIN_STRESS]
+    is_stress = config[KEY.IS_TRAIN_STRESS]
     checkpoint_given = config[KEY.CONTINUE][KEY.CHECKPOINT] is not False
     cutoff = config[KEY.CUTOFF]
 
-    Logger().write('\nInitializing dataset...\n')
+    log.write('\nInitializing dataset...\n')
 
     dataset = AtomGraphDataset({}, cutoff)
     load_dataset = config[KEY.LOAD_DATASET]
@@ -303,28 +304,24 @@ def processing_dataset(config, working_dir):
     dataset.group_by_key()  # apply labels inside original datapoint
     dataset.unify_dtypes()  # unify dtypes of all data points
 
-    dataset.toggle_requires_grad_of_data(KEY.POS, True)
-
     # TODO: I think manual chemical species input is redundant
     chem_in_db = dataset.get_species()
     if config[KEY.CHEMICAL_SPECIES] == 'auto' and not checkpoint_given:
-        Logger().writeline('Auto detect chemical species from dataset')
+        log.writeline('Auto detect chemical species from dataset')
         config.update(chemical_species_preprocess(chem_in_db))
     elif config[KEY.CHEMICAL_SPECIES] == 'auto' and checkpoint_given:
         pass  # copied from checkpoint in processing_continue.py
     elif config[KEY.CHEMICAL_SPECIES] != 'auto' and not checkpoint_given:
         pass  # processed in parse_input.py
     else:  # config[KEY.CHEMICAL_SPECIES] != "auto" and checkpoint_given
-        Logger().writeline('Ignore chemical species in yaml, use checkpoint')
+        log.writeline('Ignore chemical species in yaml, use checkpoint')
         # already processed in processing_continue.py
 
     # basic dataset compatibility check with previous model
     if checkpoint_given:
         chem_from_cp = config[KEY.CHEMICAL_SPECIES]
         if not all(chem in chem_from_cp for chem in chem_in_db):
-            raise ValueError(
-                'Chemical species in checkpoint is not compatible'
-            )
+            raise ValueError('Chemical species in checkpoint is not compatible')
 
     # check what modalities are used in dataset
     if config[KEY.USE_MODALITY]:
@@ -335,9 +332,7 @@ def processing_dataset(config, working_dir):
             config.uptate({KEY.USE_MODALITY: False})
 
         else:
-            modal_map_cp = (
-                config[KEY.MODAL_MAP + '_cp'] if checkpoint_given else {}
-            )
+            modal_map_cp = config[KEY.MODAL_MAP + '_cp'] if checkpoint_given else {}
             modal_map = modal_map_cp.copy()
             current_idx = len(modal_map_cp)
             for modal_key in modalities:
@@ -352,16 +347,17 @@ def processing_dataset(config, working_dir):
                 dist.broadcast_object_list(modal_map_bcast, src=0)
                 modal_map = modal_map_bcast[0]
 
-            config.update({
-                KEY.NUM_MODALITIES: len(modal_map),
-                KEY.MODAL_MAP: modal_map,
-                KEY.MODAL_LIST: list(modal_map.keys()),
-            })
+            config.update(
+                {
+                    KEY.NUM_MODALITIES: len(modal_map),
+                    KEY.MODAL_MAP: modal_map,
+                    KEY.MODAL_LIST: list(modal_map.keys()),
+                }
+            )
 
             dataset.write_modal_attr(
                 modal_map,
-                config[KEY.USE_MODAL_WISE_SHIFT]
-                or config[KEY.USE_MODAL_WISE_SCALE],
+                config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE],
             )
 
     # --------------- save dataset regardless of train/valid--------------#
@@ -370,34 +366,28 @@ def processing_dataset(config, working_dir):
     if save_dataset:
         if save_dataset.endswith('.sevenn_data') is False:
             save_dataset += '.sevenn_data'
-        if (
-            save_dataset.startswith('.') or save_dataset.startswith('/')
-        ) is False:
-            save_dataset = (
-                prefix + save_dataset
-            )  # save_data set is plain file name
+        if (save_dataset.startswith('.') or save_dataset.startswith('/')) is False:
+            save_dataset = prefix + save_dataset  # save_data set is plain file name
         dataset.save(save_dataset)
-        Logger().format_k_v('Dataset saved to', save_dataset, write=True)
-        # Logger().write(f"Loaded full dataset saved to : {save_dataset}\n")
+        log.format_k_v('Dataset saved to', save_dataset, write=True)
+        # log.write(f"Loaded full dataset saved to : {save_dataset}\n")
     if save_by_label:
         dataset.save(prefix, by_label=True)
-        Logger().format_k_v('Dataset saved by label', prefix, write=True)
+        log.format_k_v('Dataset saved by label', prefix, write=True)
     # --------------------------------------------------------------------#
 
     # TODO: testset is not used
     ignore_test = not config[KEY.USE_TESTSET]
-    if config[KEY.LOAD_VALIDSET]:
+    if KEY.LOAD_VALIDSET in config and config[KEY.LOAD_VALIDSET]:
         train_set = dataset
         test_set = AtomGraphDataset([], config[KEY.CUTOFF])
 
-        Logger().write('Loading validset from load_validset\n')
+        log.write('Loading validset from load_validset\n')
         valid_set = AtomGraphDataset({}, cutoff)
         for file in config[KEY.LOAD_VALIDSET]:
             valid_set.augment(dataset_load(file, config))
         valid_set.group_by_key()
         valid_set.unify_dtypes()
-
-        valid_set.toggle_requires_grad_of_data(KEY.POS, True)
 
         # condition: validset labels should be subset of trainset labels
         valid_labels = valid_set.user_labels
@@ -407,15 +397,9 @@ def processing_dataset(config, working_dir):
             valid_set.rewrite_labels_to_data()
             train_set = AtomGraphDataset(train_set.to_list(), cutoff)
             train_set.rewrite_labels_to_data()
-            Logger().write(
-                'WARNING! validset labels is not subset of trainset\n'
-            )
-            Logger().write(
-                'We overwrite all the train, valid labels to default.\n'
-            )
-            Logger().write(
-                'Please create validset by sevenn_graph_build with -l\n'
-            )
+            Logger().write('WARNING! validset labels is not subset of trainset\n')
+            Logger().write('We overwrite all the train, valid labels to default.\n')
+            Logger().write('Please create validset by sevenn_graph_build with -l\n')
 
         Logger().write('the validset loaded, load_dataset is now train_set\n')
         Logger().write('the ratio will be ignored\n')
@@ -430,81 +414,68 @@ def processing_dataset(config, working_dir):
 
             valid_set.write_modal_attr(
                 config[KEY.MODAL_MAP],
-                config[KEY.USE_MODAL_WISE_SHIFT]
-                or config[KEY.USE_MODAL_WISE_SCALE],
+                config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE],
             )
-
     else:
         train_set, valid_set, test_set = dataset.divide_dataset(
             config[KEY.RATIO], ignore_test=ignore_test
         )
-        Logger().write(
-            f'The dataset divided into train, valid by {KEY.RATIO}\n'
-        )
+        log.write(f'The dataset divided into train, valid by {KEY.RATIO}\n')
 
-    Logger().format_k_v(
-        '\nloaded trainset size is', train_set.len(), write=True
-    )
-    Logger().format_k_v(
-        '\nloaded validset size is', valid_set.len(), write=True
-    )
+    log.format_k_v('\nloaded trainset size is', train_set.len(), write=True)
+    log.format_k_v('\nloaded validset size is', valid_set.len(), write=True)
 
-    Logger().write('Dataset initialization was successful\n')
+    log.write('Dataset initialization was successful\n')
 
-    Logger().write('\nNumber of atoms in the train_set:\n')
-    Logger().natoms_write(train_set.get_natoms(config[KEY.TYPE_MAP]))
+    log.write('\nNumber of atoms in the train_set:\n')
+    log.natoms_write(train_set.get_natoms(config[KEY.TYPE_MAP]))
 
-    Logger().bar()
-    Logger().write('Per atom energy(eV/atom) distribution:\n')
-    Logger().statistic_write(train_set.get_statistics(KEY.PER_ATOM_ENERGY))
-    Logger().bar()
-    Logger().write('Force(eV/Angstrom) distribution:\n')
-    Logger().statistic_write(train_set.get_statistics(KEY.FORCE))
-    Logger().bar()
-    Logger().write('Stress(eV/Angstrom^3) distribution:\n')
+    log.bar()
+    log.write('Per atom energy(eV/atom) distribution:\n')
+    log.statistic_write(train_set.get_statistics(KEY.PER_ATOM_ENERGY))
+    log.bar()
+    log.write('Force(eV/Angstrom) distribution:\n')
+    log.statistic_write(train_set.get_statistics(KEY.FORCE))
+    log.bar()
+    log.write('Stress(eV/Angstrom^3) distribution:\n')
     try:
-        Logger().statistic_write(train_set.get_statistics(KEY.STRESS))
+        log.statistic_write(train_set.get_statistics(KEY.STRESS))
     except KeyError:
-        Logger().write('\n Stress is not included in the train_set\n')
+        log.write('\n Stress is not included in the train_set\n')
         if is_stress:
             is_stress = False
-            Logger().write('Turn off stress training\n')
-    Logger().bar()
+            log.write('Turn off stress training\n')
+    log.bar()
 
     # saved data must have atomic numbers as X not one hot idx
     if config[KEY.SAVE_BY_TRAIN_VALID]:
         train_set.save(prefix + 'train')
         valid_set.save(prefix + 'valid')
-        Logger().format_k_v(
-            'Dataset saved by train, valid', prefix, write=True
-        )
+        log.format_k_v('Dataset saved by train, valid', prefix, write=True)
 
     # inconsistent .info dict give error when collate
-    _, _ = train_set.seperate_info()
-    _, _ = valid_set.seperate_info()
+    _, _ = train_set.separate_info()
+    _, _ = valid_set.separate_info()
 
-    # make sure x is one hot index
     if train_set.x_is_one_hot_idx is False:
         train_set.x_to_one_hot_idx(config[KEY.TYPE_MAP])
     if valid_set.x_is_one_hot_idx is False:
         valid_set.x_to_one_hot_idx(config[KEY.TYPE_MAP])
 
-    Logger().write(Logger.format_k_v('training_set size', train_set.len()))
-    Logger().write(Logger.format_k_v('validation_set size', valid_set.len()))
+    log.format_k_v('training_set size', train_set.len(), write=True)
+    log.format_k_v('validation_set size', valid_set.len(), write=True)
 
     shift, scale, conv_denominator = handle_shift_scale(
         config, train_set, checkpoint_given
     )
-    config.update({
-        KEY.SHIFT: shift,
-        KEY.SCALE: scale,
-        KEY.CONV_DENOMINATOR: conv_denominator,
-    })
+    config.update(
+        {
+            KEY.SHIFT: shift,
+            KEY.SCALE: scale,
+            KEY.CONV_DENOMINATOR: conv_denominator,
+        }
+    )
 
     data_lists = (train_set.to_list(), valid_set.to_list(), test_set.to_list())
-    if config[KEY.DATA_SHUFFLE]:
-        Logger().write('Shuffle the train data\n')
-        for data_list in data_lists:
-            random.shuffle(data_list)
 
     return data_lists
