@@ -12,6 +12,8 @@ How to add new feature?
 
 from typing import Final
 
+from torch.jit import CompilationUnit
+
 # see
 # https://github.com/pytorch/pytorch/issues/52312
 # for FYI
@@ -95,6 +97,8 @@ LOAD_TRAINSET = 'load_trainset_path'
 LOAD_VALIDSET = 'load_validset_path'
 LOAD_TESTSET = 'load_testset_path'
 FORMAT_OUTPUTS = 'format_outputs_for_ase'
+COMPUTE_STATISTICS = 'compute_statistics'
+DATASET_TYPE = 'dataset_type'
 
 RANDOM_SEED = 'random_seed'
 RATIO = 'data_divide_ratio'
@@ -127,7 +131,7 @@ CSV_LOG = 'csv_log'
 ERROR_RECORD = 'error_record'
 BEST_METRIC = 'best_metric'
 
-NUM_WORKERS = '_num_workers'  # not work
+NUM_WORKERS = 'num_workers'  # not work
 
 RANK = 'rank'
 LOCAL_RANK = 'local_rank'

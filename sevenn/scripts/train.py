@@ -15,7 +15,14 @@ def loader_from_config(config, dataset, is_train=False):
     batch_size = config[KEY.BATCH_SIZE]
     shuffle = is_train and config[KEY.TRAIN_SHUFFLE]
     sampler = None
-    loader_args = {'dataset': dataset, 'batch_size': batch_size, 'shuffle': shuffle}
+    loader_args = {
+        'dataset': dataset,
+        'batch_size': batch_size,
+        'shuffle': shuffle
+    }
+    if KEY.NUM_WORKERS in config and config[KEY.NUM_WORKERS] > 0:
+        loader_args.update({'num_workers': config[KEY.NUM_WORKERS]})
+
     if config[KEY.IS_DDP]:
         dist.barrier()
         sampler = DistributedSampler(
@@ -30,7 +37,8 @@ def train_v2(config, working_dir: str):
     """
     Main program flow, since v0.9.6
     """
-    from sevenn.train.graph_dataset import from_config
+    import sevenn.train.atoms_dataset as atoms_dataset
+    import sevenn.train.graph_dataset as graph_dataset
 
     from .processing_continue import processing_continue_v2
     from .processing_epoch import processing_epoch_v2
@@ -51,7 +59,12 @@ def train_v2(config, working_dir: str):
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
         state_dicts, start_epoch = processing_continue_v2(config)
 
-    datasets = from_config(config, working_dir)
+    if config[KEY.DATASET_TYPE] == 'graph':
+        datasets = graph_dataset.from_config(config, working_dir)
+    elif config[KEY.DATASET_TYPE] == 'atoms':
+        datasets = atoms_dataset.from_config(config, working_dir)
+    else:
+        raise ValueError(f'Unknown dataset type: {config[KEY.DATASET_TYPE]}')
     loaders = {
         k: loader_from_config(config, v, is_train=(k == 'trainset'))
         for k, v in datasets.items()
