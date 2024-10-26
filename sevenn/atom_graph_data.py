@@ -48,7 +48,6 @@ class AtomGraphData(torch_geometric.data.Data):
         return dct
 
     def fit_dimension(self):
-        # TODO: only used in old scripts/inference.py, remove after refactoring it
         per_atom_keys = [
             KEY.ATOMIC_NUMBERS,
             KEY.ATOMIC_ENERGY,

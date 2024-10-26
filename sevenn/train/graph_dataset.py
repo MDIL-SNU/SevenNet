@@ -357,6 +357,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         for tag, atoms_list in datadct.items():
             tmp = dataload.graph_build(atoms_list, cutoff, num_cores)
             graph_list.extend(_tag_graphs(tmp, tag))
+        print(graph_list[0])
         return graph_list
 
     @staticmethod
@@ -390,7 +391,13 @@ class SevenNetGraphDataset(InMemoryDataset):
         ds_args.update(pt_to_args(filename))
         ds_args.update(kwargs)
         dataset = SevenNetGraphDataset(**ds_args)
-        return [g for g in dataset]  # type: ignore
+        # TODO: hard coded. consult with inference.py
+        glist = [g.fit_dimension() for g in dataset]  # type: ignore
+        for g in glist:
+            if KEY.STRESS in g:
+                # (1, 6) is what we want
+                g[KEY.STRESS] = g[KEY.STRESS].unsqueeze(0)
+        return glist
 
     @staticmethod
     def file_to_graph_list(
@@ -481,6 +488,15 @@ def from_config(
             dataset_args.update(pt_to_args(paths[0]))
         else:
             dataset_args.update({'files': paths, 'processed_name': name})
+        dataset_path = os.path.join(working_dir, 'sevenn_data', f'{name}.pt')
+        if os.path.exists(dataset_path) and 'force_reload' not in dataset_args:
+            log.writeline(
+                f'Dataset will be loaded from {dataset_path}, without update.'
+            )
+            log.writeline(
+                'If you have changed your files to read, put force_reload=True'
+                + ' under the data_format_args key'
+            )
         datasets[name] = SevenNetGraphDataset(**dataset_args)
 
     train_set = datasets['trainset']
