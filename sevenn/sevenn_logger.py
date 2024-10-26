@@ -137,6 +137,8 @@ class Logger(metaclass=Singleton):
         for label, dct in statistic.items():
             if label.startswith('_'):
                 continue
+            if not isinstance(dct, dict):
+                continue
             dct_new = {}
             for k, v in dct.items():
                 if k.startswith('_'):
