@@ -121,6 +121,7 @@ def init_feature_reduce(config, irreps_x):
 
 
 def init_shift_scale(config):
+    # for mm, ex, shift: modal_idx -> shifts
     shift_scale = []
     type_map = config[KEY.TYPE_MAP]
     # correct typing (I really want static python)
@@ -152,6 +153,34 @@ def init_shift_scale(config):
         scale=scale,
         train_shift_scale=config[KEY.TRAIN_SHIFT_SCALE],
     )
+
+
+def _patch_modality(layers: OrderedDict, config):
+    cfg = config
+    if not cfg[KEY.USE_MODALITY]:
+        return
+
+    num_modal = config[KEY.NUM_MODALITIES]
+    for k, module in layers.items():
+        if not isinstance(module, IrrepsLinear):
+            continue
+        if (
+            (
+                cfg[KEY.USE_MODAL_NODE_EMBEDDING]
+                and k.endswith('onehot_to_feature_x')
+            )
+            or (
+                cfg[KEY.USE_MODAL_SELF_INTER_INTRO]
+                and k.endswith('self_interaction_1')
+            )
+            or (
+                cfg[KEY.USE_MODAL_SELF_INTER_OUTRO]
+                and k.endswith('self_interaction_2')
+            )
+            or (cfg[KEY.USE_MODAL_OUTPUT_BLOCK] and k == 'reduce_input_to_hidden')
+        ):
+            module.set_num_modalities(num_modal)
+    return layers
 
 
 def _to_parallel_model(layers: OrderedDict, config):
@@ -246,7 +275,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     PRED_FORCE: (natoms, 3),
     PRED_STRESS: (6,),
 
-    for data w/o shell volume, pred_stress has garbage values
+    for data w/o cell volume, pred_stress has garbage values
     """
     layers = OrderedDict()
 
@@ -258,7 +287,6 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     use_bias_in_linear = config[KEY.USE_BIAS_IN_LINEAR]
 
     # is_parity = config[KEY.IS_PARITY]  # boolean
-    use_modality = config[KEY.USE_MODALITY]  # boolean
     lmax_node = _ = config[KEY.LMAX]  # ignore second (lmax_edge)
     if config[KEY.LMAX_EDGE] > 0:
         _ = config[KEY.LMAX_EDGE]
@@ -294,11 +322,6 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         else irreps_manual[0]
     )
 
-    num_modalities = (
-        config[KEY.NUM_MODALITIES]
-        if use_modality and config[KEY.USE_MODAL_NODE_EMBEDDING]
-        else 1
-    )
     layers.update(
         {
             'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
@@ -306,7 +329,6 @@ def build_E3_equivariant_model(config: dict, parallel=False):
                 irreps_in=one_hot_irreps,
                 irreps_out=irreps_x,
                 data_key_in=KEY.NODE_FEATURE,
-                num_modalities=num_modalities,
                 biases=use_bias_in_linear,
             ),
         }
@@ -416,6 +438,9 @@ def build_E3_equivariant_model(config: dict, parallel=False):
 
     if parallel:
         layers_list = _to_parallel_model(layers, config)
-        return [AtomGraphSequential(v, **common_args) for v in layers_list]
+        return [
+            AtomGraphSequential(_patch_modality(layers, config), **common_args)
+            for layers in layers_list
+        ]
     else:
-        return AtomGraphSequential(layers, **common_args)
+        return AtomGraphSequential(_patch_modality(layers, config), **common_args)

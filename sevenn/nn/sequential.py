@@ -10,6 +10,16 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 
+def _instantiate_modules(modules):
+    # see IrrepsLinear of linear.py
+    for module in modules.values():
+        try:
+            if not module.layer_instantiated:
+                module.instantiate()
+        except AttributeError:
+            pass
+
+
 @compile_mode('script')
 class AtomGraphSequential(nn.Sequential):
     """
@@ -57,6 +67,7 @@ class AtomGraphSequential(nn.Sequential):
         self.key_node_feature = data_key_node_feature
         self.key_grad = data_key_grad
 
+        _instantiate_modules(modules)
         super().__init__(modules)
 
     def set_is_batch_data(self, flag: bool):
