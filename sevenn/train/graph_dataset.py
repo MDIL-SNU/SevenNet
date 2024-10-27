@@ -429,26 +429,6 @@ class SevenNetGraphDataset(InMemoryDataset):
             )
         return graph_list
 
-    @staticmethod
-    def from_pt(path: str):
-        """
-        Return SevenNetGraphDataset from path (xxx/yyy/sevenn_data/train.pt)
-        An yaml file with meta and statistics information must present in the
-        same directory.
-        """
-        pass
-        meta_f = path.replace('.pt', '.yaml')
-        if not os.path.exists(meta_f):
-            raise ValueError('No saved meta information found')
-
-        with open(meta_f, 'r') as f:
-            meta = yaml.safe_load(f)
-
-        cutoff = float(meta['cutoff'])
-        ds_args: dict[str, Any] = dict({'cutoff': cutoff})
-        ds_args.update(pt_to_args(path))
-        return SevenNetGraphDataset(**ds_args)
-
 
 # script, return dict of SevenNetGraphDataset
 def from_config(
