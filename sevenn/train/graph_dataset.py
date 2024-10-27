@@ -82,22 +82,22 @@ def _run_stat(
         array = torch.cat(dct['_array'])
         if array.dtype == torch.int64:  # because of n_neigh
             array = array.to(torch.float)
-            try:
-                median = torch.quantile(array, q=0.5)
-            except RuntimeError:
-                warnings.warn(f'skip median due to too large tensor size: {y}')
-                median = torch.nan
-            dct.update(
-                {
-                    'mean': float(torch.mean(array)),
-                    'std': float(torch.std(array, correction=0)),
-                    'median': float(median),
-                    'max': float(torch.max(array)),
-                    'min': float(torch.min(array)),
-                    'count': array.numel(),
-                    '_array': array,
-                }
-            )
+        try:
+            median = torch.quantile(array, q=0.5)
+        except RuntimeError:
+            warnings.warn(f'skip median due to too large tensor size: {y}')
+            median = torch.nan
+        dct.update(
+            {
+                'mean': float(torch.mean(array)),
+                'std': float(torch.std(array, correction=0)),
+                'median': float(median),
+                'max': float(torch.max(array)),
+                'min': float(torch.min(array)),
+                'count': array.numel(),
+                '_array': array,
+            }
+        )
 
     natoms = {chemical_symbols[int(z)]: cnt for z, cnt in natoms_counter.items()}
     natoms['total'] = sum(list(natoms.values()))
