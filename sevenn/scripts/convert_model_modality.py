@@ -145,6 +145,16 @@ def get_single_modal_model_dct(
     from_processing_cp: bool = False,
     is_deploy: bool = False,
 ):
+    """
+    Convert multimodal model state dictionary to single modal model.
+    Modal is selected by `ref_modal`
+    
+    `model_state_dct`: model state dictionary from multimodal checkpoint file
+    `config`: dictionary containing configuration of the checkpoint model
+    `ref_modal`: modal that are going to be converted
+    `from_processing_cp`: if True, use modal_map of the checkpoint file
+    `is_deploy`: if True, model is build with single-modal shift and scale
+    """
     if (
         not from_processing_cp and not config[KEY.USE_MODALITY]
     ):  # model is already single modal
@@ -245,6 +255,15 @@ def append_modality_to_model_dct(
     orig_num_modal: int,
     append_modal_length: int,
 ):
+    """
+    Append modal-wise parameters to the original linear layers.
+    This enables expanding modal to single/multi modal model checkpoint.
+    
+    `model_state_dct`: model state dictionary from multimodal checkpoint file
+    `config`: dictionary containing configuration of the checkpoint model
+    `orig_num_modal`: Number of modality used in original checkpoint
+    `append_modal_length`: Number of modality to be appended in new checkpoint.
+    """
     config_num_modal = config[KEY.NUM_MODALITIES]
     config.update({KEY.NUM_MODALITIES: orig_num_modal, KEY.USE_MODALITY: True})
 
