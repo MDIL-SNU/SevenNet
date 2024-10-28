@@ -224,7 +224,7 @@ def inference(
         else:
             dataset = []
             for file in targets:
-                tmplist = SevenNetGraphDataset._file_to_graph_list(
+                tmplist = SevenNetGraphDataset.file_to_graph_list(
                     filename=file,
                     cutoff=cutoff,
                     num_cores=num_workers,
