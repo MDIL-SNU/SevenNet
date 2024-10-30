@@ -1,7 +1,7 @@
 import copy
 import os.path
 from functools import partial
-from itertools import islice
+from itertools import chain, islice
 from typing import Callable, List, Optional
 
 import ase
@@ -181,12 +181,9 @@ def atoms_to_graph(
         info = copy.deepcopy(atoms.info)
         # save only metadata
         # TODO: is it really necessary?
-        if 'y_energy' in info:
-            del info['y_energy']
-        if 'y_force' in info:
-            del info['y_force']
-        if 'y_stress' in info:
-            del info['y_stress']
+        info.pop('y_energy', None)
+        info.pop('y_force', None)
+        info.pop('y_stress', None)
         data[KEY.INFO] = info
 
     else:
@@ -432,6 +429,36 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
     return {k: _set_atoms_y(v) for k, v in structures_dict.items()}
 
 
+def dict_reader(data_dict: dict):
+    data_dict_cp = copy.deepcopy(data_dict)
+
+    ret = []
+    file_list = data_dict_cp.pop('file_list', None)
+    if file_list is None:
+        raise KeyError('file_list is not found')
+
+    data_weight_default = {
+        'energy': 1.0,
+        'force': 1.0,
+        'stress': 1.0,
+    }
+    data_weight = data_weight_default.copy()
+    data_weight.update(data_dict_cp.pop(KEY.DATA_WEIGHT, {}))
+
+    for file_dct in file_list:
+        ftype = file_dct.pop('data_format', 'ase')
+        files = list(braceexpand(file_dct.pop('file')))
+        if ftype == 'ase':
+            ret.extend(chain(*[ase_reader(f, **file_dct) for f in files]))
+        else:
+            raise ValueError(f'{ftype} yet')
+
+    for atoms in ret:
+        atoms.info.update(data_dict_cp)
+        atoms.info.update({KEY.DATA_WEIGHT: data_weight})
+    return _set_atoms_y(ret)
+
+
 def match_reader(reader_name: str, **kwargs):
     reader = None
     metadata = {}
@@ -495,17 +522,13 @@ def file_to_dataset(
                         weights = info.split('=')[1]
                         try:
                             if ',' in weights:
-                                weight_list = list(
-                                    map(float, weights.split(','))
-                                )
+                                weight_list = list(map(float, weights.split(',')))
                             else:
                                 weight_list = [float(weights)] * 3
                             weight_dict = {}
                             for idx, loss_type in enumerate(LossType):
                                 weight_dict[loss_type.value] = (
-                                    weight_list[idx]
-                                    if idx < len(weight_list)
-                                    else 1
+                                    weight_list[idx] if idx < len(weight_list) else 1
                                 )
                             graph[KEY.DATA_WEIGHT] = weight_dict
                             find_weight = True
