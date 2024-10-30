@@ -22,6 +22,7 @@ class IrrepsLinear(nn.Module):
         irreps_out: Irreps,
         data_key_in: str,
         data_key_out: Optional[str] = None,
+        data_key_modal_attr: str = KEY.MODAL_ATTR,
         num_modalities: int = 0,
         lazy_layer_instantiate: bool = True,
         **e3nn_linear_params,
@@ -32,6 +33,7 @@ class IrrepsLinear(nn.Module):
             self.key_output = data_key_in
         else:
             self.key_output = data_key_out
+        self.key_modal_attr = data_key_modal_attr
 
         self._irreps_in_wo_modal = irreps_in
         self.irreps_in = irreps_in
@@ -67,7 +69,7 @@ class IrrepsLinear(nn.Module):
     def _patch_modal_to_data(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self._is_batch_data:
             batch = data[KEY.BATCH]
-            batch_modality_onehot = data[KEY.MODAL_ATTR].reshape(
+            batch_modality_onehot = data[self.key_modal_attr].reshape(
                 -1, self.num_modalities
             )
             batch_modality_onehot = batch_modality_onehot.type(
@@ -77,7 +79,7 @@ class IrrepsLinear(nn.Module):
                 [data[self.key_input], batch_modality_onehot[batch]], dim=1
             )
         else:
-            modality_onehot = data[KEY.MODAL_ATTR].expand(
+            modality_onehot = data[self.key_modal_attr].expand(
                 len(data[self.key_input]), -1
             )
             modality_onehot = modality_onehot.type(data[self.key_input].dtype)

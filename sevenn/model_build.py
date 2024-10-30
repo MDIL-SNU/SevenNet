@@ -2,7 +2,6 @@ import copy
 import warnings
 from collections import OrderedDict
 
-import torch
 from e3nn.o3 import Irreps
 
 import sevenn._const as _const
@@ -35,6 +34,18 @@ warnings.filterwarnings(
         "The TorchScript type system doesn't " 'support instance-level annotations'
     ),
 )
+
+
+def _insert_after(module_name_after, key_module_pair, layers):
+    idx = -1
+    for i, (key, _) in enumerate(layers):
+        if key == module_name_after:
+            idx = i
+            break
+    if idx == -1:
+        assert False
+    layers.insert(idx + 1, key_module_pair)
+    return layers
 
 
 def init_self_connection(config):
@@ -123,52 +134,76 @@ def init_feature_reduce(config, irreps_x):
 def init_shift_scale(config):
     # for mm, ex, shift: modal_idx -> shifts
     shift_scale = []
+    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
     type_map = config[KEY.TYPE_MAP]
+
+    # in case of modal, shift or scale has more dims [][]
+    print(config[KEY.SHIFT])
+    print(config[KEY.SCALE])
     # correct typing (I really want static python)
     for s in (config[KEY.SHIFT], config[KEY.SCALE]):
         if hasattr(s, 'tolist'):  # numpy or torch
             s = s.tolist()
         if isinstance(s, list) and len(s) == 1:
             s = s[0]
-        # check whether list shift scale matches the size of type_map:
-        if isinstance(s, list) and len(s) > len(type_map):
-            # assume s is indexed with atomic numbers from 0 to 120
-            if len(s) != _const.NUM_UNIV_ELEMENT:
-                raise ValueError('given shift or scale is strange')
-            s = [s[z] for z in sorted(type_map, key=type_map.get)]
         shift_scale.append(s)
 
     rescale_module = None
-    if all([isinstance(s, float) for s in shift_scale]):
-        rescale_module = Rescale
+    shift, scale = shift_scale
+    if config[KEY.USE_MODALITY]:
+        rescale_module = ModalWiseRescale.from_mappers(  # type: ignore
+            shift,
+            scale,
+            config[KEY.USE_MODAL_WISE_SHIFT],
+            config[KEY.USE_BIAS_IN_LINEAR],
+            type_map=type_map,
+            modal_map=config[KEY.MODAL_MAP],
+            train_shift_scale=train_shift_scale,
+        )
+    elif all([isinstance(s, float) for s in shift_scale]):
+        rescale_module = Rescale(shift, scale, train_shift_scale=train_shift_scale)
     elif any([isinstance(s, list) for s in shift_scale]):
-        rescale_module = SpeciesWiseRescale
+        rescale_module = SpeciesWiseRescale.from_mappers(  # type: ignore
+            shift, scale, type_map=type_map, train_shift_scale=train_shift_scale
+        )
     else:
         raise ValueError('shift, scale should be list of float or float')
 
-    shift, scale = shift_scale
-
-    return rescale_module(
-        shift=shift,
-        scale=scale,
-        train_shift_scale=config[KEY.TRAIN_SHIFT_SCALE],
-    )
+    return rescale_module
 
 
-def _patch_modality(layers: OrderedDict, config):
+def patch_modality(layers: OrderedDict, config):
+    """
+    Postprocess 7net-model to multimodal model.
+    1. prepend modality one-hot embedding layer
+    2. patch modalities of IrrepsLinear layers
+    Modality aware shift scale is handled by init_shift_scale, not here
+    """
     cfg = config
     if not cfg[KEY.USE_MODALITY]:
-        return
+        return layers
+
+    _layers = list(layers.items())
+    _layers = _insert_after(
+        'edge_embedding',
+        (
+            'one_hot_modality',
+            OnehotEmbedding(
+                num_classes=config[KEY.NUM_MODALITIES],
+                data_key_x=KEY.MODAL_TYPE,
+                data_key_out=KEY.MODAL_ATTR,
+            ),
+        ),
+        _layers,
+    )
+    layers = OrderedDict(_layers)
 
     num_modal = config[KEY.NUM_MODALITIES]
     for k, module in layers.items():
         if not isinstance(module, IrrepsLinear):
             continue
         if (
-            (
-                cfg[KEY.USE_MODAL_NODE_EMBEDDING]
-                and k.endswith('onehot_to_feature_x')
-            )
+            (cfg[KEY.USE_MODAL_NODE_EMBEDDING] and k.endswith('onehot_to_feature_x'))
             or (
                 cfg[KEY.USE_MODAL_SELF_INTER_INTRO]
                 and k.endswith('self_interaction_1')
@@ -193,17 +228,6 @@ def _to_parallel_model(layers: OrderedDict, config):
 
     num_convolution_layer = config[KEY.NUM_CONVOLUTION]
 
-    def insert_after(module_name_after, key_module_pair, layers):
-        idx = -1
-        for i, (key, _) in enumerate(layers):
-            if key == module_name_after:
-                idx = i
-                break
-        if idx == -1:
-            assert False
-        layers.insert(idx + 1, key_module_pair)
-        return layers
-
     def slice_until_this(module_name, layers):
         idx = -1
         for i, (key, _) in enumerate(layers):
@@ -214,7 +238,7 @@ def _to_parallel_model(layers: OrderedDict, config):
         remain = layers[idx + 1 :]
         return first_to, remain
 
-    _layers = insert_after(
+    _layers = _insert_after(
         'onehot_to_feature_x',
         (
             'one_hot_ghost',
@@ -227,7 +251,7 @@ def _to_parallel_model(layers: OrderedDict, config):
         ),
         _layers,
     )
-    _layers = insert_after(
+    _layers = _insert_after(
         'one_hot_ghost',
         (
             'ghost_onehot_to_feature_x',
@@ -240,7 +264,7 @@ def _to_parallel_model(layers: OrderedDict, config):
         ),
         _layers,
     )
-    _layers = insert_after(
+    _layers = _insert_after(
         '0_self_interaction_1',
         (
             'ghost_0_self_interaction_1',
@@ -432,15 +456,19 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     common_args = {
         'cutoff': cutoff,
         'type_map': config[KEY.TYPE_MAP],
-        'eval_type_map': True if not parallel else False,
+        'modal_map': config.get(KEY.MODAL_MAP, None),
+        'eval_type_map': False if parallel else True,
+        'eval_modal_map': False
+        if not config[KEY.USE_MODALITY] or parallel
+        else True,
         'data_key_grad': grad_key,
     }
 
     if parallel:
         layers_list = _to_parallel_model(layers, config)
         return [
-            AtomGraphSequential(_patch_modality(layers, config), **common_args)
+            AtomGraphSequential(patch_modality(layers, config), **common_args)
             for layers in layers_list
         ]
     else:
-        return AtomGraphSequential(_patch_modality(layers, config), **common_args)
+        return AtomGraphSequential(patch_modality(layers, config), **common_args)
