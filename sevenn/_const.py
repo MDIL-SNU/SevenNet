@@ -60,7 +60,7 @@ SEVENNET_0_22May2024 = (
 AtomGraphDataType = Dict[str, torch.Tensor]
 
 
-class LossType(Enum):
+class LossType(Enum):  # only used for train_v1, do not use it afterwards
     ENERGY = 'energy'  # eV or eV/atom
     FORCE = 'force'  # eV/A
     STRESS = 'stress'  # kB
