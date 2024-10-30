@@ -1,6 +1,7 @@
 import os
 import warnings
 from collections import Counter
+from copy import deepcopy
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Union
 
@@ -118,6 +119,15 @@ def _elemwise_reference_energies(composition: np.ndarray, energies: np.ndarray):
     return full_coeff.tolist()  # ex: full_coeff[1] = H_reference_energy
 
 
+def _info_copy_transform(transform, info_copy_keys):
+    def chained_transform(graph):
+        graph = transform(graph) if transform is not None else graph
+        for key in info_copy_keys:
+            graph[key] = deepcopy(graph.get(KEY.INFO, {}).get(key))
+        return graph
+    return chained_transform
+
+
 class SevenNetGraphDataset(InMemoryDataset):
     """
     Replacement of AtomGraphDataset. (and .sevenn_data)
@@ -133,14 +143,19 @@ class SevenNetGraphDataset(InMemoryDataset):
     Args:
         root: path to save/load processed PyG dataset
         cutoff: edge cutoff of given AtomGraphData
-        files: list of filenames to initialize dataset:
-               ASE readable (with proper extension), structure_list, .sevenn_data
+        files: list of filenames or dict describing how to parse the file
+               ASE readable (with proper extension), structure_list, .sevenn_data,
+               dict containing file_list (see dict_reader of train/dataload.py)
         process_num_cores: # of cpu cores to build graph
         processed_name: save as {root}/sevenn_data/{processed_name}.pt
         pre_transfrom: optional transform for each graph: def (graph) -> graph
         pre_filter: optional filtering function for each graph: def (graph) -> graph
         force_reload: if True, reload dataset from files even if there exist
                       {root}/sevenn_data/{processed_name}
+        info_copy_keys: patch these keys from KEY.INFO to graph when accessing.
+            default is KEY.DATA_WEIGHT and KEY.DATA_MODALITY, which may accessed
+            while training. User have to ensure these keys exist in info dict. See
+            consistent_info_dict function.
         **process_kwargs: keyword arguments that will be passed into ase.io.read
     """
 
@@ -148,7 +163,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         self,
         cutoff: float,
         root: Optional[str] = None,
-        files: Optional[Union[str, List[str]]] = None,
+        files: Optional[Union[str, List[Any]]] = None,
         process_num_cores: int = 1,
         processed_name: str = 'graph.pt',
         transform: Optional[Callable] = None,
@@ -156,6 +171,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         pre_filter: Optional[Callable] = None,
         log: bool = True,
         force_reload: bool = False,
+        info_copy_keys: Optional[List[str]] = None,
         **process_kwargs,
     ):
         self.cutoff = cutoff
@@ -163,8 +179,14 @@ class SevenNetGraphDataset(InMemoryDataset):
             files = []
         elif isinstance(files, str):
             files = [files]  # user convenience
-        files = [os.path.abspath(file) for file in files]
-        self._files = files
+
+        _files = []
+        for f in files:
+            if isinstance(f, str):
+                f = os.path.abspath(f)
+            _files.append(f)
+        self._files = _files
+
         self._full_file_list = []
         if not processed_name.endswith('.pt'):
             processed_name += '.pt'
@@ -174,6 +196,10 @@ class SevenNetGraphDataset(InMemoryDataset):
         ]
         self.process_num_cores = process_num_cores
         self.process_kwargs = process_kwargs
+
+        # chain info_copy function
+        info_copy_keys = info_copy_keys if info_copy_keys is not None else []
+        transform = _info_copy_transform(transform, info_copy_keys)
 
         self.tag_map = {}
         self.statistics = {}
@@ -191,7 +217,9 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     def load(self, path: str, data_cls=Data) -> None:
         super().load(path, data_cls)
-        self._load_meta()
+        if len(self.statistics) == 0:
+            # dataset is loaded from existing pt file.
+            self._load_meta()
 
     def _load_meta(self) -> None:
         with open(self.processed_paths[1], 'r') as f:
@@ -215,8 +243,17 @@ class SevenNetGraphDataset(InMemoryDataset):
         self._files = meta['files']
         self.statistics = meta['statistics']
 
+    def consistent_info_dict(self, strategy: str = 'largest', **default_kwargs):
+        info_dict_lists = [g[KEY.INFO] for g in self]
+        util.get_consistent_dict_list(
+            info_dict_lists,
+            in_place=True,
+            strategy=strategy,
+            key_defaults=default_kwargs,
+        )
+
     @property
-    def raw_file_names(self) -> List[str]:
+    def raw_file_names(self) -> List[Any]:
         return self._files
 
     @property
@@ -235,12 +272,13 @@ class SevenNetGraphDataset(InMemoryDataset):
         graph_list: list[AtomGraphData] = []
         for file in self.raw_file_names:
             tmplist = SevenNetGraphDataset.file_to_graph_list(
-                filename=file,
+                entry=file,
                 cutoff=self.cutoff,
                 num_cores=self.process_num_cores,
                 **self.process_kwargs,
             )
-            self._full_file_list.extend([os.path.abspath(file)] * len(tmplist))
+            # TODO:
+            # self._full_file_list.extend([os.path.abspath(file)] * len(tmplist))
             graph_list.extend(tmplist)
 
         processed_graph_list = []
@@ -399,53 +437,44 @@ class SevenNetGraphDataset(InMemoryDataset):
         return glist
 
     @staticmethod
+    def _read_dict(
+        data_dict: dict,
+        cutoff: float,
+        num_cores: int = 1,
+    ):
+        atoms_list = dataload.dict_reader(data_dict)
+        return dataload.graph_build(atoms_list, cutoff, num_cores)
+
+    @staticmethod
     def file_to_graph_list(
-        filename: str, cutoff: float, num_cores: int = 1, **kwargs
+        entry: Union[str, dict], cutoff: float, num_cores: int = 1, **kwargs
     ) -> List[AtomGraphData]:
         """
         kwargs: if file is ase readable, passed to ase.io.read
         """
-        if not os.path.isfile(filename):
-            raise ValueError(f'No such file: {filename}')
+        if isinstance(entry, str) and not os.path.isfile(entry):
+            raise ValueError(f'No such file: {entry}')
         graph_list: list[AtomGraphData]
-        if filename.endswith('.pt'):
-            graph_list = SevenNetGraphDataset._read_graph_dataset(filename, cutoff)
-        elif filename.endswith('.sevenn_data'):
-            graph_list, cutoff_other = SevenNetGraphDataset._read_sevenn_data(
-                filename
+        if isinstance(entry, dict):
+            graph_list = SevenNetGraphDataset._read_dict(
+                entry, cutoff, num_cores, **kwargs
             )
+        elif entry.endswith('.pt'):
+            graph_list = SevenNetGraphDataset._read_graph_dataset(entry, cutoff)
+        elif entry.endswith('.sevenn_data'):
+            graph_list, cutoff_other = SevenNetGraphDataset._read_sevenn_data(entry)
             if cutoff_other != cutoff:
-                warnings.warn(f'Given {filename} has different {cutoff_other}!')
+                warnings.warn(f'Given {entry} has different {cutoff_other}!')
             cutoff = cutoff_other
-        elif 'structure_list' in filename:
+        elif 'structure_list' in entry:
             graph_list = SevenNetGraphDataset._read_structure_list(
-                filename, cutoff, num_cores
+                entry, cutoff, num_cores
             )
         else:
             graph_list = SevenNetGraphDataset._read_ase_readable(
-                filename, cutoff, num_cores, **kwargs
+                entry, cutoff, num_cores, **kwargs
             )
         return graph_list
-
-    @staticmethod
-    def from_pt(path: str):
-        """
-        Return SevenNetGraphDataset from path (xxx/yyy/sevenn_data/train.pt)
-        An yaml file with meta and statistics information must present in the
-        same directory.
-        """
-        pass
-        meta_f = path.replace('.pt', '.yaml')
-        if not os.path.exists(meta_f):
-            raise ValueError('No saved meta information found')
-
-        with open(meta_f, 'r') as f:
-            meta = yaml.safe_load(f)
-
-        cutoff = float(meta['cutoff'])
-        ds_args: dict[str, Any] = dict({'cutoff': cutoff})
-        ds_args.update(pt_to_args(path))
-        return SevenNetGraphDataset(**ds_args)
 
 
 # script, return dict of SevenNetGraphDataset
