@@ -119,15 +119,6 @@ def _elemwise_reference_energies(composition: np.ndarray, energies: np.ndarray):
     return full_coeff.tolist()  # ex: full_coeff[1] = H_reference_energy
 
 
-def _info_copy_transform(transform, info_copy_keys):
-    def chained_transform(graph):
-        graph = transform(graph) if transform is not None else graph
-        for key in info_copy_keys:
-            graph[key] = deepcopy(graph.get(KEY.INFO, {}).get(key))
-        return graph
-    return chained_transform
-
-
 class SevenNetGraphDataset(InMemoryDataset):
     """
     Replacement of AtomGraphDataset. (and .sevenn_data)
@@ -152,10 +143,6 @@ class SevenNetGraphDataset(InMemoryDataset):
         pre_filter: optional filtering function for each graph: def (graph) -> graph
         force_reload: if True, reload dataset from files even if there exist
                       {root}/sevenn_data/{processed_name}
-        info_copy_keys: patch these keys from KEY.INFO to graph when accessing.
-            default is KEY.DATA_WEIGHT and KEY.DATA_MODALITY, which may accessed
-            while training. User have to ensure these keys exist in info dict. See
-            consistent_info_dict function.
         **process_kwargs: keyword arguments that will be passed into ase.io.read
     """
 
@@ -169,9 +156,9 @@ class SevenNetGraphDataset(InMemoryDataset):
         transform: Optional[Callable] = None,
         pre_transform: Optional[Callable] = None,
         pre_filter: Optional[Callable] = None,
+        use_data_weight: bool = False,
         log: bool = True,
         force_reload: bool = False,
-        info_copy_keys: Optional[List[str]] = None,
         **process_kwargs,
     ):
         self.cutoff = cutoff
@@ -196,10 +183,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         ]
         self.process_num_cores = process_num_cores
         self.process_kwargs = process_kwargs
-
-        # chain info_copy function
-        info_copy_keys = info_copy_keys if info_copy_keys is not None else []
-        transform = _info_copy_transform(transform, info_copy_keys)
+        self.use_data_weight = use_data_weight
 
         self.tag_map = {}
         self.statistics = {}
@@ -287,6 +271,12 @@ class SevenNetGraphDataset(InMemoryDataset):
                 continue
             if self.pre_transform is not None:
                 data = self.pre_transform(data)
+            if self.use_data_weight:
+                # pop data weight from info, and assign to graph
+                weight = data[KEY.INFO].pop(
+                    KEY.DATA_WEIGHT, {'energy': 1.0, 'force': 1.0, 'stress': 1.0}
+                )
+                data[KEY.DATA_WEIGHT] = weight
             processed_graph_list.append(data)
 
         if len(processed_graph_list) == 0:
@@ -442,8 +432,37 @@ class SevenNetGraphDataset(InMemoryDataset):
         cutoff: float,
         num_cores: int = 1,
     ):
+        # logic same as the dataload dict_reader, but handles graphs
+        data_dict_cp = deepcopy(data_dict)
+        file_list = data_dict_cp.get('file_list', None)
+        if file_list is None:
+            raise KeyError('file_list is not found')
+
+        data_weight_default = {
+            'energy': 1.0,
+            'force': 1.0,
+            'stress': 1.0,
+        }
+        data_weight = data_weight_default.copy()
+        data_weight.update(data_dict_cp.pop(KEY.DATA_WEIGHT, {}))
+
+        graph_list = []
+        for file_dct in file_list:
+            ftype = file_dct.pop('data_format', 'ase')
+            if ftype != 'graph':
+                continue
+            graph_list.extend(
+                SevenNetGraphDataset._read_graph_dataset(
+                    file_dct.get('file'), cutoff=cutoff
+                )
+            )
+        for graph in graph_list:
+            graph[KEY.INFO].update(data_dict_cp)
+            graph[KEY.INFO].update({KEY.DATA_WEIGHT: data_weight})
+
         atoms_list = dataload.dict_reader(data_dict)
-        return dataload.graph_build(atoms_list, cutoff, num_cores)
+        graph_list.extend(dataload.graph_build(atoms_list, cutoff, num_cores))
+        return graph_list
 
     @staticmethod
     def file_to_graph_list(
@@ -477,6 +496,70 @@ class SevenNetGraphDataset(InMemoryDataset):
         return graph_list
 
 
+def from_single_path(
+    path: Union[str, List], override_data_weight: bool = True, **dataset_kwargs
+) -> Union[SevenNetGraphDataset, None]:
+    """
+    Convenient routine for loading a single .pt dataset.
+    If given dict and it has data_weight, apply it using transform
+    """
+    data_weight = {'energy': 1.0, 'force': 1.0, 'stress': 1.0}
+    spath = _extract_single_path(path)
+    if spath is None:
+        return None
+
+    if isinstance(spath, str):
+        if not spath.endswith('.pt'):
+            return None
+        dataset_kwargs.update(pt_to_args(spath))
+    elif isinstance(spath, dict):
+        file = _extract_file_from_dict(spath)
+        if file is None or not file.endswith('.pt'):
+            return None
+        dataset_kwargs.update(pt_to_args(file))
+        data_weight_user = spath.get(KEY.DATA_WEIGHT, None)
+        if data_weight_user is not None:
+            data_weight.update(data_weight_user)
+    else:
+        return None
+
+    if override_data_weight:
+        dataset_kwargs['transform'] = _chain_data_weight_override(
+            dataset_kwargs.get('transform'), data_weight
+        )
+
+    return SevenNetGraphDataset(**dataset_kwargs)
+
+
+def _extract_single_path(path: Union[str, List]) -> Union[str, dict, None]:
+    """Extracts a single path from the input,
+    ensuring it's either a single string or list with one item."""
+    if isinstance(path, list):
+        return path[0] if len(path) == 1 else None
+    return path if isinstance(path, (str, dict)) else None
+
+
+def _extract_file_from_dict(path_dict: dict) -> Union[str, None]:
+    """Extracts a single file path from the dictionary, ensuring it's valid."""
+    file_list = path_dict.get('file_list', None)
+    if file_list and len(file_list) == 1:
+        file = file_list[0].get('file', None)
+        return file if isinstance(file, str) else None
+    return None
+
+
+def _chain_data_weight_override(transform_func, data_weight):
+    """Creates a transform function that overrides the data weight."""
+
+    def chained_transform(graph):
+        graph = transform_func(graph) if transform_func is not None else graph
+        graph[KEY.INFO].pop(KEY.DATA_WEIGHT, None)
+        graph[KEY.DATA_WEIGHT] = data_weight
+        return graph
+
+    return chained_transform
+
+
 # script, return dict of SevenNetGraphDataset
 def from_config(
     config: dict[str, Any],
@@ -498,6 +581,7 @@ def from_config(
         'cutoff': config[KEY.CUTOFF],
         'root': working_dir,
         'process_num_cores': config[KEY.PREPROCESS_NUM_CORES],
+        'use_data_weight': config[KEY.USE_WEIGHT],
         **config[KEY.DATA_FORMAT_ARGS],
     }
 
@@ -508,24 +592,18 @@ def from_config(
         if isinstance(paths, str):
             paths = [paths]
         name = dk.split('_')[1].strip()
-        if (
-            len(paths) == 1
-            and 'sevenn_data' in paths[0]
-            and paths[0].endswith('.pt')
-        ):
-            dataset_args.update(pt_to_args(paths[0]))
+        if (dataset := from_single_path(paths, **dataset_args)) is not None:
+            datasets[name] = dataset
         else:
             dataset_args.update({'files': paths, 'processed_name': name})
-        dataset_path = os.path.join(working_dir, 'sevenn_data', f'{name}.pt')
-        if os.path.exists(dataset_path) and 'force_reload' not in dataset_args:
-            log.writeline(
-                f'Dataset will be loaded from {dataset_path}, without update.'
-            )
-            log.writeline(
-                'If you have changed your files to read, put force_reload=True'
-                + ' under the data_format_args key'
-            )
-        datasets[name] = SevenNetGraphDataset(**dataset_args)
+            dataset_path = os.path.join(working_dir, 'sevenn_data', f'{name}.pt')
+            if os.path.exists(dataset_path) and 'force_reload' not in dataset_args:
+                log.writeline(
+                    f'Dataset will be loaded from {dataset_path}, without update.'
+                    + 'If you have changed your files to read, put force_reload=True'
+                    + ' under the data_format_args key'
+                )
+            datasets[name] = SevenNetGraphDataset(**dataset_args)
 
     train_set = datasets['trainset']
 
