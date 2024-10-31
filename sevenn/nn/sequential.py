@@ -117,8 +117,9 @@ class AtomGraphSequential(nn.Sequential):
             input=z_to_onehot_tensor, dim=0, index=atomic_numbers
         )
 
-    def _init_modal_attr(self, data: AtomGraphDataType):
+    def _eval_modal_map(self, data: AtomGraphDataType):
         assert self.modal_map is not None
+        # modal_map: dict[str, int]
         if not self.is_batch_data:
             modal_idx = self.modal_map[data[KEY.DATA_MODALITY]]  # type: ignore
         else:
@@ -126,7 +127,11 @@ class AtomGraphSequential(nn.Sequential):
                 self.modal_map[ii]  # type: ignore
                 for ii in data[KEY.DATA_MODALITY]
             ]
-        modal_idx = torch.tensor(modal_idx, dtype=torch.int64)
+        modal_idx = torch.tensor(
+            modal_idx,
+            dtype=torch.int64,
+            device=data.x.device,  # type: ignore
+        )
         data[KEY.MODAL_TYPE] = modal_idx
 
     def forward(self, input: AtomGraphDataType) -> AtomGraphDataType:
@@ -137,7 +142,7 @@ class AtomGraphSequential(nn.Sequential):
             data[self.key_node_feature] = onehot
 
         if self.eval_modal_map:
-            self._init_modal_attr(input)
+            self._eval_modal_map(input)
 
         if self.key_grad is not None:
             data[self.key_grad].requires_grad_(True)
