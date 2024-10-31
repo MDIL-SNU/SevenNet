@@ -1,6 +1,7 @@
+import bisect
 import os
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional
 
 import numpy as np
 from torch.utils.data import ConcatDataset, Dataset
@@ -10,15 +11,13 @@ import sevenn.util as util
 from sevenn.sevenn_logger import Logger
 
 
-def _arrange_paths_by_modality(
-    paths: List[Union[str, dict]], default_modality: str = 'common'
-):
+def _arrange_paths_by_modality(paths: List[dict]):
     modal_dct = {}
     for path in paths:
-        if isinstance(path, str):
-            modal = default_modality
-        elif isinstance(path, dict):
-            modal = path.get(KEY.DATA_MODALITY, default_modality)
+        if isinstance(path, dict):
+            if KEY.DATA_MODALITY not in path:
+                raise ValueError(f'{KEY.DATA_MODALITY} is missing')
+            modal = path.pop(KEY.DATA_MODALITY)
         else:
             raise TypeError(f'{path} is not dict or str')
         if modal not in modal_dct:
@@ -106,6 +105,13 @@ class SevenNetMultiModalDataset(ConcatDataset):
             datasets.append(dataset)
         self.modals = modals
         super().__init__(datasets)
+
+    def __getitem__(self, idx):
+        graph = super().__getitem__(idx)
+        dataset_idx = bisect.bisect_right(self.cumulative_sizes, idx)
+        modality = self.modals[dataset_idx]
+        graph[KEY.DATA_MODALITY] = modality
+        return graph
 
     def _modal_wise_property(self, attribute_name: str):
         dct = {}
@@ -223,26 +229,23 @@ class SevenNetMultiModalDataset(ConcatDataset):
 
     @staticmethod
     def as_graph_dataset(
-        paths: List[Union[str, dict]],
-        cutoff: float,
-        default_modality: str,
+        paths: List[dict],
         **graph_dataset_kwargs,
     ):
-        from .graph_dataset import SevenNetGraphDataset
+        import sevenn.train.graph_dataset as gd
 
-        modal_paths = _arrange_paths_by_modality(paths, default_modality)
+        modal_paths = _arrange_paths_by_modality(paths)
         dataset_dct = {}
-        kwargs = deepcopy(graph_dataset_kwargs)
         for modality, paths in modal_paths.items():
-            processed_name = kwargs.pop('processed_name', 'graph')
-            processed_name = processed_name.replace('.pt', '')
-            processed_name = processed_name + '_' + modality + '.pt'
-            dataset_dct[modality] = SevenNetGraphDataset(
-                cutoff=cutoff,
-                files=paths,
-                processed_name=processed_name,
-                **kwargs,
-            )
+            kwargs = deepcopy(graph_dataset_kwargs)
+            if (dataset := gd.from_single_path(paths, **kwargs)) is None:
+                pname = kwargs.pop('processed_name', 'graph').replace('.pt', '')
+                dataset = gd.SevenNetGraphDataset(
+                    files=paths,
+                    processed_name=f'{pname}_{modality}.pt',
+                    **kwargs,
+                )
+            dataset_dct[modality] = dataset
         return SevenNetMultiModalDataset(dataset_dct)
 
 
@@ -260,16 +263,11 @@ def from_config(
     if KEY.LOAD_TRAINSET not in dataset_keys:
         raise ValueError(f'{KEY.LOAD_TRAINSET} must be present in config')
 
-    info_copy_keys = [KEY.DATA_MODALITY]  # you will use modality anyway
-    if config[KEY.USE_WEIGHT]:
-        info_copy_keys.append(KEY.DATA_WEIGHT)
-
     dataset_args = {
         'cutoff': config[KEY.CUTOFF],
         'root': working_dir,
         'process_num_cores': config[KEY.PREPROCESS_NUM_CORES],
-        'default_modality': config[KEY.DEFAULT_MODAL],  # for paths w/o modality
-        'info_copy_keys': info_copy_keys,
+        'use_data_weight': config[KEY.USE_WEIGHT],
         **config[KEY.DATA_FORMAT_ARGS],
     }
 
@@ -308,6 +306,7 @@ def from_config(
     modals = sorted(list(modals))
     modal_map = {modal: i for i, modal in enumerate(modals)}
     config[KEY.MODAL_MAP] = modal_map
+    log.writeline(f'Modalities of this model: {modals}')
 
     # initialize known species from dataset if 'auto'
     # sorted to alphabetical order (which is same as before)
