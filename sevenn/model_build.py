@@ -31,8 +31,7 @@ from .nn.sequential import AtomGraphSequential
 warnings.filterwarnings(
     'ignore',
     message=(
-        "The TorchScript type system doesn't "
-        'support instance-level annotations'
+        "The TorchScript type system doesn't " 'support instance-level annotations'
     ),
 )
 
@@ -77,10 +76,80 @@ def init_edge_embedding(config):
     _normalize_sph = config[KEY._NORMALIZE_SPH]
     sph = SphericalEncoding(lmax_edge, parity, normalize=_normalize_sph)
 
-    return EdgeEmbedding(
-        basis_module=rbf,
-        cutoff_module=env,
-        spherical_module=sph
+    return EdgeEmbedding(basis_module=rbf, cutoff_module=env, spherical_module=sph)
+
+
+def init_feature_reduce(config, irreps_x):
+    # features per node to scalar per node
+    layers = OrderedDict()
+    if config[KEY.READOUT_AS_FCN] is False:
+        hidden_irreps = Irreps([(irreps_x.dim // 2, (0, 1))])
+        layers.update(
+            {
+                'reduce_input_to_hidden': IrrepsLinear(
+                    irreps_x,
+                    hidden_irreps,
+                    data_key_in=KEY.NODE_FEATURE,
+                    biases=config[KEY.USE_BIAS_IN_LINEAR],
+                ),
+                'reduce_hidden_to_energy': IrrepsLinear(
+                    hidden_irreps,
+                    Irreps([(1, (0, 1))]),
+                    data_key_in=KEY.NODE_FEATURE,
+                    data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                    biases=config[KEY.USE_BIAS_IN_LINEAR],
+                ),
+            }
+        )
+    else:
+        act = _const.ACTIVATION[config[KEY.READOUT_FCN_ACTIVATION]]
+        hidden_neurons = config[KEY.READOUT_FCN_HIDDEN_NEURONS]
+        layers.update(
+            {
+                'readout_FCN': FCN_e3nn(
+                    dim_out=1,
+                    hidden_neurons=hidden_neurons,
+                    activation=act,
+                    data_key_in=KEY.NODE_FEATURE,
+                    data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                    irreps_in=irreps_x,
+                )
+            }
+        )
+    return layers
+
+
+def init_shift_scale(config):
+    shift_scale = []
+    type_map = config[KEY.TYPE_MAP]
+    # correct typing (I really want static python)
+    for s in (config[KEY.SHIFT], config[KEY.SCALE]):
+        if hasattr(s, 'tolist'):  # numpy or torch
+            s = s.tolist()
+        if isinstance(s, list) and len(s) == 1:
+            s = s[0]
+        # check whether list shift scale matches the size of type_map:
+        if isinstance(s, list) and len(s) > len(type_map):
+            # assume s is indexed with atomic numbers from 0 to 120
+            if len(s) != _const.NUM_UNIV_ELEMENT:
+                raise ValueError('given shift or scale is strange')
+            s = [s[z] for z in sorted(type_map, key=type_map.get)]
+        shift_scale.append(s)
+
+    rescale_module = None
+    if all([isinstance(s, float) for s in shift_scale]):
+        rescale_module = Rescale
+    elif any([isinstance(s, list) for s in shift_scale]):
+        rescale_module = SpeciesWiseRescale
+    else:
+        raise ValueError('shift, scale should be list of float or float')
+
+    shift, scale = shift_scale
+
+    return rescale_module(
+        shift=shift,
+        scale=scale,
+        train_shift_scale=config[KEY.TRAIN_SHIFT_SCALE],
     )
 
 
@@ -168,6 +237,16 @@ def _to_parallel_model(layers: OrderedDict, config):
 
 # TODO: it gets bigger and bigger. refactor it
 def build_E3_equivariant_model(config: dict, parallel=False):
+    """
+    output shapes (w/o batch)
+
+    PRED_TOTAL_ENERGY: (),
+    ATOMIC_ENERGY: (natoms, 1),  # intended
+    PRED_FORCE: (natoms, 3),
+    PRED_STRESS: (6,),
+
+    for data w/o shell volume, pred_stress has garbage values
+    """
     layers = OrderedDict()
 
     cutoff = config[KEY.CUTOFF]
@@ -211,15 +290,17 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         if irreps_manual is None
         else irreps_manual[0]
     )
-    layers.update({
-        'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
-        'onehot_to_feature_x': IrrepsLinear(
-            irreps_in=one_hot_irreps,
-            irreps_out=irreps_x,
-            data_key_in=KEY.NODE_FEATURE,
-            biases=use_bias_in_linear,
-        ),
-    })
+    layers.update(
+        {
+            'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
+            'onehot_to_feature_x': IrrepsLinear(
+                irreps_in=one_hot_irreps,
+                irreps_out=irreps_x,
+                data_key_in=KEY.NODE_FEATURE,
+                biases=use_bias_in_linear,
+            ),
+        }
+    )
 
     weight_nn_hidden = config[KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS]
     weight_nn_layers = [radial_basis_num] + weight_nn_hidden
@@ -244,10 +325,12 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             act_scalar[k] = _const.ACTIVATION_DICT[k][v]
         for k, v in config[KEY.ACTIVATION_GATE].items():
             act_gate[k] = _const.ACTIVATION_DICT[k][v]
-        param_interaction_block.update({
-            'act_scalar': act_scalar,
-            'act_gate': act_gate,
-        })
+        param_interaction_block.update(
+            {
+                'act_scalar': act_scalar,
+                'act_gate': act_gate,
+            }
+        )
 
     if interaction_type == 'nequip':
         interaction_builder = NequIP_interaction_block
@@ -255,10 +338,13 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         raise ValueError(f'Unknown interaction type: {interaction_type}')
 
     for t in range(num_convolution_layer):
-        param_interaction_block.update({
-            'irreps_x': irreps_x, 't': t,
-            'conv_denominator': conv_denominator[t],
-        })
+        param_interaction_block.update(
+            {
+                'irreps_x': irreps_x,
+                't': t,
+                'conv_denominator': conv_denominator[t],
+            }
+        )
         if interaction_type == 'nequip':
             parity_mode = 'full'
             fix_multiplicity = False
@@ -266,9 +352,9 @@ def build_E3_equivariant_model(config: dict, parallel=False):
                 lmax_node = 0
                 parity_mode = 'even'
             irreps_out_tp = util.infer_irreps_out(
-                irreps_x,
+                irreps_x,  # type: ignore
                 irreps_filter,
-                lmax_node,
+                lmax_node,  # type: ignore
                 parity_mode,
                 fix_multiplicity,
             )
@@ -277,91 +363,49 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         # TODO: irreps_manual is applicable to both irreps_out_tp and irreps_out
         irreps_out = (
             util.infer_irreps_out(
-                irreps_x,
+                irreps_x,  # type: ignore
                 irreps_filter,
-                lmax_node,
+                lmax_node,  # type: ignore
                 parity_mode,
                 fix_multiplicity=feature_multiplicity,
             )
             if irreps_manual is None
             else irreps_manual[t + 1]
-        )  # customizable part
-        param_interaction_block.update({
-            'irreps_out_tp': irreps_out_tp,
-            'irreps_out': irreps_out,
-        })
+        )
+        param_interaction_block.update(
+            {
+                'irreps_out_tp': irreps_out_tp,
+                'irreps_out': irreps_out,
+            }
+        )
         layers.update(interaction_builder(**param_interaction_block))
         irreps_x = irreps_out
 
-    if config[KEY.READOUT_AS_FCN] is False:
-        mid_dim = (
-            feature_multiplicity
-            if irreps_manual is None
-            else irreps_manual[-1].num_irreps
-        )
-        hidden_irreps = Irreps([(mid_dim // 2, (0, 1))])
-        layers.update({
-            'reduce_input_to_hidden': IrrepsLinear(
-                irreps_x,
-                hidden_irreps,
-                data_key_in=KEY.NODE_FEATURE,
-                biases=use_bias_in_linear,
-            ),
-            'reduce_hidden_to_energy': IrrepsLinear(
-                hidden_irreps,
-                Irreps([(1, (0, 1))]),
-                data_key_in=KEY.NODE_FEATURE,
-                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
-                biases=use_bias_in_linear,
-            ),
-        })
-    else:
-        act = _const.ACTIVATION[config[KEY.READOUT_FCN_ACTIVATION]]
-        hidden_neurons = config[KEY.READOUT_FCN_HIDDEN_NEURONS]
-        layers.update({
-            'readout_FCN': FCN_e3nn(
-                dim_out=1,
-                hidden_neurons=hidden_neurons,
-                activation=act,
-                data_key_in=KEY.NODE_FEATURE,
-                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
-                irreps_in=irreps_x,
-            )
-        })
+    layers.update(init_feature_reduce(config, irreps_x))
 
-    shift = config[KEY.SHIFT]
-    scale = config[KEY.SCALE]
-    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
-    rescale_module = (
-        SpeciesWiseRescale
-        if config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
-        else Rescale
+    layers.update(
+        {
+            'rescale_atomic_energy': init_shift_scale(config),
+            'reduce_total_enegy': AtomReduce(
+                data_key_in=KEY.ATOMIC_ENERGY,
+                data_key_out=KEY.PRED_TOTAL_ENERGY,
+            ),
+        }
     )
-    layers.update({
-        'rescale_atomic_energy': rescale_module(
-            shift=shift,
-            scale=scale,
-            data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-            data_key_out=KEY.ATOMIC_ENERGY,
-            train_shift_scale=train_shift_scale,
-        ),
-        'reduce_total_enegy': AtomReduce(
-            data_key_in=KEY.ATOMIC_ENERGY,
-            data_key_out=KEY.PRED_TOTAL_ENERGY,
-            constant=1.0,
-        ),
-    })
-    gradient_module = ForceStressOutputFromEdge(
-        data_key_energy=KEY.PRED_TOTAL_ENERGY,
-        data_key_force=KEY.PRED_FORCE,
-        data_key_stress=KEY.PRED_STRESS,
-    )
+
+    gradient_module = ForceStressOutputFromEdge()
+    grad_key = gradient_module.get_grad_key()
     layers.update({'force_output': gradient_module})
 
-    # output extraction part
-    type_map = config[KEY.TYPE_MAP]
+    common_args = {
+        'cutoff': cutoff,
+        'type_map': config[KEY.TYPE_MAP],
+        'eval_type_map': True if not parallel else False,
+        'data_key_grad': grad_key,
+    }
+
     if parallel:
         layers_list = _to_parallel_model(layers, config)
-        return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
+        return [AtomGraphSequential(v, **common_args) for v in layers_list]
     else:
-        return AtomGraphSequential(layers, cutoff, type_map)
+        return AtomGraphSequential(layers, **common_args)

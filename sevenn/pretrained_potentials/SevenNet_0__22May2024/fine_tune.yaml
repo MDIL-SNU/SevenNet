@@ -63,7 +63,7 @@ data:
     data_divide_ratio: 0.1
 
     #data_format: 'ase'                           # Default is 'ase'
-    #data_format_args:                            # Paramaters, will be passed to ase.io.read
+    #data_format_args:                            # Parameters, will be passed to ase.io.read
         #index: '-10:'
 
     # ASE tries to infer its type by extension, in this case, extxyz file is loaded by ase.

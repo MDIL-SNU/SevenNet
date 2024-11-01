@@ -7,6 +7,8 @@ import torch
 import sevenn._keys as KEY
 from sevenn.nn.activation import ShiftedSoftPlus
 
+NUM_UNIV_ELEMENT = 119  # Z = 0 ~ 118
+
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of parallel model
@@ -171,10 +173,11 @@ DEFAULT_DATA_CONFIG = {
     KEY.RATIO: 0.1,
     KEY.BATCH_SIZE: 6,
     KEY.PREPROCESS_NUM_CORES: 1,
+    KEY.COMPUTE_STATISTICS: True,
+    KEY.DATASET_TYPE: 'graph',
     # KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
     KEY.SHIFT: 'per_atom_energy_mean',
     KEY.SCALE: 'force_rms',
-    KEY.DATA_SHUFFLE: True,
 }
 
 DATA_CONFIG_CONDITION = {
@@ -187,10 +190,11 @@ DATA_CONFIG_CONDITION = {
     KEY.RATIO: float,
     KEY.BATCH_SIZE: int,
     KEY.PREPROCESS_NUM_CORES: int,
+    KEY.DATASET_TYPE: lambda x: x in ['graph', 'atoms'],
     # KEY.USE_SPECIES_WISE_SHIFT_SCALE: bool,
     KEY.SHIFT: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SHIFT,
     KEY.SCALE: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SCALE,
-    KEY.DATA_SHUFFLE: bool,
+    KEY.COMPUTE_STATISTICS: bool,
     KEY.SAVE_DATASET: str,
 }
 
@@ -224,7 +228,6 @@ DEFAULT_TRAINING_CONFIG = {
     },
     KEY.CSV_LOG: 'log.csv',
     KEY.NUM_WORKERS: 0,
-    KEY.IS_TRACE_STRESS: False,
     KEY.IS_TRAIN_STRESS: True,
     KEY.TRAIN_SHUFFLE: True,
     KEY.ERROR_RECORD: [
@@ -243,7 +246,7 @@ TRAINING_CONFIG_CONDITION = {
     KEY.FORCE_WEIGHT: float,
     KEY.STRESS_WEIGHT: float,
     KEY.USE_TESTSET: None,  # Not used
-    KEY.NUM_WORKERS: None,  # Not used
+    KEY.NUM_WORKERS: int,
     KEY.PER_EPOCH: int,
     KEY.CONTINUE: {
         KEY.CHECKPOINT: str,
@@ -252,7 +255,6 @@ TRAINING_CONFIG_CONDITION = {
         KEY.RESET_EPOCH: bool,
         KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT: bool,
     },
-    KEY.IS_TRACE_STRESS: bool,  # Not used
     KEY.IS_TRAIN_STRESS: bool,
     KEY.TRAIN_SHUFFLE: bool,
     KEY.ERROR_RECORD: error_record_condition,

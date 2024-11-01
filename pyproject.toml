@@ -1,11 +1,11 @@
 [project]
 name = "sevenn"
-version = "0.9.5"
+version = "0.10.1"
 authors = [
-  { name="Yutack Park", email="parkyutack@snu.ac.kr" },
-  { name="Jaesun Kim" },
-  { name="Gijin Kim" },
-  { name="Hyungmin An" },
+    { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
+    { name = "Jaesun Kim" },
+    { name = "Gijin Kim" },
+    { name = "Hyungmin An" },
 ]
 description = "Scalable EquiVariance Enabled Neural Network"
 readme = "README.md"
@@ -23,7 +23,7 @@ dependencies = [
     "e3nn",
     "tqdm",
     "scikit-learn",
-    "torch_geometric",
+    "torch_geometric>=2.5.0",
     "numpy<2.0",
 ]
 
@@ -53,9 +53,15 @@ sevenn = [
     "pair_e3gnn/patch_lammps.sh",
     "presets/*.yaml",
     "pretrained_potentials/SevenNet_0__11July2024/checkpoint_sevennet_0.pth",
-    "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth"
+    "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth",
+    "py.typed",
 ]
 
 [tool.setuptools.packages.find]
 include = ["sevenn*"]
 exclude = ["tests*", "example_inputs*", ]
+
+[tool.pytest.ini_options]
+log_cli = true
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
+log_cli_date_format = "%Y-%m-%d %H:%M:%S"

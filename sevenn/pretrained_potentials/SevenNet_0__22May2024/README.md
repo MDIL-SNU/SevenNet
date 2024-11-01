@@ -10,8 +10,6 @@ This is the model referred as SevenNet-0 in [our paper](https://pubs.acs.org/doi
 It can be directly applied to any system without training and fine-tuned with another dataset if accuracy is unsatisfactory.
 
 - checkpoint_sevennet_0.pth: checkpoint of SevenNet-0 model.
-- serial_model/deployed_serial.pt: LAMMPS potential for single GPU runs.
-- parallel_model/deployed_parallel_{0-4}.pt: LAMMPS potential for multi-GPU runs.
 - fine_tune.yaml: example input.yaml for fine-tuning.
 
 ### Accuracy
@@ -24,7 +22,7 @@ MAE (Mean absolute error)
 
 
 ### Note
-You can obtain the same deployed models by running the following command (-p for parallel)
+You can obtain models for LAMMPS by running the following command (-p for parallel)
 ```bash
 $ sevenn_get_model {-p} checkpoint_sevennet_0.pth
 ```

@@ -1,97 +1,19 @@
 import csv
 import os
-from typing import List
+import tempfile
+from typing import IO, Iterable, List, Union
 
+import ase.io
 import numpy as np
-import torch
-from ase import io
 from ase.calculators.singlepoint import SinglePointCalculator
+from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 import sevenn._keys as KEY
-import sevenn.error_recorder as error_recorder
-from sevenn.train.dataload import graph_build
-from sevenn.train.dataset import AtomGraphDataset
-from sevenn.util import (
-    model_from_checkpoint,
-    pretrained_name_to_path,
-    to_atom_graph_list,
-)
-
-# TODO: use updated dataset construction scheme, not directly call graph_build
-
-
-def load_sevenn_data(sevenn_datas: str, cutoff, type_map):
-    full_dataset = None
-    for sevenn_data in sevenn_datas:
-        with open(sevenn_data, 'rb') as f:
-            dataset = torch.load(f, weights_only=False)
-        if full_dataset is None:
-            full_dataset = dataset
-        else:
-            full_dataset.augment(dataset)
-    if full_dataset.cutoff != cutoff:
-        raise ValueError(f'cutoff mismatch: {full_dataset.cutoff} != {cutoff}')
-    if full_dataset.x_is_one_hot_idx and full_dataset.type_map != type_map:
-        raise ValueError(
-            "loaded dataset's x is not atomic numbers.                 this is"
-            ' deprecated. Create dataset from structure list                '
-            ' with the newest version of sevenn'
-        )
-    return full_dataset
-
-
-# TODO: Outcar can be trajectory
-def outcars_to_atoms(outcars: List[str]):
-    atoms_list = []
-    info_dct = {'data_from': 'infer_OUTCAR'}
-    for outcar_path in outcars:
-        atoms = io.read(outcar_path)
-        info_dct_f = {**info_dct, 'file': os.path.abspath(outcar_path)}
-        atoms.info = info_dct_f
-        atoms_list.append(atoms)
-    return atoms_list
-
-
-def poscars_to_atoms(poscars: List[str]):
-    """
-    load poscars to ase atoms list
-    dummy y values are injected for convenience
-    """
-    atoms_list = []
-    stress_dummy = np.array([0, 0, 0, 0, 0, 0])
-    calc_results = {'energy': 0, 'free_energy': 0, 'stress': stress_dummy}
-    info_dct = {'data_from': 'infer_POSCAR'}
-    for poscar_path in poscars:
-        atoms = io.read(poscar_path)
-        natoms = len(atoms.get_atomic_numbers())
-        dummy_force = np.zeros((natoms, 3))
-        dummy_calc_res = calc_results.copy()
-        dummy_calc_res['forces'] = dummy_force
-        calculator = SinglePointCalculator(atoms, **dummy_calc_res)
-        atoms = calculator.get_atoms()
-        info_dct_f = {**info_dct, 'file': os.path.abspath(poscar_path)}
-        atoms.info = info_dct_f
-        atoms_list.append(atoms)
-    return atoms_list
-
-
-def get_error_recorder():
-    config = [
-        ('Energy', 'RMSE'),
-        ('Force', 'RMSE'),
-        ('Stress', 'RMSE'),
-        ('Energy', 'MAE'),
-        ('Force', 'MAE'),
-        ('Stress', 'MAE'),
-    ]
-    err_metrics = []
-    for err_type, metric_name in config:
-        metric_kwargs = error_recorder.ERROR_TYPES[err_type].copy()
-        metric_kwargs['name'] += f'_{metric_name}'
-        metric_cls = error_recorder.ErrorRecorder.METRIC_DICT[metric_name]
-        err_metrics.append(metric_cls(**metric_kwargs))
-    return error_recorder.ErrorRecorder(err_metrics)
+import sevenn.train.dataload as dl
+import sevenn.util as util
+from sevenn.atom_graph_data import AtomGraphData
+from sevenn.train.graph_dataset import SevenNetGraphDataset
 
 
 def write_inference_csv(output_list, out):
@@ -184,110 +106,158 @@ def write_inference_csv(output_list, out):
                 writer.writerow(data)
 
 
-def inference_main(  # TODO: re-write
-    checkpoint,
-    fnames,
-    output_path,
-    num_cores=1,
-    num_workers=1,
-    device='cpu',
-    batch_size=5,
-    on_the_fly_graph_build=True,
-):
-    if os.path.isfile(checkpoint):
-        pass
-    else:
-        checkpoint = pretrained_name_to_path(checkpoint)
-    model, config = model_from_checkpoint(checkpoint)
+def _extract_unlabeled_data(targets: List[str], tmp_file: IO, **data_kwargs):
+    # for only, ase readable, it may be unlabeled
+    # extract such files and returns graph list built with these
+
+    def assign_dummy_y(atoms):
+        dummy = {'energy': np.nan, 'free_energy': np.nan}
+        dummy['forces'] = np.full((len(atoms), 3), np.nan)  # type: ignore
+        dummy['stress'] = np.full((6,), np.nan)  # type: ignore
+        calc = SinglePointCalculator(atoms, **dummy)
+        atoms = calc.get_atoms()
+        return calc.get_atoms()
+
+    new_targets = []
+    atoms_list_patched = []
+    unlabeled_file_list = []
+    for target in targets:
+        if not (
+            not target.endswith('.pt')
+            and not target.endswith('.sevenn_data')
+            and 'structure_list' not in target
+        ):
+            new_targets.append(target)
+            continue
+        # it must be ase readable
+        try:
+            _ = dl.ase_reader(target, **data_kwargs)
+            new_targets.append(target)  # No error occurred, target is labeled
+        except RuntimeError or KeyError:
+            # The data is not labeled
+            print(
+                f'{target} seems not labeled, dummy values will be used',
+                flush=True,
+            )
+            atoms_list = ase.io.read(target, index=':')
+            for atoms in atoms_list:
+                atoms_patched = assign_dummy_y(atoms)
+                atoms_patched.info.update({'y_is_dummy': 'Yes'})
+                atoms_list_patched.append(atoms_patched)
+            unlabeled_file_list.extend([target] * len(atoms_list))
+
+    if len(atoms_list_patched) > 0:
+        ase.io.write(tmp_file, atoms_list_patched, format='extxyz')
+        tmp_file.flush()
+        new_targets.append(tmp_file.name)
+    return new_targets, unlabeled_file_list
+
+
+def _patch_data_info(
+    graph_list: Iterable[AtomGraphData], full_file_list: List[str]
+) -> None:
+    keys = set()
+    for graph, path in zip(graph_list, full_file_list):
+        graph[KEY.INFO].update({'file': os.path.abspath(path)})
+        keys.update(graph[KEY.INFO].keys())
+
+    for graph in graph_list:
+        info_dict = graph[KEY.INFO]
+        info_dict.update({k: '' for k in keys if k not in info_dict})
+
+
+def inference(
+    checkpoint: str,
+    targets: Union[str, List[str]],
+    output_dir: str,
+    num_workers: int = 1,
+    device: str = 'cpu',
+    batch_size: int = 4,
+    save_graph: bool = False,
+    **data_kwargs,
+) -> None:
+    """
+    Inference model on the target dataset, writes
+    per_graph, per_atom inference results in csv format
+    to the output_dir
+    If given target doesn't have EFS key, it puts dummy
+    values to the it.
+
+    Args:
+        checkpoint: model checkpoint path,
+        target: path, or list of path to evaluate. Supports
+            ASE readable, sevenn_data/*.pt, .sevenn_data, and
+            structure_list
+        output_dir: directory to write results
+        num_workers: number of workers to build graph
+        device: device to evaluate, defaults to 'auto'
+        batch_size: batch size for inference
+        save_grpah: if True, save preprocessed graph to output dir
+        data_kwargs: keyword arguments used when reading targets,
+            for example, given index='-1', only the last snapshot
+            will be evaluated if it was ASE readable.
+            While this function can handle different types of targets
+            at once, it will not work smoothly with data_kwargs
+
+    """
+    model, _ = util.model_from_checkpoint(checkpoint)
+    cutoff = model.cutoff
+
+    if isinstance(targets, str):
+        targets = [targets]
+
+    full_file_list = []
+    with tempfile.NamedTemporaryFile('w+') as tmp_file:
+        targets, unlabeled_file_list = _extract_unlabeled_data(
+            targets, tmp_file, **data_kwargs
+        )
+        if save_graph:
+            dataset = SevenNetGraphDataset(
+                cutoff=cutoff,
+                root=output_dir,
+                files=targets,
+                process_num_cores=num_workers,
+                processed_name='saved_graph.pt',
+                **data_kwargs,
+            )
+            full_file_list = dataset.full_file_list
+        else:
+            dataset = []
+            for file in targets:
+                tmplist = SevenNetGraphDataset.file_to_graph_list(
+                    filename=file,
+                    cutoff=cutoff,
+                    num_cores=num_workers,
+                    **data_kwargs,
+                )
+                dataset.extend(tmplist)
+                full_file_list.extend([os.path.abspath(file)] * len(tmplist))
+        if len(unlabeled_file_list) > 0:
+            full_file_list = full_file_list[: -len(unlabeled_file_list)]
+            full_file_list.extend(unlabeled_file_list)
+    assert len(full_file_list) == len(dataset)
+    _patch_data_info(dataset, full_file_list)  # type: ignore
+    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
     model.to(device)
     model.set_is_batch_data(True)
     model.eval()
 
-    cutoff = config[KEY.CUTOFF]
-    type_map = config[KEY.TYPE_MAP]
-
-    head = os.path.basename(fnames[0])
-    atoms_list = None
-    inference_set = None
-    no_ref = False
-    if head.endswith('sevenn_data'):
-        inference_set = load_sevenn_data(fnames, cutoff, type_map)
-        on_the_fly_graph_build = False
-    else:
-        if head.startswith('POSCAR'):
-            atoms_list = poscars_to_atoms(fnames)
-            no_ref = True  # poscar has no y value
-        elif head.startswith('OUTCAR'):
-            atoms_list = outcars_to_atoms(fnames)
-        else:
-            atoms_list = []
-            for fname in fnames:
-                atoms_list.extend(io.read(fname, index=':'))
-
-    if not on_the_fly_graph_build:  # old code
-        from torch_geometric.loader import DataLoader
-        if atoms_list is not None:
-            data_list = graph_build(atoms_list, cutoff, num_cores=num_cores)
-            inference_set = AtomGraphDataset(data_list, cutoff)
-        assert inference_set is not None
-
-        inference_set.x_to_one_hot_idx(type_map)
-        infer_list = inference_set.to_list()
-        loader = DataLoader(
-            infer_list,
-            batch_size=batch_size,
-            num_workers=num_workers,
-            shuffle=False
-        )
-        output_list = []
-    else:  # new
-        from torch.utils.data.dataloader import DataLoader
-
-        from sevenn.train.collate import AtomsToGraphCollater
-        collate = AtomsToGraphCollater(
-            atoms_list,
-            cutoff,
-            type_map,
-            transfer_info=True
-        )
-        loader = DataLoader(
-            atoms_list,
-            collate_fn=collate,
-            batch_size=batch_size,
-            shuffle=False,
-            num_workers=num_workers
-        )
-
-    recorder = get_error_recorder()
+    rec = util.get_error_recorder()
     output_list = []
-    try:
-        for batch in tqdm(loader):
-            batch = batch.to(device, non_blocking=True)
-            batch[KEY.EDGE_VEC].requires_grad_(True)
-            output = model(batch)
-            output.detach().to('cpu')
-            recorder.update(output)
-            output_list.extend(to_atom_graph_list(output))  # unroll batch data
-    except Exception as e:
-        print(e)
-        print("Keeping 'info' failed. Try with separated info")
-        recorder.epoch_forward()
-        infer_list, _ = inference_set.separate_info()
-        loader = DataLoader(infer_list, batch_size=batch_size, shuffle=False)
-        output_list = []
-        for batch in tqdm(loader):
-            batch = batch.to(device, non_blocking=True)
-            batch[KEY.EDGE_VEC].requires_grad_(True)
-            output = model(batch)
-            output.detach().to('cpu')
-            recorder.update(output)
-            output_list.extend(to_atom_graph_list(output))  # unroll batch data
 
-    errors = recorder.epoch_forward()
+    for batch in tqdm(loader):
+        batch = batch.to(device)
+        output = model(batch)
+        rec.update(output)
+        output_list.extend(util.to_atom_graph_list(output))
 
-    if not no_ref:
-        with open(f'{output_path}/errors.txt', 'w', encoding='utf-8') as f:
-            for key, val in errors.items():
-                f.write(f'{key}: {val}\n')
+    errors = rec.epoch_forward()
 
-    write_inference_csv(output_list, output_path)
+    if not os.path.exists(output_dir):
+        os.makedirs(output_dir)
+    with open(os.path.join(output_dir, 'errors.txt'), 'w', encoding='utf-8') as f:
+        for key, val in errors.items():
+            f.write(f'{key}: {val}\n')
+
+    write_inference_csv(output_list, output_dir)

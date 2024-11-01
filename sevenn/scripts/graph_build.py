@@ -1,88 +1,119 @@
 import os
+from typing import Optional
 
 from sevenn.sevenn_logger import Logger
-from sevenn.train.dataload import file_to_dataset, match_reader
 from sevenn.train.dataset import AtomGraphDataset
+from sevenn.util import unique_filepath
 
 
-def dataset_finalize(
-    dataset, labels, metadata, out, save_by_label=False, verbose=True
+def build_sevennet_graph_dataset(
+    source: list[str],
+    cutoff: float,
+    num_cores: int,
+    out: str,
+    filename: str,
+    metadata: Optional[dict] = None,
+    **fmt_kwargs,
 ):
+    from sevenn.train.graph_dataset import SevenNetGraphDataset
+
+    log = Logger()
+    if metadata is None:
+        metadata = {}
+
+    log.timer_start('graph_build')
+    db = SevenNetGraphDataset(
+        cutoff=cutoff,
+        root=out,
+        files=source,
+        processed_name=filename,
+        process_num_cores=num_cores,
+        **fmt_kwargs,
+    )
+    log.timer_end('graph_build', 'graph build time')
+    log.writeline(f'Graph saved: {db.processed_paths[0]}')
+
+    log.bar()
+    for k, v in metadata.items():
+        log.format_k_v(k, v, write=True)
+    log.bar()
+
+    log.writeline('Distribution:')
+    log.statistic_write(db.statistics)
+    log.format_k_v('# atoms (node)', db.natoms, write=True)
+    log.format_k_v('# structures (graph)', len(db), write=True)
+
+
+def dataset_finalize(dataset, metadata, out):
     """
-    Common finalization of dataset include logging and saving
+    Deprecated
     """
     natoms = dataset.get_natoms()
     species = dataset.get_species()
     metadata = {
         **metadata,
-        'labels': labels,
         'natoms': natoms,
         'species': species,
     }
     dataset.meta = metadata
 
-    if save_by_label:
-        out = os.path.dirname(out)
-    elif os.path.isdir(out) and save_by_label is False:
+    if os.path.isdir(out):
         out = os.path.join(out, 'graph_built.sevenn_data')
     elif out.endswith('.sevenn_data') is False:
         out = out + '.sevenn_data'
+    out = unique_filepath(out)
 
-    if verbose:
-        Logger().writeline('The metadata of the dataset is...')
-        for k, v in metadata.items():
-            Logger().format_k_v(k, v, write=True)
-    dataset.save(out, save_by_label)
-    Logger().writeline(f'dataset is saved to {out}')
+    log = Logger()
+    log.writeline('The metadata of the dataset is...')
+    for k, v in metadata.items():
+        log.format_k_v(k, v, write=True)
+    dataset.save(out)
+    log.writeline(f'dataset is saved to {out}')
 
     return dataset
 
 
 def build_script(
-    source: str,
+    source: list[str],
     cutoff: float,
     num_cores: int,
-    label_by: str,
     out: str,
-    save_by_label: bool,
-    fmt: str,
-    suffix: str,
-    transfer_info: bool,
-    metadata: dict = None,
-    fmt_kwargs: dict = None,
+    metadata: Optional[dict] = None,
+    **fmt_kwargs,
 ):
+    """
+    Deprecated
+    """
+    from sevenn.train.dataload import file_to_dataset, match_reader
 
-    reader, rmeta = match_reader(fmt, **fmt_kwargs)
-    metadata.update(**rmeta)
+    if metadata is None:
+        metadata = {}
+    log = Logger()
+
     dataset = AtomGraphDataset({}, cutoff)
-
-    if os.path.isdir(source):
-        Logger().writeline(f'Look for source dir: {source}')
-        if suffix is not None:
-            Logger().writeline(f'Try to read files if it ends with {suffix}')
-        for file in os.listdir(source):
-            label = file.split('.')[0] if label_by == 'auto' else label_by
-            file = os.path.join(source, file)
-            if suffix is not None and file.endswith(suffix) is False:
-                continue
-            Logger().writeline(f'Read from file: {file}')
-            Logger().timer_start('graph_build')
-            db = file_to_dataset(
-                file, cutoff, num_cores, reader, label, transfer_info
+    common_args = {
+        'cutoff': cutoff,
+        'cores': num_cores,
+        'label': 'graph_build',
+    }
+    log.timer_start('graph_build')
+    for path in source:
+        if os.path.isdir(path):
+            continue
+        log.writeline(f'Read: {path}')
+        basename = os.path.basename(path)
+        if 'structure_list' in basename:
+            fmt = 'structure_list'
+        else:
+            fmt = 'ase'
+        reader, rmeta = match_reader(fmt, **fmt_kwargs)
+        metadata.update(**rmeta)
+        dataset.augment(
+            file_to_dataset(
+                file=path,
+                reader=reader,
+                **common_args,
             )
-            dataset.augment(db)
-            Logger().timer_end('graph_build', f'{label} graph build time')
-    elif os.path.isfile(source):
-        file = source
-        label = file.split('.')[0] if label_by == 'auto' else label_by
-        Logger().writeline(f'Read from file: {file}')
-        Logger().timer_start('graph_build')
-        db = file_to_dataset(
-            file, cutoff, num_cores, reader, label, transfer_info
         )
-        dataset.augment(db)
-        Logger().timer_end('graph_build', f'{label} graph build time')
-    else:
-        raise ValueError(f'source {source} is not a file or dir')
-
-    dataset_finalize(dataset, label, metadata, out, save_by_label)
+    log.timer_end('graph_build', 'graph build time')
+    dataset_finalize(dataset, metadata, out)
