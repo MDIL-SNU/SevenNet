@@ -1,4 +1,4 @@
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
 
@@ -19,7 +19,7 @@ class LossDefinition:
         ref_key: Optional[str] = None,
         pred_key: Optional[str] = None,
         use_weight: bool = False,
-        delete_unlabled: bool = True,
+        delete_unlabeled: bool = True,
     ):
         self.name = name
         self.unit = unit
@@ -27,7 +27,7 @@ class LossDefinition:
         self.ref_key = ref_key
         self.pred_key = pred_key
         self.use_weight = use_weight
-        self.delete_unlabled = delete_unlabled
+        self.delete_unlabeled = delete_unlabeled
 
     def __repr__(self):
         return self.name
@@ -41,12 +41,20 @@ class LossDefinition:
         self,
         batch_data: Dict[str, Any],
         model: Optional[Callable] = None
-    ):
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         if self.pred_key is None or self.ref_key is None:
             raise NotImplementedError('LossDefinition is not implemented.')
-        return torch.reshape(batch_data[self.pred_key], (-1,)), torch.reshape(
-            batch_data[self.ref_key], (-1,)
-        )
+        pred = torch.reshape(batch_data[self.pred_key], (-1,))
+        ref = torch.reshape(batch_data[self.ref_key], (-1,))
+        return pred, ref, None
+
+    def _delete_unlabeled(self, pred, ref, data_weights=None):
+        unlabeled = torch.isnan(ref)
+        pred = pred[~unlabeled]
+        ref = ref[~unlabeled]
+        if data_weights is not None:
+            data_weights = data_weights[~unlabeled]
+        return pred, ref, data_weights
 
     def get_loss(
         self,
@@ -58,35 +66,17 @@ class LossDefinition:
         """
         if self.criterion is None:
             raise NotImplementedError('LossDefinition has no criterion.')
-        pred, ref = self._preprocess(batch_data, model)
+        pred, ref, w_tensor = self._preprocess(batch_data, model)
+
+        if self.delete_unlabeled:
+            pred, ref, w_tensor = self._delete_unlabeled(pred, ref, w_tensor)
+
+        if len(pred) == 0:
+            return None
+
+        loss = self.criterion(pred, ref)
         if self.use_weight:
-            vdim = {'energy': 1, 'force': 3, 'stress': 6}
-            loss_type = self.name.lower()
-            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
-            weight_tensor = (
-                weight[batch_data[KEY.BATCH]]
-                if loss_type == 'force'
-                else weight
-            )
-            weight_tensor =\
-                torch.repeat_interleave(weight_tensor, vdim[loss_type])
-
-        if self.delete_unlabled:
-            #  nan in `pred`` should be deleted in other process
-            unlabled_idx = torch.isnan(ref)
-            pred = pred[~unlabled_idx]
-            ref = ref[~unlabled_idx]
-
-            if self.use_weight:
-                weight_tensor = weight_tensor[~unlabled_idx]
-
-        if len(pred) > 0:  # more than one ref value is labelled.
-            loss = self.criterion(pred, ref)
-            if self.use_weight:
-                loss = torch.mean(loss * weight_tensor)
-        else:
-            loss = None
-
+            loss = torch.mean(loss * w_tensor)
         return loss
 
 
@@ -120,10 +110,16 @@ class PerAtomEnergyLoss(LossDefinition):
     ):
         num_atoms = batch_data[KEY.NUM_ATOMS]
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
-        return (
-            batch_data[self.pred_key] / num_atoms,
-            batch_data[self.ref_key] / num_atoms,
-        )
+        pred = batch_data[self.pred_key] / num_atoms
+        ref = batch_data[self.ref_key] / num_atoms
+        w_tensor = None
+
+        if self.use_weight:
+            loss_type = self.name.lower()
+            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
+            w_tensor = torch.repeat_interleave(weight, 1)
+
+        return pred, ref, w_tensor
 
 
 class ForceLoss(LossDefinition):
@@ -155,10 +151,17 @@ class ForceLoss(LossDefinition):
         model: Optional[Callable] = None
     ):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
-        return (
-            torch.reshape(batch_data[self.pred_key], (-1,)),
-            torch.reshape(batch_data[self.ref_key], (-1,)),
-        )
+        pred = torch.reshape(batch_data[self.pred_key], (-1,))
+        ref = torch.reshape(batch_data[self.ref_key], (-1,))
+        w_tensor = None
+
+        if self.use_weight:
+            loss_type = self.name.lower()
+            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
+            w_tensor = weight[batch_data[KEY.BATCH]]
+            w_tensor = torch.repeat_interleave(w_tensor, 3)
+
+        return pred, ref, w_tensor
 
 
 class StressLoss(LossDefinition):
@@ -191,10 +194,17 @@ class StressLoss(LossDefinition):
         model: Optional[Callable] = None
     ):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
-        return (
-            torch.reshape(batch_data[self.pred_key] * self.TO_KB, (-1,)),
-            torch.reshape(batch_data[self.ref_key] * self.TO_KB, (-1,)),
-        )
+
+        pred = torch.reshape(batch_data[self.pred_key] * self.TO_KB, (-1,))
+        ref = torch.reshape(batch_data[self.ref_key] * self.TO_KB, (-1,))
+        w_tensor = None
+
+        if self.use_weight:
+            loss_type = self.name.lower()
+            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
+            w_tensor = torch.repeat_interleave(weight, 6)
+
+        return pred, ref, w_tensor
 
 
 def get_loss_functions_from_config(config: Dict[str, Any]):
@@ -218,7 +228,7 @@ def get_loss_functions_from_config(config: Dict[str, Any]):
     if config[KEY.IS_TRAIN_STRESS]:
         loss_functions.append((StressLoss(**commons), config[KEY.STRESS_WEIGHT]))
 
-    for loss_function, _ in loss_functions:
+    for loss_function, _ in loss_functions:  # why do these?
         if loss_function.criterion is None:
             loss_function.assign_criteria(criterion)
 

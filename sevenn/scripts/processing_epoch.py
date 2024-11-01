@@ -34,7 +34,9 @@ def processing_epoch_v2(
     total_epoch = total_epoch or config[KEY.EPOCH]
     per_epoch = per_epoch or config[KEY.PER_EPOCH]
     best_metric = best_metric or config[KEY.BEST_METRIC]
-    recorder = error_recorder or ErrorRecorder.from_config(config)
+    recorder = error_recorder or ErrorRecorder.from_config(
+        config, trainer.loss_functions
+    )
     recorders = {k: deepcopy(recorder) for k in loaders}
 
     best_val = float('inf')
