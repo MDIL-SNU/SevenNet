@@ -42,6 +42,7 @@ def train_v2(config, working_dir: str):
     """
     import sevenn.train.atoms_dataset as atoms_dataset
     import sevenn.train.graph_dataset as graph_dataset
+    import sevenn.train.modal_dataset as modal_dataset
 
     from .processing_continue import processing_continue_v2
     from .processing_epoch import processing_epoch_v2
@@ -62,7 +63,9 @@ def train_v2(config, working_dir: str):
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
         state_dicts, start_epoch = processing_continue_v2(config)
 
-    if config[KEY.DATASET_TYPE] == 'graph':
+    if config.get(KEY.USE_MODALITY, False):
+        datasets = modal_dataset.from_config(config, working_dir)
+    elif config[KEY.DATASET_TYPE] == 'graph':
         datasets = graph_dataset.from_config(config, working_dir)
     elif config[KEY.DATASET_TYPE] == 'atoms':
         datasets = atoms_dataset.from_config(config, working_dir)
