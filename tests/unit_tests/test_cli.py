@@ -137,7 +137,14 @@ def test_inference_unlabeled(atoms_hfo, tmp_path):
     ase.io.write(unlabeled, atoms_hfo)
 
     output_dir = tmp_path / 'inference_results'
-    cli_args = ['--output', str(output_dir), cp_0_path, labeled, unlabeled]
+    cli_args = [
+        '--output',
+        str(output_dir),
+        '--allow_unlabeled',
+        cp_0_path,
+        labeled,
+        unlabeled,
+    ]
     with mock.patch('sys.argv', [f'{main}/sevenn_inference.py'] + cli_args):
         inference_main()
 
