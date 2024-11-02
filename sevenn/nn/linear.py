@@ -36,7 +36,7 @@ class IrrepsLinear(nn.Module):
         self.key_modal_attr = data_key_modal_attr
 
         self._irreps_in_wo_modal = irreps_in
-        self.irreps_in = irreps_in
+        self._irreps_in = irreps_in
         self.irreps_out = irreps_out
         self.e3nn_linear_params = e3nn_linear_params
 
@@ -56,14 +56,15 @@ class IrrepsLinear(nn.Module):
             raise ValueError('Layer already instantiated, can not change modalities')
         irreps_in = self._irreps_in_wo_modal + Irreps(f'{num_modalities}x0e')
         self.num_modalities = num_modalities
-        self.irreps_in = irreps_in
+        self._irreps_in = irreps_in
 
     def instantiate(self):
         if self.linear is not None:
             raise ValueError('Linear layer already exists')
         self.linear = Linear(
-            self.irreps_in, self.irreps_out, **self.e3nn_linear_params
+            self._irreps_in, self.irreps_out, **self.e3nn_linear_params
         )
+        self.irreps_in = self._irreps_in
         self.layer_instantiated = True
 
     def _patch_modal_to_data(self, data: AtomGraphDataType) -> AtomGraphDataType:
