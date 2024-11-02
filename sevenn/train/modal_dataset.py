@@ -285,8 +285,9 @@ def from_config(
         )
 
     train_set = datasets['trainset']
+    modals = train_set.modals
 
-    modals = set()
+    _modals_all = set()
     chem_species = set()
     # print statistics of each dataset
     for name, dataset in datasets.items():
@@ -297,16 +298,23 @@ def from_config(
             log.format_k_v(
                 '# structures (graph)', len(dataset.datasets[idx]), write=True
             )
-            modals.update([modality])
+            _modals_all.update([modality])
         chem_species.update(dataset.species['total'])
     log.bar()
 
-    config[KEY.NUM_MODALITIES] = len(modals)
-
-    modals = sorted(list(modals))
-    modal_map = {modal: i for i, modal in enumerate(modals)}
-    config[KEY.MODAL_MAP] = modal_map
+    if (modal_map := config.get(KEY.MODAL_MAP, None)) is None:
+        modals = sorted(list(modals))
+        modal_map = {modal: i for i, modal in enumerate(modals)}
+        config[KEY.MODAL_MAP] = modal_map
     log.writeline(f'Modalities of this model: {modals}')
+
+    if not _modals_all.issubset(modal_map):
+        raise ValueError(
+            f'Found modalities of datasets: {_modals_all} are not subset of {modals}'
+            + '. Use a sevenn_cp cli tool to append/assign modality'
+        )
+
+    config[KEY.NUM_MODALITIES] = len(modal_map)
 
     # initialize known species from dataset if 'auto'
     # sorted to alphabetical order (which is same as before)
@@ -346,7 +354,7 @@ def from_config(
             if e.args[0] == 'total':
                 raise NotImplementedError(
                     f'{k}: {input} does not support total statistics. '
-                    + f'Try to set modal-wise True or specify {k} manually'
+                    + f'Set use_modal_wise_{k} True or specify numbers manually'
                 )
             else:
                 raise e
