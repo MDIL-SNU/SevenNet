@@ -64,6 +64,14 @@ def processing_continue_v2(config):  # simpler
         + f'This model knows {config[KEY.NUM_SPECIES]} species'
     )
 
+    modal_map = config_cp.get(KEY.MODAL_MAP, {})
+    config.update({KEY.MODAL_MAP: modal_map})
+    if len(modal_map) > 0:
+        modalities = list(modal_map.keys())
+        log.writeline(f'Multimodal model found: {modalities}')
+        log.writeline(f'{KEY.USE_MODALITY}: True')
+        config[KEY.USE_MODALITY] = True
+
     from_epoch = checkpoint['epoch']
     log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
     epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1

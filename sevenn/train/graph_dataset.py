@@ -227,15 +227,6 @@ class SevenNetGraphDataset(InMemoryDataset):
         self._files = meta['files']
         self.statistics = meta['statistics']
 
-    def consistent_info_dict(self, strategy: str = 'largest', **default_kwargs):
-        info_dict_lists = [g[KEY.INFO] for g in self]
-        util.get_consistent_dict_list(
-            info_dict_lists,
-            in_place=True,
-            strategy=strategy,
-            key_defaults=default_kwargs,
-        )
-
     @property
     def raw_file_names(self) -> List[Any]:
         return self._files
@@ -249,20 +240,22 @@ class SevenNetGraphDataset(InMemoryDataset):
         return os.path.join(self.root, 'sevenn_data')
 
     @property
-    def full_file_list(self) -> List[str]:
+    def full_file_list(self) -> Union[List[str], None]:
         return self._full_file_list
 
     def process(self):
         graph_list: list[AtomGraphData] = []
         for file in self.raw_file_names:
             tmplist = SevenNetGraphDataset.file_to_graph_list(
-                entry=file,
+                file=file,
                 cutoff=self.cutoff,
                 num_cores=self.process_num_cores,
                 **self.process_kwargs,
             )
-            # TODO:
-            # self._full_file_list.extend([os.path.abspath(file)] * len(tmplist))
+            if isinstance(file, str) and self._full_file_list is not None:
+                self._full_file_list.extend([os.path.abspath(file)] * len(tmplist))
+            else:
+                self._full_file_list = None
             graph_list.extend(tmplist)
 
         processed_graph_list = []
@@ -389,10 +382,22 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     @staticmethod
     def _read_ase_readable(
-        filename: str, cutoff: float, num_cores: int = 1, tag: str = '', **ase_kwargs
+        filename: str,
+        cutoff: float,
+        num_cores: int = 1,
+        tag: str = '',
+        transfer_info: bool = True,
+        allow_unlabeled: bool = False,
+        **ase_kwargs,
     ) -> list[AtomGraphData]:
         atoms_list = dataload.ase_reader(filename, **ase_kwargs)
-        graph_list = dataload.graph_build(atoms_list, cutoff, num_cores)
+        graph_list = dataload.graph_build(
+            atoms_list,
+            cutoff,
+            num_cores,
+            transfer_info=transfer_info,
+            allow_unlabeled=allow_unlabeled,
+        )
         if tag != '':
             graph_list = _tag_graphs(graph_list, tag)
         return graph_list
@@ -403,6 +408,8 @@ class SevenNetGraphDataset(InMemoryDataset):
     ) -> list[AtomGraphData]:
         meta_f = filename.replace('.pt', '.yaml')
         orig_cutoff = cutoff
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f'No such file: {filename}')
         if not os.path.exists(meta_f):
             warnings.warn('No meta info found, beware of cutoff...')
         else:
@@ -466,32 +473,32 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     @staticmethod
     def file_to_graph_list(
-        entry: Union[str, dict], cutoff: float, num_cores: int = 1, **kwargs
+        file: Union[str, dict], cutoff: float, num_cores: int = 1, **kwargs
     ) -> List[AtomGraphData]:
         """
         kwargs: if file is ase readable, passed to ase.io.read
         """
-        if isinstance(entry, str) and not os.path.isfile(entry):
-            raise ValueError(f'No such file: {entry}')
+        if isinstance(file, str) and not os.path.isfile(file):
+            raise ValueError(f'No such file: {file}')
         graph_list: list[AtomGraphData]
-        if isinstance(entry, dict):
+        if isinstance(file, dict):
             graph_list = SevenNetGraphDataset._read_dict(
-                entry, cutoff, num_cores, **kwargs
+                file, cutoff, num_cores, **kwargs
             )
-        elif entry.endswith('.pt'):
-            graph_list = SevenNetGraphDataset._read_graph_dataset(entry, cutoff)
-        elif entry.endswith('.sevenn_data'):
-            graph_list, cutoff_other = SevenNetGraphDataset._read_sevenn_data(entry)
+        elif file.endswith('.pt'):
+            graph_list = SevenNetGraphDataset._read_graph_dataset(file, cutoff)
+        elif file.endswith('.sevenn_data'):
+            graph_list, cutoff_other = SevenNetGraphDataset._read_sevenn_data(file)
             if cutoff_other != cutoff:
-                warnings.warn(f'Given {entry} has different {cutoff_other}!')
+                warnings.warn(f'Given {file} has different {cutoff_other}!')
             cutoff = cutoff_other
-        elif 'structure_list' in entry:
+        elif 'structure_list' in file:
             graph_list = SevenNetGraphDataset._read_structure_list(
-                entry, cutoff, num_cores
+                file, cutoff, num_cores
             )
         else:
             graph_list = SevenNetGraphDataset._read_ase_readable(
-                entry, cutoff, num_cores, **kwargs
+                file, cutoff, num_cores, **kwargs
             )
         return graph_list
 
@@ -580,9 +587,9 @@ def from_config(
     dataset_args = {
         'cutoff': config[KEY.CUTOFF],
         'root': working_dir,
-        'process_num_cores': config[KEY.PREPROCESS_NUM_CORES],
-        'use_data_weight': config[KEY.USE_WEIGHT],
-        **config[KEY.DATA_FORMAT_ARGS],
+        'process_num_cores': config.get(KEY.PREPROCESS_NUM_CORES, 1),
+        'use_data_weight': config.get(KEY.USE_WEIGHT, False),
+        **config.get(KEY.DATA_FORMAT_ARGS, {}),
     }
 
     datasets = {}
