@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -71,72 +71,6 @@ def error_recorder_from_loss_functions(loss_functions):
         elif type(criterion) is torch.nn.L1Loss:
             metrics.append(MAError(**base))
     return ErrorRecorder(metrics)
-
-
-def postprocess_output(output, loss_types, use_weight=False, delete_unlabeld=True):
-    from ._const import LossType
-
-    """
-    Postprocess output from model to be used for loss calculation
-    Flatten all the output & unit converting and store them as (pred, ref, vdim)
-    Averaging them without care of vdim results in component-wise something
-    Args:
-        output (dict): output from model
-        loss_types (list): list of loss types to be calculated
-        use_weight (bool): if True, trying to multiply weight to output.
-                           Used for training only.
-        delete_unlabeld (bool): if True, delete unlabeld (i.e. nan) data
-                                from reference.
-    Returns:
-        results (dict): dictionary of loss type and its corresponding
-    """
-    TO_KB = 1602.1766208  # eV/A^3 to kbar
-    results = {}
-    weight_tensor = None
-    for loss_type in loss_types:
-        is_valid = True
-        if loss_type is LossType.ENERGY:
-            # dim: (num_batch)
-            num_atoms = output[KEY.NUM_ATOMS]
-            pred = output[KEY.PRED_TOTAL_ENERGY] / num_atoms
-            ref = output[KEY.ENERGY] / num_atoms
-            vdim = 1
-        elif loss_type is LossType.FORCE:
-            # dim: (total_number_of_atoms_over_batch, 3)
-            pred = torch.reshape(output[KEY.PRED_FORCE], (-1,))
-            ref = torch.reshape(output[KEY.FORCE], (-1,))
-            vdim = 3
-        elif loss_type is LossType.STRESS:
-            # dim: (num_batch, 6)
-            # calculate stress loss based on kB unit (was eV/A^3)
-            pred = torch.reshape(output[KEY.PRED_STRESS] * TO_KB, (-1,))
-            ref = torch.reshape(output[KEY.STRESS] * TO_KB, (-1,))
-            vdim = 6
-        else:
-            raise ValueError(f'Unknown loss type: {loss_type}')
-
-        if use_weight:
-            weight = output[KEY.DATA_WEIGHT][loss_type.value]
-            weight_tensor = (
-                weight[output[KEY.BATCH]] if loss_type is LossType.FORCE else weight
-            )
-            weight_tensor = torch.repeat_interleave(weight_tensor, vdim)
-
-        if delete_unlabeld:
-            #  nan in pred might not be deleted, which is natural.
-            #  This must be done after multiplying weight.
-            unlabeld_idx = torch.isnan(ref)
-            pred = pred[~unlabeld_idx]
-            ref = ref[~unlabeld_idx]
-
-            if len(pred) == 0:
-                is_valid = False  # not a valid error, erase for loss.backward
-
-            if use_weight:
-                weight_tensor = weight_tensor[~unlabeld_idx]
-
-        results[loss_type] = (pred, ref, vdim, is_valid, weight_tensor)
-    return results
 
 
 def onehot_to_chem(one_hot_indices: List[int], type_map: Dict[int, int]):
@@ -217,9 +151,11 @@ def model_from_checkpoint(checkpoint) -> Tuple[torch.nn.Module, Dict]:
     config = _patch_old_config(config)
 
     for k, v in defaults.items():
-        if k not in config:
-            warnings.warn(f'{k} not in config, using default value {v}', UserWarning)
-            config[k] = v
+        if k in config:
+            continue
+        if os.getenv('SEVENN_DEBUG', False):
+            warnings.warn(f'{k} not in config, use default value {v}', UserWarning)
+        config[k] = v
 
     # expect only non-tensor values in config, if exists, move to cpu
     # This can be happen if config has torch tensor as value (shift, scale)
