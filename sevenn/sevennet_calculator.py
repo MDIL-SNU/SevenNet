@@ -37,7 +37,7 @@ class SevenNetCalculator(Calculator):
         model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
-        modal_selection=None,
+        modal: Optional[str] = None,
         sevennet_config: Optional[Any] = None,  # hold meta information
         **kwargs,
     ):
@@ -77,7 +77,10 @@ class SevenNetCalculator(Calculator):
             self.type_map = config[KEY.TYPE_MAP]
             self.cutoff = config[KEY.CUTOFF]
             self.sevennet_config = config
+
         elif file_type == 'torchscript' and isinstance(model, str):
+            if modal:
+                raise NotImplementedError()
             extra_dict = {
                 'chemical_symbols_to_index': b'',
                 'cutoff': b'',
@@ -96,6 +99,7 @@ class SevenNetCalculator(Calculator):
                 sym_to_num[sym]: i for i, sym in enumerate(chem_symbols.split())
             }
             self.cutoff = float(extra_dict['cutoff'].decode('utf-8'))
+
         elif isinstance(model, AtomGraphSequential):
             if model.type_map is None:
                 raise ValueError(
@@ -108,18 +112,26 @@ class SevenNetCalculator(Calculator):
             model_loaded = model
             self.type_map = model.type_map
             self.cutoff = model.cutoff
+
         else:
-            raise ValueError('Unexpected input combinations')
+            raise ValueError('Unexpected input combination')
 
         if self.sevennet_config is None and sevennet_config is not None:
             self.sevennet_config = sevennet_config
 
         self.model = model_loaded
 
+        if isinstance(self.model, AtomGraphSequential) and modal:
+            if self.model.modal_map is None:
+                raise ValueError('Modality given, but model has no modal_map')
+            if modal not in self.model.modal_map:
+                _modals = list(self.model.modal_map.keys())
+                raise ValueError(f'Unknown modal {modal} (not in {_modals})')
+
         self.model.to(self.device)
         self.model.eval()
 
-        self.modal_selection = modal_selection
+        self.modal = modal
 
         self.implemented_properties = [
             'free_energy',
@@ -129,6 +141,16 @@ class SevenNetCalculator(Calculator):
             'energies',
         ]
 
+    def set_atoms(self, atoms):
+        # called by ase, when atoms.calc = calc
+        zs = tuple(set(atoms.get_atomic_numbers()))
+        for z in zs:
+            if z not in self.type_map:
+                sp = list(self.type_map.keys())
+                raise ValueError(
+                    f'Model do not know atomic number: {z}, (knows: {sp})'
+                )
+
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
@@ -137,15 +159,8 @@ class SevenNetCalculator(Calculator):
         data = AtomGraphData.from_numpy_dict(
             unlabeled_atoms_to_graph(atoms, self.cutoff)
         )
-        if self.modal_selection is not None:
-            modal_type_mapper = self.sevennet_config[KEY.MODAL_MAP]
-            num_modalities = len(modal_type_mapper)
-            modal_idx = modal_type_mapper[self.modal_selection]
-            tmp_tensor = torch.zeros(num_modalities)
-            tmp_tensor[modal_idx] = 1.0
-            data[KEY.MODAL_ATTR] = tmp_tensor
-            data[KEY.MODAL_TYPE] = torch.tensor([modal_idx])
-            data[KEY.BATCH] = [0] * len(atoms)
+        if self.modal:
+            data[KEY.DATA_MODALITY] = self.modal
         data.to(self.device)  # type: ignore
 
         if isinstance(self.model, torch_script_type):
