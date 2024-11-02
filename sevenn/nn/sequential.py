@@ -142,7 +142,7 @@ class AtomGraphSequential(nn.Sequential):
             data[self.key_node_feature] = onehot
 
         if self.eval_modal_map:
-            self._eval_modal_map(input)
+            self._eval_modal_map(data)
 
         if self.key_grad is not None:
             data[self.key_grad].requires_grad_(True)
