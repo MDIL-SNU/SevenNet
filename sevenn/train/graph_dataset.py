@@ -84,19 +84,21 @@ def _run_stat(
         if array.dtype == torch.int64:  # because of n_neigh
             array = array.to(torch.float)
         try:
-            dct.update(
-                {
-                    'mean': float(torch.mean(array)),
-                    'std': float(torch.std(array, correction=0)),
-                    'median': float(torch.quantile(array, q=0.5)),
-                    'max': float(torch.max(array)),
-                    'min': float(torch.min(array)),
-                    'count': array.numel(),
-                    '_array': array,
-                }
-            )
-        except RuntimeError as e:
-            warnings.warn(f'Computing statistics of {y} is failed: {e}')
+            median = torch.quantile(array, q=0.5)
+        except RuntimeError:
+            warnings.warn(f'skip median due to too large tensor size: {y}')
+            median = torch.nan
+        dct.update(
+            {
+                'mean': float(torch.mean(array)),
+                'std': float(torch.std(array, correction=0)),
+                'median': float(median),
+                'max': float(torch.max(array)),
+                'min': float(torch.min(array)),
+                'count': array.numel(),
+                '_array': array,
+            }
+        )
 
     natoms = {chemical_symbols[int(z)]: cnt for z, cnt in natoms_counter.items()}
     natoms['total'] = sum(list(natoms.values()))
@@ -201,6 +203,9 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     def load(self, path: str, data_cls=Data) -> None:
         super().load(path, data_cls)
+        
+        if len(self) == 0:
+            warnings.warn(f'No graphs found {self.processed_paths[0]}')
         if len(self.statistics) == 0:
             # dataset is loaded from existing pt file.
             self._load_meta()
@@ -502,7 +507,6 @@ class SevenNetGraphDataset(InMemoryDataset):
             )
         return graph_list
 
-
 def from_single_path(
     path: Union[str, List], override_data_weight: bool = True, **dataset_kwargs
 ) -> Union[SevenNetGraphDataset, None]:
@@ -565,7 +569,6 @@ def _chain_data_weight_override(transform_func, data_weight):
         return graph
 
     return chained_transform
-
 
 # script, return dict of SevenNetGraphDataset
 def from_config(
