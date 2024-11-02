@@ -193,6 +193,8 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     def load(self, path: str, data_cls=Data) -> None:
         super().load(path, data_cls)
+        if len(self) == 0:
+            warnings.warn(f'No graphs found {self.processed_paths[0]}')
         self._load_meta()
 
     def _load_meta(self) -> None:
@@ -377,6 +379,8 @@ class SevenNetGraphDataset(InMemoryDataset):
     ) -> list[AtomGraphData]:
         meta_f = filename.replace('.pt', '.yaml')
         orig_cutoff = cutoff
+        if not os.path.exists(filename):
+            raise FileNotFoundError(f'No such file: {filename}')
         if not os.path.exists(meta_f):
             warnings.warn('No meta info found, beware of cutoff...')
         else:
