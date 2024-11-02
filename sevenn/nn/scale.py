@@ -102,7 +102,7 @@ class SpeciesWiseRescale(nn.Module):
         shift_scale = []
         n_atom_types = len(type_map)
         for s in (shift, scale):
-            if isinstance(s, list) and len(s) > len(type_map):
+            if isinstance(s, list) and len(s) > n_atom_types:
                 if len(s) != NUM_UNIV_ELEMENT:
                     raise ValueError('given shift or scale is strange')
                 s = [s[z] for z in sorted(type_map, key=lambda x: type_map[x])]
@@ -190,40 +190,68 @@ class ModalWiseRescale(nn.Module):
             (scale, use_modal_wise_scale),
         ):
             # solve elemewise, or broadcast
-            shape = (n_modals, n_atom_types) if use_mw else (n_atom_types,)
             if isinstance(s, float):
-                res = torch.full(shape, s).tolist()  # TODO: with plain python
+                # given, modal-wise: no, elem-wise: no => broadcast
+                shape = (n_modals, n_atom_types) if use_mw else (n_atom_types,)
+                res = torch.full(shape, s).tolist()  # TODO: w/o torch
             elif isinstance(s, list) and len(s) == NUM_UNIV_ELEMENT:
-                # element-wise list
+                # given, modal-wise: no, elem-wise: yes(univ) => solve elem map
                 s = solve_mapper(s, type_map)
                 res = [s] * n_modals if use_mw else s
-            elif isinstance(s, list) and len(s) == len(modal_map):
-                # modal-wise list, for element-wise, use same value
-                res = [[v] * len(type_map) for v in s]
+            elif (  # given, modal-wise: yes, elem-wise: no => broadcast to elemwise
+                isinstance(s, list)
+                and isinstance(s[0], float)
+                and len(s) == n_modals
+                and use_mw
+            ):
+                res = [[v] * n_atom_types for v in s]
+            elif (  # given, modal-wise: no, elem-wise: yes => as it is
+                isinstance(s, list)
+                and isinstance(s[0], float)
+                and len(s) == n_atom_types
+                and not use_mw
+            ):
+                res = s
+            elif (  # given, modal-wise: yes, elem-wise: yes => as it is
+                isinstance(s, list)
+                and isinstance(s[0], list)
+                and len(s) == n_modals
+                and len(s[0]) == n_atom_types
+                and use_mw
+            ):
+                res = s
             elif isinstance(s, dict) and use_mw:
-                # solve modal dict
+                # solve modal dict, modal-wise: yes
                 s = solve_mapper(s, modal_map)
                 if isinstance(s[0], list) and len(s[0]) == NUM_UNIV_ELEMENT:
+                    # elem-wise: yes(univ) => solve elem map
                     res = [solve_mapper(v, type_map) for v in s]
-                    pass
                 elif isinstance(s[0], float):
-                    res = [[v] * len(type_map) for v in s]
+                    # elem-wise: no => broadcast to elemwise
+                    res = [[v] * n_atom_types for v in s]
+                elif isinstance(s[0], list) and len(s[0]) == n_atom_types:
+                    # elem-wise: yes => not univ, already mapped => as it is
+                    res = s
                 else:
-                    raise ValueError()
+                    raise ValueError(f'Invalid shift or scale {s}')
             else:
-                raise ValueError()
+                raise ValueError(f'Invalid shift or scale {s}')
+
+            if use_mw:
+                assert (
+                    isinstance(res, list)
+                    and isinstance(res[0], list)
+                    and len(res) == n_modals
+                    and len(res[0]) == n_atom_types
+                )
+            else:
+                assert (
+                    isinstance(res, list)
+                    and isinstance(res[0], float)
+                    and len(res) == n_atom_types
+                )
             shift_scale.append(res)
-        print('bf')
-        print('shift:')
-        print(shift)
-        print('scale:')
-        print(scale)
         shift, scale = shift_scale
-        print('af')
-        print('shift:')
-        print(shift)
-        print('scale:')
-        print(scale)
 
         return ModalWiseRescale(
             shift,
