@@ -158,6 +158,7 @@ class ModalWiseRescale(nn.Module):
         self.key_modal_indices = data_key_modal_indices
         self.use_modal_wise_shift = use_modal_wise_shift
         self.use_modal_wise_scale = use_modal_wise_scale
+        self._is_batch_data = True
 
     @staticmethod
     def from_mappers(
@@ -262,8 +263,11 @@ class ModalWiseRescale(nn.Module):
         )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        batch = data[KEY.BATCH]
-        modal_indices = data[self.key_modal_indices][batch]
+        if self._is_batch_data:
+            batch = data[KEY.BATCH]
+            modal_indices = data[self.key_modal_indices][batch]
+        else:
+            modal_indices = data[self.key_modal_indices]
         atom_indices = data[self.key_atom_indices]
         shift = (
             self.shift[modal_indices, atom_indices]
