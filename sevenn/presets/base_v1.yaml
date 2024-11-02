@@ -1,0 +1,97 @@
+# Example input.yaml for training SevenNet.
+# '*' signifies default. You can check log.sevenn for defaults.
+# Use `sevenn -m train_v1` to run this, although -m train_v2 also work.
+
+model:
+    chemical_species: 'Auto'                      # Chemical elements present in the dataset, guess them from load_dataset data if 'auto'
+    cutoff: 5.0                                   # Cutoff radius in Angstroms. If two atoms are within the cutoff, they are connected.
+    channel: 32                                   # The multiplicity(channel) of node features.
+    lmax: 2                                       # Maximum order of irreducible representations (rotation order).
+    num_convolution_layer: 3                      # The number of message passing layers.
+
+    #irreps_manual:                               # Manually set irreps of the model in each layer
+        #- "128x0e"
+        #- "128x0e+64x1e+32x2e"
+        #- "128x0e+64x1e+32x2e"
+        #- "128x0e+64x1e+32x2e"
+        #- "128x0e+64x1e+32x2e"
+        #- "128x0e"
+
+    weight_nn_hidden_neurons: [64, 64]            # Hidden neurons in convolution weight neural network
+    radial_basis:                                 # Function and its parameters to encode radial distance
+        radial_basis_name: 'bessel'               # Only 'bessel' is currently supported
+        bessel_basis_num: 8
+    cutoff_function:                              # Envelop function, multiplied to radial_basis functions to init edge features
+        cutoff_function_name: 'poly_cut'          # {'poly_cut' and 'poly_cut_p_value'} or {'XPLOR' and 'cutoff_on'}
+        poly_cut_p_value: 6
+
+    act_gate: {'e': 'silu', 'o': 'tanh'}          # Equivalent to 'nonlinearity_gates' in nequip
+    act_scalar: {'e': 'silu', 'o': 'tanh'}        # Equivalent to 'nonlinearity_scalars' in nequip
+
+    is_parity: False                              # Pairy True (E(3) group) or False (to SE(3) group)
+
+    self_connection_type: 'nequip'                # Default is 'nequip'. 'linear' is used for SevenNet-0.
+
+    conv_denominator: "avg_num_neigh"             # Valid options are "avg_num_neigh*", "sqrt_avg_num_neigh", or float
+    train_denominator: False                      # Enable training for denominator in convolution layer
+    train_shift_scale: False                      # Enable training for shift & scale in output layer
+
+train:
+    random_seed: 1
+    is_train_stress: True                         # Includes stress in the loss function
+    epoch: 200                                    # Ends training after this number of epochs
+
+    #loss: 'Huber'                                # Default is 'mse' (mean squared error)
+    #loss_param:
+        #delta: 0.01
+
+    # Each optimizer and scheduler have different available parameters.
+    # You can refer to sevenn/train/optim.py for supporting optimizer & schedulers
+    optimizer: 'adam'                             # Options available are 'sgd', 'adagrad', 'adam', 'adamw', 'radam'
+    optim_param:
+        lr: 0.005
+    scheduler: 'exponentiallr'                    # 'steplr', 'multisteplr', 'exponentiallr', 'cosineannealinglr', 'reducelronplateau', 'linearlr'
+    scheduler_param:
+        gamma: 0.99
+
+    force_loss_weight: 0.1                        # Coefficient for force loss
+    stress_loss_weight: 1e-06                     # Coefficient for stress loss (to kbar unit)
+
+    per_epoch: 10                                 # Generate checkpoints every this epoch
+
+    # ['target y', 'metric']
+    # Target y: TotalEnergy, Energy, Force, Stress, Stress_GPa, TotalLoss
+    # Metric  : RMSE, MAE, or Loss
+    error_record:
+        - ['Energy', 'RMSE']
+        - ['Force', 'RMSE']
+        - ['Stress', 'RMSE']
+        - ['TotalLoss', 'None']
+
+    # Continue training model from given checkpoint, or pre-trained model checkpoint for fine-tuning
+    #continue:
+        #checkpoint: 'checkpoint_best.pth'         # Checkpoint of pre-trained model or a model want to continue training.
+        #reset_optimizer: False                    # Set True for fine-tuning
+        #reset_scheduler: False                    # Set True for fine-tuning
+        #use_statistic_values_of_checkpoint: False # Set True to use shift, scale, and avg_num_neigh from checkpoint or not
+
+data:
+    batch_size: 4                                 # Per GPU batch size.
+    data_divide_ratio: 0.1                        # Split dataset into training and validation sets by this ratio
+
+    shift: 'per_atom_energy_mean'                 # One of 'per_atom_energy_mean*', 'elemwise_reference_energies', float
+    scale: 'force_rms'                            # One of 'force_rms*', 'per_atom_energy_std', 'elemwise_force_rms', float
+
+    # ase.io.read readable data files or structure_list or .sevenn_data files can be used as dataset.
+    # .sevenn_data is preprocessed data set has edges connected (can be obtained by using sevenn_graph_build or by save_** options below)
+    data_format: 'ase'                            # One of 'ase', 'structure_list' (.sevenn_data is always readable)
+    data_format_args:                             # if `data_format` is `ase`, args will be passed to `ase.io.read`
+        index: ':'                                # see `https://wiki.fysik.dtu.dk/ase/ase/io/io.html` for more valid arguments
+
+    # If only load_dataset_path is provided, train/valid set is automatically decided by splitting dataset by divide ratio
+    # If both load_dataset_path & load_validset_path is provided, use load_dataset_path as training set.
+    load_dataset_path: ['../data/train.extxyz']   # Example of using ase as data_format, support multiple datasets and expansion(*)
+    #load_validset_path: ['./valid.sevenn_data']
+
+    #save_dataset_path: './total'                 # Save the preprocessed (in load_dataset_path) dataset
+    #save_by_train_valid: True                    # Save the preprocessed train.sevenn_data, valid.sevenn_data

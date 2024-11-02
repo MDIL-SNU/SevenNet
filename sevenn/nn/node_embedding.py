@@ -1,4 +1,4 @@
-from typing import Dict, List
+from typing import Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -27,12 +27,17 @@ class OnehotEmbedding(nn.Module):
         self,
         num_classes: int,
         data_key_x: str = KEY.NODE_FEATURE,
+        data_key_out: Optional[str] = None,
         data_key_save: str = KEY.ATOM_TYPE,
         data_key_additional: str = KEY.NODE_ATTR,  # additional output
     ):
         super().__init__()
         self.num_classes = num_classes
         self.key_x = data_key_x
+        if data_key_out is None:
+            self.key_output = data_key_x
+        else:
+            self.key_output = data_key_out
         self.key_save = data_key_save
         self.key_additional_output = data_key_additional
 
@@ -40,18 +45,18 @@ class OnehotEmbedding(nn.Module):
         inp = data[self.key_x]
         embd = torch.nn.functional.one_hot(inp, self.num_classes)
         embd = embd.float()
-        data[self.key_x] = embd
+        data[self.key_output] = embd
         if self.key_additional_output is not None:
-            data[self.key_additional_output] = embd
+            data[self.key_additional_output] = embd  # for self-connection
         if self.key_save is not None:
-            data[self.key_save] = inp
+            data[self.key_save] = inp  # for elemwise shift scale
         return data
 
 
 def get_type_mapper_from_specie(specie_list: List[str]):
     """
     from ['Hf', 'O']
-    return {72: 0, 16: 1}
+    return {72: 0, 8: 1}
     """
     specie_list = sorted(specie_list)
     type_map = {}

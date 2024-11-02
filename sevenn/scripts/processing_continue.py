@@ -12,6 +12,81 @@ from sevenn.scripts.convert_model_modality import (
 from sevenn.sevenn_logger import Logger
 
 
+def processing_continue_v2(config):  # simpler
+    """
+    Replacement of processing_continue,
+    Skips model compatibility
+    """
+    log = Logger()
+    continue_dct = config[KEY.CONTINUE]
+    log.write('\nContinue found, loading checkpoint\n')
+
+    checkpoint = torch.load(
+        continue_dct[KEY.CHECKPOINT], map_location='cpu', weights_only=False
+    )
+    model_cp, config_cp = util.model_from_checkpoint(checkpoint)
+    model_state_dict_cp = model_cp.state_dict()
+
+    optimizer_state_dict_cp = (
+        checkpoint['optimizer_state_dict']
+        if not continue_dct[KEY.RESET_OPTIMIZER]
+        else None
+    )
+    scheduler_state_dict_cp = (
+        checkpoint['scheduler_state_dict']
+        if not continue_dct[KEY.RESET_SCHEDULER]
+        else None
+    )
+
+    # use_statistic_value_of_checkpoint always True
+    # Overwrite config from model state dict, so graph_dataset.from_config
+    # will not put statistic values to shift, scale, and conv_denominator
+    config[KEY.SHIFT] = model_state_dict_cp['rescale_atomic_energy.shift'].tolist()
+    config[KEY.SCALE] = model_state_dict_cp['rescale_atomic_energy.scale'].tolist()
+    conv_denom = []
+    for i in range(config_cp[KEY.NUM_CONVOLUTION]):
+        conv_denom.append(model_state_dict_cp[f'{i}_convolution.denominator'].item())
+    config[KEY.CONV_DENOMINATOR] = conv_denom
+    log.writeline(
+        f'{KEY.SHIFT}, {KEY.SCALE}, and {KEY.CONV_DENOMINATOR} are '
+        + 'overwritten by model_state_dict of checkpoint'
+    )
+
+    chem_keys = [
+        KEY.TYPE_MAP,
+        KEY.NUM_SPECIES,
+        KEY.CHEMICAL_SPECIES,
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER,
+    ]
+    config.update({k: config_cp[k] for k in chem_keys})
+    log.writeline(
+        'chemical_species are overwritten by checkpoint. '
+        + f'This model knows {config[KEY.NUM_SPECIES]} species'
+    )
+
+    modal_map = config_cp.get(KEY.MODAL_MAP, {})
+    config.update({KEY.MODAL_MAP: modal_map})
+    if len(modal_map) > 0:
+        modalities = list(modal_map.keys())
+        log.writeline(f'Multimodal model found: {modalities}')
+        log.writeline(f'{KEY.USE_MODALITY}: True')
+        config[KEY.USE_MODALITY] = True
+
+    from_epoch = checkpoint['epoch']
+    log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
+    epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
+    log.writeline(f'epoch start from {epoch}')
+
+    log.writeline('checkpoint loading successful')
+
+    state_dicts = [
+        model_state_dict_cp,
+        optimizer_state_dict_cp,
+        scheduler_state_dict_cp,
+    ]
+    return state_dicts, epoch
+
+
 def check_config_compatible(config, config_cp):
     # TODO: check more
     SHOULD_BE_SAME = [
@@ -32,7 +107,7 @@ def check_config_compatible(config, config_cp):
         if sbs == KEY.SELF_CONNECTION_TYPE and config_cp[sbs] == 'MACE':
             warnings.warn(
                 'We do not support this version of checkpoints to continue '
-                'Please use self_connection_type=\'linear\' in input.yaml '
+                "Please use self_connection_type='linear' in input.yaml "
                 'and train from scratch',
                 UserWarning,
             )
@@ -59,10 +134,13 @@ def check_config_compatible(config, config_cp):
 
 
 def processing_continue(config):
+    log = Logger()
     continue_dct = config[KEY.CONTINUE]
-    Logger().write('\nContinue found, loading checkpoint\n')
+    log.write('\nContinue found, loading checkpoint\n')
 
-    checkpoint = torch.load(continue_dct[KEY.CHECKPOINT], map_location='cpu')
+    checkpoint = torch.load(
+        continue_dct[KEY.CHECKPOINT], map_location='cpu', weights_only=False
+    )
     config_cp = checkpoint['config']
 
     model_cp, config_cp = util.model_from_checkpoint(checkpoint)
@@ -70,7 +148,7 @@ def processing_continue(config):
 
     # it will raise error if not compatible
     check_config_compatible(config, config_cp)
-    Logger().write('Checkpoint config is compatible\n')
+    log.write('Checkpoint config is compatible\n')
 
     # for backward compat.
     config.update({KEY._NORMALIZE_SPH: config_cp[KEY._NORMALIZE_SPH]})
@@ -107,15 +185,13 @@ def processing_continue(config):
         KEY.CONV_DENOMINATOR + '_cp': conv_denominators,
     })
 
-    chem_speices_related = {
-        KEY.TYPE_MAP: config_cp[KEY.TYPE_MAP],
-        KEY.NUM_SPECIES: config_cp[KEY.NUM_SPECIES],
-        KEY.CHEMICAL_SPECIES: config_cp[KEY.CHEMICAL_SPECIES],
-        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER: config_cp[
-            KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER
-        ],
-    }
-    config.update(chem_speices_related)
+    chem_keys = [
+        KEY.TYPE_MAP,
+        KEY.NUM_SPECIES,
+        KEY.CHEMICAL_SPECIES,
+        KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER,
+    ]
+    config.update({k: config_cp[k] for k in chem_keys})
 
     if (
         KEY.USE_MODALITY in config_cp.keys() and config_cp[KEY.USE_MODALITY]
@@ -132,16 +208,16 @@ def processing_continue(config):
             KEY.NUM_MODALITIES + '_cp': 0,
         })
 
-    Logger().write(f'checkpoint previous epoch was: {from_epoch}\n')
+    log.write(f'checkpoint previous epoch was: {from_epoch}\n')
 
     # decide start epoch
     reset_epoch = continue_dct[KEY.RESET_EPOCH]
     if reset_epoch:
         start_epoch = 1
-        Logger().write('epoch reset to 1\n')
+        log.write('epoch reset to 1\n')
     else:
         start_epoch = from_epoch + 1
-        Logger().write(f'epoch start from {start_epoch}\n')
+        log.write(f'epoch start from {start_epoch}\n')
 
     # decide csv file to continue
     init_csv = True
@@ -149,19 +225,17 @@ def processing_continue(config):
     if os.path.isfile(csv_fname):
         # I hope python compare dict well
         if config_cp[KEY.ERROR_RECORD] == config[KEY.ERROR_RECORD]:
-            Logger().writeline('Same metric, csv file will be appended')
+            log.writeline('Same metric, csv file will be appended')
             init_csv = False
     else:
-        Logger().writeline(
-            f'{csv_fname} file not found, new csv file will be created'
-        )
-    Logger().writeline('checkpoint loading was successful')
+        log.writeline(f'{csv_fname} file not found, new csv file will be created')
+    log.writeline('checkpoint loading was successful')
 
-    state_dicts = (
+    state_dicts = [
         model_state_dict_cp,
         optimizer_state_dict_cp,
         scheduler_state_dict_cp,
-    )
+    ]
     return state_dicts, start_epoch, init_csv
 
 

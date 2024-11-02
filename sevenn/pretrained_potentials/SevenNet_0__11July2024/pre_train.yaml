@@ -69,7 +69,7 @@ train:
     #    reset_scheduler: False
 data:
     data_shuffle: False
-    batch_size: 4
+    batch_size: 128  # per GPU batch size, as the model trained with 32 GPUs, the effective batch size equals 4096.
     scale: 1.730  # 'per_atom_energy_std'
     shift: 'elemwise_reference_energies'
 

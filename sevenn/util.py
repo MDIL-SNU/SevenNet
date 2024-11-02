@@ -1,34 +1,13 @@
+import os
 import warnings
-from typing import Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
+import torch.nn
 from e3nn.o3 import FullTensorProduct, Irreps
 
 import sevenn._keys as KEY
-
-
-class AverageNumber:
-    def __init__(self):
-        self._sum = 0.0
-        self._count = 0
-
-    def update(self, values: torch.Tensor):
-        self._sum += values.sum().item()
-        self._count += values.numel()
-
-    def _ddp_reduce(self, device):
-        _sum = torch.tensor(self._sum, device=device)
-        _count = torch.tensor(self._count, device=device)
-        torch.distributed.all_reduce(_sum, op=torch.distributed.ReduceOp.SUM)
-        torch.distributed.all_reduce(_count, op=torch.distributed.ReduceOp.SUM)
-        self._sum = _sum.item()
-        self._count = _count.item()
-
-    def get(self):
-        if self._count == 0:
-            return np.nan
-        return self._sum / self._count
 
 
 def to_atom_graph_list(atom_graph_batch):
@@ -43,16 +22,13 @@ def to_atom_graph_list(atom_graph_batch):
 
     indices = atom_graph_batch[KEY.NUM_ATOMS].tolist()
 
-    atomic_energy_list = torch.split(
-        atom_graph_batch[KEY.ATOMIC_ENERGY], indices
-    )
+    atomic_energy_list = torch.split(atom_graph_batch[KEY.ATOMIC_ENERGY], indices)
     inferred_total_energy_list = torch.unbind(
         atom_graph_batch[KEY.PRED_TOTAL_ENERGY]
     )
-    inferred_force_list = torch.split(
-        atom_graph_batch[KEY.PRED_FORCE], indices
-    )
+    inferred_force_list = torch.split(atom_graph_batch[KEY.PRED_FORCE], indices)
 
+    inferred_stress_list = None
     if is_stress:
         inferred_stress_list = torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
 
@@ -61,24 +37,16 @@ def to_atom_graph_list(atom_graph_batch):
         data[KEY.PRED_TOTAL_ENERGY] = inferred_total_energy_list[i]
         data[KEY.PRED_FORCE] = inferred_force_list[i]
         # To fit with KEY.STRESS (ref) format
-        if is_stress:
+        if is_stress and inferred_stress_list is not None:
             data[KEY.PRED_STRESS] = torch.unsqueeze(inferred_stress_list[i], 0)
     return data_list
 
 
 def error_recorder_from_loss_functions(loss_functions):
-    from copy import deepcopy
-
-    from sevenn.error_recorder import (
-        ERROR_TYPES,
-        ErrorRecorder,
-        MAError,
-        RMSError,
-    )
-    from sevenn.train.loss import ForceLoss, PerAtomEnergyLoss, StressLoss
+    from .error_recorder import ErrorRecorder, MAError, RMSError, get_err_type
+    from .train.loss import ForceLoss, PerAtomEnergyLoss, StressLoss
 
     metrics = []
-    BASE = deepcopy(ERROR_TYPES)
     for loss_function, _ in loss_functions:
         ref_key = loss_function.ref_key
         pred_key = loss_function.pred_key
@@ -87,11 +55,11 @@ def error_recorder_from_loss_functions(loss_functions):
         name = loss_function.name
         base = None
         if type(loss_function) is PerAtomEnergyLoss:
-            base = BASE['Energy']
+            base = get_err_type('Energy')
         elif type(loss_function) is ForceLoss:
-            base = BASE['Force']
+            base = get_err_type('Force')
         elif type(loss_function) is StressLoss:
-            base = BASE['Stress']
+            base = get_err_type('Stress')
         else:
             base = {}
         base['name'] = name
@@ -105,92 +73,19 @@ def error_recorder_from_loss_functions(loss_functions):
     return ErrorRecorder(metrics)
 
 
-def postprocess_output(
-    output, loss_types, use_weight=False, delete_unlabled=True
-):
-    from sevenn._const import LossType
-
-    """
-    Postprocess output from model to be used for loss calculation
-    Flatten all the output & unit converting and store them as (pred, ref, vdim)
-    Averaging them without care of vdim results in component-wise something
-    Args:
-        output (dict): output from model
-        loss_types (list): list of loss types to be calculated
-        use_weight (bool): if True, trying to multiply weight to output. Used for training only.
-        delete_unlabled (bool): if True, delete unlabled (i.e. nan) data from reference.
-
-    Returns:
-        results (dict): dictionary of loss type and its corresponding
-    """
-    TO_KB = 1602.1766208  # eV/A^3 to kbar
-    results = {}
-    weight_tensor = None
-    for loss_type in loss_types:
-        is_valid = True
-        if loss_type is LossType.ENERGY:
-            # dim: (num_batch)
-            num_atoms = output[KEY.NUM_ATOMS]
-            pred = output[KEY.PRED_TOTAL_ENERGY] / num_atoms
-            ref = output[KEY.ENERGY] / num_atoms
-            vdim = 1
-        elif loss_type is LossType.FORCE:
-            # dim: (total_number_of_atoms_over_batch, 3)
-            pred = torch.reshape(output[KEY.PRED_FORCE], (-1,))
-            ref = torch.reshape(output[KEY.FORCE], (-1,))
-            vdim = 3
-        elif loss_type is LossType.STRESS:
-            # dim: (num_batch, 6)
-            # calculate stress loss based on kB unit (was eV/A^3)
-            pred = torch.reshape(output[KEY.PRED_STRESS] * TO_KB, (-1,))
-            ref = torch.reshape(output[KEY.STRESS] * TO_KB, (-1,))
-            vdim = 6
-        else:
-            raise ValueError(f'Unknown loss type: {loss_type}')
-
-        if use_weight:
-            weight = output[KEY.DATA_WEIGHT][loss_type.value]
-            weight_tensor = (
-                weight[output[KEY.BATCH]]
-                if loss_type is LossType.FORCE
-                else weight
-            )
-            weight_tensor = torch.repeat_interleave(weight_tensor, vdim)
-
-        if delete_unlabled:
-            #  nan in pred might not be deleted, which is natural.
-            #  This must be done after multiplying weight.
-            unlabeld_idx = torch.isnan(ref)
-            pred = pred[~unlabeld_idx]
-            ref = ref[~unlabeld_idx]
-
-            if len(pred) == 0:
-                is_valid = False  # not a valid error, erase for loss.backward
-
-            if use_weight:
-                weight_tensor = weight_tensor[~unlabeld_idx]
-
-        results[loss_type] = (pred, ref, vdim, is_valid, weight_tensor)
-    return results
-
-
-def squared_error(pred, ref, vdim, *args):
-    MSE = torch.nn.MSELoss(reduction='none')
-    return torch.reshape(MSE(pred, ref), (-1, vdim)).sum(dim=1)
-
-
-def onehot_to_chem(one_hot_indices, type_map):
+def onehot_to_chem(one_hot_indices: List[int], type_map: Dict[int, int]):
     from ase.data import chemical_symbols
 
     type_map_rev = {v: k for k, v in type_map.items()}
     return [chemical_symbols[type_map_rev[x]] for x in one_hot_indices]
 
 
-def _patch_old_config(config):
+def _patch_old_config(config: Dict[str, Any]):
     # Fixing my old mistakes
     if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
         config[KEY.CUTOFF_FUNCTION].pop('poly_cut_p_value', None)
-    config[KEY.TRAIN_DENOMINTAOR] = config.pop('train_avg_num_neigh', False)
+    if KEY.TRAIN_DENOMINTAOR not in config:
+        config[KEY.TRAIN_DENOMINTAOR] = config.pop('train_avg_num_neigh', False)
     _opt = config.pop('optimize_by_reduce', None)
     if _opt is False:
         raise ValueError(
@@ -223,9 +118,7 @@ def _map_old_model(old_model_state_dict):
         _old_module_name_mapping[f'{i} self interaction 2'] = (
             f'{i}_self_interaction_2'
         )
-        _old_module_name_mapping[f'{i} equivariant gate'] = (
-            f'{i}_equivariant_gate'
-        )
+        _old_module_name_mapping[f'{i} equivariant gate'] = f'{i}_equivariant_gate'
 
     new_model_state_dict = {}
     for k, v in old_model_state_dict.items():
@@ -241,12 +134,12 @@ def _map_old_model(old_model_state_dict):
     return new_model_state_dict
 
 
-def model_from_checkpoint(checkpoint):
-    from sevenn._const import data_defaults, model_defaults, train_defaults
-    from sevenn.model_build import build_E3_equivariant_model
+def model_from_checkpoint(checkpoint) -> Tuple[torch.nn.Module, Dict]:
+    from ._const import model_defaults
+    from .model_build import build_E3_equivariant_model
 
     if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint, map_location='cpu')
+        checkpoint = torch.load(checkpoint, map_location='cpu', weights_only=False)
     elif isinstance(checkpoint, dict):
         pass
     else:
@@ -254,19 +147,15 @@ def model_from_checkpoint(checkpoint):
 
     model_state_dict = checkpoint['model_state_dict']
     config = checkpoint['config']
-    defaults = {
-        **model_defaults(config),
-        **train_defaults(config),
-        **data_defaults(config),
-    }
+    defaults = {**model_defaults(config)}
     config = _patch_old_config(config)
 
     for k, v in defaults.items():
-        if k not in config:
-            warnings.warn(
-                f'{k} not in config, using default value {v}', UserWarning
-            )
-            config[k] = v
+        if k in config:
+            continue
+        if os.getenv('SEVENN_DEBUG', False):
+            warnings.warn(f'{k} not in config, use default value {v}', UserWarning)
+        config[k] = v
 
     # expect only non-tensor values in config, if exists, move to cpu
     # This can be happen if config has torch tensor as value (shift, scale)
@@ -276,6 +165,7 @@ def model_from_checkpoint(checkpoint):
             config[k] = v.cpu()
 
     model = build_E3_equivariant_model(config)
+    assert isinstance(model, torch.nn.Module)
     missing, _ = model.load_state_dict(model_state_dict, strict=False)
     if len(missing) > 0:
         updated = _map_old_model(model_state_dict)
@@ -288,35 +178,47 @@ def model_from_checkpoint(checkpoint):
     return model, config
 
 
-def unlabeled_atoms_to_input(atoms, cutoff):
-    from sevenn.atom_graph_data import AtomGraphData
-    from sevenn.train.dataload import unlabeled_atoms_to_graph
+def unlabeled_atoms_to_input(atoms, cutoff: float, grad_key: str = KEY.EDGE_VEC):
+    from .atom_graph_data import AtomGraphData
+    from .train.dataload import unlabeled_atoms_to_graph
 
     atom_graph = AtomGraphData.from_numpy_dict(
         unlabeled_atoms_to_graph(atoms, cutoff)
     )
-    atom_graph[KEY.POS].requires_grad_(True)
+    atom_graph[grad_key].requires_grad_(True)
     atom_graph[KEY.BATCH] = torch.zeros([0])
     return atom_graph
 
 
-def chemical_species_preprocess(input_chem):
-    from ase.data import atomic_numbers
+def chemical_species_preprocess(input_chem: List[str], universal: bool = False):
+    from ase.data import atomic_numbers, chemical_symbols
 
-    from sevenn.nn.node_embedding import get_type_mapper_from_specie
+    from .nn.node_embedding import get_type_mapper_from_specie
 
     config = {}
-    chemical_specie = sorted([x.strip() for x in input_chem])
-    config[KEY.CHEMICAL_SPECIES] = chemical_specie
-    config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
-        atomic_numbers[x] for x in chemical_specie
-    ]
-    config[KEY.NUM_SPECIES] = len(chemical_specie)
-    config[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
+    if not universal:
+        input_chem = list(set(input_chem))
+        chemical_specie = sorted([x.strip() for x in input_chem])
+        config[KEY.CHEMICAL_SPECIES] = chemical_specie
+        config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = [
+            atomic_numbers[x] for x in chemical_specie
+        ]
+        config[KEY.NUM_SPECIES] = len(chemical_specie)
+        config[KEY.TYPE_MAP] = get_type_mapper_from_specie(chemical_specie)
+    else:
+        config[KEY.CHEMICAL_SPECIES] = chemical_symbols
+        len_univ = len(chemical_symbols)
+        config[KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER] = list(range(len_univ))
+        config[KEY.NUM_SPECIES] = len_univ
+        config[KEY.TYPE_MAP] = {z: z for z in range(len_univ)}
     return config
 
 
-def dtype_correct(v, float_dtype=torch.float32, int_dtype=torch.int64):
+def dtype_correct(
+    v: Union[np.ndarray, torch.Tensor, int, float],
+    float_dtype: torch.dtype = torch.float32,
+    int_dtype: torch.dtype = torch.int64,
+):
     if isinstance(v, np.ndarray):
         if np.issubdtype(v.dtype, np.floating):
             return torch.from_numpy(v).to(float_dtype)
@@ -332,60 +234,8 @@ def dtype_correct(v, float_dtype=torch.float32, int_dtype=torch.int64):
             return torch.tensor(v, dtype=int_dtype)
         elif isinstance(v, float):
             return torch.tensor(v, dtype=float_dtype)
-        else:
-            # non-number
+        else:  # Not numeric
             return v
-
-
-def load_model_from_checkpoint(checkpoint):
-    """
-    Deprecated
-    """
-    from sevenn._const import (
-        DEFAULT_DATA_CONFIG,
-        DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
-        DEFAULT_TRAINING_CONFIG,
-    )
-    from sevenn.model_build import build_E3_equivariant_model
-
-    warnings.warn(
-        'This method is deprecated, use model_from_checkpoint instead',
-        DeprecationWarning,
-    )
-
-    if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint, map_location='cpu')
-    elif isinstance(checkpoint, dict):
-        pass
-    else:
-        raise ValueError('checkpoint must be either str or dict')
-
-    defaults = {
-        **DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
-        **DEFAULT_DATA_CONFIG,
-        **DEFAULT_TRAINING_CONFIG,
-    }
-
-    model_state_dict = checkpoint['model_state_dict']
-    config = checkpoint['config']
-
-    for k, v in defaults.items():
-        if k not in config:
-            print(f'Warning: {k} not in config, using default value {v}')
-            config[k] = v
-
-    # expect only non-tensor values in config, if exists, move to cpu
-    # This can be happen if config has torch tensor as value (shift, scale)
-    # TODO: putting only non-tensors at first place is better
-    for k, v in config.items():
-        if isinstance(v, torch.Tensor):
-            config[k] = v.cpu()
-
-    model = build_E3_equivariant_model(config)
-
-    model.load_state_dict(model_state_dict, strict=False)
-
-    return model
 
 
 def infer_irreps_out(
@@ -394,12 +244,10 @@ def infer_irreps_out(
     drop_l: Union[bool, int] = False,
     parity_mode: str = 'full',
     fix_multiplicity: Union[bool, int] = False,
-) -> Irreps:
+):
     assert parity_mode in ['full', 'even', 'sph']
     # (mul, (ir, p))
-    irreps_out = FullTensorProduct(
-        irreps_x, irreps_operand
-    ).irreps_out.simplify()
+    irreps_out = FullTensorProduct(irreps_x, irreps_operand).irreps_out.simplify()
     new_irreps_elem = []
     for mul, (l, p) in irreps_out:
         elem = (mul, (l, p))
@@ -429,3 +277,43 @@ def pretrained_name_to_path(name: str) -> str:
         raise ValueError('Not a valid potential')
 
     return checkpoint_path
+
+
+def unique_filepath(filepath: str) -> str:
+    if not os.path.isfile(filepath):
+        return filepath
+    else:
+        dirname = os.path.dirname(filepath)
+        fname = os.path.basename(filepath)
+        name, ext = os.path.splitext(fname)
+        cnt = 0
+        new_name = f'{name}{cnt}{ext}'
+        new_path = os.path.join(dirname, new_name)
+        while os.path.exists(new_path):
+            cnt += 1
+            new_name = f'{name}{cnt}{ext}'
+            new_path = os.path.join(dirname, new_name)
+        return new_path
+
+
+def get_error_recorder(
+    recorder_tuples: List[Tuple[str, str]] = [
+        ('Energy', 'RMSE'),
+        ('Force', 'RMSE'),
+        ('Stress', 'RMSE'),
+        ('Energy', 'MAE'),
+        ('Force', 'MAE'),
+        ('Stress', 'MAE'),
+    ],
+):
+    # TODO add criterion argument and loss recorder selections
+    import sevenn.error_recorder as error_recorder
+
+    config = recorder_tuples
+    err_metrics = []
+    for err_type, metric_name in config:
+        metric_kwargs = error_recorder.get_err_type(err_type).copy()
+        metric_kwargs['name'] += f'_{metric_name}'
+        metric_cls = error_recorder.ErrorRecorder.METRIC_DICT[metric_name]
+        err_metrics.append(metric_cls(**metric_kwargs))
+    return error_recorder.ErrorRecorder(err_metrics)

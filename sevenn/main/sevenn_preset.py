@@ -23,7 +23,13 @@ def main(args=None):
 def cmd_parse_preset(args=None):
     ag = argparse.ArgumentParser(description=description_preset)
     ag.add_argument(
-        'preset', choices=['fine_tune', 'sevennet-0', 'base'],
+        'preset', choices=[
+            'fine_tune',
+            'sevennet-0',
+            'base',
+            'fine_tune_v1',
+            'base_v1'
+        ],
         help=preset_help
     )
     args = ag.parse_args()

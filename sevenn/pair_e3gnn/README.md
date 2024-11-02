@@ -2,9 +2,9 @@ We support the LAMMPS pair style `d3` of the Grimme's D3 dispersion (van der Waa
 
 **PLEASE NOTE:** Currently, this D3 code does not support mulit-GPU parallelism yet. So it can only be run on a single GPU.
 
-# About Grimme's D3 code accelerated with CUDA 
+# About Grimme's D3 code accelerated with CUDA
 
-This is LAMMPS implementation of [Grimme's D3 method](https://doi.org/10.1063/1.3382344). We have ported the code from the [original fortran code](https://www.chemie.uni-bonn.de/grimme/de/software/dft-d3) to a LAMMPS pair style written in CUDA/C++. 
+This is LAMMPS implementation of [Grimme's D3 method](https://doi.org/10.1063/1.3382344). We have ported the code from the [original fortran code](https://www.chemie.uni-bonn.de/grimme/de/software/dft-d3) to a LAMMPS pair style written in CUDA/C++.
 
 While D3 method is significantly faster than DFT, existing CPU implementations were slower than SevenNet. To address this, we have adopted CUDA and single precision (FP32) operations to accelerate the code.
 
@@ -17,9 +17,9 @@ sevenn_patch_lammps ./lammps_sevenn --d3
 
 You can follow the remaining installation steps in the [SevenNet documentation](../../README.md#installation-for-lammps).
 
-Also, this code requires a GPU with a compute capability of **at least 6.0**. If you try to compile it with version 5.0, you may encounter an `atomicAdd` error. 
+Also, this code requires a GPU with a compute capability of **at least 6.0**. If you try to compile it with version 5.0, you may encounter an `atomicAdd` error.
 
-The target compute capability of this code follows the setting of LibTorch in SevenNet, except for version 5.0. 
+The target compute capability of this code follows the setting of LibTorch in SevenNet, except for version 5.0.
 
 You can manually select the target capability using the `TORCH_CUDA_ARCH_LIST` environment variable. For example, you can use: `export TORCH_CUDA_ARCH_LIST="6.1;7.0;8.0;8.6;8.9;9.0"`.
 
@@ -57,7 +57,7 @@ Available `name_of_functional` options are the same as in the original Fortran c
 ## Cautions
 - It can be slower than the CPU with a small number of atoms.
 - The maximum number of atoms that can be calculated is 46,340 (overflow issue).
-- There can be occured small amounts of numerical error
+- There can be occurred small amounts of numerical error
   - The introduction of some FP32 operations can lead to minor numerical errors, particularly in pressure calculations, but these are generally smaller than those seen with SevenNet.
   - If the error is too large, ensure that the `fmad=false` option in `patch_lammps.sh` is correctly applied during build.
 
@@ -75,5 +75,3 @@ Available `name_of_functional` options are the same as in the original Fortran c
 
 [^1]: On the [VASP DFT-D3](https://www.vasp.at/wiki/index.php/DFT-D3) page, the `VDW_RADIUS` and `VDW_CNRADIUS` are `50.2` and `20.0`, respectively (units are Å). However, when running VASP 6.3.2 with D3 using zero damping (BJ does not provide such a log), the default values in the OUTCAR file are `50.2022` and `21.1671`. These values are the same as our defaults.
 [^2]: Since OpenACC is not compatible with libtorch, we chose to use the CUDA.
-
-

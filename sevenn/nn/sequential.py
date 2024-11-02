@@ -1,6 +1,6 @@
 import warnings
 from collections import OrderedDict
-from typing import Dict
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -10,29 +10,72 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 
+def _instantiate_modules(modules):
+    # see IrrepsLinear of linear.py
+    for module in modules.values():
+        try:
+            if not module.layer_instantiated:
+                module.instantiate()
+        except AttributeError:
+            pass
+
+
 @compile_mode('script')
 class AtomGraphSequential(nn.Sequential):
     """
-    same as nn.Sequential but with type notation
-    see
-    https://github.com/pytorch/pytorch/issues/52588
+    Wrapper of SevenNet model
+
+    Args:
+        modules: OrderedDict of nn.Modules
+        cutoff: not used internally, but makes sense to have
+        type_map: atomic_numbers => onehot index (see nn/node_embedding.py)
+        eval_type_map: perform index mapping using type_map defaults to True
+        data_key_atomic_numbers: used when eval_type_map is True
+        data_key_node_feature: used when eval_type_map is True
+        data_key_grad: if given, sets its requires grad True before pred
     """
 
     def __init__(
         self,
         modules: Dict[str, nn.Module],
         cutoff: float = 0.0,
-        type_map: Dict[int, int] = {-1: -1},
+        type_map: Optional[Dict[int, int]] = None,
+        modal_map: Optional[Dict[str, int]] = None,
+        eval_type_map: bool = True,
+        eval_modal_map: bool = False,
+        data_key_atomic_numbers: str = KEY.ATOMIC_NUMBERS,
+        data_key_node_feature: str = KEY.NODE_FEATURE,
+        data_key_grad: Optional[str] = None,
     ):
         if not isinstance(modules, OrderedDict):
             modules = OrderedDict(modules)
         self.cutoff = cutoff
         self.type_map = type_map
+        self.eval_type_map = eval_type_map
+        self.is_batch_data = True
+
         if cutoff == 0.0:
             warnings.warn('cutoff is 0.0 or not given', UserWarning)
-        if type_map == {-1: -1}:
-            warnings.warn('type_map is not given', UserWarning)
 
+        if self.type_map is None:
+            warnings.warn('type_map is not given', UserWarning)
+            self.eval_type_map = False
+        else:
+            z_to_onehot_tensor = torch.neg(torch.ones(120, dtype=torch.long))
+            for z, onehot in self.type_map.items():
+                z_to_onehot_tensor[z] = onehot
+            self.z_to_onehot_tensor = z_to_onehot_tensor
+
+        if eval_modal_map and modal_map is None:
+            raise ValueError('eval_modal_map is True but modal_map is None')
+        self.eval_modal_map = eval_modal_map
+        self.modal_map = modal_map
+
+        self.key_atomic_numbers = data_key_atomic_numbers
+        self.key_node_feature = data_key_node_feature
+        self.key_grad = data_key_grad
+
+        _instantiate_modules(modules)
         super().__init__(modules)
 
     def set_is_batch_data(self, flag: bool):
@@ -41,9 +84,10 @@ class AtomGraphSequential(nn.Sequential):
         # forward function make problem harder when make it into torchscript
         for module in self:
             try:  # Easier to ask for forgiveness than permission.
-                module._is_batch_data = flag
+                module._is_batch_data = flag  # type: ignore
             except AttributeError:
                 pass
+        self.is_batch_data = flag
 
     def get_irreps_in(self, modlue_name: str, attr_key: str = 'irreps_in'):
         tg_module = self._modules[modlue_name]
@@ -56,7 +100,7 @@ class AtomGraphSequential(nn.Sequential):
 
     def prepand_module(self, key: str, module: nn.Module):
         self._modules.update({key: module})
-        self._modules.move_to_end(key, last=False)
+        self._modules.move_to_end(key, last=False)  # type: ignore
 
     def replace_module(self, key: str, module: nn.Module):
         self._modules.update({key: module})
@@ -65,24 +109,44 @@ class AtomGraphSequential(nn.Sequential):
         if key in self._modules.keys():
             del self._modules[key]
 
-    def to_onehot_idx(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        """
-        User must call this function first before the forward
-        if the data is not one-hot encoded
-        """
-        if self.type_map is {-1: -1}:
-            raise ValueError('type_map is not set')
-        device = data[KEY.NODE_FEATURE].device
-        data[KEY.NODE_FEATURE] = torch.LongTensor(
-            [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]]
-        ).to(device)
+    def _atomic_numbers_to_onehot(self, atomic_numbers: torch.Tensor):
+        assert atomic_numbers.dtype == torch.int64
+        device = atomic_numbers.device
+        z_to_onehot_tensor = self.z_to_onehot_tensor.to(device)
+        return torch.index_select(
+            input=z_to_onehot_tensor, dim=0, index=atomic_numbers
+        )
 
-        return data
+    def _eval_modal_map(self, data: AtomGraphDataType):
+        assert self.modal_map is not None
+        # modal_map: dict[str, int]
+        if not self.is_batch_data:
+            modal_idx = self.modal_map[data[KEY.DATA_MODALITY]]  # type: ignore
+        else:
+            modal_idx = [
+                self.modal_map[ii]  # type: ignore
+                for ii in data[KEY.DATA_MODALITY]
+            ]
+        modal_idx = torch.tensor(
+            modal_idx,
+            dtype=torch.int64,
+            device=data.x.device,  # type: ignore
+        )
+        data[KEY.MODAL_TYPE] = modal_idx
 
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        """
-        type_map is a dict of {atomic_number: one_hot_idx}
-        """
+    def forward(self, input: AtomGraphDataType) -> AtomGraphDataType:
+        data = input
+        if self.eval_type_map:
+            atomic_numbers = data[self.key_atomic_numbers]
+            onehot = self._atomic_numbers_to_onehot(atomic_numbers)
+            data[self.key_node_feature] = onehot
+
+        if self.eval_modal_map:
+            self._eval_modal_map(data)
+
+        if self.key_grad is not None:
+            data[self.key_grad].requires_grad_(True)
+
         for module in self:
             data = module(data)
         return data

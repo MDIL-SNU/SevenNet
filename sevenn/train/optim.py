@@ -1,13 +1,13 @@
 import torch.nn as nn
-import torch.optim as optim
 import torch.optim.lr_scheduler as scheduler
+from torch.optim import adagrad, adam, adamw, radam, sgd
 
 optim_dict = {
-    'sgd': optim.SGD,
-    'adagrad': optim.Adagrad,
-    'adam': optim.Adam,
-    'adamw': optim.AdamW,
-    'radam': optim.RAdam,
+    'sgd': sgd.SGD,
+    'adagrad': adagrad.Adagrad,
+    'adam': adam.Adam,
+    'adamw': adamw.AdamW,
+    'radam': radam.RAdam,
 }
 
 

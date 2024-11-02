@@ -1,5 +1,3 @@
-from typing import Final
-
 """
 How to add new feature?
 
@@ -11,6 +9,10 @@ How to add new feature?
     you must add your own input validation code to
     parse_input.py
 """
+
+from typing import Final
+
+from torch.jit import CompilationUnit
 
 # see
 # https://github.com/pytorch/pytorch/issues/52312
@@ -78,6 +80,8 @@ DATA_MODALITY: Final[str] = (
 )
 BATCH: Final[str] = 'batch'
 
+TAG = 'tag'  # replace USER_LABEL
+
 # etc
 SELF_CONNECTION_TEMP: Final[str] = 'self_cont_tmp'
 BATCH_SIZE: Final[str] = 'batch_size'
@@ -96,9 +100,13 @@ SAVE_BY_TRAIN_VALID = 'save_by_train_valid'
 DATA_FORMAT = 'data_format'
 DATA_FORMAT_ARGS = 'data_format_args'
 STRUCTURE_LIST = 'structure_list'
-LOAD_DATASET = 'load_dataset_path'
+LOAD_DATASET = 'load_dataset_path'  # not used in v2
+LOAD_TRAINSET = 'load_trainset_path'
 LOAD_VALIDSET = 'load_validset_path'
+LOAD_TESTSET = 'load_testset_path'
 FORMAT_OUTPUTS = 'format_outputs_for_ase'
+COMPUTE_STATISTICS = 'compute_statistics'
+DATASET_TYPE = 'dataset_type'
 
 RANDOM_SEED = 'random_seed'
 RATIO = 'data_divide_ratio'
@@ -115,10 +123,8 @@ STRESS_WEIGHT = 'stress_loss_weight'
 DEVICE = 'device'
 DTYPE = 'dtype'
 
-DATA_SHUFFLE = 'data_shuffle'
 TRAIN_SHUFFLE = 'train_shuffle'
 
-IS_TRACE_STRESS = '_is_trace_stress'
 IS_TRAIN_STRESS = 'is_train_stress'
 
 CONTINUE = 'continue'
@@ -136,13 +142,13 @@ CSV_LOG = 'csv_log'
 ERROR_RECORD = 'error_record'
 BEST_METRIC = 'best_metric'
 
-NUM_WORKERS = '_num_workers'  # not work
+NUM_WORKERS = 'num_workers'  # not work
 
 RANK = 'rank'
 LOCAL_RANK = 'local_rank'
 WORLD_SIZE = 'world_size'
 IS_DDP = 'is_ddp'
-
+DDP_BACKEND = 'ddp_backend'
 PER_EPOCH = 'per_epoch'
 
 USE_WEIGHT = 'use_weight'
@@ -213,16 +219,8 @@ USE_MODAL_WISE_SCALE = 'use_modal_wise_scale'
 
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_DENOMINTAOR = 'train_denominator'
+INTERACTION_TYPE = 'interaction_type'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 _NORMALIZE_SPH = '_normalize_sph'
 OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
-
-# deprecated
-DRAW_PARITY = 'draw_parity'
-MODEL_CHECK_POINT = 'model_check_point'
-DEPLOY_MODEL = 'deploy_model'
-SAVE_DATA_PICKLE = 'save_data_pickle'
-SKIP_OUTPUT_UNTIL = 'skip_output_until'
-DRAW_LC = 'draw_learning_curve'
-OUTPUT_PER_EPOCH = 'output_per_epoch'

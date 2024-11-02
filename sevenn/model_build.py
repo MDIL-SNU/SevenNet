@@ -1,41 +1,51 @@
+import copy
 import warnings
 from collections import OrderedDict
 
-import torch
 from e3nn.o3 import Irreps
 
 import sevenn._const as _const
 import sevenn._keys as KEY
 import sevenn.util as util
-from sevenn.nn.convolution import IrrepsConvolution
-from sevenn.nn.edge_embedding import (
+
+from .nn.edge_embedding import (
     BesselBasis,
     EdgeEmbedding,
-    EdgePreprocess,
     PolynomialCutoff,
     SphericalEncoding,
     XPLORCutoff,
 )
-from sevenn.nn.equivariant_gate import EquivariantGate
-from sevenn.nn.force_output import ForceStressOutput
-from sevenn.nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
-from sevenn.nn.node_embedding import OnehotEmbedding
-from sevenn.nn.scale import Rescale, SpeciesWiseRescale, ModalWiseRescale
-from sevenn.nn.self_connection import (
+from .nn.force_output import ForceStressOutputFromEdge
+from .nn.interaction_blocks import NequIP_interaction_block
+from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
+from .nn.node_embedding import OnehotEmbedding
+from .nn.scale import ModalWiseRescale, Rescale, SpeciesWiseRescale
+from .nn.self_connection import (
     SelfConnectionIntro,
     SelfConnectionLinearIntro,
     SelfConnectionOutro,
 )
-from sevenn.nn.sequential import AtomGraphSequential
+from .nn.sequential import AtomGraphSequential
 
 # warning from PyTorch, about e3nn type annotations
 warnings.filterwarnings(
     'ignore',
     message=(
-        "The TorchScript type system doesn't "
-        'support instance-level annotations'
+        "The TorchScript type system doesn't " 'support instance-level annotations'
     ),
 )
+
+
+def _insert_after(module_name_after, key_module_pair, layers):
+    idx = -1
+    for i, (key, _) in enumerate(layers):
+        if key == module_name_after:
+            idx = i
+            break
+    if idx == -1:
+        assert False
+    layers.insert(idx + 1, key_module_pair)
+    return layers
 
 
 def init_self_connection(config):
@@ -53,60 +63,258 @@ def init_self_connection(config):
     return intro, outro
 
 
-def init_radial_basis(config):
-    radial_basis_dct = config[KEY.RADIAL_BASIS]
-    param = {'cutoff_length': config[KEY.CUTOFF]}
-    param.update(radial_basis_dct)
-    del param[KEY.RADIAL_BASIS_NAME]
+def init_edge_embedding(config):
+    _cutoff_param = {'cutoff_length': config[KEY.CUTOFF]}
+    rbf, env, sph = None, None, None
 
-    if radial_basis_dct[KEY.RADIAL_BASIS_NAME] == 'bessel':
-        basis_function = BesselBasis(**param)
-        return basis_function, basis_function.num_basis
-    raise RuntimeError('something went wrong...')
+    rbf_dct = copy.deepcopy(config[KEY.RADIAL_BASIS])
+    rbf_dct.update(_cutoff_param)
+    rbf_name = rbf_dct.pop(KEY.RADIAL_BASIS_NAME)
+    if rbf_name == 'bessel':
+        rbf = BesselBasis(**rbf_dct)
+
+    envelop_dct = copy.deepcopy(config[KEY.CUTOFF_FUNCTION])
+    envelop_dct.update(_cutoff_param)
+    envelop_name = envelop_dct.pop(KEY.CUTOFF_FUNCTION_NAME)
+    if envelop_name == 'poly_cut':
+        env = PolynomialCutoff(**envelop_dct)
+    elif envelop_name == 'XPLOR':
+        env = XPLORCutoff(**envelop_dct)
+
+    lmax_edge = config[KEY.LMAX]
+    if config[KEY.LMAX_EDGE] > 0:
+        lmax_edge = config[KEY.LMAX_EDGE]
+    parity = -1 if config[KEY.IS_PARITY] else 1
+    _normalize_sph = config[KEY._NORMALIZE_SPH]
+    sph = SphericalEncoding(lmax_edge, parity, normalize=_normalize_sph)
+
+    return EdgeEmbedding(basis_module=rbf, cutoff_module=env, spherical_module=sph)
 
 
-def init_cutoff_function(config):
-    cutoff_function_dct = config[KEY.CUTOFF_FUNCTION]
-    param = {'cutoff_length': config[KEY.CUTOFF]}
-    param.update(cutoff_function_dct)
-    del param[KEY.CUTOFF_FUNCTION_NAME]
+def init_feature_reduce(config, irreps_x):
+    # features per node to scalar per node
+    layers = OrderedDict()
+    if config[KEY.READOUT_AS_FCN] is False:
+        hidden_irreps = Irreps([(irreps_x.dim // 2, (0, 1))])
+        layers.update(
+            {
+                'reduce_input_to_hidden': IrrepsLinear(
+                    irreps_x,
+                    hidden_irreps,
+                    data_key_in=KEY.NODE_FEATURE,
+                    biases=config[KEY.USE_BIAS_IN_LINEAR],
+                ),
+                'reduce_hidden_to_energy': IrrepsLinear(
+                    hidden_irreps,
+                    Irreps([(1, (0, 1))]),
+                    data_key_in=KEY.NODE_FEATURE,
+                    data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                    biases=config[KEY.USE_BIAS_IN_LINEAR],
+                ),
+            }
+        )
+    else:
+        act = _const.ACTIVATION[config[KEY.READOUT_FCN_ACTIVATION]]
+        hidden_neurons = config[KEY.READOUT_FCN_HIDDEN_NEURONS]
+        layers.update(
+            {
+                'readout_FCN': FCN_e3nn(
+                    dim_out=1,
+                    hidden_neurons=hidden_neurons,
+                    activation=act,
+                    data_key_in=KEY.NODE_FEATURE,
+                    data_key_out=KEY.SCALED_ATOMIC_ENERGY,
+                    irreps_in=irreps_x,
+                )
+            }
+        )
+    return layers
 
-    if cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'poly_cut':
-        return PolynomialCutoff(**param)
-    elif cutoff_function_dct[KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
-        return XPLORCutoff(**param)
-    raise RuntimeError('something went very wrong...')
+
+def init_shift_scale(config):
+    # for mm, ex, shift: modal_idx -> shifts
+    shift_scale = []
+    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
+    type_map = config[KEY.TYPE_MAP]
+
+    # in case of modal, shift or scale has more dims [][]
+    # correct typing (I really want static python)
+    for s in (config[KEY.SHIFT], config[KEY.SCALE]):
+        if hasattr(s, 'tolist'):  # numpy or torch
+            s = s.tolist()
+        shift_scale.append(s)
+    shift, scale = shift_scale
+
+    rescale_module = None
+    if config.get(KEY.USE_MODALITY, False):
+        rescale_module = ModalWiseRescale.from_mappers(  # type: ignore
+            shift,
+            scale,
+            config[KEY.USE_MODAL_WISE_SHIFT],
+            config[KEY.USE_MODAL_WISE_SCALE],
+            type_map=type_map,
+            modal_map=config[KEY.MODAL_MAP],
+            train_shift_scale=train_shift_scale,
+        )
+    elif all([isinstance(s, float) for s in shift_scale]):
+        rescale_module = Rescale(shift, scale, train_shift_scale=train_shift_scale)
+    elif any([isinstance(s, list) for s in shift_scale]):
+        rescale_module = SpeciesWiseRescale.from_mappers(  # type: ignore
+            shift, scale, type_map=type_map, train_shift_scale=train_shift_scale
+        )
+    else:
+        raise ValueError('shift, scale should be list of float or float')
+
+    return rescale_module
+
+
+def patch_modality(layers: OrderedDict, config):
+    """
+    Postprocess 7net-model to multimodal model.
+    1. prepend modality one-hot embedding layer
+    2. patch modalities of IrrepsLinear layers
+    Modality aware shift scale is handled by init_shift_scale, not here
+    """
+    cfg = config
+    if not cfg.get(KEY.USE_MODALITY, False):
+        return layers
+
+    _layers = list(layers.items())
+    _layers = _insert_after(
+        'edge_embedding',
+        (
+            'one_hot_modality',
+            OnehotEmbedding(
+                num_classes=config[KEY.NUM_MODALITIES],
+                data_key_x=KEY.MODAL_TYPE,
+                data_key_out=KEY.MODAL_ATTR,
+            ),
+        ),
+        _layers,
+    )
+    layers = OrderedDict(_layers)
+
+    num_modal = config[KEY.NUM_MODALITIES]
+    for k, module in layers.items():
+        if not isinstance(module, IrrepsLinear):
+            continue
+        if (
+            (cfg[KEY.USE_MODAL_NODE_EMBEDDING] and k.endswith('onehot_to_feature_x'))
+            or (
+                cfg[KEY.USE_MODAL_SELF_INTER_INTRO]
+                and k.endswith('self_interaction_1')
+            )
+            or (
+                cfg[KEY.USE_MODAL_SELF_INTER_OUTRO]
+                and k.endswith('self_interaction_2')
+            )
+            or (cfg[KEY.USE_MODAL_OUTPUT_BLOCK] and k == 'reduce_input_to_hidden')
+        ):
+            module.set_num_modalities(num_modal)
+    return layers
+
+
+def _to_parallel_model(layers: OrderedDict, config):
+    num_classes = layers['onehot_idx_to_onehot'].num_classes
+    one_hot_irreps = Irreps(f'{num_classes}x0e')
+    irreps_node_zero = layers['onehot_to_feature_x'].irreps_out
+
+    _layers = list(layers.items())
+    layers_list = []
+
+    num_convolution_layer = config[KEY.NUM_CONVOLUTION]
+
+    def slice_until_this(module_name, layers):
+        idx = -1
+        for i, (key, _) in enumerate(layers):
+            if key == module_name:
+                idx = i
+                break
+        first_to = layers[: idx + 1]
+        remain = layers[idx + 1 :]
+        return first_to, remain
+
+    _layers = _insert_after(
+        'onehot_to_feature_x',
+        (
+            'one_hot_ghost',
+            OnehotEmbedding(
+                data_key_x=KEY.NODE_FEATURE_GHOST,
+                num_classes=num_classes,
+                data_key_save=None,
+                data_key_additional=None,
+            ),
+        ),
+        _layers,
+    )
+    _layers = _insert_after(
+        'one_hot_ghost',
+        (
+            'ghost_onehot_to_feature_x',
+            IrrepsLinear(
+                irreps_in=one_hot_irreps,
+                irreps_out=irreps_node_zero,
+                data_key_in=KEY.NODE_FEATURE_GHOST,
+                biases=config[KEY.USE_BIAS_IN_LINEAR],
+            ),
+        ),
+        _layers,
+    )
+    _layers = _insert_after(
+        '0_self_interaction_1',
+        (
+            'ghost_0_self_interaction_1',
+            IrrepsLinear(
+                irreps_node_zero,
+                irreps_node_zero,
+                data_key_in=KEY.NODE_FEATURE_GHOST,
+                biases=config[KEY.USE_BIAS_IN_LINEAR],
+            ),
+        ),
+        _layers,
+    )
+    # assign modules (before first communications)
+    # initialize edge related to retain position gradients
+    for i in range(1, num_convolution_layer):
+        sliced, _layers = slice_until_this(f'{i}_self_interaction_1', _layers)
+        layers_list.append(OrderedDict(sliced))
+        _layers.insert(0, ('edge_embedding', init_edge_embedding(config)))
+
+    layers_list.append(OrderedDict(_layers))
+    del layers_list[-1]['force_output']  # done in LAMMPS
+    return layers_list
 
 
 # TODO: it gets bigger and bigger. refactor it
 def build_E3_equivariant_model(config: dict, parallel=False):
-    data_key_weight_input = KEY.EDGE_EMBEDDING  # default
+    """
+    output shapes (w/o batch)
 
-    # parameter initialization
+    PRED_TOTAL_ENERGY: (),
+    ATOMIC_ENERGY: (natoms, 1),  # intended
+    PRED_FORCE: (natoms, 3),
+    PRED_STRESS: (6,),
+
+    for data w/o cell volume, pred_stress has garbage values
+    """
+    layers = OrderedDict()
+
     cutoff = config[KEY.CUTOFF]
     num_species = config[KEY.NUM_SPECIES]
-
     feature_multiplicity = config[KEY.NODE_FEATURE_MULTIPLICITY]
-
-    lmax = config[KEY.LMAX]
-    lmax_edge = config[KEY.LMAX_EDGE] if config[KEY.LMAX_EDGE] >= 0 else lmax
-    lmax_node = config[KEY.LMAX_NODE] if config[KEY.LMAX_NODE] >= 0 else lmax
-
     num_convolution_layer = config[KEY.NUM_CONVOLUTION]
+    interaction_type = config[KEY.INTERACTION_TYPE]
+    use_bias_in_linear = config[KEY.USE_BIAS_IN_LINEAR]
 
-    is_parity = config[KEY.IS_PARITY]  # boolean
-    use_modality = config[KEY.USE_MODALITY]  # boolean
+    # is_parity = config[KEY.IS_PARITY]  # boolean
+    lmax_node = _ = config[KEY.LMAX]  # ignore second (lmax_edge)
+    if config[KEY.LMAX_EDGE] > 0:
+        _ = config[KEY.LMAX_EDGE]
+    if config[KEY.LMAX_NODE] > 0:
+        lmax_node = config[KEY.LMAX_NODE]
 
-    irreps_spherical_harm = Irreps.spherical_harmonics(
-        lmax_edge, -1 if is_parity else 1
-    )
-    layers_list = []
-    if parallel:
-        layers_list = [OrderedDict() for _ in range(num_convolution_layer)]
-        layers_idx = 0
-        layers = layers_list[0]
-    else:
-        layers = OrderedDict()
+    act_radial = _const.ACTIVATION[config[KEY.ACTIVATION_RADIAL]]
+    self_connection_pair = init_self_connection(config)
 
     irreps_manual = None
     if config[KEY.IRREPS_MANUAL] is not False:
@@ -117,49 +325,15 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         except Exception:
             raise RuntimeError('invalid irreps_manual input given')
 
-    sc_intro, sc_outro = init_self_connection(config)
-
-    act_scalar = {}
-    act_gate = {}
-    for k, v in config[KEY.ACTIVATION_SCARLAR].items():
-        act_scalar[k] = _const.ACTIVATION_DICT[k][v]
-    for k, v in config[KEY.ACTIVATION_GATE].items():
-        act_gate[k] = _const.ACTIVATION_DICT[k][v]
-    act_radial = _const.ACTIVATION[config[KEY.ACTIVATION_RADIAL]]
-
-    radial_basis_module, radial_basis_num = init_radial_basis(config)
-    cutoff_function_module = init_cutoff_function(config)
-
     conv_denominator = config[KEY.CONV_DENOMINATOR]
     if not isinstance(conv_denominator, list):
         conv_denominator = [conv_denominator] * num_convolution_layer
     train_conv_denominator = config[KEY.TRAIN_DENOMINTAOR]
 
-    use_bias_in_linear = config[KEY.USE_BIAS_IN_LINEAR]
-
-    _normalize_sph = config[KEY._NORMALIZE_SPH]
-    # model definitions
-    edge_embedding = EdgeEmbedding(
-        # operate on ||r||
-        basis_module=radial_basis_module,
-        cutoff_module=cutoff_function_module,
-        # operate on r/||r||
-        spherical_module=SphericalEncoding(
-            lmax_edge, -1 if is_parity else 1, normalize=_normalize_sph
-        ),
-    )
-    layers.update({
-        # simple edge preprocessor module with no param
-        'edge_preprocess': EdgePreprocess(is_stress=True),
-    })
-
-    layers.update({
-        # 'Not' simple edge embedding module
-        'edge_embedding': edge_embedding,
-    })
-    # ~~ node embedding to first irreps feature ~~ #
-    # here, one hot embedding is preprocess of data not part of model
-    # see AtomGraphData._data_for_E3_equivariant_model
+    edge_embedding = init_edge_embedding(config)
+    irreps_filter = edge_embedding.spherical.irreps_out
+    radial_basis_num = edge_embedding.basis_function.num_basis
+    layers.update({'edge_embedding': edge_embedding})
 
     one_hot_irreps = Irreps(f'{num_species}x0e')
     irreps_x = (
@@ -168,273 +342,129 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         else irreps_manual[0]
     )
 
-    num_modalities = (
-        config[KEY.NUM_MODALITIES]
-        if use_modality and config[KEY.USE_MODAL_NODE_EMBEDDING]
-        else 1
-    )
-    layers.update({
-        'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
-        'onehot_to_feature_x': IrrepsLinear(
-            irreps_in=one_hot_irreps,
-            irreps_out=irreps_x,
-            data_key_in=KEY.NODE_FEATURE,
-            num_modalities=num_modalities,
-            biases=use_bias_in_linear,
-        ),
-    })
-    if parallel:
-        layers.update({
-            # Do not change its name (or see deploy.py before change)
-            'one_hot_ghost': OnehotEmbedding(
-                data_key_x=KEY.NODE_FEATURE_GHOST,
-                num_classes=num_species,
-                data_key_save=None,
-                data_key_additional=None,
-            ),
-            # Do not change its name (or see deploy.py before change)
-            'ghost_onehot_to_feature_x': IrrepsLinear(
+    layers.update(
+        {
+            'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
+            'onehot_to_feature_x': IrrepsLinear(
                 irreps_in=one_hot_irreps,
                 irreps_out=irreps_x,
-                data_key_in=KEY.NODE_FEATURE_GHOST,
-                num_modalities=num_modalities,
+                data_key_in=KEY.NODE_FEATURE,
                 biases=use_bias_in_linear,
             ),
-        })
-
-    # ~~ edge feature(convoluiton filter) ~~ #
-
-    # here, we can infer irreps or weight of tp from lmax and f0_irreps
-    # get all possible irreps from tp (here we drop l > lmax)
-    irreps_node_attr = one_hot_irreps
+        }
+    )
 
     weight_nn_hidden = config[KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS]
-    # output layer determined at each IrrepsConvolution layer
     weight_nn_layers = [radial_basis_num] + weight_nn_hidden
 
-    for i in range(num_convolution_layer):
-        interaction_block = {}
+    param_interaction_block = {
+        'irreps_filter': irreps_filter,
+        'weight_nn_layers': weight_nn_layers,
+        'train_conv_denominator': train_conv_denominator,
+        'self_connection_pair': self_connection_pair,
+        'act_radial': act_radial,
+        'bias_in_linear': use_bias_in_linear,
+        'num_species': num_species,
+        'parallel': parallel,
+    }
 
-        parity_mode = 'full'
-        if i == num_convolution_layer - 1:
-            lmax_node = 0
-            parity_mode = 'even'
+    interaction_builder = None
 
-        # raw irreps out after message(convolution) function
-        tp_irreps_out = util.infer_irreps_out(
-            irreps_x,  # node feature irreps
-            irreps_spherical_harm,  # filter irreps
-            drop_l=lmax_node,
-            parity_mode=parity_mode,
+    if interaction_type in ['nequip']:
+        act_scalar = {}
+        act_gate = {}
+        for k, v in config[KEY.ACTIVATION_SCARLAR].items():
+            act_scalar[k] = _const.ACTIVATION_DICT[k][v]
+        for k, v in config[KEY.ACTIVATION_GATE].items():
+            act_gate[k] = _const.ACTIVATION_DICT[k][v]
+        param_interaction_block.update(
+            {
+                'act_scalar': act_scalar,
+                'act_gate': act_gate,
+            }
         )
 
-        # multiplicity maintained irreps after Gate, linear, ..
-        true_irreps_out = (
+    if interaction_type == 'nequip':
+        interaction_builder = NequIP_interaction_block
+    else:
+        raise ValueError(f'Unknown interaction type: {interaction_type}')
+
+    for t in range(num_convolution_layer):
+        param_interaction_block.update(
+            {
+                'irreps_x': irreps_x,
+                't': t,
+                'conv_denominator': conv_denominator[t],
+            }
+        )
+        if interaction_type == 'nequip':
+            parity_mode = 'full'
+            fix_multiplicity = False
+            if t == num_convolution_layer - 1:
+                lmax_node = 0
+                parity_mode = 'even'
+            irreps_out_tp = util.infer_irreps_out(
+                irreps_x,  # type: ignore
+                irreps_filter,
+                lmax_node,  # type: ignore
+                parity_mode,
+                fix_multiplicity,
+            )
+        else:
+            raise ValueError(f'Unknown interaction type: {interaction_type}')
+        # TODO: irreps_manual is applicable to both irreps_out_tp and irreps_out
+        irreps_out = (
             util.infer_irreps_out(
-                irreps_x,
-                irreps_spherical_harm,
-                drop_l=lmax_node,
-                parity_mode=parity_mode,
+                irreps_x,  # type: ignore
+                irreps_filter,
+                lmax_node,  # type: ignore
+                parity_mode,
                 fix_multiplicity=feature_multiplicity,
             )
             if irreps_manual is None
-            else irreps_manual[i + 1]
+            else irreps_manual[t + 1]
         )
-
-        gate_layer = EquivariantGate(true_irreps_out, act_scalar, act_gate)
-        irreps_for_gate_in = gate_layer.get_gate_irreps_in()
-
-        interaction_block[f'{i}_self_connection_intro'] = sc_intro(
-            irreps_x=irreps_x,
-            irreps_operand=irreps_node_attr,
-            irreps_out=irreps_for_gate_in,
+        param_interaction_block.update(
+            {
+                'irreps_out_tp': irreps_out_tp,
+                'irreps_out': irreps_out,
+            }
         )
+        layers.update(interaction_builder(**param_interaction_block))
+        irreps_x = irreps_out
 
-        num_modalities = (
-            config[KEY.NUM_MODALITIES]
-            if use_modality and config[KEY.USE_MODAL_SELF_INTER_INTRO]
-            else 1
-        )
+    layers.update(init_feature_reduce(config, irreps_x))
 
-        interaction_block[f'{i}_self_interaction_1'] = IrrepsLinear(
-            irreps_x,
-            irreps_x,
-            data_key_in=KEY.NODE_FEATURE,
-            num_modalities=num_modalities,
-            biases=use_bias_in_linear,
-        )
-
-        if parallel and i == 0:
-            # Do not change its name (or see deploy.py before change)
-            interaction_block[f'ghost_{i}_self_interaction_1'] = IrrepsLinear(
-                irreps_x,
-                irreps_x,
-                data_key_in=KEY.NODE_FEATURE_GHOST,
-                num_modalities=num_modalities,
-                biases=use_bias_in_linear,
-            )
-        elif parallel and i != 0:
-            layers_idx += 1
-            layers.update(interaction_block)
-            interaction_block = {}  # TODO: this is confusing
-            #######################################################
-            radial_basis_module, _ = init_radial_basis(config)
-            cutoff_function_module = init_cutoff_function(config)
-            interaction_block.update({
-                'edge_embedding': EdgeEmbedding(
-                    # operate on ||r||
-                    basis_module=radial_basis_module,
-                    cutoff_module=cutoff_function_module,
-                    # operate on r/||r||
-                    spherical_module=SphericalEncoding(
-                        lmax_edge,
-                        -1 if is_parity else 1,
-                        normalize=_normalize_sph,
-                    ),
-                )
-            })
-            #######################################################
-            layers = layers_list[layers_idx]
-            # communication from lammps here
-
-        # convolution part, l>lmax is dropped as defined in irreps_out
-        interaction_block[f'{i}_convolution'] = IrrepsConvolution(
-            irreps_x=irreps_x,
-            irreps_filter=irreps_spherical_harm,
-            irreps_out=tp_irreps_out,
-            data_key_weight_input=data_key_weight_input,
-            weight_layer_input_to_hidden=weight_nn_layers,
-            weight_layer_act=act_radial,
-            # TODO: BOTNet says no sqrt is better
-            denominator=conv_denominator[i],
-            train_denominator=train_conv_denominator,
-            is_parallel=parallel,
-        )
-
-        num_modalities = (
-            config[KEY.NUM_MODALITIES]
-            if use_modality and config[KEY.USE_MODAL_SELF_INTER_OUTRO]
-            else 1
-        )
-        # irreps of x increase to gate_irreps_in
-        interaction_block[f'{i}_self_interaction_2'] = IrrepsLinear(
-            tp_irreps_out,
-            irreps_for_gate_in,
-            data_key_in=KEY.NODE_FEATURE,
-            num_modalities=num_modalities,
-            biases=use_bias_in_linear,
-        )
-
-        interaction_block[f'{i}_self_connection_outro'] = sc_outro()
-
-        # irreps of x change back to 'irreps_out'
-        interaction_block[f'{i}_equivariant_gate'] = gate_layer
-        # now we have irreps of x as 'irreps_out' as we wanted
-
-        layers.update(interaction_block)
-        irreps_x = true_irreps_out
-
-        # end of interaction block for-loop
-
-    if config[KEY.READOUT_AS_FCN] is False:
-        mid_dim = (
-            feature_multiplicity
-            if irreps_manual is None
-            else irreps_manual[-1].num_irreps
-        )
-        hidden_irreps = Irreps([(mid_dim // 2, (0, 1))])
-        num_modalities = (
-            config[KEY.NUM_MODALITIES]
-            if use_modality and config[KEY.USE_MODAL_OUTPUT_BLOCK]
-            else 1
-        )
-        layers.update({
-            'reduce_input_to_hidden': IrrepsLinear(
-                irreps_x,
-                hidden_irreps,
-                data_key_in=KEY.NODE_FEATURE,
-                num_modalities=num_modalities,
-                biases=use_bias_in_linear,
+    layers.update(
+        {
+            'rescale_atomic_energy': init_shift_scale(config),
+            'reduce_total_enegy': AtomReduce(
+                data_key_in=KEY.ATOMIC_ENERGY,
+                data_key_out=KEY.PRED_TOTAL_ENERGY,
             ),
-            'reduce_hidden_to_energy': IrrepsLinear(
-                hidden_irreps,
-                Irreps([(1, (0, 1))]),
-                data_key_in=KEY.NODE_FEATURE,
-                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
-                biases=use_bias_in_linear,
-            ),
-        })
-    else:
-        act = _const.ACTIVATION[config[KEY.READOUT_FCN_ACTIVATION]]
-        hidden_neurons = config[KEY.READOUT_FCN_HIDDEN_NEURONS]
-        layers.update({
-            'readout_FCN': FCN_e3nn(
-                dim_out=1,
-                hidden_neurons=hidden_neurons,
-                activation=act,
-                data_key_in=KEY.NODE_FEATURE,
-                data_key_out=KEY.SCALED_ATOMIC_ENERGY,
-                irreps_in=irreps_x,
-            )
-        })
-
-    shift = config[KEY.SHIFT]
-    scale = config[KEY.SCALE]
-    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
-    modal_wise_shift_scale = config[KEY.USE_MODALITY] and (
-        config[KEY.USE_MODAL_WISE_SHIFT]
-        or config[KEY.USE_MODAL_WISE_SCALE]
-    )
-    rescale_module = (
-        ModalWiseRescale
-        if modal_wise_shift_scale
-        else (
-            SpeciesWiseRescale
-            if config[KEY.USE_SPECIES_WISE_SHIFT_SCALE]
-            else Rescale
-        )
+        }
     )
 
-    if not modal_wise_shift_scale and '_deploy' in config.keys() and config['_deploy']:
-        # This is only for tensor size compatibility when deploying single modal model.
-        if not isinstance(shift, torch.Tensor):
-            shift = torch.FloatTensor(shift)
-        if not isinstance(scale, torch.Tensor):
-            scale = torch.FloatTensor(scale)
-
-        if shift.dim() != 1:
-            shift = shift[0]
-        if scale.dim() != 1:
-            scale = scale[0]
-
-    layers.update({
-        'rescale_atomic_energy': rescale_module(
-            shift=shift,
-            scale=scale,
-            data_key_in=KEY.SCALED_ATOMIC_ENERGY,
-            data_key_out=KEY.ATOMIC_ENERGY,
-            train_shift_scale=train_shift_scale,
-            use_modal_wise_shift=config[KEY.USE_MODAL_WISE_SHIFT],
-            use_modal_wise_scale=config[KEY.USE_MODAL_WISE_SCALE],
-        ),
-        'reduce_total_enegy': AtomReduce(
-            data_key_in=KEY.ATOMIC_ENERGY,
-            data_key_out=KEY.PRED_TOTAL_ENERGY,
-            constant=1.0,
-        ),
-    })
-    gradient_module = ForceStressOutput(
-        data_key_energy=KEY.PRED_TOTAL_ENERGY,
-        data_key_force=KEY.PRED_FORCE,
-        data_key_stress=KEY.PRED_STRESS,
-    )
+    gradient_module = ForceStressOutputFromEdge()
+    grad_key = gradient_module.get_grad_key()
     layers.update({'force_output': gradient_module})
 
-    # output extraction part
-    type_map = config[KEY.TYPE_MAP]
+    common_args = {
+        'cutoff': cutoff,
+        'type_map': config[KEY.TYPE_MAP],
+        'modal_map': config.get(KEY.MODAL_MAP, None),
+        'eval_type_map': False if parallel else True,
+        'eval_modal_map': False
+        if not config.get(KEY.USE_MODALITY, False) or parallel
+        else True,
+        'data_key_grad': grad_key,
+    }
+
     if parallel:
-        del layers_list[0]['edge_preprocess']  # done in LAMMPS
-        del layers_list[-1]['force_output']  # done in LAMMPS
-        return [AtomGraphSequential(v, cutoff, type_map) for v in layers_list]
+        layers_list = _to_parallel_model(layers, config)
+        return [
+            AtomGraphSequential(patch_modality(layers, config), **common_args)
+            for layers in layers_list
+        ]
     else:
-        return AtomGraphSequential(layers, cutoff, type_map)
+        return AtomGraphSequential(patch_modality(layers, config), **common_args)

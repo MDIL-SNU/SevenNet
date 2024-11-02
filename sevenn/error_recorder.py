@@ -1,13 +1,16 @@
-from typing import Callable, List, Tuple
+from copy import deepcopy
+from typing import Any, Callable, List, Optional, Tuple
 
 import torch
+import torch.distributed as dist
 
 import sevenn._keys as KEY
-from sevenn.atom_graph_data import AtomGraphData
-from sevenn.train.optim import loss_dict
-from sevenn.util import AverageNumber
+from sevenn.train.loss import LossDefinition
 
-ERROR_TYPES = {
+from .atom_graph_data import AtomGraphData
+from .train.optim import loss_dict
+
+_ERROR_TYPES = {
     'TotalEnergy': {
         'name': 'Energy',
         'ref_key': KEY.ENERGY,
@@ -53,6 +56,40 @@ ERROR_TYPES = {
 }
 
 
+def get_err_type(name: str) -> dict[str, Any]:
+    return deepcopy(_ERROR_TYPES[name])
+
+
+def _get_loss_function_from_name(loss_functions, name):
+    for loss_def, w in loss_functions:
+        if loss_def.name.lower() == name.lower():
+            return loss_def, w
+    return None, None
+
+
+class AverageNumber:
+    def __init__(self):
+        self._sum = 0.0
+        self._count = 0
+
+    def update(self, values: torch.Tensor):
+        self._sum += values.sum().item()
+        self._count += values.numel()
+
+    def _ddp_reduce(self, device):
+        _sum = torch.tensor(self._sum, device=device)
+        _count = torch.tensor(self._count, device=device)
+        dist.all_reduce(_sum, op=dist.ReduceOp.SUM)
+        dist.all_reduce(_count, op=dist.ReduceOp.SUM)
+        self._sum = _sum.item()
+        self._count = _count.item()
+
+    def get(self):
+        if self._count == 0:
+            return torch.nan
+        return self._sum / self._count
+
+
 class ErrorMetric:
     """
     Base class for error metrics We always average error by # of structures,
@@ -65,9 +102,9 @@ class ErrorMetric:
         ref_key: str,
         pred_key: str,
         coeff: float = 1.0,
-        unit: str = None,
+        unit: Optional[str] = None,
         per_atom: bool = False,
-        delete_unlabled: bool = True,
+        ignore_unlabeled: bool = True,
         **kwargs,
     ):
         self.name = name
@@ -76,7 +113,7 @@ class ErrorMetric:
         self.ref_key = ref_key
         self.pred_key = pred_key
         self.per_atom = per_atom
-        self.delete_unlabled = delete_unlabled
+        self.ignore_unlabeled = ignore_unlabeled
         self.value = AverageNumber()
 
     def update(self, output: AtomGraphData):
@@ -86,10 +123,11 @@ class ErrorMetric:
         y_ref = output[self.ref_key] * self.coeff
         y_pred = output[self.pred_key] * self.coeff
         if self.per_atom:
+            assert y_ref.dim() == 1 and y_pred.dim() == 1
             natoms = output[KEY.NUM_ATOMS]
             y_ref = y_ref / natoms
             y_pred = y_pred / natoms
-        if self.delete_unlabled:
+        if self.ignore_unlabeled:
             unlabelled_idx = torch.isnan(y_ref)
             y_ref = y_ref[~unlabelled_idx]
             y_pred = y_pred[~unlabelled_idx]
@@ -104,8 +142,8 @@ class ErrorMetric:
     def get(self):
         return self.value.get()
 
-    def key_str(self):
-        if self.unit is None:
+    def key_str(self, with_unit=True):
+        if self.unit is None or not with_unit:
             return self.name
         else:
             return f'{self.name} ({self.unit})'
@@ -125,7 +163,7 @@ class RMSError(ErrorMetric):
         self._se = torch.nn.MSELoss(reduction='none')
 
     def _square_error(self, y_ref, y_pred, vdim: int):
-        return self._se(y_ref, y_pred).view(-1, vdim).sum(dim=1)
+        return self._se(y_ref.view(-1, vdim), y_pred.view(-1, vdim)).sum(dim=1)
 
     def update(self, output: AtomGraphData):
         y_ref, y_pred = self._retrieve(output)
@@ -139,7 +177,7 @@ class RMSError(ErrorMetric):
 class ComponentRMSError(ErrorMetric):
     """
     Ignore vector dim and just average over components
-    Results in smaller error looking
+    Results smaller error
     """
 
     def __init__(self, **kwargs):
@@ -157,7 +195,7 @@ class ComponentRMSError(ErrorMetric):
         self.value.update(se)
 
     def get(self):
-        return torch.sqrt(self.value.get())
+        return self.value.get() ** 0.5
 
 
 class MAError(ErrorMetric):
@@ -195,6 +233,29 @@ class CustomError(ErrorMetric):
         y_ref, y_pred = self._retrieve(output)
         se = self.func(y_ref, y_pred) if len(y_ref) > 0 else torch.tensor([])
         self.value.update(se)
+
+
+class LossError(ErrorMetric):
+    """
+    Error metric that record loss
+    """
+
+    def __init__(
+        self,
+        name: str,
+        loss_def: LossDefinition,
+        **kwargs,
+    ):
+        super().__init__(
+            name,
+            ignore_unlabeld=loss_def.ignore_unlabeled,
+            **kwargs,
+        )
+        self.loss_def = loss_def
+
+    def update(self, output: AtomGraphData):
+        loss = self.loss_def.get_loss(output)  # type: ignore
+        self.value.update(loss)  # type: ignore
 
 
 class CombinedError(ErrorMetric):
@@ -236,7 +297,7 @@ class ErrorRecorder:
         'RMSE': RMSError,
         'ComponentRMSE': ComponentRMSError,
         'MAE': MAError,
-        'Loss': CustomError,
+        'Loss': LossError,
     }
 
     def __init__(self, metrics: List[ErrorMetric]):
@@ -254,42 +315,83 @@ class ErrorRecorder:
         else:
             self._update(output)
 
-    def get_metric_dict(self):
-        return {metric.key_str(): metric.get() for metric in self.metrics}
+    def get_metric_dict(self, with_unit=True):
+        return {metric.key_str(with_unit): metric.get() for metric in self.metrics}
+
+    def get_current(self):
+        dct = {}
+        for metric in self.metrics:
+            dct[metric.name] = {
+                'value': metric.get(),
+                'unit': metric.unit,
+                'ref_key': metric.ref_key,
+                'pred_key': metric.pred_key,
+            }
+        return dct
+
+    def get_dct(self, prefix=''):
+        dct = {}
+        if prefix.endswith('_') is False and prefix != '':
+            prefix = prefix + '_'
+        for metric in self.metrics:
+            dct[f'{prefix}{metric.name}'] = f'{metric.get():6f}'
+        return dct
+
+    def get_key_str(self, name: str):
+        for metric in self.metrics:
+            if name == metric.name:
+                return metric.key_str()
+        return None
 
     def epoch_forward(self):
-        self.history.append(self.get_metric_dict())
+        self.history.append(self.get_current())
+        pretty = self.get_metric_dict(with_unit=True)
         for metric in self.metrics:
             metric.reset()
-        return self.history[-1]
-
-    def get_history(self):
-        return self.history
+        return pretty  # for print
 
     @staticmethod
-    def init_total_loss_metric(config, criteria):
+    def init_total_loss_metric(
+        config,
+        criteria: Optional[Callable] = None,
+        loss_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
+    ):
+        if criteria is None and loss_functions is None:
+            raise ValueError('both criteria and loss functions not given')
+
         is_stress = config[KEY.IS_TRAIN_STRESS]
         metrics = []
-        energy_metric = CustomError(criteria, **ERROR_TYPES['Energy'])
-        metrics.append((energy_metric, 1))
-        force_metric = CustomError(criteria, **ERROR_TYPES['Force'])
-        metrics.append((force_metric, config[KEY.FORCE_WEIGHT]))
-        if is_stress:
-            stress_metric = CustomError(criteria, **ERROR_TYPES['Stress'])
-            metrics.append((stress_metric, config[KEY.STRESS_WEIGHT]))
+        if criteria is not None:
+            energy_metric = CustomError(criteria, **get_err_type('Energy'))
+            metrics.append((energy_metric, 1))
+            force_metric = CustomError(criteria, **get_err_type('Force'))
+            metrics.append((force_metric, config[KEY.FORCE_WEIGHT]))
+            if is_stress:
+                stress_metric = CustomError(criteria, **get_err_type('Stress'))
+                metrics.append((stress_metric, config[KEY.STRESS_WEIGHT]))
+        else:
+            for efs in ['Energy', 'Force', 'Stress']:
+                if efs == 'stress' and not is_stress:
+                    continue
+                lf, w = _get_loss_function_from_name(loss_functions, efs)
+                if lf is None:
+                    raise ValueError(f'{efs} not found from loss_functions')
+                metric = LossError(loss_def=lf, **get_err_type(efs))
+                metrics.append((metric, w))
+
         total_loss_metric = CombinedError(
             metrics, name='TotalLoss', unit=None, ref_key=None, pred_key=None
         )
         return total_loss_metric
 
     @staticmethod
-    def from_config(config: dict):
+    def from_config(config: dict, loss_functions=None):
         loss_cls = loss_dict[config[KEY.LOSS].lower()]
         try:
             loss_param = config[KEY.LOSS_PARAM]
         except KeyError:
             loss_param = {}
-        criteria = loss_cls(**loss_param)
+        criteria = loss_cls(**loss_param) if loss_functions is None else None
 
         err_config = config[KEY.ERROR_RECORD]
         err_config_n = []
@@ -302,16 +404,27 @@ class ErrorRecorder:
 
         err_metrics = []
         for err_type, metric_name in err_config:
-            metric_kwargs = ERROR_TYPES[err_type].copy()
+            metric_kwargs = get_err_type(err_type)
             if err_type == 'TotalLoss':  # special case
                 err_metrics.append(
-                    ErrorRecorder.init_total_loss_metric(config, criteria)
+                    ErrorRecorder.init_total_loss_metric(
+                        config, criteria, loss_functions
+                    )
                 )
                 continue
             metric_cls = ErrorRecorder.METRIC_DICT[metric_name]
-            metric_kwargs['name'] += f'_{metric_name}'
+            assert isinstance(metric_kwargs['name'], str)
             if metric_name == 'Loss':
-                metric_kwargs['func'] = criteria
-                metric_kwargs['unit'] = None
+                if loss_functions is not None:
+                    metric_cls = LossError
+                    metric_kwargs['loss_def'], _ = _get_loss_function_from_name(
+                        loss_functions, metric_kwargs['name']
+                    )
+                else:
+                    metric_cls = CustomError
+                    metric_kwargs['func'] = criteria
+                print(metric_cls)
+                metric_kwargs.pop('unit', None)
+            metric_kwargs['name'] += f'_{metric_name}'
             err_metrics.append(metric_cls(**metric_kwargs))
         return ErrorRecorder(err_metrics)
