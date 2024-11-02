@@ -1,18 +1,16 @@
 import csv
 import os
-from typing import IO, Iterable, List, Union
+from typing import Iterable, List, Optional, Union
 
-import ase.io
 import numpy as np
-from ase.calculators.singlepoint import SinglePointCalculator
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 import sevenn._keys as KEY
-import sevenn.train.dataload as dl
 import sevenn.util as util
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.graph_dataset import SevenNetGraphDataset
+from sevenn.train.modal_dataset import SevenNetMultiModalDataset
 
 
 def write_inference_csv(output_list, out):
@@ -127,6 +125,7 @@ def inference(
     batch_size: int = 4,
     save_graph: bool = False,
     allow_unlabeled: bool = False,
+    modal: Optional[str] = None,
     **data_kwargs,
 ) -> None:
     """
@@ -156,6 +155,13 @@ def inference(
     model, _ = util.model_from_checkpoint(checkpoint)
     cutoff = model.cutoff
 
+    if modal:
+        if model.modal_map is None:
+            raise ValueError('Modality given, but model has no modal_map')
+        if modal not in model.modal_map:
+            _modals = list(model.modal_map.keys())
+            raise ValueError(f'Unknown modal {modal} (not in {_modals})')
+
     if isinstance(targets, str):
         targets = [targets]
 
@@ -184,7 +190,11 @@ def inference(
             full_file_list.extend([os.path.abspath(file)] * len(tmplist))
     if full_file_list is not None and len(full_file_list) == len(dataset):
         _patch_data_info(dataset, full_file_list)  # type: ignore
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+
+    if modal:
+        dataset = SevenNetMultiModalDataset({modal: dataset})  # type: ignore
+
+    loader = DataLoader(dataset, batch_size, shuffle=False)  # type: ignore
 
     model.to(device)
     model.set_is_batch_data(True)
