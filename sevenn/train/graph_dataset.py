@@ -203,7 +203,7 @@ class SevenNetGraphDataset(InMemoryDataset):
 
     def load(self, path: str, data_cls=Data) -> None:
         super().load(path, data_cls)
-        
+
         if len(self) == 0:
             warnings.warn(f'No graphs found {self.processed_paths[0]}')
         if len(self.statistics) == 0:

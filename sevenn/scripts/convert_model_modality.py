@@ -148,7 +148,7 @@ def get_single_modal_model_dct(
     """
     Convert multimodal model state dictionary to single modal model.
     Modal is selected by `ref_modal`
-    
+
     `model_state_dct`: model state dictionary from multimodal checkpoint file
     `config`: dictionary containing configuration of the checkpoint model
     `ref_modal`: modal that are going to be converted
@@ -258,7 +258,7 @@ def append_modality_to_model_dct(
     """
     Append modal-wise parameters to the original linear layers.
     This enables expanding modal to single/multi modal model checkpoint.
-    
+
     `model_state_dct`: model state dictionary from multimodal checkpoint file
     `config`: dictionary containing configuration of the checkpoint model
     `orig_num_modal`: Number of modality used in original checkpoint
