@@ -55,6 +55,7 @@ def main(args=None):
         device,
         args.batch,
         args.save_graph,
+        args.allow_unlabeled,
         **fmt_kwargs,
     )
 
@@ -96,6 +97,12 @@ def cmd_parse_data(args=None):
         '--save_graph',
         action='store_true',
         help='Additionally, save preprocessed graph as sevenn_data'
+    )
+    ag.add_argument(
+        '-au',
+        '--allow_unlabeled',
+        action='store_true',
+        help='Allow energy or force unlabeled data'
     )
     ag.add_argument(
         '--kwargs',
