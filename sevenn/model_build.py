@@ -138,24 +138,20 @@ def init_shift_scale(config):
     type_map = config[KEY.TYPE_MAP]
 
     # in case of modal, shift or scale has more dims [][]
-    print(config[KEY.SHIFT])
-    print(config[KEY.SCALE])
     # correct typing (I really want static python)
     for s in (config[KEY.SHIFT], config[KEY.SCALE]):
         if hasattr(s, 'tolist'):  # numpy or torch
             s = s.tolist()
-        if isinstance(s, list) and len(s) == 1:
-            s = s[0]
         shift_scale.append(s)
+    shift, scale = shift_scale
 
     rescale_module = None
-    shift, scale = shift_scale
-    if config[KEY.USE_MODALITY]:
+    if config.get(KEY.USE_MODALITY, False):
         rescale_module = ModalWiseRescale.from_mappers(  # type: ignore
             shift,
             scale,
             config[KEY.USE_MODAL_WISE_SHIFT],
-            config[KEY.USE_BIAS_IN_LINEAR],
+            config[KEY.USE_MODAL_WISE_SCALE],
             type_map=type_map,
             modal_map=config[KEY.MODAL_MAP],
             train_shift_scale=train_shift_scale,
@@ -180,7 +176,7 @@ def patch_modality(layers: OrderedDict, config):
     Modality aware shift scale is handled by init_shift_scale, not here
     """
     cfg = config
-    if not cfg[KEY.USE_MODALITY]:
+    if not cfg.get(KEY.USE_MODALITY, False):
         return layers
 
     _layers = list(layers.items())
@@ -221,7 +217,7 @@ def patch_modality(layers: OrderedDict, config):
 def _to_parallel_model(layers: OrderedDict, config):
     num_classes = layers['onehot_idx_to_onehot'].num_classes
     one_hot_irreps = Irreps(f'{num_classes}x0e')
-    irreps_node_zero = layers['onehot_to_feature_x'].linear.irreps_out
+    irreps_node_zero = layers['onehot_to_feature_x'].irreps_out
 
     _layers = list(layers.items())
     layers_list = []
@@ -459,7 +455,7 @@ def build_E3_equivariant_model(config: dict, parallel=False):
         'modal_map': config.get(KEY.MODAL_MAP, None),
         'eval_type_map': False if parallel else True,
         'eval_modal_map': False
-        if not config[KEY.USE_MODALITY] or parallel
+        if not config.get(KEY.USE_MODALITY, False) or parallel
         else True,
         'data_key_grad': grad_key,
     }

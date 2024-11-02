@@ -22,14 +22,13 @@ get_parallel_help = 'deploy parallel model'
 
 
 def main(args=None):
-    checkpoint, output_prefix, get_parallel, modal, save_cp =\
-        cmd_parse_get_model(args)
+    checkpoint, output_prefix, get_parallel, modal, save_cp = cmd_parse_get_model(
+        args
+    )
     get_serial = not get_parallel
 
     if output_prefix is None:
-        output_prefix = (
-            'deployed_parallel' if not get_serial else 'deployed_serial'
-        )
+        output_prefix = 'deployed_parallel' if not get_serial else 'deployed_serial'
 
     checkpoint_path = None
     if os.path.isfile(checkpoint):
@@ -40,8 +39,10 @@ def main(args=None):
     model, config = sevenn.util.model_from_checkpoint(checkpoint_path)
     stct_dct = model.state_dict()
 
-    if KEY.USE_MODALITY in config.keys() and config[KEY.USE_MODALITY]:
-        stct_dct = get_single_modal_model_dct(stct_dct, config, modal, is_deploy=True)
+    if config.get(KEY.USE_MODALITY, False):
+        stct_dct = get_single_modal_model_dct(
+            stct_dct, config, modal, is_deploy=True
+        )
         output_prefix = modal + '_' + output_prefix
         if save_cp:
             cp_file = torch.load(checkpoint_path, map_location='cpu')
