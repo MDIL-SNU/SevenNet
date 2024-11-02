@@ -104,7 +104,7 @@ class ErrorMetric:
         coeff: float = 1.0,
         unit: Optional[str] = None,
         per_atom: bool = False,
-        delete_unlabeled: bool = True,
+        ignore_unlabeled: bool = True,
         **kwargs,
     ):
         self.name = name
@@ -113,7 +113,7 @@ class ErrorMetric:
         self.ref_key = ref_key
         self.pred_key = pred_key
         self.per_atom = per_atom
-        self.delete_unlabeled = delete_unlabeled
+        self.ignore_unlabeled = ignore_unlabeled
         self.value = AverageNumber()
 
     def update(self, output: AtomGraphData):
@@ -127,7 +127,7 @@ class ErrorMetric:
             natoms = output[KEY.NUM_ATOMS]
             y_ref = y_ref / natoms
             y_pred = y_pred / natoms
-        if self.delete_unlabeled:
+        if self.ignore_unlabeled:
             unlabelled_idx = torch.isnan(y_ref)
             y_ref = y_ref[~unlabelled_idx]
             y_pred = y_pred[~unlabelled_idx]
@@ -248,7 +248,7 @@ class LossError(ErrorMetric):
     ):
         super().__init__(
             name,
-            delete_unlabeld=loss_def.delete_unlabeled,
+            ignore_unlabeld=loss_def.ignore_unlabeled,
             **kwargs,
         )
         self.loss_def = loss_def

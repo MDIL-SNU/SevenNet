@@ -19,7 +19,7 @@ class LossDefinition:
         ref_key: Optional[str] = None,
         pred_key: Optional[str] = None,
         use_weight: bool = False,
-        delete_unlabeled: bool = True,
+        ignore_unlabeled: bool = True,
     ):
         self.name = name
         self.unit = unit
@@ -27,7 +27,7 @@ class LossDefinition:
         self.ref_key = ref_key
         self.pred_key = pred_key
         self.use_weight = use_weight
-        self.delete_unlabeled = delete_unlabeled
+        self.ignore_unlabeled = ignore_unlabeled
 
     def __repr__(self):
         return self.name
@@ -48,7 +48,7 @@ class LossDefinition:
         ref = torch.reshape(batch_data[self.ref_key], (-1,))
         return pred, ref, None
 
-    def _delete_unlabeled(self, pred, ref, data_weights=None):
+    def _ignore_unlabeled(self, pred, ref, data_weights=None):
         unlabeled = torch.isnan(ref)
         pred = pred[~unlabeled]
         ref = ref[~unlabeled]
@@ -68,8 +68,8 @@ class LossDefinition:
             raise NotImplementedError('LossDefinition has no criterion.')
         pred, ref, w_tensor = self._preprocess(batch_data, model)
 
-        if self.delete_unlabeled:
-            pred, ref, w_tensor = self._delete_unlabeled(pred, ref, w_tensor)
+        if self.ignore_unlabeled:
+            pred, ref, w_tensor = self._ignore_unlabeled(pred, ref, w_tensor)
 
         if len(pred) == 0:
             return None
@@ -213,15 +213,14 @@ def get_loss_functions_from_config(config: Dict[str, Any]):
     loss_functions = []  # list of tuples (loss_definition, weight)
 
     loss = loss_dict[config[KEY.LOSS].lower()]
-    try:
-        loss_param = config[KEY.LOSS_PARAM]
-    except KeyError:
-        loss_param = {}
-    if config[KEY.USE_WEIGHT]:
+    loss_param = config.get(KEY.LOSS_PARAM, {})
+
+    use_weight = config.get(KEY.USE_WEIGHT, False)
+    if use_weight:
         loss_param['reduction'] = 'none'
     criterion = loss(**loss_param)
 
-    commons = {'use_weight': config[KEY.USE_WEIGHT]}
+    commons = {'use_weight': use_weight}
 
     loss_functions.append((PerAtomEnergyLoss(**commons), 1.0))
     loss_functions.append((ForceLoss(**commons), config[KEY.FORCE_WEIGHT]))
