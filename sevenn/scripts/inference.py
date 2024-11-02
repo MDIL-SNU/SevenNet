@@ -1,6 +1,5 @@
 import csv
 import os
-import tempfile
 from typing import IO, Iterable, List, Union
 
 import ase.io
@@ -104,53 +103,6 @@ def write_inference_csv(output_list, out):
                     writer = csv.DictWriter(f, fieldnames=data.keys())
                     writer.writeheader()
                 writer.writerow(data)
-
-
-def _extract_unlabeled_data(targets: List[str], tmp_file: IO, **data_kwargs):
-    # for only, ase readable, it may be unlabeled
-    # extract such files and returns graph list built with these
-
-    def assign_dummy_y(atoms):
-        dummy = {'energy': np.nan, 'free_energy': np.nan}
-        dummy['forces'] = np.full((len(atoms), 3), np.nan)  # type: ignore
-        dummy['stress'] = np.full((6,), np.nan)  # type: ignore
-        calc = SinglePointCalculator(atoms, **dummy)
-        atoms = calc.get_atoms()
-        return calc.get_atoms()
-
-    new_targets = []
-    atoms_list_patched = []
-    unlabeled_file_list = []
-    for target in targets:
-        if not (
-            not target.endswith('.pt')
-            and not target.endswith('.sevenn_data')
-            and 'structure_list' not in target
-        ):
-            new_targets.append(target)
-            continue
-        # it must be ase readable
-        try:
-            _ = dl.ase_reader(target, **data_kwargs)
-            new_targets.append(target)  # No error occurred, target is labeled
-        except RuntimeError or KeyError:
-            # The data is not labeled
-            print(
-                f'{target} seems not labeled, dummy values will be used',
-                flush=True,
-            )
-            atoms_list = ase.io.read(target, index=':')
-            for atoms in atoms_list:
-                atoms_patched = assign_dummy_y(atoms)
-                atoms_patched.info.update({'y_is_dummy': 'Yes'})
-                atoms_list_patched.append(atoms_patched)
-            unlabeled_file_list.extend([target] * len(atoms_list))
-
-    if len(atoms_list_patched) > 0:
-        ase.io.write(tmp_file, atoms_list_patched, format='extxyz')
-        tmp_file.flush()
-        new_targets.append(tmp_file.name)
-    return new_targets, unlabeled_file_list
 
 
 def _patch_data_info(
