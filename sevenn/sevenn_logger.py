@@ -137,11 +137,16 @@ class Logger(metaclass=Singleton):
         for label, dct in statistic.items():
             if label.startswith('_'):
                 continue
+            if not isinstance(dct, dict):
+                continue
             dct_new = {}
             for k, v in dct.items():
                 if k.startswith('_'):
                     continue
-                dct_new[k] = f'{v:.3f}'
+                if isinstance(v, int):
+                    dct_new[k] = v
+                else:
+                    dct_new[k] = f'{v:.3f}'
             content += self.format_k_v(label, dct_new)
         self.write(content)
 

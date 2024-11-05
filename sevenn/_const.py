@@ -173,6 +173,8 @@ DEFAULT_DATA_CONFIG = {
     KEY.RATIO: 0.1,
     KEY.BATCH_SIZE: 6,
     KEY.PREPROCESS_NUM_CORES: 1,
+    KEY.COMPUTE_STATISTICS: True,
+    KEY.DATASET_TYPE: 'graph',
     # KEY.USE_SPECIES_WISE_SHIFT_SCALE: False,
     KEY.SHIFT: 'per_atom_energy_mean',
     KEY.SCALE: 'force_rms',
@@ -188,9 +190,11 @@ DATA_CONFIG_CONDITION = {
     KEY.RATIO: float,
     KEY.BATCH_SIZE: int,
     KEY.PREPROCESS_NUM_CORES: int,
+    KEY.DATASET_TYPE: lambda x: x in ['graph', 'atoms'],
     # KEY.USE_SPECIES_WISE_SHIFT_SCALE: bool,
     KEY.SHIFT: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SHIFT,
     KEY.SCALE: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SCALE,
+    KEY.COMPUTE_STATISTICS: bool,
     KEY.SAVE_DATASET: str,
 }
 
@@ -242,7 +246,7 @@ TRAINING_CONFIG_CONDITION = {
     KEY.FORCE_WEIGHT: float,
     KEY.STRESS_WEIGHT: float,
     KEY.USE_TESTSET: None,  # Not used
-    KEY.NUM_WORKERS: None,  # Not used
+    KEY.NUM_WORKERS: int,
     KEY.PER_EPOCH: int,
     KEY.CONTINUE: {
         KEY.CHECKPOINT: str,

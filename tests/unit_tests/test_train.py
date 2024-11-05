@@ -7,6 +7,7 @@ import torch
 from torch_geometric.loader import DataLoader
 
 import sevenn.train.graph_dataset as graph_ds
+from sevenn._const import NUM_UNIV_ELEMENT
 from sevenn.scripts.processing_continue import processing_continue_v2
 from sevenn.scripts.processing_epoch import processing_epoch_v2
 from sevenn.sevenn_logger import Logger
@@ -28,6 +29,7 @@ cp_0_path = str(data_root / 'checkpoints' / 'cp_0.pth')
 sevennet_0_path = pretrained_name_to_path('7net-0_11July2024')
 
 known_elements = ['Hf', 'O']
+_elemwise_ref_energy_dct = {72: -17.379337, 8: -34.7499924}
 
 Logger()  # init
 
@@ -235,7 +237,12 @@ def test_dataset_from_config_as_it_is_load(graph_dataset_path, tmp_path):
             {
                 'shift': 'elemwise_reference_energies',
             },
-            [-17.379337, -34.7499924],
+            [
+                0.0
+                if z not in _elemwise_ref_energy_dct
+                else _elemwise_ref_energy_dct[z]
+                for z in range(NUM_UNIV_ELEMENT)
+            ],
             0.113304,
             25.333333,
         ),
