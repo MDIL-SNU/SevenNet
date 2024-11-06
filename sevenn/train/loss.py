@@ -38,9 +38,7 @@ class LossDefinition:
         self.criterion = criterion
 
     def _preprocess(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
     ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
         if self.pred_key is None or self.ref_key is None:
             raise NotImplementedError('LossDefinition is not implemented.')
@@ -56,11 +54,7 @@ class LossDefinition:
             data_weights = data_weights[~unlabeled]
         return pred, ref, data_weights
 
-    def get_loss(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
-    ):
+    def get_loss(self, batch_data: Dict[str, Any], model: Optional[Callable] = None):
         """
         Function that return scalar
         """
@@ -72,7 +66,8 @@ class LossDefinition:
             pred, ref, w_tensor = self._ignore_unlabeled(pred, ref, w_tensor)
 
         if len(pred) == 0:
-            return None
+            assert self.ref_key is not None
+            return torch.zeros(1, device=batch_data[self.ref_key].device)
 
         loss = self.criterion(pred, ref)
         if self.use_weight:
@@ -100,13 +95,11 @@ class PerAtomEnergyLoss(LossDefinition):
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            **kwargs
+            **kwargs,
         )
 
     def _preprocess(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
     ):
         num_atoms = batch_data[KEY.NUM_ATOMS]
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
@@ -142,13 +135,11 @@ class ForceLoss(LossDefinition):
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            **kwargs
+            **kwargs,
         )
 
     def _preprocess(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
     ):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
         pred = torch.reshape(batch_data[self.pred_key], (-1,))
@@ -184,14 +175,12 @@ class StressLoss(LossDefinition):
             criterion=criterion,
             ref_key=ref_key,
             pred_key=pred_key,
-            **kwargs
+            **kwargs,
         )
         self.TO_KB = 1602.1766208  # eV/A^3 to kbar
 
     def _preprocess(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
     ):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
 
