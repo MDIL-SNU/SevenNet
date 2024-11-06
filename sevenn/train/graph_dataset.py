@@ -181,7 +181,7 @@ class SevenNetGraphDataset(InMemoryDataset):
             processed_name += '.pt'
         self._processed_names = [
             processed_name,  # {root}/sevenn_data/{name}.pt
-            processed_name.replace('pt', 'yaml'),
+            processed_name.replace('.pt', '.yaml'),
         ]
         self.process_num_cores = process_num_cores
         self.process_kwargs = process_kwargs
@@ -507,6 +507,7 @@ class SevenNetGraphDataset(InMemoryDataset):
             )
         return graph_list
 
+
 def from_single_path(
     path: Union[str, List], override_data_weight: bool = True, **dataset_kwargs
 ) -> Union[SevenNetGraphDataset, None]:
@@ -569,6 +570,7 @@ def _chain_data_weight_override(transform_func, data_weight):
         return graph
 
     return chained_transform
+
 
 # script, return dict of SevenNetGraphDataset
 def from_config(
