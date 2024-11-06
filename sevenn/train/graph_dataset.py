@@ -237,7 +237,7 @@ class SevenNetGraphDataset(InMemoryDataset):
                 (
                     'Loaded dataset is built with different cutoff length: '
                     + f'{cutoff} != {self.cutoff}, dataset cutoff will be'
-                    + f'overwritten to {cutoff}'
+                    + f' overwritten to {cutoff}'
                 )
             )
         self.cutoff = cutoff
