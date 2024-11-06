@@ -621,7 +621,7 @@ def from_config(
             continue
         if isinstance(paths, str):
             paths = [paths]
-        name = dk.split('_')[1].strip()
+        name = '_'.join([nn.strip() for nn in dk.split('_')[1:-1]])
         if (dataset := from_single_path(paths, **dataset_args)) is not None:
             datasets[name] = dataset
         else:
