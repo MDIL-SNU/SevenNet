@@ -161,6 +161,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         use_data_weight: bool = False,
         log: bool = True,
         force_reload: bool = False,
+        drop_info: bool = True,
         **process_kwargs,
     ):
         self.cutoff = cutoff
@@ -184,16 +185,19 @@ class SevenNetGraphDataset(InMemoryDataset):
             processed_name.replace('.pt', '.yaml'),
         ]
 
-        _pt = self.processed_file_names[0]
-        if not os.path.isfile(_pt) and len(self._files) == 0:
+        root = root or './'
+        _pdir = os.path.join(root, 'sevenn_data')
+        _pt = os.path.join(_pdir, self._processed_names[0])
+        if not os.path.exists(_pt) and len(self._files) == 0:
             raise ValueError(f'{_pt} not found and no files to process.')
-        _yam = self.processed_file_names[1]
-        if not os.path.isfile(_yam) and len(self._files) == 0:
+        _yam = os.path.join(_pdir, self._processed_names[1])
+        if not os.path.exists(_yam) and len(self._files) == 0:
             raise ValueError(f'{_yam} not found and no files to process')
 
         self.process_num_cores = process_num_cores
         self.process_kwargs = process_kwargs
         self.use_data_weight = use_data_weight
+        self.drop_info = drop_info
 
         self.tag_map = {}
         self.statistics = {}
@@ -239,6 +243,12 @@ class SevenNetGraphDataset(InMemoryDataset):
         self.cutoff = cutoff
         self._files = meta['files']
         self.statistics = meta['statistics']
+
+    def __getitem__(self, idx):
+        graph = super().__getitem__(idx)
+        if self.drop_info:
+            graph.pop(KEY.INFO, None)  # type: ignore
+        return graph
 
     @property
     def raw_file_names(self) -> List[Any]:
