@@ -183,6 +183,14 @@ class SevenNetGraphDataset(InMemoryDataset):
             processed_name,  # {root}/sevenn_data/{name}.pt
             processed_name.replace('.pt', '.yaml'),
         ]
+
+        _pt = self.processed_file_names[0]
+        if not os.path.isfile(_pt) and len(self._files) == 0:
+            raise ValueError(f'{_pt} not found and no files to process.')
+        _yam = self.processed_file_names[1]
+        if not os.path.isfile(_yam) and len(self._files) == 0:
+            raise ValueError(f'{_yam} not found and no files to process')
+
         self.process_num_cores = process_num_cores
         self.process_kwargs = process_kwargs
         self.use_data_weight = use_data_weight
