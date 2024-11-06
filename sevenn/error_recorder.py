@@ -423,7 +423,6 @@ class ErrorRecorder:
                 else:
                     metric_cls = CustomError
                     metric_kwargs['func'] = criteria
-                print(metric_cls)
                 metric_kwargs.pop('unit', None)
             metric_kwargs['name'] += f'_{metric_name}'
             err_metrics.append(metric_cls(**metric_kwargs))

@@ -77,7 +77,6 @@ def error_record_condition(x):
         if v[0] == 'TotalLoss':
             continue
         if v[1] not in SUPPORTING_METRICS:
-            print('w')
             return False
     return True
 
