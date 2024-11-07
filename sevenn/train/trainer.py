@@ -89,7 +89,7 @@ class Trainer:
             ],
             scheduler_args=config.get(KEY.SCHEDULER_PARAM, {}),
             device=config.get(KEY.DEVICE, 'auto'),
-            distributed=config.get(KEY.IS_DDP, 'False'),
+            distributed=config.get(KEY.IS_DDP, False),
             distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
         )
         return trainer
