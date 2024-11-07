@@ -25,6 +25,7 @@ dependencies = [
     "scikit-learn",
     "torch_geometric>=2.5.0",
     "numpy<2.0",
+    "matscipy",
 ]
 
 
