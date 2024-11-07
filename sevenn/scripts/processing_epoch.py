@@ -32,8 +32,8 @@ def processing_epoch_v2(
     prefix = f'{os.path.abspath(working_dir)}/'
 
     total_epoch = total_epoch or config[KEY.EPOCH]
-    per_epoch = per_epoch or config[KEY.PER_EPOCH]
-    best_metric = best_metric or config[KEY.BEST_METRIC]
+    per_epoch = per_epoch or config.get(KEY.PER_EPOCH, 10)
+    best_metric = best_metric or config.get(KEY.BEST_METRIC, 'TotalLoss')
     recorder = error_recorder or ErrorRecorder.from_config(config)
     recorders = {k: deepcopy(recorder) for k in loaders}
 
