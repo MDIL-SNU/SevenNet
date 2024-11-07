@@ -18,9 +18,9 @@ from ase.io.vasp_parsers.vasp_outcar_parsers import (
     outcarchunks,
 )
 from ase.neighborlist import primitive_neighbor_list
-from matscipy.neighbours import neighbour_list
 from ase.utils import string2index
 from braceexpand import braceexpand
+from matscipy.neighbours import neighbour_list
 from tqdm import tqdm
 
 import sevenn._keys as KEY
