@@ -18,6 +18,7 @@ from ase.io.vasp_parsers.vasp_outcar_parsers import (
     outcarchunks,
 )
 from ase.neighborlist import primitive_neighbor_list
+from matscipy.neighbours import neighbour_list
 from ase.utils import string2index
 from braceexpand import braceexpand
 from tqdm import tqdm
@@ -42,11 +43,33 @@ def _correct_scalar(v):
 def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
-
+    pbc = atoms.get_pbc()
     # building neighbor list
-    edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
-        'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
+    # edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
+    #     'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
+    # )
+    # ase -> matscipy
+    pbc_x = pbc[0]
+    pbc_y = pbc[1]
+    pbc_z = pbc[2]
+    identity = np.identity(3, dtype=float)
+    max_positions = np.max(np.absolute(pos)) + 1
+
+    # Extend cell in non-periodic directions
+    # For models with more than 5 layers, the multiplicative constant needs to be increased.
+    if not pbc_x:
+        cell[0, :] = max_positions * 5 * cutoff * identity[0, :]
+    if not pbc_y:
+        cell[1, :] = max_positions * 5 * cutoff * identity[1, :]
+    if not pbc_z:
+        cell[2, :] = max_positions * 5 * cutoff * identity[2, :]
+    # it does not have self-interaction
+    edge_src, edge_dst, edge_vec, shifts = neighbour_list(
+        quantities='ijDS', pbc=pbc, cell=cell, positions=pos, cutoff=cutoff,
     )
+    # dtype issue
+    edge_src = edge_src.astype(np.int64)
+    edge_dst = edge_dst.astype(np.int64)
 
     is_zero_idx = np.all(edge_vec == 0, axis=1)
     is_self_idx = edge_src == edge_dst
