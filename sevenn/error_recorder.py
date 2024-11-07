@@ -331,16 +331,17 @@ class ErrorRecorder:
 
     @staticmethod
     def from_config(config: dict):
-        loss_cls = loss_dict[config[KEY.LOSS].lower()]
-        try:
-            loss_param = config[KEY.LOSS_PARAM]
-        except KeyError:
-            loss_param = {}
+        loss_cls = loss_dict[config.get(KEY.LOSS, 'mse').lower()]
+        loss_param = config.get(KEY.LOSS_PARAM, {})
         criteria = loss_cls(**loss_param)
 
-        err_config = config[KEY.ERROR_RECORD]
+        err_config = config.get(KEY.ERROR_RECORD, False)
+        if not err_config:
+            raise ValueError(
+                'No error_record config found. Consider util.get_error_recorder'
+            )
         err_config_n = []
-        if not config[KEY.IS_TRAIN_STRESS]:
+        if not config.get(KEY.IS_TRAIN_STRESS, True):
             for err_type, metric_name in err_config:
                 if 'Stress' in err_type:
                     continue

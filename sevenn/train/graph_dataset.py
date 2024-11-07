@@ -172,8 +172,24 @@ class SevenNetGraphDataset(InMemoryDataset):
             processed_name += '.pt'
         self._processed_names = [
             processed_name,  # {root}/sevenn_data/{name}.pt
-            processed_name.replace('pt', 'yaml'),
+            processed_name.replace('.pt', '.yaml'),
         ]
+
+        root = root or './'
+        _pdir = os.path.join(root, 'sevenn_data')
+        _pt = os.path.join(_pdir, self._processed_names[0])
+        if not os.path.exists(_pt) and len(self._files) == 0:
+            raise ValueError((
+                f'{_pt} not found and no files to process. '
+                + 'If you copied only .pt file, please copy '
+                + 'whole sevenn_data dir without changing its name.'
+                + ' They all work together.'
+            ))
+
+        _yam = os.path.join(_pdir, self._processed_names[1])
+        if not os.path.exists(_yam) and len(self._files) == 0:
+            raise ValueError(f'{_yam} not found and no files to process')
+
         self.process_num_cores = process_num_cores
         self.process_kwargs = process_kwargs
 
