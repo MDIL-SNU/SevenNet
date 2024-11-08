@@ -20,7 +20,6 @@ from ase.io.vasp_parsers.vasp_outcar_parsers import (
 from ase.neighborlist import primitive_neighbor_list
 from ase.utils import string2index
 from braceexpand import braceexpand
-from matscipy.neighbours import neighbour_list
 from tqdm import tqdm
 
 import sevenn._keys as KEY
@@ -29,25 +28,11 @@ from sevenn.atom_graph_data import AtomGraphData
 from .dataset import AtomGraphDataset
 
 
-def _correct_scalar(v):
-    if isinstance(v, np.ndarray):
-        v = v.squeeze()
-        assert v.ndim == 0, f'given {v} is not a scalar'
-        return v
-    elif isinstance(v, (int, float, np.integer, np.floating)):
-        return np.array(v)
-    else:
-        assert False, f'{type(v)} is not expected'
-
-
-def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
-    pos = atoms.get_positions()
-    cell = np.array(atoms.get_cell())
-    pbc = atoms.get_pbc()
-    # ase -> matscipy
+def _graph_build_matscipy(cutoff: float, pbc, cell, pos):
     pbc_x = pbc[0]
     pbc_y = pbc[1]
     pbc_z = pbc[2]
+
     identity = np.identity(3, dtype=float)
     max_positions = np.max(np.absolute(pos)) + 1
 
@@ -72,14 +57,59 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
     edge_src = edge_src.astype(np.int64)
     edge_dst = edge_dst.astype(np.int64)
 
+    return edge_src, edge_dst, edge_vec, shifts
+
+
+def _graph_build_ase(cutoff: float, pbc, cell, pos):
+    # building neighbor list
+    edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
+        'ijDS', pbc, cell, pos, cutoff, self_interaction=True
+    )
+
+    return edge_src, edge_dst, edge_vec, shifts
+
+
+_graph_build_f = _graph_build_ase
+try:
+    from matscipy.neighbours import neighbour_list
+    _graph_build_f = _graph_build_matscipy
+except ImportError:
+    pass
+
+
+def _remove_self_edges(edge_src, edge_dst, edge_vec, shifts):
     is_zero_idx = np.all(edge_vec == 0, axis=1)
     is_self_idx = edge_src == edge_dst
     non_trivials = ~(is_zero_idx & is_self_idx)
-    cell_shift = np.array(shifts[non_trivials])
+    shifts = np.array(shifts[non_trivials])
 
     edge_vec = edge_vec[non_trivials]
     edge_src = edge_src[non_trivials]
     edge_dst = edge_dst[non_trivials]
+
+    return edge_src, edge_dst, edge_vec, shifts
+
+
+def _correct_scalar(v):
+    if isinstance(v, np.ndarray):
+        v = v.squeeze()
+        assert v.ndim == 0, f'given {v} is not a scalar'
+        return v
+    elif isinstance(v, (int, float, np.integer, np.floating)):
+        return np.array(v)
+    else:
+        assert False, f'{type(v)} is not expected'
+
+
+def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
+    pos = atoms.get_positions()
+    cell = np.array(atoms.get_cell())
+    pbc = atoms.get_pbc()
+
+    edge_src, edge_dst, edge_vec, shifts = _remove_self_edges(
+        *_graph_build_f(cutoff, pbc, cell, pos)
+    )
+
     edge_idx = np.array([edge_src, edge_dst])
 
     atomic_numbers = atoms.get_atomic_numbers()
@@ -96,7 +126,7 @@ def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
         KEY.EDGE_IDX: edge_idx,
         KEY.EDGE_VEC: edge_vec,
         KEY.CELL: cell,
-        KEY.CELL_SHIFT: cell_shift,
+        KEY.CELL_SHIFT: shifts,
         KEY.CELL_VOLUME: vol,
         KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
     }
@@ -161,22 +191,13 @@ def atoms_to_graph(
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
+    pbc = atoms.get_pbc()
 
-    # building neighbor list
-    edge_src, edge_dst, edge_vec, shifts = primitive_neighbor_list(
-        'ijDS', atoms.get_pbc(), cell, pos, cutoff, self_interaction=True
+    edge_src, edge_dst, edge_vec, shifts = _remove_self_edges(
+        *_graph_build_f(cutoff, pbc, cell, pos)
     )
 
-    is_zero_idx = np.all(edge_vec == 0, axis=1)
-    is_self_idx = edge_src == edge_dst
-    non_trivials = ~(is_zero_idx & is_self_idx)
-    cell_shift = np.array(shifts[non_trivials])
-
-    edge_vec = edge_vec[non_trivials]
-    edge_src = edge_src[non_trivials]
-    edge_dst = edge_dst[non_trivials]
     edge_idx = np.array([edge_src, edge_dst])
-
     atomic_numbers = atoms.get_atomic_numbers()
 
     cell = np.array(cell)
@@ -194,7 +215,7 @@ def atoms_to_graph(
         KEY.FORCE: y_force,
         KEY.STRESS: y_stress.reshape(1, 6),  # to make batch have (n_node, 6)
         KEY.CELL: cell,
-        KEY.CELL_SHIFT: cell_shift,
+        KEY.CELL_SHIFT: shifts,
         KEY.CELL_VOLUME: vol,
         KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
         KEY.PER_ATOM_ENERGY: _correct_scalar(y_energy / len(pos)),
