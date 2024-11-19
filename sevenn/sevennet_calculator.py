@@ -6,7 +6,9 @@ import numpy as np
 import torch
 import torch.jit
 import torch.jit._script
+from ase import units
 from ase.calculators.calculator import Calculator, all_changes
+from ase.calculators.mixing import SumCalculator
 from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
@@ -175,3 +177,41 @@ class SevenNetCalculator(Calculator):
                 .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
             ),
         }
+
+
+class SevenNetD3Calculator(SumCalculator):
+    def __init__(
+        self,
+        model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
+        file_type: str = 'checkpoint',
+        device: Union[torch.device, str] = 'auto',
+        sevennet_config: Optional[Any] = None,  # hold meta information
+        damping: str = 'bj',
+        dispersion_xc: str = 'pbe',
+        dispersion_cutoff: float = 40.0 * units.Bohr,
+        **kwargs,
+    ):
+
+        if isinstance(device, str) and device == 'auto':
+            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+        try:
+            from torch_dftd.torch_dftd3_calculator import TorchDFTD3Calculator
+
+            d3_calc = TorchDFTD3Calculator(
+                device=str(device),
+                damping=damping,
+                xc=dispersion_xc,
+                cutoff=dispersion_cutoff,
+                **kwargs,
+            )
+        except ImportError as e:
+            raise ImportError('Run: pip install torch-dftd') from e
+        sevennet_calc = SevenNetCalculator(
+            model=model,
+            file_type=file_type,
+            device=device,
+            sevennet_config=sevennet_config,
+            **kwargs,
+        )
+        super().__init__([sevennet_calc, d3_calc])
