@@ -3,7 +3,7 @@ from typing import List
 import torch
 import torch.nn as nn
 from e3nn.nn import FullyConnectedNet
-from e3nn.o3 import Irreps, TensorProduct
+from e3nn.o3 import Instruction, Irreps, TensorProduct
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
@@ -76,6 +76,10 @@ class IrrepsConvolution(nn.Module):
             (i_in1, i_in2, p[i_out], mode, train)
             for i_in1, i_in2, i_out, mode, train in instructions
         ]
+        # From v1.11.x, to compatible with cuEquivariance
+        self._instructions_before_sort = instructions
+        instructions = sorted(instructions, key=lambda x: x[2])
+
         self.convolution = TensorProduct(
             irreps_x,
             irreps_filter,
