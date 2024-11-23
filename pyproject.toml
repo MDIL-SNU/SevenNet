@@ -1,6 +1,6 @@
 [project]
 name = "sevenn"
-version = "0.10.1"
+version = "0.10.2.dev"
 authors = [
     { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
     { name = "Jaesun Kim" },
@@ -25,7 +25,10 @@ dependencies = [
     "scikit-learn",
     "torch_geometric>=2.5.0",
     "numpy<2.0",
+    #"matscipy",
 ]
+[project.optional-dependencies]
+matscipy = ["matscipy"]
 
 
 [project.scripts]
