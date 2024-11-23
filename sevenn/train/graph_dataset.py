@@ -189,7 +189,13 @@ class SevenNetGraphDataset(InMemoryDataset):
         _pdir = os.path.join(root, 'sevenn_data')
         _pt = os.path.join(_pdir, self._processed_names[0])
         if not os.path.exists(_pt) and len(self._files) == 0:
-            raise ValueError(f'{_pt} not found and no files to process.')
+            raise ValueError((
+                f'{_pt} not found and no files to process. '
+                + 'If you copied only .pt file, please copy '
+                + 'whole sevenn_data dir without changing its name.'
+                + ' They all work together.'
+            ))
+
         _yam = os.path.join(_pdir, self._processed_names[1])
         if not os.path.exists(_yam) and len(self._files) == 0:
             raise ValueError(f'{_yam} not found and no files to process')

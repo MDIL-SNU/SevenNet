@@ -82,13 +82,15 @@ class Trainer:
         trainer = Trainer(
             model,
             loss_functions=get_loss_functions_from_config(config),
-            optimizer_cls=optim_dict[config[KEY.OPTIMIZER].lower()],
-            optimizer_args=config[KEY.OPTIM_PARAM],
-            scheduler_cls=scheduler_dict[config[KEY.SCHEDULER].lower()],
-            scheduler_args=config[KEY.SCHEDULER_PARAM],
-            device=config[KEY.DEVICE],
-            distributed=config[KEY.IS_DDP],
-            distributed_backend=config[KEY.DDP_BACKEND]
+            optimizer_cls=optim_dict[config.get(KEY.OPTIMIZER, 'adam').lower()],
+            optimizer_args=config.get(KEY.OPTIM_PARAM, {}),
+            scheduler_cls=scheduler_dict[
+                config.get(KEY.SCHEDULER, 'exponentiallr').lower()
+            ],
+            scheduler_args=config.get(KEY.SCHEDULER_PARAM, {}),
+            device=config.get(KEY.DEVICE, 'auto'),
+            distributed=config.get(KEY.IS_DDP, False),
+            distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
         )
         return trainer
 
