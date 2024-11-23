@@ -58,8 +58,9 @@ def processing_epoch_v2(
         with open(csv_path, 'w') as f:
             f.write(','.join(head) + '\n')
 
-    path = f'{prefix}/checkpoint_0.pth'  # save first epoch
-    trainer.write_checkpoint(path, config=config, epoch=0)
+    if start_epoch == 0:
+        path = f'{prefix}/checkpoint_0.pth'  # save first epoch
+        trainer.write_checkpoint(path, config=config, epoch=0)
 
     for epoch in range(start_epoch, total_epoch + 1):  # one indexing
         log.timer_start('epoch')
