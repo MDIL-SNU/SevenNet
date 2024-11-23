@@ -52,7 +52,7 @@ Supporting MD frameworks and its features. While all modes support both CPU and 
 ## Installation
 
 - Python >= 3.8
-- PyTorch >= 1.12.0
+- PyTorch >= 1.12.0, PyTorch < 2.5.0
 
 Please install PyTorch from [`PyTorch official`](https://pytorch.org/get-started/locally/) before installing the SevenNet.
 Note that for SevenNet, `torchvision` and `torchaudio` are redundant. You can safely exclude these packages from the installation commands.
@@ -181,7 +181,7 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 ## Installation for LAMMPS
 
-- PyTorch (same version as used for training)
+- PyTorch < 2.5.0 (same version as used for training)
 - LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
 - (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 - MKL-include

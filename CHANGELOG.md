@@ -24,6 +24,7 @@ All notable changes to this project will be documented in this file.
 - Save checkpoint_0.pth (model before any training)
 - `SevenNetGraphDataset._file_to_graph_list` -> `SevenNetGraphDataset.file_to_graph_list`
 - Refactoring `SevenNetGraphDataset`, skips computing statistics if it is loaded, more detailed logging
+- Prefer use .get when accessing config dict
 ### Fixed
 - Fix error when loading `SevenNetGraphDataset` with other types of data (ex: extxyz) in one dataset
 
