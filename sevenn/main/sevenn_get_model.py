@@ -36,6 +36,7 @@ def main(args=None):
     else:
         checkpoint_path = sevenn.util.pretrained_name_to_path(checkpoint)
 
+    """
     model, config = sevenn.util.model_from_checkpoint(checkpoint_path)
     stct_dct = model.state_dict()
 
@@ -48,11 +49,12 @@ def main(args=None):
             cp_file = torch.load(checkpoint_path, map_location='cpu')
             cp_file.update({'model_state_dict': stct_dct, 'config': config})
             torch.save(cp_file, checkpoint_path.replace('.', f'_{modal}.'))
+    """
 
     if get_serial:
-        deploy(stct_dct, config, output_prefix)
+        deploy(checkpoint_path, output_prefix)
     else:
-        deploy_parallel(stct_dct, config, output_prefix)
+        deploy_parallel(checkpoint_path, output_prefix)
 
 
 def cmd_parse_get_model(args=None):

@@ -79,12 +79,8 @@ def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
 
 
 def test_sevennet_0_cal_deployed(tmp_path, atoms_pbc):
-    model, config = model_from_checkpoint(
-        pretrained_name_to_path('7net-0_11July2024')
-    )
-
     fname = str(tmp_path / '7net_0.pt')
-    deploy(model.state_dict(), config, fname)
+    deploy(pretrained_name_to_path('7net-0_11July2024'), fname)
 
     calc_script = SevenNetCalculator(fname, file_type='torchscript')
     calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))

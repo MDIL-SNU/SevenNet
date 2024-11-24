@@ -9,10 +9,11 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
+from sevenn.util import model_from_checkpoint
 
 
 # TODO: this is E3_equivariant specific
-def deploy(model_state_dct, config, fname):
+def deploy(checkpoint, fname):
     """
     This method is messy to avoid changes in pair_e3gnn.cpp, while
     refactoring python part.
@@ -22,8 +23,9 @@ def deploy(model_state_dct, config, fname):
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
 
-    model = build_E3_equivariant_model(config)
-    assert isinstance(model, torch.nn.Module)
+    model, config = model_from_checkpoint(checkpoint)
+    model_state_dct = model.state_dict()
+
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
     grad_module = ForceStressOutput()
     model.replace_module('force_output', grad_module)
@@ -64,12 +66,14 @@ def deploy(model_state_dct, config, fname):
 
 
 # TODO: this is E3_equivariant specific
-def deploy_parallel(model_state_dct, config, fname):
+def deploy_parallel(checkpoint, fname):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
-    # config[KEY.IS_TRACE_STRESS] = False
-    # config[KEY.IS_TRAIN_STRESS] = False  #now model_build has no dependency on this
+    model, config = model_from_checkpoint(checkpoint)
+    model_state_dct = model.state_dict()
+
+    # TODO: build model only once
     model_list = build_E3_equivariant_model(config, parallel=True)
     assert isinstance(model_list, list)
     dct_temp = {}

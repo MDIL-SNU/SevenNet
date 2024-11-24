@@ -12,7 +12,6 @@ from ase.calculators.singlepoint import SinglePointCalculator
 
 from sevenn.scripts.deploy import deploy, deploy_parallel
 from sevenn.sevennet_calculator import SevenNetCalculator
-from sevenn.util import model_from_checkpoint
 
 logger = logging.getLogger('test_lammps')
 
@@ -29,19 +28,17 @@ cp_0_path = str(data_root / 'checkpoints' / 'cp_0.pth')  # knows Hf, O
 
 @pytest.fixture(scope='module')
 def serial_potential_path(tmp_path_factory):
-    model, config = model_from_checkpoint(cp_0_path)
     tmp = tmp_path_factory.mktemp('serial_potential')
     pot_path = str(tmp / 'deployed_serial.pt')
-    deploy(model.state_dict(), config, pot_path)
+    deploy(cp_0_path, pot_path)
     return pot_path
 
 
 @pytest.fixture(scope='module')
 def parallel_potential_path(tmp_path_factory):
-    model, config = model_from_checkpoint(cp_0_path)
     tmp = tmp_path_factory.mktemp('paralllel_potential')
     pot_path = str(tmp / 'deployed_parallel')
-    deploy_parallel(model.state_dict(), config, pot_path)
+    deploy_parallel(cp_0_path, pot_path)
     return ' '.join(['3', pot_path])
 
 
