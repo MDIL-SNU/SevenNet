@@ -3,14 +3,14 @@ from typing import List
 import torch
 import torch.nn as nn
 from e3nn.nn import FullyConnectedNet
-from e3nn.o3 import Instruction, Irreps, TensorProduct
+from e3nn.o3 import Irreps, TensorProduct
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 from .activation import ShiftedSoftPlus
-from .util import _broadcast
+from .util import broadcast
 
 
 def message_gather(
@@ -18,7 +18,7 @@ def message_gather(
     edge_dst: torch.Tensor,
     message: torch.Tensor
 ):
-    index = _broadcast(edge_dst, message, 0)
+    index = broadcast(edge_dst, message, 0)
     out_shape = [len(node_features)] + list(message.shape[1:])
     out = torch.zeros(
         out_shape,

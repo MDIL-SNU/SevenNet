@@ -5,7 +5,7 @@ from e3nn.util.jit import compile_mode
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
-from .util import _broadcast
+from .util import broadcast
 
 
 @compile_mode('script')
@@ -184,8 +184,8 @@ class ForceStressOutputFromEdge(nn.Module):
             # compute force
             pf = torch.zeros(tot_num, 3, dtype=fij.dtype, device=fij.device)
             nf = torch.zeros(tot_num, 3, dtype=fij.dtype, device=fij.device)
-            _edge_src = _broadcast(edge_idx[0], fij, 0)
-            _edge_dst = _broadcast(edge_idx[1], fij, 0)
+            _edge_src = broadcast(edge_idx[0], fij, 0)
+            _edge_dst = broadcast(edge_idx[1], fij, 0)
             pf.scatter_reduce_(0, _edge_src, fij, reduce='sum')
             nf.scatter_reduce_(0, _edge_dst, fij, reduce='sum')
             data[self.key_force] = pf - nf
@@ -204,7 +204,7 @@ class ForceStressOutputFromEdge(nn.Module):
             ], dim=-1)
 
             _s = torch.zeros(tot_num, 6, dtype=fij.dtype, device=fij.device)
-            _edge_dst6 = _broadcast(edge_idx[1], _virial, 0)
+            _edge_dst6 = broadcast(edge_idx[1], _virial, 0)
             _s.scatter_reduce_(0, _edge_dst6, _virial, reduce='sum')
 
             if self._is_batch_data:
@@ -213,7 +213,7 @@ class ForceStressOutputFromEdge(nn.Module):
                 sout = torch.zeros(
                     (nbatch, 6), dtype=_virial.dtype, device=_virial.device
                 )
-                _batch = _broadcast(batch, _s, 0)
+                _batch = broadcast(batch, _s, 0)
                 sout.scatter_reduce_(0, _batch, _s, reduce='sum')
             else:
                 sout = torch.sum(_s, dim=0)
