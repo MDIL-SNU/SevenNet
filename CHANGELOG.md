@@ -15,6 +15,8 @@ All notable changes to this project will be documented in this file.
 - Ignore unlabelled data when calculating loss. (e.g. stress data for non-pbc structure)
 - Record shift and scale used for each modality in `log.sevenn`.
 - Record error and loss in the `log.sevenn` with the value after weighting the loss and ignoring unlabelled data.
+- Deploy takes checkpoint path (now deployed serial build model only once)
+- Sort instructions of tensor product in convolution (+ fix flipped w3j coeff of old model)
 
 ## [0.10.1]
 ### Added
