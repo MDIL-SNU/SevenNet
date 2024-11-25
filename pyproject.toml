@@ -20,7 +20,7 @@ dependencies = [
     "ase",
     "braceexpand",
     "pyyaml",
-    "e3nn",
+    "e3nn>=0.4.4",
     "tqdm",
     "scikit-learn",
     "torch_geometric>=2.5.0",

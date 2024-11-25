@@ -8,6 +8,7 @@ import sevenn._const as _const
 import sevenn._keys as KEY
 import sevenn.util as util
 
+from .nn.convolution import IrrepsConvolution
 from .nn.edge_embedding import (
     BesselBasis,
     EdgeEmbedding,
@@ -211,6 +212,40 @@ def patch_modality(layers: OrderedDict, config):
             or (cfg[KEY.USE_MODAL_OUTPUT_BLOCK] and k == 'reduce_input_to_hidden')
         ):
             module.set_num_modalities(num_modal)
+    return layers
+
+
+def patch_cue(layers: OrderedDict, config):
+    import sevenn.nn.cue_helper as cue_helper
+
+    cue_cfg = copy.deepcopy(config.get(KEY.CUEQUIVARIANCE_CONFIG, {}))
+
+    if not cue_cfg.pop('use', False):
+        return layers
+
+    group = 'O3' if config[KEY.IS_PARITY] else 'SO3'
+    updates = {}
+    for k, module in layers.items():
+        if isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
+            if k == 'reduce_hidden_to_energy':  # TODO: has bug with 0 shape
+                continue
+            module_patched = cue_helper.patch_linear(
+                module, group, layout='mul_ir', **cue_cfg
+            )
+            updates[k] = module_patched
+        elif isinstance(module, IrrepsConvolution):
+            module_patched = cue_helper.patch_convolution(
+                module, group, layout='mul_ir', **cue_cfg
+            )
+            updates[k] = module_patched
+
+    layers.update(updates)
+    return layers
+
+
+def patch_modules(layers: OrderedDict, config):
+    layers = patch_modality(layers, config)
+    layers = patch_cue(layers, config)
     return layers
 
 
@@ -463,8 +498,8 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     if parallel:
         layers_list = _to_parallel_model(layers, config)
         return [
-            AtomGraphSequential(patch_modality(layers, config), **common_args)
+            AtomGraphSequential(patch_modules(layers, config), **common_args)
             for layers in layers_list
         ]
     else:
-        return AtomGraphSequential(patch_modality(layers, config), **common_args)
+        return AtomGraphSequential(patch_modules(layers, config), **common_args)

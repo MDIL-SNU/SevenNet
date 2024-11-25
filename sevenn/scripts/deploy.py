@@ -9,7 +9,7 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.util import model_from_checkpoint
+from sevenn.util import model_from_checkpoint_with_backend
 
 
 # TODO: this is E3_equivariant specific
@@ -23,7 +23,7 @@ def deploy(checkpoint, fname):
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
 
-    model, config = model_from_checkpoint(checkpoint)
+    model, config = model_from_checkpoint_with_backend(checkpoint, 'e3nn')
     model_state_dct = model.state_dict()
 
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
@@ -70,7 +70,7 @@ def deploy_parallel(checkpoint, fname):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
-    model, config = model_from_checkpoint(checkpoint)
+    model, config = model_from_checkpoint_with_backend(checkpoint, 'e3nn')
     model_state_dct = model.state_dict()
 
     # TODO: build model only once

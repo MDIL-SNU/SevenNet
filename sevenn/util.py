@@ -1,7 +1,7 @@
 import copy
 import os
 import warnings
-from typing import Any, Dict, List, Tuple, Union
+from typing import Dict, List, Tuple, Union
 
 import numpy as np
 import torch
@@ -9,6 +9,7 @@ import torch.nn
 from e3nn.o3 import FullTensorProduct, Irreps
 
 import sevenn._keys as KEY
+import sevenn.scripts.backward_compatibility as compat
 
 
 def to_atom_graph_list(atom_graph_batch):
@@ -81,146 +82,11 @@ def onehot_to_chem(one_hot_indices: List[int], type_map: Dict[int, int]):
     return [chemical_symbols[type_map_rev[x]] for x in one_hot_indices]
 
 
-def _patch_old_config(config: Dict[str, Any]):
-    # Fixing my old mistakes
-    if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
-        config[KEY.CUTOFF_FUNCTION].pop('poly_cut_p_value', None)
-    if KEY.TRAIN_DENOMINTAOR not in config:
-        config[KEY.TRAIN_DENOMINTAOR] = config.pop('train_avg_num_neigh', False)
-    _opt = config.pop('optimize_by_reduce', None)
-    if _opt is False:
-        raise ValueError(
-            'This checkpoint(optimize_by_reduce: False) is no longer supported'
-        )
-    if KEY.CONV_DENOMINATOR not in config:
-        config[KEY.CONV_DENOMINATOR] = 0.0
-    if KEY._NORMALIZE_SPH not in config:
-        config[KEY._NORMALIZE_SPH] = False
-        # Warn this in the docs, not here for SevenNet-0 (22May2024)
-    return config
-
-
-def _map_old_model(old_model_state_dict):
-    """
-    For compatibility with old namings (before 'correct' branch merged 2404XX)
-    Map old model's module names to new model's module names
-    """
-    _old_module_name_mapping = {
-        'EdgeEmbedding': 'edge_embedding',
-        'reducing nn input to hidden': 'reduce_input_to_hidden',
-        'reducing nn hidden to energy': 'reduce_hidden_to_energy',
-        'rescale atomic energy': 'rescale_atomic_energy',
-    }
-    for i in range(10):
-        _old_module_name_mapping[f'{i} self connection intro'] = (
-            f'{i}_self_connection_intro'
-        )
-        _old_module_name_mapping[f'{i} convolution'] = f'{i}_convolution'
-        _old_module_name_mapping[f'{i} self interaction 2'] = (
-            f'{i}_self_interaction_2'
-        )
-        _old_module_name_mapping[f'{i} equivariant gate'] = f'{i}_equivariant_gate'
-
-    new_model_state_dict = {}
-    for k, v in old_model_state_dict.items():
-        key_name = k.split('.')[0]
-        follower = '.'.join(k.split('.')[1:])
-        if 'denumerator' in follower:
-            follower = follower.replace('denumerator', 'denominator')
-        if key_name in _old_module_name_mapping:
-            new_key_name = _old_module_name_mapping[key_name] + '.' + follower
-            new_model_state_dict[new_key_name] = v
-        else:
-            new_model_state_dict[k] = v
-    return new_model_state_dict
-
-
-def _sort_old_convolution(model_now, state_dict):
-    """ Reason1: we have to sort instructions of convolution to be compatible with
-    cuEquivariance. (therefore, sort weight)
-    Reason2: some of old convolution module's w3j coeff has flipped sign. This also
-    has to be fixed to be compatible with cuEquivarinace."""
-    conv_dicts = {}
-    for k, v in state_dict.items():
-        key_name = k.split('.')[0]
-        if key_name.split('_')[1] == 'convolution':
-            if key_name not in conv_dicts:
-                conv_dicts[key_name] = {}
-            conv_dicts[key_name].update({k: v})
-
-    def patch(stct):
-        inst_old = copy.copy(conv._instructions_before_sort)
-        inst_old = [(inst[0], inst[1], inst[2]) for inst in inst_old]
-        del conv._instructions_before_sort
-        inst_sorted = [
-            (inst.i_in1, inst.i_in2, inst.i_out, inst.path_shape)
-            for inst in tp.instructions
-        ]
-        irreps_in1 = tp.irreps_in1
-        irreps_in2 = tp.irreps_in2
-        irreps_out = tp.irreps_out
-        n = len(weight_nn.hs) - 2
-        ww_key = f'{conv_key}.weight_nn.layer{n}.weight'
-        ww = stct[ww_key]
-        ww_sorted = [None] * len(inst_old)
-        _prev_idx = 0
-        for ist_src in inst_old:
-            for j, ist_dst in enumerate(inst_sorted):
-                if not all(ist_src[ii] == ist_dst[ii] for ii in range(3)):
-                    continue
-
-                numel = ist_dst[3][0]  # path_shape
-                ww_src = ww[:, _prev_idx : _prev_idx + numel]
-                l1, l2, l3 = (
-                    irreps_in1[ist_src[0]].ir.l,
-                    irreps_in2[ist_src[1]].ir.l,
-                    irreps_out[ist_src[2]].ir.l,
-                )
-                if l1 > 0 and l2 > 0 and l3 > 0:
-                    w3j_key = f'_w3j_{l1}_{l2}_{l3}'
-                    conv_w3j_key = (
-                        f'{conv_key}.convolution._compiled_main_left_right.{w3j_key}'
-                    )
-                    w3j_old = stct[conv_w3j_key]
-                    w3j_tp = getattr(
-                        tp._compiled_main_left_right, w3j_key
-                    )
-                    if not torch.allclose(w3j_old.to(w3j_tp.device), w3j_tp):
-                        assert torch.allclose(w3j_old.to(w3j_tp.device), -1 * w3j_tp)
-                        ww_src = -1 * ww_src
-                        stct[conv_w3j_key] *= -1  # !!stct updated!!
-                _prev_idx += numel
-                ww_sorted[j] = ww_src
-        ww_sorted = torch.cat(ww_sorted, dim=1)  # type: ignore
-        stct[ww_key] = ww_sorted.clone()
-
-    new_state_dict = {}
-    new_state_dict.update(state_dict)
-    for conv_key, conv_state_dict in conv_dicts.items():
-        conv = model_now._modules[conv_key]
-        tp = conv.convolution
-        weight_nn = conv.weight_nn
-        patch(conv_state_dict)
-        new_state_dict.update(conv_state_dict)
-
-    return new_state_dict
-
-
-def model_from_checkpoint(checkpoint) -> Tuple[torch.nn.Module, Dict]:
+def _config_cp_routine(config):
     from ._const import model_defaults
-    from .model_build import build_E3_equivariant_model
 
-    if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint, map_location='cpu', weights_only=False)
-    elif isinstance(checkpoint, dict):
-        pass
-    else:
-        raise ValueError('checkpoint must be either str or dict')
-
-    model_state_dict = checkpoint['model_state_dict']
-    config = checkpoint['config']
     defaults = {**model_defaults(config)}
-    config = _patch_old_config(config)
+    config = compat.patch_old_config(config)  # type: ignore
 
     for k, v in defaults.items():
         if k in config:
@@ -235,12 +101,155 @@ def model_from_checkpoint(checkpoint) -> Tuple[torch.nn.Module, Dict]:
     for k, v in config.items():
         if isinstance(v, torch.Tensor):
             config[k] = v.cpu()
+    return config
+
+
+def _e3nn_to_cue(stct_src, stct_dst, src_config):
+    """
+    manually check keys and assert if something unexpected happens
+    """
+    n_layer = src_config['num_convolution_layer']
+
+    linear_module_names = [
+        'onehot_to_feature_x',
+        'reduce_input_to_hidden',
+        'reduce_hidden_to_energy',
+    ]
+    convolution_module_names = []
+    for i in range(n_layer):
+        linear_module_names.append(f'{i}_self_interaction_1')
+        linear_module_names.append(f'{i}_self_interaction_2')
+        linear_module_names.append(f'{i}_self_connection_intro')
+        convolution_module_names.append(f'{i}_convolution')
+
+    # Rule: those keys can be safely ignored before state dict load,
+    #       except for linear.bias. This should be aborted in advance to
+    #       this function. Others are not parameters but constants.
+    cue_only_linear_followers = ['linear.f.tp.f_fx.module.c']
+    e3nn_only_linear_followers = ['linear.bias', 'linear.output_mask']
+    ignores_in_linear = cue_only_linear_followers + e3nn_only_linear_followers
+
+    cue_only_conv_followers = [
+        'convolution.f.tp.f_fx.module.c'
+    ]
+    e3nn_only_conv_followers = [
+        'convolution._compiled_main_left_right._w3j',
+        'convolution.weight',
+        'convolution.output_mask',
+    ]
+    ignores_in_conv = cue_only_conv_followers + e3nn_only_conv_followers
+
+    updated_keys = []
+    stct_updated = stct_dst.copy()
+    for k, v in stct_src.items():
+        module_name = k.split('.')[0]
+        flag = False
+        if module_name in linear_module_names:
+            for ignore in ignores_in_linear:
+                if '.'.join([module_name, ignore]) in k:
+                    flag = True
+                    break
+            if not flag and k == '.'.join([module_name, 'linear.weight']):
+                updated_keys.append(k)
+                stct_updated[k] = v.clone()
+                flag = True
+            assert flag, f'Unexpected key from linear: {k}'
+        elif module_name in convolution_module_names:
+            for ignore in ignores_in_conv:
+                if '.'.join([module_name, ignore]) in k:
+                    flag = True
+                    break
+            if not flag and (
+                k.startswith(f'{module_name}.weight_nn')
+                or k == '.'.join([module_name, 'denominator'])
+            ):
+                updated_keys.append(k)
+                stct_updated[k] = v.clone()
+                flag = True
+            assert flag, f'Unexpected key from linear: {k}'
+        else:
+            # assert k in stct_updated
+            updated_keys.append(k)
+            stct_updated[k] = v.clone()
+
+    return stct_updated
+
+
+def model_from_checkpoint(
+    checkpoint: Union[str, dict],
+) -> Tuple[torch.nn.Module, Dict]:
+    from .model_build import build_E3_equivariant_model
+
+    if isinstance(checkpoint, str):
+        checkpoint = torch.load(checkpoint, map_location='cpu', weights_only=False)
+        assert isinstance(checkpoint, dict)
+    elif isinstance(checkpoint, dict):
+        pass
+    else:
+        raise ValueError('checkpoint must be either str or dict')
+
+    stct_cp = checkpoint['model_state_dict']  # type: ignore
+    config = _config_cp_routine(checkpoint.get('config'))
 
     model = build_E3_equivariant_model(config)
     assert isinstance(model, torch.nn.Module)
-    model_state_dict = _map_old_model(model_state_dict)
-    model_state_dict = _sort_old_convolution(model, model_state_dict)
-    missing, not_used = model.load_state_dict(model_state_dict, strict=False)
+
+    stct_cp = compat.patch_state_dict_if_old(stct_cp, config, model)
+    missing, not_used = model.load_state_dict(stct_cp, strict=False)
+    if len(not_used) > 0:
+        warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
+
+    assert len(missing) == 0, f'Missing keys: {missing}'
+
+    return model, config
+
+
+def model_from_checkpoint_with_backend(
+    checkpoint: Union[str, dict],
+    backend: str = 'e3nn',
+) -> Tuple[torch.nn.Module, Dict]:
+    from .model_build import build_E3_equivariant_model
+
+    use_cue = backend == 'cue'
+
+    if isinstance(checkpoint, str):
+        checkpoint = torch.load(checkpoint, map_location='cpu', weights_only=False)
+        assert isinstance(checkpoint, dict)
+    elif isinstance(checkpoint, dict):
+        pass
+    else:
+        raise ValueError('checkpoint must be either str or dict')
+    config_cp = _config_cp_routine(checkpoint.get('config'))
+
+    # early return
+    cue_cfg = config_cp.get(KEY.CUEQUIVARIANCE_CONFIG, {'use': False})
+    cp_already_use_cue = cue_cfg.get('use', False)
+    if use_cue == cp_already_use_cue:
+        return model_from_checkpoint(checkpoint)
+
+    print(f'model convert to {backend}')
+
+    # build empty [e3nn | cue] model
+    config = copy.deepcopy(config_cp)
+    config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': use_cue}
+    model = build_E3_equivariant_model(config)
+    assert isinstance(model, torch.nn.Module)
+
+    # patch model checkpoint's state dict
+    stct_src = checkpoint['model_state_dict'].copy()  # type: ignore
+    stct_src = compat.patch_state_dict_if_old(stct_src, config_cp, model)
+
+    # get empty [e3nn | cue] state dicts
+    stct_dst = model.state_dict()
+    # patch state dicts
+    stct_new = (
+        _e3nn_to_cue(stct_src, stct_dst, config_cp)
+        if use_cue
+        # TODO: for now, no special routine needed when src dst changed
+        else _e3nn_to_cue(stct_src, stct_dst, config_cp)
+    )
+
+    missing, not_used = model.load_state_dict(stct_new, strict=False)
     if len(not_used) > 0:
         warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
 

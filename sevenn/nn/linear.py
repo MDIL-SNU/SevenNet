@@ -25,7 +25,7 @@ class IrrepsLinear(nn.Module):
         data_key_modal_attr: str = KEY.MODAL_ATTR,
         num_modalities: int = 0,
         lazy_layer_instantiate: bool = True,
-        **e3nn_linear_params,
+        **linear_params,
     ):
         super().__init__()
         self.key_input = data_key_in
@@ -36,14 +36,17 @@ class IrrepsLinear(nn.Module):
         self.key_modal_attr = data_key_modal_attr
 
         self._irreps_in_wo_modal = irreps_in
-        self._irreps_in = irreps_in
+        self.irreps_in = irreps_in
         self.irreps_out = irreps_out
-        self.e3nn_linear_params = e3nn_linear_params
+        self.linear_params = linear_params
 
         self.linear = None
         self.layer_instantiated = False
         self.num_modalities = num_modalities
         self._is_batch_data = True
+
+        # use getter setter
+        self.linear_cls = Linear
 
         if num_modalities > 1:  # in case of multi-modal
             self.set_num_modalities(num_modalities)
@@ -51,21 +54,20 @@ class IrrepsLinear(nn.Module):
         if not lazy_layer_instantiate:
             self.instantiate()
 
+    def instantiate(self):
+        if self.linear is not None:
+            raise ValueError('Linear layer already exists')
+        self.linear = self.linear_cls(
+            self.irreps_in, self.irreps_out, **self.linear_params
+        )
+        self.layer_instantiated = True
+
     def set_num_modalities(self, num_modalities):
         if self.layer_instantiated:
             raise ValueError('Layer already instantiated, can not change modalities')
         irreps_in = self._irreps_in_wo_modal + Irreps(f'{num_modalities}x0e')
         self.num_modalities = num_modalities
-        self._irreps_in = irreps_in
-
-    def instantiate(self):
-        if self.linear is not None:
-            raise ValueError('Linear layer already exists')
-        self.linear = Linear(
-            self._irreps_in, self.irreps_out, **self.e3nn_linear_params
-        )
-        self.irreps_in = self._irreps_in
-        self.layer_instantiated = True
+        self.irreps_in = irreps_in
 
     def _patch_modal_to_data(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self._is_batch_data:
@@ -90,7 +92,7 @@ class IrrepsLinear(nn.Module):
         return data
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        assert self.linear is not None
+        assert self.linear is not None, 'Layer is not instantiated'
         if self.num_modalities > 1:
             data = self._patch_modal_to_data(data)
 

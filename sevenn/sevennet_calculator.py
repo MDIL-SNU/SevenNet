@@ -1,5 +1,6 @@
 import os
 import pathlib
+import warnings
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -38,6 +39,7 @@ class SevenNetCalculator(Calculator):
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
         modal: Optional[str] = None,
+        enable_cueq: bool = False,
         sevennet_config: Optional[Any] = None,  # hold meta information
         **kwargs,
     ):
@@ -57,6 +59,12 @@ class SevenNetCalculator(Calculator):
         if file_type not in ['checkpoint', 'torchscript', 'model_instance']:
             raise ValueError('file_type should be checkpoint or torchscript')
 
+        if enable_cueq and file_type in ['model_instance', 'torchscript']:
+            warnings.warn(
+                'file_type should be checkpoint to enable cueq. cueq set to False'
+            )
+            enable_cueq = False
+
         if isinstance(device, str):  # TODO: do we really need this?
             if device == 'auto':
                 self.device = torch.device(
@@ -72,7 +80,10 @@ class SevenNetCalculator(Calculator):
                 checkpoint = model
             else:
                 checkpoint = util.pretrained_name_to_path(model)
-            model_loaded, config = util.model_from_checkpoint(checkpoint)
+            backend = 'e3nn' if not enable_cueq else 'cue'
+            model_loaded, config = util.model_from_checkpoint_with_backend(
+                checkpoint, backend
+            )
             model_loaded.set_is_batch_data(False)
             self.type_map = config[KEY.TYPE_MAP]
             self.cutoff = config[KEY.CUTOFF]

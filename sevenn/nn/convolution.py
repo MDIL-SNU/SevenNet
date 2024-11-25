@@ -48,6 +48,7 @@ class IrrepsConvolution(nn.Module):
         data_key_filter: str = KEY.EDGE_ATTR,
         data_key_weight_input: str = KEY.EDGE_EMBEDDING,
         data_key_edge_idx: str = KEY.EDGE_IDX,
+        lazy_layer_instantiate: bool = True,
         is_parallel: bool = False,
     ):
         super().__init__()
@@ -62,40 +63,65 @@ class IrrepsConvolution(nn.Module):
 
         instructions = []
         irreps_mid = []
+        weight_numel = 0
         for i, (mul_x, ir_x) in enumerate(irreps_x):
             for j, (_, ir_filter) in enumerate(irreps_filter):
                 for ir_out in ir_x * ir_filter:
                     if ir_out in irreps_out:  # here we drop l > lmax
                         k = len(irreps_mid)
+                        weight_numel += mul_x * 1  # path shape
                         irreps_mid.append((mul_x, ir_out))
                         instructions.append((i, j, k, 'uvu', True))
 
         irreps_mid = Irreps(irreps_mid)
-        irreps_mid, p, _ = irreps_mid.sort()
+        irreps_mid, p, _ = irreps_mid.sort()  # type: ignore
         instructions = [
             (i_in1, i_in2, p[i_out], mode, train)
             for i_in1, i_in2, i_out, mode, train in instructions
         ]
-        # From v1.11.x, to compatible with cuEquivariance
+
+        # From v0.11.x, to compatible with cuEquivariance
         self._instructions_before_sort = instructions
         instructions = sorted(instructions, key=lambda x: x[2])
 
-        self.convolution = TensorProduct(
-            irreps_x,
-            irreps_filter,
-            irreps_mid,
-            instructions,
+        self._convolution_kwargs = dict(
+            irreps_in1=irreps_x,
+            irreps_in2=irreps_filter,
+            irreps_out=irreps_mid,
+            instructions=instructions,
             shared_weights=False,
             internal_weights=False,
         )
 
-        self.weight_nn = FullyConnectedNet(
-            weight_layer_input_to_hidden + [self.convolution.weight_numel],
-            weight_layer_act,
+        self._weight_nn_kwargs = dict(
+            hs=weight_layer_input_to_hidden + [weight_numel],
+            act=weight_layer_act
         )
-        self._comm_size = self.convolution.irreps_in1.dim  # used in parallel
+
+        self.convolution = None
+        self.weight_nn = None
+        self.layer_instantiated = False
+        self.convolution_cls = TensorProduct
+        self.weight_nn_cls = FullyConnectedNet
+
+        if not lazy_layer_instantiate:
+            self.instantiate()
+
+        self._comm_size = irreps_x.dim  # used in parallel
+
+    def instantiate(self):
+        if self.convolution is not None:
+            raise ValueError('Convolution layer already exists')
+        if self.weight_nn is not None:
+            raise ValueError('Weight_nn layer already exists')
+
+        self.convolution = self.convolution_cls(**self._convolution_kwargs)
+        self.weight_nn = self.weight_nn_cls(**self._weight_nn_kwargs)
+        self.layer_instantiated = True
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        assert self.convolution is not None, 'Convolution is not instantiated'
+        assert self.weight_nn is not None, 'Weight_nn is not instantiated'
         weight = self.weight_nn(data[self.key_weight_input])
         x = data[self.key_x]
         if self.is_parallel:
@@ -110,7 +136,6 @@ class IrrepsConvolution(nn.Module):
         x = message_gather(x, edge_dst, message)
         x = x.div(self.denominator)
         if self.is_parallel:
-            # NLOCAL is # of atoms in system at 'CPU'
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
         data[self.key_x] = x
         return data

@@ -48,6 +48,12 @@ def main(args=None):
     screen = args.screen
     distributed = args.distributed
     distributed_backend = args.distributed_backend
+    use_cue = args.enable_cueq
+
+    if use_cue:
+        import sevenn.nn.cue_helper
+        if not sevenn.nn.cue_helper.is_cue_available():
+            raise ImportError('cuEquivariance not installed.')
 
     if working_dir is None:
         working_dir = os.getcwd()
@@ -96,6 +102,12 @@ def main(args=None):
         train_config[KEY.RANK] = rank
         train_config[KEY.WORLD_SIZE] = world_size
 
+        if use_cue:
+            if KEY.CUEQUIVARIANCE_CONFIG not in model_config:
+                model_config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': True}
+            else:
+                model_config[KEY.CUEQUIVARIANCE_CONFIG].update({'use': True})
+
         logger.print_config(model_config, data_config, train_config)
         # don't have to distinguish configs inside program
         global_config.update(model_config)
@@ -132,6 +144,12 @@ def cmd_parse_main(args=None):
         default='train_v2',
         help=mode_help,
         type=str,
+    )
+    ag.add_argument(
+        '-cue',
+        '--enable_cueq',
+        help='use cuEquivariance for training',
+        action='store_true'
     )
     ag.add_argument(
         '-w',

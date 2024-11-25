@@ -13,11 +13,8 @@ from sevenn._const import AtomGraphDataType
 def _instantiate_modules(modules):
     # see IrrepsLinear of linear.py
     for module in modules.values():
-        try:
-            if not module.layer_instantiated:
-                module.instantiate()
-        except AttributeError:
-            pass
+        if not getattr(module, 'layer_instantiated', True):
+            module.instantiate()
 
 
 @compile_mode('script')

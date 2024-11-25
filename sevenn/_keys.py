@@ -222,5 +222,7 @@ TRAIN_DENOMINTAOR = 'train_denominator'
 INTERACTION_TYPE = 'interaction_type'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
+CUEQUIVARIANCE_CONFIG = 'cuequivariance_config'
+
 _NORMALIZE_SPH = '_normalize_sph'
 OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
