@@ -18,6 +18,10 @@ All notable changes to this project will be documented in this file.
 - Deploy takes checkpoint path (now deployed serial build model only once)
 - Sort instructions of tensor product in convolution (+ fix flipped w3j coeff of old model)
 
+## [0.10.2]
+### Added
+- Accelerated graph build routine if matscipy is installed  @hexagonerose
+
 ## [0.10.1]
 ### Added
 - experimental `SevenNetAtomsDataset` which is memory efficient, can be enabled with `dataset_type='atoms'`

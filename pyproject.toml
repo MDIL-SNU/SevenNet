@@ -1,4 +1,3 @@
-[project]
 name = "sevenn"
 version = "0.11.0.dev"
 authors = [
@@ -25,7 +24,10 @@ dependencies = [
     "scikit-learn",
     "torch_geometric>=2.5.0",
     "numpy<2.0",
+    #"matscipy",
 ]
+[project.optional-dependencies]
+matscipy = ["matscipy"]
 
 
 [project.scripts]
