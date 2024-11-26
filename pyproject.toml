@@ -29,6 +29,7 @@ dependencies = [
     #"matscipy",
 ]
 [project.optional-dependencies]
+test = ["matscipy", "pytest-cov>=5"]
 opt = ["matscipy"]
 
 
