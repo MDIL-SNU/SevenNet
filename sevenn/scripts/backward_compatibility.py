@@ -82,6 +82,7 @@ def sort_old_convolution(model_now, state_dict):
         irreps_out = conv_args.get('irreps_out', conv_args.get('filter_irreps_out'))
 
         inst_sorted = sorted(inst_old, key=lambda x: x[2])
+
         inst_sorted = [
             # in1, in2, out, weights
             (inst[0], inst[1], inst[2], irreps_in1[inst[0]].mul)
@@ -144,10 +145,15 @@ def sort_old_convolution(model_now, state_dict):
 
 
 def patch_state_dict_if_old(state_dict, config_cp, now_model):
-    stct_src = map_old_model(state_dict)
+    version = config_cp['version']
+    major, minor, _ = version.split('.')[:3]
 
-    cue_cfg = config_cp.get(KEY.CUEQUIVARIANCE_CONFIG, {'use': False})
-    if not cue_cfg.get('use', False):
-        # patch only when it is e3nn model
-        stct_src = sort_old_convolution(now_model, stct_src)
-    return stct_src
+    if int(major) == 0 and int(minor) < 10:
+        state_dict = map_old_model(state_dict)
+
+    # TODO: change version criteria before release!!!
+    #       it causes problem if model is sorted but this function is called
+    #       ... more robust way? idk
+    if int(major) == 0 and int(minor) < 12:
+        state_dict = sort_old_convolution(now_model, state_dict)
+    return state_dict
