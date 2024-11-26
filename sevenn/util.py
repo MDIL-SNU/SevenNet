@@ -210,7 +210,7 @@ def model_from_checkpoint_with_backend(
 ) -> Tuple[torch.nn.Module, Dict]:
     from .model_build import build_E3_equivariant_model
 
-    use_cue = backend == 'cue'
+    use_cue = backend.lower() in ['cue', 'cueq', 'cuequivariance']
 
     if isinstance(checkpoint, str):
         checkpoint = torch.load(checkpoint, map_location='cpu', weights_only=False)

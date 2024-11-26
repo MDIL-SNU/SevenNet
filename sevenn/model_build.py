@@ -223,19 +223,30 @@ def patch_cue(layers: OrderedDict, config):
     if not cue_cfg.pop('use', False):
         return layers
 
+    if not cue_helper.is_cue_available():
+        warnings.warn(
+            (
+                'cuEquivariance is requested, but the package is not installed. '
+                + 'Fallback to original code.'
+            )
+        )
+        return layers
+
     group = 'O3' if config[KEY.IS_PARITY] else 'SO3'
+    cueq_module_params = dict(layout='mul_ir', optimize_fallback=True)
+    cueq_module_params.update(cue_cfg)
     updates = {}
     for k, module in layers.items():
         if isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
             if k == 'reduce_hidden_to_energy':  # TODO: has bug with 0 shape
                 continue
             module_patched = cue_helper.patch_linear(
-                module, group, layout='mul_ir', **cue_cfg
+                module, group, **cueq_module_params
             )
             updates[k] = module_patched
         elif isinstance(module, IrrepsConvolution):
             module_patched = cue_helper.patch_convolution(
-                module, group, layout='mul_ir', **cue_cfg
+                module, group, **cueq_module_params
             )
             updates[k] = module_patched
 
