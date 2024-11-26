@@ -1,8 +1,9 @@
 [project]
 name = "sevenn"
-version = "0.10.2.dev"
+version = "0.10.2"
 authors = [
     { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
+    { name = "Haekwan Jeon", email = "haekwan98@snu.ac.kr" },
     { name = "Jaesun Kim" },
     { name = "Gijin Kim" },
     { name = "Hyungmin An" },
@@ -28,7 +29,7 @@ dependencies = [
     #"matscipy",
 ]
 [project.optional-dependencies]
-matscipy = ["matscipy"]
+opt = ["matscipy"]
 
 
 [project.scripts]
