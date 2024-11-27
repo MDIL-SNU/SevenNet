@@ -7,11 +7,15 @@ import ase.calculators.lammps
 import ase.io.lammpsdata
 import numpy as np
 import pytest
+import torch
 from ase.build import bulk, surface
 from ase.calculators.singlepoint import SinglePointCalculator
 
+import sevenn
+from sevenn.model_build import build_E3_equivariant_model
 from sevenn.scripts.deploy import deploy, deploy_parallel
 from sevenn.sevennet_calculator import SevenNetCalculator
+from sevenn.util import chemical_species_preprocess
 
 logger = logging.getLogger('test_lammps')
 
@@ -22,7 +26,6 @@ lmp_script_path = str(
 )
 
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
-hfo2_path = str(data_root / 'systems' / 'hfo2.extxyz')
 cp_0_path = str(data_root / 'checkpoints' / 'cp_0.pth')  # knows Hf, O
 
 
@@ -45,6 +48,52 @@ def parallel_potential_path(tmp_path_factory):
 @pytest.fixture(scope='module')
 def ref_calculator():
     return SevenNetCalculator(cp_0_path)
+
+
+def get_model_config():
+    config = {
+        'cutoff': cutoff,
+        'channel': 8,
+        'lmax': 2,
+        'is_parity': True,
+        'num_convolution_layer': 3,
+        'self_connection_type': 'linear',  # not NequIp
+        'interaction_type': 'nequip',
+        'radial_basis': {
+            'radial_basis_name': 'bessel',
+        },
+        'cutoff_function': {'cutoff_function_name': 'poly_cut'},
+        'weight_nn_hidden_neurons': [64, 64],
+        'act_radial': 'silu',
+        'act_scalar': {'e': 'silu', 'o': 'tanh'},
+        'act_gate': {'e': 'silu', 'o': 'tanh'},
+        'conv_denominator': 30.0,
+        'train_denominator': False,
+        'shift': -10.0,
+        'scale': 10.0,
+        'train_shift_scale': False,
+        'irreps_manual': False,
+        'lmax_edge': -1,
+        'lmax_node': -1,
+        'readout_as_fcn': False,
+        'use_bias_in_linear': False,
+        '_normalize_sph': True,
+    }
+    config.update(chemical_species_preprocess(['Hf', 'O']))
+    return config
+
+
+def get_model(config_overwrite=None, use_cueq=False, cueq_config=None):
+    cf = get_model_config()
+    if config_overwrite is not None:
+        cf.update(config_overwrite)
+
+    cueq_config = cueq_config or {'cuequivariance_config': {'use': use_cueq}}
+    cf.update(cueq_config)
+
+    model = build_E3_equivariant_model(cf, parallel=False)
+    assert not isinstance(model, list)
+    return model
 
 
 def hfo2_bulk(replicate=(2, 2, 2), a=3.0):
@@ -263,4 +312,72 @@ def test_parallel(
         ncores=ncores,
     )
     atoms.calc = ref_calculator
+    assert_atoms(atoms, atoms_lammps)
+
+
+def test_cueq_serial(lammps_cmd, tmp_path):
+    """
+    TODO: Use already saved cueq enabled checkpoint after cueq becomes stable
+    """
+    cueq = True
+    model = get_model(use_cueq=cueq)
+    ref_calc = SevenNetCalculator(model, file_type='model_instance')
+    atoms = get_system('bulk')
+
+    cfg = get_model_config()
+    cfg.update({'cuequivariance_config': {'use': cueq},
+                'version': sevenn.__version__})
+
+    cp_path = str(tmp_path / 'cp.pth')
+    torch.save(
+        {'model_state_dict': model.state_dict(), 'config': cfg},
+        cp_path,
+    )
+
+    pot_path = str(tmp_path / 'deployed_from_cueq_serial.pt')
+    deploy(cp_path, pot_path)
+
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=pot_path,
+        wd=tmp_path,
+        test_name='cueq checkpoint serial lmp run test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_calc
+    assert_atoms(atoms, atoms_lammps)
+
+
+def test_cueq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
+    """
+    TODO: Use already saved cueq enabled checkpoint after cueq becomes stable
+    """
+    cueq = True
+    model = get_model(use_cueq=cueq)
+    ref_calc = SevenNetCalculator(model, file_type='model_instance')
+    atoms = get_system('surface', replicate=(4, 4, 1))
+
+    cfg = get_model_config()
+    cfg.update({'cuequivariance_config': {'use': cueq},
+                'version': sevenn.__version__})
+
+    cp_path = str(tmp_path / 'cp.pth')
+    torch.save(
+        {'model_state_dict': model.state_dict(), 'config': cfg},
+        cp_path,
+    )
+
+    pot_path = str(tmp_path / 'deployed_from_cueq_parallel')
+    deploy_parallel(cp_path, pot_path)
+
+    atoms_lammps = parallel_lammps_run(
+        atoms=atoms,
+        potential=' '.join([str(cfg['num_convolution_layer']), pot_path]),
+        wd=tmp_path,
+        test_name='cueq checkpoint parallel lmp run test',
+        lammps_cmd=lammps_cmd,
+        mpirun_cmd=mpirun_cmd,
+        ncores=2
+    )
+    atoms.calc = ref_calc
     assert_atoms(atoms, atoms_lammps)

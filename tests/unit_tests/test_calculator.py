@@ -34,9 +34,9 @@ def sevennet_0_cal():
 
 
 @pytest.fixture(scope='module')
-def sevennet_0_cue_cal():
+def sevennet_0_cueq_cal():
     cpp = pretrained_name_to_path('7net-0_11July2024')
-    model, _ = model_from_checkpoint_with_backend(cpp, 'cue')
+    model, _ = model_from_checkpoint_with_backend(cpp, 'cueq')
     return SevenNetCalculator(model)
 
 
@@ -128,7 +128,7 @@ def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
         assert np.allclose(res_cp[k], res_script[k])
 
 
-def test_sevennet_0_cal_cue(atoms_pbc, sevennet_0_cue_cal):
+def test_sevennet_0_cal_cueq(atoms_pbc, sevennet_0_cueq_cal):
     atoms1_ref = {
         'energy': -3.779199,
         'energies': [-1.8493923, -1.9298072],
@@ -148,7 +148,7 @@ def test_sevennet_0_cal_cue(atoms_pbc, sevennet_0_cue_cal):
         ],
     }
 
-    atoms_pbc.calc = sevennet_0_cue_cal
+    atoms_pbc.calc = sevennet_0_cueq_cal
     assert np.allclose(atoms_pbc.get_potential_energy(), atoms1_ref['energy'])
     assert np.allclose(
         atoms_pbc.get_potential_energy(force_consistent=True), atoms1_ref['energy']

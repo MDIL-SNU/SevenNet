@@ -66,7 +66,7 @@ def get_model_config():
         'act_radial': 'silu',
         'act_scalar': {'e': 'silu', 'o': 'tanh'},
         'act_gate': {'e': 'silu', 'o': 'tanh'},
-        'conv_denominator': 1.0,
+        'conv_denominator': 30.0,
         'train_denominator': False,
         'self_connection_type': 'nequip',
         'shift': -10.0,
