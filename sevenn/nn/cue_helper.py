@@ -4,6 +4,7 @@ from typing import Iterator, Literal, Union
 
 import e3nn.o3 as o3
 import numpy as np
+import torch.cuda
 
 from .convolution import IrrepsConvolution
 from .linear import IrrepsLinear
@@ -74,7 +75,11 @@ def _check_may_not_compatible(orig_kwargs, defaults):
 
 
 def is_cue_cuda_available_model(config):
-    if int(config.get('lmax')) < 3 and int(config.get('channel')) in [32, 64, 128]:
+    if (
+        int(config.get('lmax')) < 3
+        and int(config.get('channel')) in [32, 64, 128]
+        and torch.cuda.is_available()
+    ):
         warnings.warn(
             'https://github.com/NVIDIA/cuEquivariance/issues/33, fallback to e3nn'
         )
