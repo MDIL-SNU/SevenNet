@@ -102,6 +102,9 @@ def main(args=None):
         train_config[KEY.RANK] = rank
         train_config[KEY.WORLD_SIZE] = world_size
 
+        if distributed:
+            torch.cuda.set_device(torch.device('cuda', local_rank))
+
         if use_cue:
             if KEY.CUEQUIVARIANCE_CONFIG not in model_config:
                 model_config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': True}
