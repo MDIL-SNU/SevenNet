@@ -146,7 +146,7 @@ def cmd_parse_main(args=None):
         type=str,
     )
     ag.add_argument(
-        '-cue',
+        '-cueq',
         '--enable_cueq',
         help='use cuEquivariance for training',
         action='store_true'
