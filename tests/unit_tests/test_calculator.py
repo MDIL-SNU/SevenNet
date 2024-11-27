@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 from ase.build import bulk, molecule
 
+from sevenn.nn.cue_helper import is_cue_available
 from sevenn.scripts.deploy import deploy
 from sevenn.sevennet_calculator import SevenNetCalculator
 from sevenn.util import (
@@ -128,6 +129,7 @@ def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
         assert np.allclose(res_cp[k], res_script[k])
 
 
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_sevennet_0_cal_cueq(atoms_pbc, sevennet_0_cueq_cal):
     atoms1_ref = {
         'energy': -3.779199,

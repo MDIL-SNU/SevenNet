@@ -13,6 +13,7 @@ from ase.calculators.singlepoint import SinglePointCalculator
 
 import sevenn
 from sevenn.model_build import build_E3_equivariant_model
+from sevenn.nn.cue_helper import is_cue_available
 from sevenn.scripts.deploy import deploy, deploy_parallel
 from sevenn.sevennet_calculator import SevenNetCalculator
 from sevenn.util import chemical_species_preprocess
@@ -315,6 +316,7 @@ def test_parallel(
     assert_atoms(atoms, atoms_lammps)
 
 
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_cueq_serial(lammps_cmd, tmp_path):
     """
     TODO: Use already saved cueq enabled checkpoint after cueq becomes stable
@@ -348,6 +350,7 @@ def test_cueq_serial(lammps_cmd, tmp_path):
     assert_atoms(atoms, atoms_lammps)
 
 
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_cueq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
     """
     TODO: Use already saved cueq enabled checkpoint after cueq becomes stable

@@ -12,6 +12,7 @@ import sevenn
 import sevenn.train.dataload as dl
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.model_build import build_E3_equivariant_model
+from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.sevennet_calculator import SevenNetCalculator
 from sevenn.util import (
@@ -26,7 +27,6 @@ _avg_num_neigh = 30.0
 _atoms.rattle()
 
 _graph = AtomGraphData.from_numpy_dict(dl.unlabeled_atoms_to_graph(_atoms, cutoff))
-print(_graph)
 
 
 def get_graphs(batched):
@@ -45,7 +45,7 @@ def get_model_config():
         'lmax': 2,
         'is_parity': True,
         'num_convolution_layer': 3,
-        'self_connection_type': 'linear',  # not NequIp
+        'self_connection_type': 'nequip',  # not NequIp
         'interaction_type': 'nequip',
         'radial_basis': {
             'radial_basis_name': 'bessel',
@@ -86,16 +86,17 @@ def get_model(config_overwrite=None, use_cueq=False, cueq_config=None):
     return model
 
 
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 @pytest.mark.parametrize(
     'cf',
     [
         ({}),
+        ({'self_connection_type': 'linear'}),
         ({'is_parity': False}),
         ({'channel': 7}),
         ({'lmax': 3}),
         ({'num_interaction_layer': 2}),
         ({'num_interaction_layer': 4}),
-        # ({'self_connection_type': 'nequip'}),
     ],
 )
 def test_model_output(cf):
@@ -130,6 +131,7 @@ def test_model_output(cf):
     )
 
 
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 @pytest.mark.parametrize(
     'start_from_cueq',
     [
@@ -174,6 +176,7 @@ def test_checkpoint_convert(tmp_path, start_from_cueq):
     )
 
 
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 @pytest.mark.parametrize(
     'start_from_cueq',
     [
@@ -235,6 +238,7 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
     # assert acl(atoms1.get_potential_energies(), atoms2.get_potential_energies())
 
 
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_calculator(tmp_path):
     cueq = True
     model = get_model(use_cueq=cueq)
