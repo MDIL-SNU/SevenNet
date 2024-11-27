@@ -50,6 +50,8 @@ class SelfConnectionIntro(nn.Module):
             self.irreps_in1,
             self.irreps_in2,
             self.irreps_out,
+            shared_weights=True,
+            internal_weights=None,  # same as True
             **self.fc_tensor_product_kwargs,
         )
         self.layer_instantiated = True

@@ -28,8 +28,7 @@ try:
         def clebsch_gordan(  # type: ignore
             cls, rep1: 'O3_e3nn', rep2: 'O3_e3nn', rep3: 'O3_e3nn'
         ) -> np.ndarray:
-            rep1, rep2, rep3 =\
-                cls._from(rep1), cls._from(rep2), cls._from(rep3)  # type: ignore
+            rep1, rep2, rep3 = cls._from(rep1), cls._from(rep2), cls._from(rep3)
 
             if rep1.p * rep2.p == rep3.p:
                 return o3.wigner_3j(rep1.l, rep2.l, rep3.l).numpy()[None] * np.sqrt(

@@ -235,6 +235,9 @@ def patch_cue(layers: OrderedDict, config):
     if not cue_helper.is_cue_cuda_available_model(config):
         return layers
 
+    if not cue_helper.is_cue_cuda_available_model(config):
+        return layers
+
     group = 'O3' if config[KEY.IS_PARITY] else 'SO3'
     cueq_module_params = dict(layout='mul_ir', optimize_fallback=True)
     cueq_module_params.update(cue_cfg)
