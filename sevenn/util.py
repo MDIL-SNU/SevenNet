@@ -227,7 +227,7 @@ def model_from_checkpoint_with_backend(
     if use_cue == cp_already_use_cue:
         return model_from_checkpoint(checkpoint)
 
-    print(f'model convert to {backend}')
+    print(f'convert the model to {backend}')
 
     # build empty [e3nn | cue] model
     config = copy.deepcopy(config_cp)

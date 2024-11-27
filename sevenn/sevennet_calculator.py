@@ -80,7 +80,7 @@ class SevenNetCalculator(Calculator):
                 checkpoint = model
             else:
                 checkpoint = util.pretrained_name_to_path(model)
-            backend = 'e3nn' if not enable_cueq else 'cue'
+            backend = 'e3nn' if not enable_cueq else 'cueq'
             model_loaded, config = util.model_from_checkpoint_with_backend(
                 checkpoint, backend
             )
