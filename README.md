@@ -148,7 +148,10 @@ Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 sevenn_graph_build my_train_data.extxyz 5.0
 ```
 
-You can preprocess the dataset with `sevenn_graph_build` to obtain `*.sevenn_data` files. The cutoff length should be provided.
+You can preprocess the dataset with `sevenn_graph_build` to obtain `./sevenn_data/graph.pt` files. These files can be used for training (`sevenn`) or
+inference (`sevenn_inference`), skipping the graph build stage. `./sevenn_data/graph.yaml` contains statistics and meta information for the dataset.
+These files must be located under the `sevenn_data`. If you move the dataset, move the entire `sevenn_data` directory without changing the contents.
+
 See `sevenn_graph_build --help` for more information.
 
 ### sevenn_inference

@@ -4,6 +4,8 @@ All notable changes to this project will be documented in this file.
 ## [0.10.2]
 ### Added
 - Accelerated graph build routine if matscipy is installed  @hexagonerose
+### Changed
+- matscipy is included as dependency
 
 ## [0.10.1]
 ### Added
