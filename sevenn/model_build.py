@@ -360,10 +360,9 @@ def build_E3_equivariant_model(config: dict, parallel=False):
     interaction_type = config[KEY.INTERACTION_TYPE]
     use_bias_in_linear = config[KEY.USE_BIAS_IN_LINEAR]
 
-    # is_parity = config[KEY.IS_PARITY]  # boolean
-    lmax_node = _ = config[KEY.LMAX]  # ignore second (lmax_edge)
-    if config[KEY.LMAX_EDGE] > 0:
-        _ = config[KEY.LMAX_EDGE]
+    lmax_node = config[KEY.LMAX]  # ignore second (lmax_edge)
+    # if config[KEY.LMAX_EDGE] > 0:  # not yet used
+    #     _ = config[KEY.LMAX_EDGE]
     if config[KEY.LMAX_NODE] > 0:
         lmax_node = config[KEY.LMAX_NODE]
 
