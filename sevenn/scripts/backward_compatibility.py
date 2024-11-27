@@ -76,7 +76,7 @@ def sort_old_convolution(model_now, state_dict):
         inst_old = [(inst[0], inst[1], inst[2]) for inst in inst_old]
         del conv._instructions_before_sort
 
-        conv_args = conv._convolution_kwargs
+        conv_args = conv.convolution_kwargs
         irreps_in1 = conv_args['irreps_in1']
         irreps_in2 = conv_args['irreps_in2']
         irreps_out = conv_args.get('irreps_out', conv_args.get('filter_irreps_out'))

@@ -25,7 +25,7 @@ class IrrepsLinear(nn.Module):
         data_key_modal_attr: str = KEY.MODAL_ATTR,
         num_modalities: int = 0,
         lazy_layer_instantiate: bool = True,
-        **linear_params,
+        **linear_kwargs,
     ):
         super().__init__()
         self.key_input = data_key_in
@@ -38,7 +38,7 @@ class IrrepsLinear(nn.Module):
         self._irreps_in_wo_modal = irreps_in
         self.irreps_in = irreps_in
         self.irreps_out = irreps_out
-        self.linear_params = linear_params
+        self.linear_kwargs = linear_kwargs
 
         self.linear = None
         self.layer_instantiated = False
@@ -58,7 +58,7 @@ class IrrepsLinear(nn.Module):
         if self.linear is not None:
             raise ValueError('Linear layer already exists')
         self.linear = self.linear_cls(
-            self.irreps_in, self.irreps_out, **self.linear_params
+            self.irreps_in, self.irreps_out, **self.linear_kwargs
         )
         self.layer_instantiated = True
 
@@ -155,7 +155,7 @@ class FCN_e3nn(nn.Module):
         activation: Callable,
         data_key_in: str,
         data_key_out: Optional[str] = None,
-        **e3nn_params,
+        **e3nn_kwargs,
     ):
         super().__init__()
         self.key_input = data_key_in
@@ -172,7 +172,7 @@ class FCN_e3nn(nn.Module):
         self.fcn = FullyConnectedNet(
             [inp_dim] + hidden_neurons + [dim_out],
             activation,
-            **e3nn_params,
+            **e3nn_kwargs,
         )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:

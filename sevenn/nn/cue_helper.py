@@ -7,7 +7,7 @@ import numpy as np
 
 from .convolution import IrrepsConvolution
 from .linear import IrrepsLinear
-from .self_connection import SelfConnectionLinearIntro
+from .self_connection import SelfConnectionIntro, SelfConnectionLinearIntro
 
 try:
     import cuequivariance as cue
@@ -21,8 +21,7 @@ try:
             rep1: 'O3_e3nn', rep2: 'O3_e3nn'
         ) -> Iterator['O3_e3nn']:
             return [  # type: ignore
-                O3_e3nn(l=ir.l, p=ir.p)
-                for ir in cue.O3.__mul__(rep1, rep2)
+                O3_e3nn(l=ir.l, p=ir.p) for ir in cue.O3.__mul__(rep1, rep2)
             ]
 
         @classmethod
@@ -75,6 +74,19 @@ def _check_may_not_compatible(orig_kwargs, defaults):
             warnings.warn(f'{k}: {v} is ignored to use cuEquivariance')
 
 
+def is_cue_cuda_available_model(config):
+    if int(config.get('lmax')) < 3 and int(config.get('channel')) in [32, 64, 128]:
+        warnings.warn(
+            'https://github.com/NVIDIA/cuEquivariance/issues/33, fallback to e3nn'
+        )
+        return False
+    elif config.get('use_bias_in_linear', False):
+        warnings.warn('Bias in linear can not be used with cueq, fallback to e3nn')
+        return False
+    else:
+        return True
+
+
 @cue_needed
 def as_cue_irreps(irreps: o3.Irreps, group: Literal['SO3', 'O3']):
     """Convert e3nn irreps to given group's cue irreps"""
@@ -98,7 +110,7 @@ def patch_linear(
     module.irreps_in = as_cue_irreps(module.irreps_in, group)  # type: ignore
     module.irreps_out = as_cue_irreps(module.irreps_out, group)  # type: ignore
 
-    orig_kwargs = module.linear_params
+    orig_kwargs = module.linear_kwargs
 
     may_not_compatible_default = dict(
         f_in=None,
@@ -125,7 +137,7 @@ def patch_convolution(
     assert not module.layer_instantiated
 
     # conv_kwargs will be patched in place
-    conv_kwargs = module._convolution_kwargs
+    conv_kwargs = module.convolution_kwargs
     conv_kwargs.update(
         dict(
             irreps_in1=as_cue_irreps(conv_kwargs.get('irreps_in1'), group),
@@ -154,4 +166,30 @@ def patch_convolution(
 
     module.convolution_cls = cuet.ChannelWiseTensorProduct  # type: ignore
     conv_kwargs.update(**cue_kwargs)
+    return module
+
+
+@cue_needed
+def patch_fully_connected(
+    module: SelfConnectionIntro,
+    group: Literal['SO3', 'O3'],
+    **cue_kwargs,
+):
+    assert not module.layer_instantiated
+
+    module.irreps_in1 = as_cue_irreps(module.irreps_in1, group)  # type: ignore
+    module.irreps_in2 = as_cue_irreps(module.irreps_in2, group)  # type: ignore
+    module.irreps_out = as_cue_irreps(module.irreps_out, group)  # type: ignore
+
+    may_not_compatible_default = dict(
+        irrep_normalization=None,
+        path_normalization=None,
+    )
+    # pop may_not_compatible_defaults
+    _check_may_not_compatible(
+        module.fc_tensor_product_kwargs, may_not_compatible_default
+    )
+
+    module.fc_tensor_product_cls = cuet.FullyConnectedTensorProduct  # type: ignore
+    module.fc_tensor_product_kwargs.update(**cue_kwargs)
     return module

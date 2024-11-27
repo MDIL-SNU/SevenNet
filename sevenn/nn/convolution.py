@@ -84,7 +84,7 @@ class IrrepsConvolution(nn.Module):
         self._instructions_before_sort = instructions
         instructions = sorted(instructions, key=lambda x: x[2])
 
-        self._convolution_kwargs = dict(
+        self.convolution_kwargs = dict(
             irreps_in1=irreps_x,
             irreps_in2=irreps_filter,
             irreps_out=irreps_mid,
@@ -93,7 +93,7 @@ class IrrepsConvolution(nn.Module):
             internal_weights=False,
         )
 
-        self._weight_nn_kwargs = dict(
+        self.weight_nn_kwargs = dict(
             hs=weight_layer_input_to_hidden + [weight_numel],
             act=weight_layer_act
         )
@@ -115,8 +115,8 @@ class IrrepsConvolution(nn.Module):
         if self.weight_nn is not None:
             raise ValueError('Weight_nn layer already exists')
 
-        self.convolution = self.convolution_cls(**self._convolution_kwargs)
-        self.weight_nn = self.weight_nn_cls(**self._weight_nn_kwargs)
+        self.convolution = self.convolution_cls(**self.convolution_kwargs)
+        self.weight_nn = self.weight_nn_cls(**self.weight_nn_kwargs)
         self.layer_instantiated = True
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:

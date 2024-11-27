@@ -116,10 +116,14 @@ def _e3nn_to_cue(stct_src, stct_dst, src_config):
         'reduce_hidden_to_energy',
     ]
     convolution_module_names = []
+    fc_tensor_product_module_names = []
     for i in range(n_layer):
         linear_module_names.append(f'{i}_self_interaction_1')
         linear_module_names.append(f'{i}_self_interaction_2')
-        linear_module_names.append(f'{i}_self_connection_intro')
+        if src_config.get(KEY.SELF_CONNECTION_TYPE) == 'linear':
+            linear_module_names.append(f'{i}_self_connection_intro')
+        elif src_config.get(KEY.SELF_CONNECTION_TYPE) == 'nequip':
+            fc_tensor_product_module_names.append(f'{i}_self_connection_intro')
         convolution_module_names.append(f'{i}_convolution')
 
     # Rule: those keys can be safely ignored before state dict load,
@@ -138,6 +142,14 @@ def _e3nn_to_cue(stct_src, stct_dst, src_config):
         'convolution.output_mask',
     ]
     ignores_in_conv = cue_only_conv_followers + e3nn_only_conv_followers
+
+    cue_only_fc_followers = [
+        'fc_tensor_product.f.tp.f_fx.module.c'
+    ]
+    e3nn_only_fc_followers = [
+        'fc_tensor_product.output_mask',
+    ]
+    ignores_in_fc = cue_only_fc_followers + e3nn_only_fc_followers
 
     updated_keys = []
     stct_updated = stct_dst.copy()
@@ -167,6 +179,16 @@ def _e3nn_to_cue(stct_src, stct_dst, src_config):
                 stct_updated[k] = v.clone()
                 flag = True
             assert flag, f'Unexpected key from linear: {k}'
+        elif module_name in fc_tensor_product_module_names:
+            for ignore in ignores_in_fc:
+                if '.'.join([module_name, ignore]) in k:
+                    flag = True
+                    break
+            if not flag and k == '.'.join([module_name, 'fc_tensor_product.weight']):
+                updated_keys.append(k)
+                stct_updated[k] = v.clone()
+                flag = True
+            assert flag, f'Unexpected key from fc tensor product: {k}'
         else:
             # assert k in stct_updated
             updated_keys.append(k)
