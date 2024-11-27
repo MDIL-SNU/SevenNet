@@ -131,8 +131,7 @@ class AtomGraphSequential(nn.Sequential):
         )
         data[KEY.MODAL_TYPE] = modal_idx
 
-    def forward(self, input: AtomGraphDataType) -> AtomGraphDataType:
-        data = input
+    def _preprocess(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self.eval_type_map:
             atomic_numbers = data[self.key_atomic_numbers]
             onehot = self._atomic_numbers_to_onehot(atomic_numbers)
@@ -144,6 +143,10 @@ class AtomGraphSequential(nn.Sequential):
         if self.key_grad is not None:
             data[self.key_grad].requires_grad_(True)
 
+        return data
+
+    def forward(self, input: AtomGraphDataType) -> AtomGraphDataType:
+        data = self._preprocess(input)
         for module in self:
             data = module(data)
         return data
