@@ -1,6 +1,7 @@
 import copy
 import warnings
 from collections import OrderedDict
+from typing import List, Literal, Union, overload
 
 from e3nn.o3 import Irreps
 
@@ -339,8 +340,23 @@ def _to_parallel_model(layers: OrderedDict, config):
     return layers_list
 
 
-# TODO: it gets bigger and bigger. refactor it
-def build_E3_equivariant_model(config: dict, parallel=False):
+@overload
+def build_E3_equivariant_model(
+    config: dict, parallel: Literal[False] = False
+) -> AtomGraphSequential:
+    ...
+
+
+@overload
+def build_E3_equivariant_model(
+    config: dict, parallel: Literal[True]
+) -> List[AtomGraphSequential]:
+    ...
+
+
+def build_E3_equivariant_model(
+    config: dict, parallel: bool = False
+) -> Union[AtomGraphSequential, List[AtomGraphSequential]]:
     """
     output shapes (w/o batch)
 

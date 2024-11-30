@@ -1,7 +1,6 @@
 from typing import Optional
 
 import torch.distributed as dist
-from torch.nn import Module
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
@@ -78,7 +77,6 @@ def train_v2(config, working_dir: str):
 
     log.write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
-    assert isinstance(model, Module)
     log.print_model_info(model, config)
 
     trainer = Trainer.from_config(model, config)
@@ -120,7 +118,6 @@ def train(config, working_dir: str):
 
     log.write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
-    assert isinstance(model, Module)
 
     log.write('Model building was successful\n')
 

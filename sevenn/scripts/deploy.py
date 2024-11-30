@@ -75,7 +75,6 @@ def deploy_parallel(checkpoint, fname):
 
     # TODO: build model only once
     model_list = build_E3_equivariant_model(config, parallel=True)
-    assert isinstance(model_list, list)
     dct_temp = {}
     copy_counter = {gk: 0 for gk in GHOST_LAYERS_KEYS}
     for ghost_layer_key in GHOST_LAYERS_KEYS:

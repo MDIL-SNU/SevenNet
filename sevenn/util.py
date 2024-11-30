@@ -214,7 +214,6 @@ def model_from_checkpoint(
     config = _config_cp_routine(checkpoint.get('config'))
 
     model = build_E3_equivariant_model(config)
-    assert isinstance(model, torch.nn.Module)
 
     stct_cp = compat.patch_state_dict_if_old(stct_cp, config, model)
     missing, not_used = model.load_state_dict(stct_cp, strict=False)
@@ -255,7 +254,6 @@ def model_from_checkpoint_with_backend(
     config = copy.deepcopy(config_cp)
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': use_cue}
     model = build_E3_equivariant_model(config)
-    assert isinstance(model, torch.nn.Module)
 
     # patch model checkpoint's state dict
     stct_src = checkpoint['model_state_dict'].copy()  # type: ignore
