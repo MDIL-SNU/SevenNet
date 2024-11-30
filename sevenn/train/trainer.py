@@ -1,4 +1,6 @@
 import os
+import uuid
+from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
@@ -198,6 +200,8 @@ class Trainer:
             'scheduler_state_dict': self.scheduler.state_dict()
             if self.scheduler is not None
             else None,
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'hash': uuid.uuid4().hex,
         }
 
     def write_checkpoint(self, path: str, **extra) -> None:
