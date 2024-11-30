@@ -12,8 +12,6 @@ How to add new feature?
 
 from typing import Final
 
-from torch.jit import CompilationUnit
-
 # see
 # https://github.com/pytorch/pytorch/issues/52312
 # for FYI

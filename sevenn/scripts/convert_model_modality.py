@@ -18,7 +18,7 @@ modal_module_dict = {
 
 def _get_scalar_index(irreps: Irreps):
     scalar_indices = []
-    for idx, (mul, (l, p)) in enumerate(irreps):
+    for idx, (_, (l, p)) in enumerate(irreps):  # noqa
         if (
             l == 0 and p == 1
         ):  # get index of parameter for scalar (0e), which is used for modality
@@ -78,6 +78,7 @@ def _get_modal_weight_as_bias(
     irreps_in: Irreps,
     irreps_out: Irreps,
 ):
+    assert ref_index != -1
     input_dim = irreps_in.count('0e')
     output_dim = irreps_out.count('0e')
     orig_weight = model_state_dct[key + '.linear.weight']
@@ -203,16 +204,16 @@ def get_single_modal_model_dct(
                         model_state_dct,
                         module_key,
                         ref_modal_index,
-                        irreps_in,
-                        irreps_out,
+                        irreps_in,  # type: ignore
+                        irreps_out,  # type: ignore
                     )
                 )
                 erased_modal_weight = _erase_linear_modal_params(
                     model_state_dct,
                     erase_modal_indices,
                     module_key,
-                    irreps_in,
-                    irreps_out,
+                    irreps_in,  # type: ignore
+                    irreps_out,  # type: ignore
                 )
 
                 model_state_dct[module_key + '.linear.weight'] = (
@@ -289,8 +290,8 @@ def append_modality_to_model_dct(
                 append_weight = _append_modal_weight(
                     model_state_dct,
                     module_key,
-                    irreps_in,
-                    irreps_out,
+                    irreps_in,  # type: ignore
+                    irreps_out,  # type: ignore
                     append_modal_length,
                 )
                 model_state_dct[module_key + '.linear.weight'] = append_weight
