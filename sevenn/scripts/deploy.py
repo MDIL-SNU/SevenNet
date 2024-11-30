@@ -9,10 +9,9 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.util import model_from_checkpoint_with_backend
+from sevenn.util import load_checkpoint
 
 
-# TODO: this is E3_equivariant specific
 def deploy(checkpoint, fname):
     """
     This method is messy to avoid changes in pair_e3gnn.cpp, while
@@ -23,17 +22,14 @@ def deploy(checkpoint, fname):
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
 
-    model, config = model_from_checkpoint_with_backend(checkpoint, 'e3nn')
-    model_state_dct = model.state_dict()
+    cp = load_checkpoint(checkpoint)
+    model, config = cp.build_model('e3nn'), cp.config
 
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
     grad_module = ForceStressOutput()
     model.replace_module('force_output', grad_module)
     new_grad_key = grad_module.get_grad_key()
     model.key_grad = new_grad_key
-    missing, not_used = model.load_state_dict(model_state_dct, strict=False)
-    assert len(missing) == 0, f'missing keys: {missing}'
-    assert len(not_used) == 0, f'not used keys: {not_used}'
     if hasattr(model, 'eval_type_map'):
         setattr(model, 'eval_type_map', False)
 
@@ -65,15 +61,16 @@ def deploy(checkpoint, fname):
     torch.jit.save(model, fname, _extra_files=md_configs)
 
 
-# TODO: this is E3_equivariant specific
+# TODO: build model only once
 def deploy_parallel(checkpoint, fname):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
-    model, config = model_from_checkpoint_with_backend(checkpoint, 'e3nn')
+    cp = load_checkpoint(checkpoint)
+    model, config = cp.build_model('e3nn'), cp.config
+    config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
     model_state_dct = model.state_dict()
 
-    # TODO: build model only once
     model_list = build_E3_equivariant_model(config, parallel=True)
     dct_temp = {}
     copy_counter = {gk: 0 for gk in GHOST_LAYERS_KEYS}
@@ -93,7 +90,7 @@ def deploy_parallel(checkpoint, fname):
         if hasattr(model_part, 'eval_type_map'):
             setattr(model_part, 'eval_type_map', False)
         # Ensure all values are inserted
-        assert len(missing) == 0
+        assert len(missing) == 0, missing
 
     # prepare some extra information for MD
     md_configs = {}

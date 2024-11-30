@@ -105,15 +105,12 @@ class Trainer:
                 optimizer_state_dict=optim_stct,
                 scheduler_state_dict=scheduler_stct,
         """
-        from sevenn.util import model_from_checkpoint, pretrained_name_to_path
+        from sevenn.util import load_checkpoint
 
-        if os.path.isfile(checkpoint):
-            checkpoint = checkpoint
-        else:
-            checkpoint = pretrained_name_to_path(checkpoint)
+        cp = load_checkpoint(checkpoint)
 
-        cp = torch.load(checkpoint, weights_only=False)
-        model, config = model_from_checkpoint(cp)
+        model = cp.build_model()
+        config = cp.config
         optimizer_cls = optim_dict[config[KEY.OPTIMIZER].lower()]
         scheduler_cls = scheduler_dict[config[KEY.SCHEDULER].lower()]
         loss_functions = get_loss_functions_from_config(config)
@@ -127,8 +124,8 @@ class Trainer:
                 'scheduler_cls': scheduler_cls,
                 'scheduler_args': config[KEY.SCHEDULER_PARAM],
             },
-            cp['optimizer_state_dict'],
-            cp['scheduler_state_dict'],
+            cp.optimizer_state_dict,
+            cp.scheduler_state_dict,
         )
 
     def run_one_epoch(

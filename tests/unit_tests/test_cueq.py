@@ -131,6 +131,7 @@ def test_model_output(cf):
     )
 
 
+@pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 @pytest.mark.parametrize(
     'start_from_cueq',
@@ -176,6 +177,7 @@ def test_checkpoint_convert(tmp_path, start_from_cueq):
     )
 
 
+@pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 @pytest.mark.parametrize(
     'start_from_cueq',
@@ -238,6 +240,7 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
     # assert acl(atoms1.get_potential_energies(), atoms2.get_potential_energies())
 
 
+@pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_calculator(tmp_path):
     cueq = True

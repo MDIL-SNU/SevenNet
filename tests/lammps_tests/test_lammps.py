@@ -316,6 +316,7 @@ def test_parallel(
     assert_atoms(atoms, atoms_lammps)
 
 
+@pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_cueq_serial(lammps_cmd, tmp_path):
     """
@@ -350,6 +351,7 @@ def test_cueq_serial(lammps_cmd, tmp_path):
     assert_atoms(atoms, atoms_lammps)
 
 
+@pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_cueq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
     """

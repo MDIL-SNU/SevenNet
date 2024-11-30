@@ -343,14 +343,14 @@ def _to_parallel_model(layers: OrderedDict, config):
 @overload
 def build_E3_equivariant_model(
     config: dict, parallel: Literal[False] = False
-) -> AtomGraphSequential:
+) -> AtomGraphSequential:  # noqa
     ...
 
 
 @overload
 def build_E3_equivariant_model(
     config: dict, parallel: Literal[True]
-) -> List[AtomGraphSequential]:
+) -> List[AtomGraphSequential]:  # noqa
     ...
 
 

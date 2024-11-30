@@ -21,19 +21,18 @@ def processing_continue_v2(config):  # simpler
     continue_dct = config[KEY.CONTINUE]
     log.write('\nContinue found, loading checkpoint\n')
 
-    checkpoint = torch.load(
-        continue_dct[KEY.CHECKPOINT], map_location='cpu', weights_only=False
-    )
-    model_cp, config_cp = util.model_from_checkpoint(checkpoint)
+    checkpoint = util.load_checkpoint(continue_dct[KEY.CHECKPOINT])
+    model_cp = checkpoint.build_model()
+    config_cp = checkpoint.config
     model_state_dict_cp = model_cp.state_dict()
 
     optimizer_state_dict_cp = (
-        checkpoint['optimizer_state_dict']
+        checkpoint.optimizer_state_dict
         if not continue_dct[KEY.RESET_OPTIMIZER]
         else None
     )
     scheduler_state_dict_cp = (
-        checkpoint['scheduler_state_dict']
+        checkpoint.scheduler_state_dict
         if not continue_dct[KEY.RESET_SCHEDULER]
         else None
     )
@@ -72,7 +71,7 @@ def processing_continue_v2(config):  # simpler
         log.writeline(f'{KEY.USE_MODALITY}: True')
         config[KEY.USE_MODALITY] = True
 
-    from_epoch = checkpoint['epoch']
+    from_epoch = checkpoint.epoch or 0
     log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
     epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
     log.writeline(f'epoch start from {epoch}')

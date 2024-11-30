@@ -1,6 +1,5 @@
-import copy
 import os
-import warnings
+import pathlib
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
@@ -9,7 +8,7 @@ import torch.nn
 from e3nn.o3 import FullTensorProduct, Irreps
 
 import sevenn._keys as KEY
-import sevenn.scripts.backward_compatibility as compat
+from sevenn.checkpoint import SevenNetCheckpoint
 
 
 def to_atom_graph_list(atom_graph_batch):
@@ -82,200 +81,23 @@ def onehot_to_chem(one_hot_indices: List[int], type_map: Dict[int, int]):
     return [chemical_symbols[type_map_rev[x]] for x in one_hot_indices]
 
 
-def _config_cp_routine(config):
-    from ._const import model_defaults
-
-    defaults = {**model_defaults(config)}
-    config = compat.patch_old_config(config)  # type: ignore
-
-    for k, v in defaults.items():
-        if k in config:
-            continue
-        if os.getenv('SEVENN_DEBUG', False):
-            warnings.warn(f'{k} not in config, use default value {v}', UserWarning)
-        config[k] = v
-
-    # expect only non-tensor values in config, if exists, move to cpu
-    # This can be happen if config has torch tensor as value (shift, scale)
-    # TODO: save only non-tensors at first place is better
-    for k, v in config.items():
-        if isinstance(v, torch.Tensor):
-            config[k] = v.cpu()
-    return config
-
-
-def _e3nn_to_cue(stct_src, stct_dst, src_config):
-    """
-    manually check keys and assert if something unexpected happens
-    """
-    n_layer = src_config['num_convolution_layer']
-
-    linear_module_names = [
-        'onehot_to_feature_x',
-        'reduce_input_to_hidden',
-        'reduce_hidden_to_energy',
-    ]
-    convolution_module_names = []
-    fc_tensor_product_module_names = []
-    for i in range(n_layer):
-        linear_module_names.append(f'{i}_self_interaction_1')
-        linear_module_names.append(f'{i}_self_interaction_2')
-        if src_config.get(KEY.SELF_CONNECTION_TYPE) == 'linear':
-            linear_module_names.append(f'{i}_self_connection_intro')
-        elif src_config.get(KEY.SELF_CONNECTION_TYPE) == 'nequip':
-            fc_tensor_product_module_names.append(f'{i}_self_connection_intro')
-        convolution_module_names.append(f'{i}_convolution')
-
-    # Rule: those keys can be safely ignored before state dict load,
-    #       except for linear.bias. This should be aborted in advance to
-    #       this function. Others are not parameters but constants.
-    cue_only_linear_followers = ['linear.f.tp.f_fx.module.c']
-    e3nn_only_linear_followers = ['linear.bias', 'linear.output_mask']
-    ignores_in_linear = cue_only_linear_followers + e3nn_only_linear_followers
-
-    cue_only_conv_followers = [
-        'convolution.f.tp.f_fx.module.c'
-    ]
-    e3nn_only_conv_followers = [
-        'convolution._compiled_main_left_right._w3j',
-        'convolution.weight',
-        'convolution.output_mask',
-    ]
-    ignores_in_conv = cue_only_conv_followers + e3nn_only_conv_followers
-
-    cue_only_fc_followers = [
-        'fc_tensor_product.f.tp.f_fx.module.c'
-    ]
-    e3nn_only_fc_followers = [
-        'fc_tensor_product.output_mask',
-    ]
-    ignores_in_fc = cue_only_fc_followers + e3nn_only_fc_followers
-
-    updated_keys = []
-    stct_updated = stct_dst.copy()
-    for k, v in stct_src.items():
-        module_name = k.split('.')[0]
-        flag = False
-        if module_name in linear_module_names:
-            for ignore in ignores_in_linear:
-                if '.'.join([module_name, ignore]) in k:
-                    flag = True
-                    break
-            if not flag and k == '.'.join([module_name, 'linear.weight']):
-                updated_keys.append(k)
-                stct_updated[k] = v.clone()
-                flag = True
-            assert flag, f'Unexpected key from linear: {k}'
-        elif module_name in convolution_module_names:
-            for ignore in ignores_in_conv:
-                if '.'.join([module_name, ignore]) in k:
-                    flag = True
-                    break
-            if not flag and (
-                k.startswith(f'{module_name}.weight_nn')
-                or k == '.'.join([module_name, 'denominator'])
-            ):
-                updated_keys.append(k)
-                stct_updated[k] = v.clone()
-                flag = True
-            assert flag, f'Unexpected key from linear: {k}'
-        elif module_name in fc_tensor_product_module_names:
-            for ignore in ignores_in_fc:
-                if '.'.join([module_name, ignore]) in k:
-                    flag = True
-                    break
-            if not flag and k == '.'.join([module_name, 'fc_tensor_product.weight']):
-                updated_keys.append(k)
-                stct_updated[k] = v.clone()
-                flag = True
-            assert flag, f'Unexpected key from fc tensor product: {k}'
-        else:
-            # assert k in stct_updated
-            updated_keys.append(k)
-            stct_updated[k] = v.clone()
-
-    return stct_updated
-
-
 def model_from_checkpoint(
-    checkpoint: Union[str, dict],
+    checkpoint: str,
 ) -> Tuple[torch.nn.Module, Dict]:
-    from .model_build import build_E3_equivariant_model
+    cp = load_checkpoint(checkpoint)
+    model = cp.build_model()
 
-    if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint, map_location='cpu', weights_only=False)
-        assert isinstance(checkpoint, dict)
-    elif isinstance(checkpoint, dict):
-        pass
-    else:
-        raise ValueError('checkpoint must be either str or dict')
-
-    stct_cp = checkpoint['model_state_dict']  # type: ignore
-    config = _config_cp_routine(checkpoint.get('config'))
-
-    model = build_E3_equivariant_model(config)
-
-    stct_cp = compat.patch_state_dict_if_old(stct_cp, config, model)
-    missing, not_used = model.load_state_dict(stct_cp, strict=False)
-    if len(not_used) > 0:
-        warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
-
-    assert len(missing) == 0, f'Missing keys: {missing}'
-
-    return model, config
+    return model, cp.config
 
 
 def model_from_checkpoint_with_backend(
-    checkpoint: Union[str, dict],
+    checkpoint: str,
     backend: str = 'e3nn',
 ) -> Tuple[torch.nn.Module, Dict]:
-    from .model_build import build_E3_equivariant_model
+    cp = load_checkpoint(checkpoint)
+    model = cp.build_model(backend)
 
-    use_cue = backend.lower() in ['cue', 'cueq', 'cuequivariance']
-
-    if isinstance(checkpoint, str):
-        checkpoint = torch.load(checkpoint, map_location='cpu', weights_only=False)
-        assert isinstance(checkpoint, dict)
-    elif isinstance(checkpoint, dict):
-        pass
-    else:
-        raise ValueError('checkpoint must be either str or dict')
-    config_cp = _config_cp_routine(checkpoint.get('config'))
-
-    # early return
-    cue_cfg = config_cp.get(KEY.CUEQUIVARIANCE_CONFIG, {'use': False})
-    cp_already_use_cue = cue_cfg.get('use', False)
-    if use_cue == cp_already_use_cue:
-        return model_from_checkpoint(checkpoint)
-
-    print(f'convert the model to {backend}')
-
-    # build empty [e3nn | cue] model
-    config = copy.deepcopy(config_cp)
-    config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': use_cue}
-    model = build_E3_equivariant_model(config)
-
-    # patch model checkpoint's state dict
-    stct_src = checkpoint['model_state_dict'].copy()  # type: ignore
-    stct_src = compat.patch_state_dict_if_old(stct_src, config_cp, model)
-
-    # get empty [e3nn | cue] state dicts
-    stct_dst = model.state_dict()
-    # patch state dicts
-    stct_new = (
-        _e3nn_to_cue(stct_src, stct_dst, config_cp)
-        if use_cue
-        # TODO: for now, no special routine needed when src dst changed
-        else _e3nn_to_cue(stct_src, stct_dst, config_cp)
-    )
-
-    missing, not_used = model.load_state_dict(stct_new, strict=False)
-    if len(not_used) > 0:
-        warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
-
-    assert len(missing) == 0, f'Missing keys: {missing}'
-
-    return model, config
+    return model, cp.config
 
 
 def unlabeled_atoms_to_input(atoms, cutoff: float, grad_key: str = KEY.EDGE_VEC):
@@ -349,7 +171,7 @@ def infer_irreps_out(
     # (mul, (ir, p))
     irreps_out = FullTensorProduct(irreps_x, irreps_operand).irreps_out.simplify()
     new_irreps_elem = []
-    for mul, (l, p) in irreps_out:
+    for mul, (l, p) in irreps_out:  # noqa
         elem = (mul, (l, p))
         if drop_l is not False and l > drop_l:
             continue
@@ -377,6 +199,19 @@ def pretrained_name_to_path(name: str) -> str:
         raise ValueError('Not a valid potential')
 
     return checkpoint_path
+
+
+def load_checkpoint(checkpoint: Union[pathlib.Path, str]):
+    if os.path.isfile(checkpoint):
+        checkpoint_path = checkpoint
+    else:
+        try:
+            checkpoint_path = pretrained_name_to_path(str(checkpoint))
+        except ValueError:
+            raise ValueError(
+                f'Given {checkpoint} is not exists and not a pre-trained name'
+            )
+    return SevenNetCheckpoint(checkpoint_path)
 
 
 def unique_filepath(filepath: str) -> str:

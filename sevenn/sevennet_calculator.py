@@ -76,18 +76,15 @@ class SevenNetCalculator(Calculator):
             self.device = device
 
         if file_type == 'checkpoint' and isinstance(model, str):
-            if os.path.isfile(model):
-                checkpoint = model
-            else:
-                checkpoint = util.pretrained_name_to_path(model)
+            cp = util.load_checkpoint(model)
+
             backend = 'e3nn' if not enable_cueq else 'cueq'
-            model_loaded, config = util.model_from_checkpoint_with_backend(
-                checkpoint, backend
-            )
+            model_loaded = cp.build_model(backend)
             model_loaded.set_is_batch_data(False)
-            self.type_map = config[KEY.TYPE_MAP]
-            self.cutoff = config[KEY.CUTOFF]
-            self.sevennet_config = config
+
+            self.type_map = cp.config[KEY.TYPE_MAP]
+            self.cutoff = cp.config[KEY.CUTOFF]
+            self.sevennet_config = cp.config
 
         elif file_type == 'torchscript' and isinstance(model, str):
             if modal:
