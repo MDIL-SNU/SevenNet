@@ -154,6 +154,6 @@ def patch_state_dict_if_old(state_dict, config_cp, now_model):
     # TODO: change version criteria before release!!!
     #       it causes problem if model is sorted but this function is called
     #       ... more robust way? idk
-    if int(major) == 0 and int(minor) < 12:
+    if int(major) == 0 and int(minor) < 11:
         state_dict = sort_old_convolution(now_model, state_dict)
     return state_dict
