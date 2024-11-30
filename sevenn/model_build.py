@@ -45,7 +45,7 @@ def _insert_after(module_name_after, key_module_pair, layers):
             idx = i
             break
     if idx == -1:
-        assert False
+        return layers  # do nothing if not found
     layers.insert(idx + 1, key_module_pair)
     return layers
 
@@ -183,7 +183,7 @@ def patch_modality(layers: OrderedDict, config):
 
     _layers = list(layers.items())
     _layers = _insert_after(
-        'edge_embedding',
+        'onehot_idx_to_onehot',
         (
             'one_hot_modality',
             OnehotEmbedding(

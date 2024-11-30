@@ -1,12 +1,8 @@
 import argparse
 import os
 
-import torch
-
-import sevenn._keys as KEY
 import sevenn.util
 from sevenn import __version__
-from sevenn.scripts.convert_model_modality import get_single_modal_model_dct
 from sevenn.scripts.deploy import deploy, deploy_parallel
 
 description_get_model = (
@@ -36,25 +32,10 @@ def main(args=None):
     else:
         checkpoint_path = sevenn.util.pretrained_name_to_path(checkpoint)
 
-    """
-    model, config = sevenn.util.model_from_checkpoint(checkpoint_path)
-    stct_dct = model.state_dict()
-
-    if config.get(KEY.USE_MODALITY, False):
-        stct_dct = get_single_modal_model_dct(
-            stct_dct, config, modal, is_deploy=True
-        )
-        output_prefix = modal + '_' + output_prefix
-        if save_cp:
-            cp_file = torch.load(checkpoint_path, map_location='cpu')
-            cp_file.update({'model_state_dict': stct_dct, 'config': config})
-            torch.save(cp_file, checkpoint_path.replace('.', f'_{modal}.'))
-    """
-
     if get_serial:
-        deploy(checkpoint_path, output_prefix)
+        deploy(checkpoint_path, output_prefix, modal)
     else:
-        deploy_parallel(checkpoint_path, output_prefix)
+        deploy_parallel(checkpoint_path, output_prefix, modal)
 
 
 def cmd_parse_get_model(args=None):
@@ -70,7 +51,6 @@ def cmd_parse_get_model(args=None):
         '-m',
         '--modal',
         help='Modality of multi-modal model',
-        default='common',
         type=str,
     )
     ag.add_argument(

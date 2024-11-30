@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from typing import Optional
 
 import e3nn.util.jit
 import torch
@@ -12,7 +13,7 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.util import load_checkpoint
 
 
-def deploy(checkpoint, fname):
+def deploy(checkpoint, fname='deployed_serial.pt', modal: Optional[str] = None):
     """
     This method is messy to avoid changes in pair_e3gnn.cpp, while
     refactoring python part.
@@ -32,6 +33,13 @@ def deploy(checkpoint, fname):
     model.key_grad = new_grad_key
     if hasattr(model, 'eval_type_map'):
         setattr(model, 'eval_type_map', False)
+
+    if modal:
+        model.prepare_modal_deploy(modal)
+    elif model.modal_map is not None:
+        raise ValueError(
+            f'Modal is not given. It has: {list(model.modal_map.keys())}'
+        )
 
     model.set_is_batch_data(False)
     model.eval()
@@ -62,7 +70,9 @@ def deploy(checkpoint, fname):
 
 
 # TODO: build model only once
-def deploy_parallel(checkpoint, fname):
+def deploy_parallel(
+    checkpoint, fname='deployed_parallel', modal: Optional[str] = None
+):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
@@ -91,6 +101,13 @@ def deploy_parallel(checkpoint, fname):
             setattr(model_part, 'eval_type_map', False)
         # Ensure all values are inserted
         assert len(missing) == 0, missing
+
+    if modal:
+        model_list[0].prepare_modal_deploy(modal)
+    elif model_list[0].modal_map is not None:
+        raise ValueError(
+            f'Modal is not given. It has: {list(model_list[0].modal_map.keys())}'
+        )
 
     # prepare some extra information for MD
     md_configs = {}

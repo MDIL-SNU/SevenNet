@@ -18,6 +18,25 @@ def _instantiate_modules(modules):
 
 
 @compile_mode('script')
+class _ModalInputPrepare(nn.Module):
+
+    def __init__(
+        self,
+        modal_idx: int
+    ):
+        super().__init__()
+        self.modal_idx = modal_idx
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        data[KEY.MODAL_TYPE] = torch.tensor(
+            self.modal_idx,
+            dtype=torch.int64,
+            device=data['x'].device,
+        )
+        return data
+
+
+@compile_mode('script')
 class AtomGraphSequential(nn.Sequential):
     """
     Wrapper of SevenNet model
@@ -106,6 +125,7 @@ class AtomGraphSequential(nn.Sequential):
         if key in self._modules.keys():
             del self._modules[key]
 
+    @torch.jit.unused
     def _atomic_numbers_to_onehot(self, atomic_numbers: torch.Tensor):
         assert atomic_numbers.dtype == torch.int64
         device = atomic_numbers.device
@@ -114,6 +134,7 @@ class AtomGraphSequential(nn.Sequential):
             input=z_to_onehot_tensor, dim=0, index=atomic_numbers
         )
 
+    @torch.jit.unused
     def _eval_modal_map(self, data: AtomGraphDataType):
         assert self.modal_map is not None
         # modal_map: dict[str, int]
@@ -144,6 +165,14 @@ class AtomGraphSequential(nn.Sequential):
             data[self.key_grad].requires_grad_(True)
 
         return data
+
+    def prepare_modal_deploy(self, modal: str):
+        if self.modal_map is None:
+            return
+        self.eval_modal_map = False
+        self.set_is_batch_data(False)
+        modal_idx = self.modal_map[modal]  # type: ignore
+        self.prepand_module('modal_input_prepare', _ModalInputPrepare(modal_idx))
 
     def forward(self, input: AtomGraphDataType) -> AtomGraphDataType:
         data = self._preprocess(input)
