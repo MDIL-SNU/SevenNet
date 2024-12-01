@@ -113,6 +113,7 @@ class SpeciesWiseRescale(nn.Module):
                 s = s * n_atom_types
             shift_scale.append(s)
         assert all([len(s) == n_atom_types for s in shift_scale])
+        shift, scale = shift_scale
         return SpeciesWiseRescale(shift, scale, **kwargs)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
@@ -129,8 +130,7 @@ class ModalWiseRescale(nn.Module):
     """
     Scaling and shifting energy (and automatically force and stress)
     Given shift or scale is either modal-wise and atom-wise or
-    not modal-wise but atom-wise. It is always atom-wise.
-    If given scalar, it tries to expand to atom-wise
+    not modal-wise but atom-wise. It is always interpreted as atom-wise.
     """
 
     def __init__(
