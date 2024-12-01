@@ -38,6 +38,7 @@ sevenn_graph_build = "sevenn.main.sevenn_graph_build:main"
 sevenn_inference = "sevenn.main.sevenn_inference:main"
 sevenn_patch_lammps = "sevenn.main.sevenn_patch_lammps:main"
 sevenn_preset = "sevenn.main.sevenn_preset:main"
+sevenn_cp = "sevenn.main.sevenn_cp:main"
 
 [project.urls]
 Homepage = "https://github.com/MDIL-SNU/SevenNet"

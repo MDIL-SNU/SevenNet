@@ -2,14 +2,15 @@ import os
 import pathlib
 import warnings
 from copy import deepcopy
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
+import pandas as pd
 from torch import Tensor
 from torch import load as torch_load
 
+import sevenn._const as consts
 import sevenn._keys as KEY
 import sevenn.scripts.backward_compatibility as compat
-from sevenn._const import model_defaults
 from sevenn.nn.sequential import AtomGraphSequential
 
 
@@ -26,7 +27,7 @@ def copy_state_dict(state_dict) -> dict:
 
 
 def _config_cp_routine(config):
-    defaults = {**model_defaults(config)}
+    defaults = {**consts.model_defaults(config)}
     config = compat.patch_old_config(config)  # type: ignore
 
     for k, v in defaults.items():
@@ -139,14 +140,40 @@ class SevenNetCheckpoint:
     """
 
     def __init__(self, checkpoint_path: Union[pathlib.Path, str]):
-        self._checkpoint_path = checkpoint_path
+        self._checkpoint_path = os.path.abspath(checkpoint_path)
         self._config = None
         self._epoch = None
         self._model_state_dict = None
         self._optimizer_state_dict = None
         self._scheduler_state_dict = None
+        self._hash = None
+        self._time = None
 
         self._loaded = False
+
+    def __repr__(self) -> str:
+        cfg = self.config  # just alias
+        if len(cfg) == 0:
+            return ''
+        dct = {
+            'Sevennet version': cfg.get('version', 'Not found'),
+            'When': self.time,
+            'Hash': self.hash,
+            'Cutoff': cfg.get('cutoff'),
+            'Channel': cfg.get('channel'),
+            'Lmax': cfg.get('lmax'),
+            'Group (parity)': 'O3' if cfg.get('is_parity') else 'SO3',
+            'Interaction layers': cfg.get('num_convolution_layer'),
+            'Self connection type': cfg.get('self_connection_type', 'nequip'),
+            'Last epoch': self.epoch,
+            'Elements': len(cfg.get('chemical_species', [])),
+        }
+        if cfg.get('use_modality', False):
+            dct['Modality'] = ', '.join(list(cfg.get('_modal_map', {}).keys()))
+
+        df = pd.DataFrame.from_dict([dct]).T  # type: ignore
+        df.columns = ['']
+        return df.to_string()
 
     @property
     def checkpoint_path(self) -> str:
@@ -158,12 +185,6 @@ class SevenNetCheckpoint:
             self._load()
         assert isinstance(self._config, dict)
         return deepcopy(self._config)
-
-    @property
-    def epoch(self) -> Optional[int]:
-        if not self._loaded:
-            self._load()
-        return self._epoch
 
     @property
     def model_state_dict(self) -> Dict[str, Any]:
@@ -186,6 +207,26 @@ class SevenNetCheckpoint:
         assert isinstance(self._scheduler_state_dict, dict)
         return copy_state_dict(self._scheduler_state_dict)
 
+    @property
+    def epoch(self) -> Optional[int]:
+        if not self._loaded:
+            self._load()
+        return self._epoch
+
+    @property
+    def time(self) -> str:
+        if not self._loaded:
+            self._load()
+        assert isinstance(self._time, str)
+        return self._time
+
+    @property
+    def hash(self) -> str:
+        if not self._loaded:
+            self._load()
+        assert isinstance(self._hash, str)
+        return self._hash
+
     def _load(self) -> None:
         assert not self._loaded
         cp_path = self.checkpoint_path  # just alias
@@ -196,6 +237,8 @@ class SevenNetCheckpoint:
         self._optimizer_state_dict = cp.get('optimizer_state_dict', {})
         self._scheduler_state_dict = cp.get('scheduler_state_dict', {})
         self._epoch = cp.get('epoch', None)
+        self._time = cp.get('time', 'Not found')
+        self._hash = cp.get('hash', 'Not found')
 
         if len(self._config_original) == 0:
             warnings.warn(f'config is not found from {cp_path}')
@@ -205,15 +248,6 @@ class SevenNetCheckpoint:
 
         if len(self._model_state_dict) == 0:
             warnings.warn(f'model_state_dict is not found from {cp_path}')
-
-        if len(self._optimizer_state_dict) == 0:
-            warnings.warn(f'optimizer_state_dict is not found from {cp_path}')
-
-        if len(self._scheduler_state_dict) == 0:
-            warnings.warn(f'scheduler_state_dict is not found from {cp_path}')
-
-        if self._epoch is None:
-            warnings.warn(f'epoch is not found from {cp_path}')
 
         self._loaded = True
 
@@ -248,5 +282,151 @@ class SevenNetCheckpoint:
         assert len(missing) == 0, f'Missing keys: {missing}'
         return model
 
-    def __repr__(self) -> str:
-        return ''
+    def yaml_dict(self, mode: str) -> dict:
+        """
+        Return dict for input.yaml from checkpoint config
+        Dataset paths and statistic values are removed intentionally
+        """
+        if mode not in ['reproduce', 'continue', 'continue_modal']:
+            raise ValueError(f'Unknown mode: {mode}')
+
+        ignore = [
+            'when',
+            KEY.DDP_BACKEND,
+            KEY.LOCAL_RANK,
+            KEY.IS_DDP,
+            KEY.DEVICE,
+            KEY.MODEL_TYPE,
+            KEY.SHIFT,
+            KEY.SCALE,
+            KEY.CONV_DENOMINATOR,
+            KEY.SAVE_DATASET,
+            KEY.SAVE_BY_LABEL,
+            KEY.SAVE_BY_TRAIN_VALID,
+            KEY.CONTINUE,
+            KEY.LOAD_DATASET,  # old
+        ]
+
+        cfg = self.config
+
+        world_size = cfg.pop(KEY.WORLD_SIZE, 1)
+        cfg[KEY.BATCH_SIZE] = cfg[KEY.BATCH_SIZE] * world_size
+        cfg[KEY.LOAD_TRAINSET] = '**path_to_training_set**'
+
+        major, minor, _ = cfg.pop('version', '0.0.0').split('.')[:3]
+        if int(major) == 0 and int(minor) <= 9:
+            warnings.warn('checkpoint version too old, yaml may wrong')
+
+        ret = {'model': {}, 'train': {}, 'data': {}}
+        for k, v in cfg.items():
+            if k.startswith('_') or k in ignore or k.endswith('set_path'):
+                continue
+
+            if k in consts.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG:
+                ret['model'][k] = v
+            elif k in consts.DEFAULT_TRAINING_CONFIG:
+                ret['train'][k] = v
+            elif k in consts.DEFAULT_DATA_CONFIG:
+                ret['data'][k] = v
+
+        ret['data'][KEY.LOAD_TRAINSET] = '**path_to_trainset**'
+        ret['data'][KEY.LOAD_VALIDSET] = '**path_to_validset**'
+
+        if mode.startswith('continue'):
+            ret['train'].update(
+                {KEY.CONTINUE: {KEY.CHECKPOINT: self.checkpoint_path}}
+            )
+        modal_names = None
+        if mode == 'continue_modal' and not cfg.get(KEY.USE_MODALITY, False):
+            ret['train'][KEY.USE_MODALITY] = True
+
+            # suggest defaults
+            ret['model'][KEY.USE_MODAL_NODE_EMBEDDING] = False
+            ret['model'][KEY.USE_MODAL_SELF_INTER_INTRO] = True
+            ret['model'][KEY.USE_MODAL_SELF_INTER_OUTRO] = True
+            ret['model'][KEY.USE_MODAL_OUTPUT_BLOCK] = True
+
+            ret['data'][KEY.USE_MODAL_WISE_SHIFT] = True
+            ret['data'][KEY.USE_MODAL_WISE_SCALE] = False
+
+            modal_names = ['my_modal1', 'my_modal2']
+        elif cfg.get(KEY.USE_MODALITY, False):
+            modal_names = list(cfg[KEY.MODAL_MAP].keys())
+
+        if modal_names:
+            ret['data'][KEY.LOAD_TRAINSET] = [
+                {'data_modality': mm, 'file_list': [{'file': f'**path_to_{mm}**'}]}
+                for mm in modal_names
+            ]
+
+        return ret
+
+    def append_modal(
+        self,
+        new_modal_names: List[str],
+        use_modal_node_embedding: bool = False,
+        use_modal_self_inter_intro: bool = True,
+        use_modal_self_inter_outro: bool = True,
+        use_modal_output_block: bool = True,
+    ):
+        from sevenn.scripts.convert_model_modality import _append_modal_weight
+
+        # check inputs
+        if len(new_modal_names) == 0:
+            raise ValueError('No modal names is given to append')
+
+        orig_modal_map = self.config.get(KEY.MODAL_MAP, {})
+        new_modal_map = orig_modal_map.copy()
+        for new_modal_name in new_modal_names:
+            if new_modal_name in orig_modal_map:
+                warnings.warn(f'{new_modal_name} already exists, skipping')
+                continue
+            new_modal_map[new_modal_name] = len(new_modal_map)
+
+        append_num = len(new_modal_map) - len(orig_modal_map)
+
+        orig_model = self.build_model()
+        orig_state_dict = orig_model.state_dict()
+
+        new_cfg = self.config
+        new_cfg[KEY.NUM_MODALITIES] = len(new_modal_map)
+        new_cfg[KEY.MODAL_MAP] = new_modal_map
+        new_cfg[KEY.USE_MODAL_NODE_EMBEDDING] = use_modal_node_embedding
+        new_cfg[KEY.USE_MODAL_SELF_INTER_INTRO] = use_modal_self_inter_intro
+        new_cfg[KEY.USE_MODAL_SELF_INTER_OUTRO] = use_modal_self_inter_outro
+        new_cfg[KEY.USE_MODAL_OUTPUT_BLOCK] = use_modal_output_block
+
+        new_state_dict = copy_state_dict(orig_state_dict)
+        for stct_key in orig_state_dict:
+            sp = stct_key.split('.')
+            k, follower = sp[0], '.'.join(sp[1:])
+            if follower != 'linear.weight':
+                continue
+            if (
+                (
+                    new_cfg[KEY.USE_MODAL_NODE_EMBEDDING]
+                    and k.endswith('onehot_to_feature_x')
+                )
+                or (
+                    new_cfg[KEY.USE_MODAL_SELF_INTER_INTRO]
+                    and k.endswith('self_interaction_1')
+                )
+                or (
+                    new_cfg[KEY.USE_MODAL_SELF_INTER_OUTRO]
+                    and k.endswith('self_interaction_2')
+                )
+                or (
+                    new_cfg[KEY.USE_MODAL_OUTPUT_BLOCK]
+                    and k == 'reduce_input_to_hidden'
+                )
+            ):
+                orig_linear = getattr(orig_model._modules[k], 'linear')
+                # assert normalization element
+                new_state_dict[stct_key] = _append_modal_weight(
+                    orig_state_dict,
+                    stct_key,
+                    orig_linear.irreps_in,
+                    orig_linear.irreps_out,
+                    append_num,
+                )
+        return new_state_dict
