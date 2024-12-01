@@ -120,7 +120,7 @@ def deploy_parallel(
 
     comm_size = max(
         [
-            seg._modules[f'{t}_convolution']._comm_size
+            seg._modules[f'{t}_convolution']._comm_size  # type: ignore
             for t, seg in enumerate(model_list)
         ]
     )
