@@ -28,8 +28,8 @@ class OnehotEmbedding(nn.Module):
         num_classes: int,
         data_key_x: str = KEY.NODE_FEATURE,
         data_key_out: Optional[str] = None,
-        data_key_save: str = KEY.ATOM_TYPE,
-        data_key_additional: str = KEY.NODE_ATTR,  # additional output
+        data_key_save: Optional[str] = None,
+        data_key_additional: Optional[str] = None,  # additional output
     ):
         super().__init__()
         self.num_classes = num_classes

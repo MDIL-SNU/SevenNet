@@ -190,6 +190,8 @@ def patch_modality(layers: OrderedDict, config):
                 num_classes=config[KEY.NUM_MODALITIES],
                 data_key_x=KEY.MODAL_TYPE,
                 data_key_out=KEY.MODAL_ATTR,
+                data_key_save=None,
+                data_key_additional=None,
             ),
         ),
         _layers,
@@ -413,7 +415,13 @@ def build_E3_equivariant_model(
 
     layers.update(
         {
-            'onehot_idx_to_onehot': OnehotEmbedding(num_classes=num_species),
+            'onehot_idx_to_onehot': OnehotEmbedding(
+                num_classes=num_species,
+                data_key_x=KEY.NODE_FEATURE,
+                data_key_out=KEY.NODE_FEATURE,
+                data_key_save=KEY.ATOM_TYPE,  # atomic numbers
+                data_key_additional=KEY.NODE_ATTR,  # one-hot embeddings
+            ),
             'onehot_to_feature_x': IrrepsLinear(
                 irreps_in=one_hot_irreps,
                 irreps_out=irreps_x,
