@@ -82,12 +82,14 @@ def error_record_condition(x):
 
 
 DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
-    KEY.IRREPS_MANUAL: False,
+    KEY.CUTOFF: 4.5,
     KEY.NODE_FEATURE_MULTIPLICITY: 32,
+    KEY.IRREPS_MANUAL: False,
     KEY.LMAX: 1,
     KEY.LMAX_EDGE: -1,  # -1 means lmax_edge = lmax
     KEY.LMAX_NODE: -1,  # -1 means lmax_node = lmax
     KEY.IS_PARITY: True,
+    KEY.NUM_CONVOLUTION: 3,
     KEY.RADIAL_BASIS: {
         KEY.RADIAL_BASIS_NAME: 'bessel',
     },
@@ -95,11 +97,9 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
         KEY.CUTOFF_FUNCTION_NAME: 'poly_cut',
     },
     KEY.ACTIVATION_RADIAL: 'silu',
-    KEY.CUTOFF: 4.5,
-    KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: [64, 64],
-    KEY.NUM_CONVOLUTION: 3,
     KEY.ACTIVATION_SCARLAR: {'e': 'silu', 'o': 'tanh'},
     KEY.ACTIVATION_GATE: {'e': 'silu', 'o': 'tanh'},
+    KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: [64, 64],
     # KEY.AVG_NUM_NEIGH: True,  # deprecated
     # KEY.TRAIN_AVG_NUM_NEIGH: False,  # deprecated
     KEY.CONV_DENOMINATOR: 'avg_num_neigh',
@@ -212,7 +212,6 @@ DATA_CONFIG_CONDITION = {
     KEY.USE_MODAL_WISE_SCALE: bool,
     # KEY.DATA_SHUFFLE: bool,
     KEY.COMPUTE_STATISTICS: bool,
-    KEY.SAVE_DATASET: str,
     # KEY.DATA_WEIGHT: bool,
     # KEY.DATA_MODALITY: bool,
 }
@@ -237,7 +236,7 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.FORCE_WEIGHT: 0.1,
     KEY.STRESS_WEIGHT: 1e-6,  # SIMPLE-NN default
     KEY.PER_EPOCH: 5,
-    KEY.USE_TESTSET: False,
+    # KEY.USE_TESTSET: False,
     KEY.CONTINUE: {
         KEY.CHECKPOINT: False,
         KEY.RESET_OPTIMIZER: False,
@@ -246,7 +245,7 @@ DEFAULT_TRAINING_CONFIG = {
         KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT: True,
         KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY: True,
     },
-    KEY.DEFAULT_MODAL: 'common',
+    # KEY.DEFAULT_MODAL: 'common',
     KEY.CSV_LOG: 'log.csv',
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRAIN_STRESS: True,

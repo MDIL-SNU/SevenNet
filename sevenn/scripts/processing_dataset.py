@@ -377,7 +377,7 @@ def processing_dataset(config, working_dir):
     # --------------------------------------------------------------------#
 
     # TODO: testset is not used
-    ignore_test = not config[KEY.USE_TESTSET]
+    ignore_test = not config.get(KEY.USE_TESTSET, False)
     if KEY.LOAD_VALIDSET in config and config[KEY.LOAD_VALIDSET]:
         train_set = dataset
         test_set = AtomGraphDataset([], config[KEY.CUTOFF])
