@@ -403,27 +403,27 @@ def build_E3_equivariant_model(config: dict, parallel=False):
             if t == num_convolution_layer - 1:
                 lmax_node = 0
                 parity_mode = 'even'
+            # TODO: irreps_manual is applicable to both irreps_out_tp and irreps_out
+            irreps_out = (
+                util.infer_irreps_out(
+                    irreps_x,  # type: ignore
+                    irreps_filter,
+                    lmax_node,  # type: ignore
+                    parity_mode,
+                    fix_multiplicity=feature_multiplicity,
+                )
+                if irreps_manual is None
+                else irreps_manual[t + 1]
+            )
             irreps_out_tp = util.infer_irreps_out(
                 irreps_x,  # type: ignore
                 irreps_filter,
-                lmax_node,  # type: ignore
+                irreps_out.lmax,  # type: ignore
                 parity_mode,
                 fix_multiplicity,
             )
         else:
             raise ValueError(f'Unknown interaction type: {interaction_type}')
-        # TODO: irreps_manual is applicable to both irreps_out_tp and irreps_out
-        irreps_out = (
-            util.infer_irreps_out(
-                irreps_x,  # type: ignore
-                irreps_filter,
-                lmax_node,  # type: ignore
-                parity_mode,
-                fix_multiplicity=feature_multiplicity,
-            )
-            if irreps_manual is None
-            else irreps_manual[t + 1]
-        )
         param_interaction_block.update(
             {
                 'irreps_out_tp': irreps_out_tp,
