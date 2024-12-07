@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - data_divide_ration defaults to 0.0 (not used)
 ### Fixed
 - For torch version >= 2.4.0, Loading graph dataset no more raises warnings.
+- Raise error when unknown element is found (SevenNetCalculator)
 
 ## [0.10.1]
 ### Added
