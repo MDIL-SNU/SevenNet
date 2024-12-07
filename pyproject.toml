@@ -3,6 +3,7 @@ name = "sevenn"
 version = "0.11.0.dev"
 authors = [
     { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
+    { name = "Haekwan Jeon", email = "haekwan98@snu.ac.kr" },
     { name = "Jaesun Kim" },
     { name = "Gijin Kim" },
     { name = "Hyungmin An" },
@@ -25,10 +26,10 @@ dependencies = [
     "scikit-learn",
     "torch_geometric>=2.5.0",
     "numpy<2.0",
-    #"matscipy",
+    "matscipy",
 ]
 [project.optional-dependencies]
-matscipy = ["matscipy"]
+test = ["matscipy", "pytest-cov>=5"]
 
 
 [project.scripts]
@@ -69,3 +70,13 @@ exclude = ["tests*", "example_inputs*", ]
 log_cli = true
 log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s (%(filename)s:%(lineno)s)"
 log_cli_date_format = "%Y-%m-%d %H:%M:%S"
+
+[tool.ruff]
+line-length = 85
+
+[tool.ruff.lint]
+extend-select = ["E501"]
+
+[tool.ruff.format]
+quote-style = "single"
+docstring-code-format = true
