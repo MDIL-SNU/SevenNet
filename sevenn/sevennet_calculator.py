@@ -126,6 +126,16 @@ class SevenNetCalculator(Calculator):
             'energies',
         ]
 
+    def set_atoms(self, atoms):
+        # called by ase, when atoms.calc = calc
+        zs = tuple(set(atoms.get_atomic_numbers()))
+        for z in zs:
+            if z not in self.type_map:
+                sp = list(self.type_map.keys())
+                raise ValueError(
+                    f'Model do not know atomic number: {z}, (knows: {sp})'
+                )
+
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)

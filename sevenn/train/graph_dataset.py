@@ -6,6 +6,8 @@ from typing import Any, Callable, Dict, List, Optional, Union
 
 import numpy as np
 import torch
+import torch.serialization
+import torch.utils.data
 import yaml
 from ase.data import chemical_symbols
 from torch_geometric.data import Data
@@ -19,6 +21,10 @@ from sevenn import __version__
 from sevenn._const import NUM_UNIV_ELEMENT
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.sevenn_logger import Logger
+
+if torch.__version__.split()[0] >= '2.4.0':
+    # load graph without error
+    torch.serialization.add_safe_globals([AtomGraphData])
 
 # warning from PyG, for later torch versions
 warnings.filterwarnings(
@@ -179,12 +185,14 @@ class SevenNetGraphDataset(InMemoryDataset):
         _pdir = os.path.join(root, 'sevenn_data')
         _pt = os.path.join(_pdir, self._processed_names[0])
         if not os.path.exists(_pt) and len(self._files) == 0:
-            raise ValueError((
-                f'{_pt} not found and no files to process. '
-                + 'If you copied only .pt file, please copy '
-                + 'whole sevenn_data dir without changing its name.'
-                + ' They all work together.'
-            ))
+            raise ValueError(
+                (
+                    f'{_pt} not found and no files to process. '
+                    + 'If you copied only .pt file, please copy '
+                    + 'whole sevenn_data dir without changing its name.'
+                    + ' They all work together.'
+                )
+            )
 
         _yam = os.path.join(_pdir, self._processed_names[1])
         if not os.path.exists(_yam) and len(self._files) == 0:
@@ -533,14 +541,20 @@ def from_config(
         elif isinstance(input, str) and not hasattr(train_set, input):
             raise NotImplementedError(input)
 
-    """
-    if 'validset' not in dataset_keys:
-        log.writeline('As validset is not given, I use random split')
-        log.writeline('Note that statistics computed BEFORE the random split!')
+    if 'validset' not in datasets and config.get(KEY.RATIO, 0.0) > 0.0:
+        log.writeline('Use validation set as random split from the training set')
+        log.writeline(
+            'Note that statistics, shift, scale, and conv_denominator are '
+            + 'computed before random split.\n If you want these after random '
+            + 'split, please preprocess dataset and set it as load_trainset_path '
+            + 'and load_validset_path explicitly.'
+        )
+
         ratio = float(config[KEY.RATIO])
-        train, valid = random_split(datasets['dataset'], (1.0 - ratio, ratio))
-        datasets['dataset'] = train
+        train, valid = torch.utils.data.random_split(
+            datasets['trainset'], (1.0 - ratio, ratio)
+        )
+        datasets['trainset'] = train
         datasets['validset'] = valid
-    """
 
     return datasets
