@@ -21,6 +21,7 @@ All notable changes to this project will be documented in this file.
 - Lazy initialization for `IrrepsLinear` and `SelfConnection*`
 - Checkpoint things using `sevenn/checkpoint.py`
 - e3nn >= 0.5.0, to ensure changed CG coeff later on
+- pandas as dependency
 
 ### Fixed
 - More refactor for shift scale things + few bug fixes
