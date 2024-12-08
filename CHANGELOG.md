@@ -3,20 +3,27 @@ All notable changes to this project will be documented in this file.
 
 ## WIP [0.11.0]
 ### Added
-- Read modality and weight of each data label from `structure_list`
+- Build multi-fidelity model, SevenNet-MF, based on given modality in the yaml
+- Modality support for sevenn_inference, sevenn_get_modal, and SevenNetCalculator
+- [cli] sevenn_cp tool for checkpoint summary, input generation, multi-modal routines
+- Modality append / assign using sevenn_cp
 - Loss weighting for energy, force and stress for corresponding data label
-- Build multi-fidelity model, SevenNet-MF, based on given modality in the training set
-- `AtomGraphDataset` contains information about the modality of given data.
-- `sevenn_get_model` / `sevenn_inference` selects the target fidelity when deploying / inferring SevenNet-MF.
-- `SevenNetCalculator` takes target fidelity for inference as input.
-- Automatic fine-tuning for SevenNet-MF by converting initial weights and shift & scale from checkpoint file.
+- Ignore unlabelled data when calculating loss. (e.g. stress data for non-pbc structure)
+- Dict style dataset input for multi-modal and data-weight
+
+### Added (code)
+- sevenn.train.modal_dataset SevenNetMultiModalDataset
+- sevenn.scripts.backward_compatibility.py
+- sevenn.checkpoint.py
 
 ### Changed
-- Ignore unlabelled data when calculating loss. (e.g. stress data for non-pbc structure)
-- Record shift and scale used for each modality in `log.sevenn`.
-- Record error and loss in the `log.sevenn` with the value after weighting the loss and ignoring unlabelled data.
-- Deploy takes checkpoint path (now deployed serial build model only once)
 - Sort instructions of tensor product in convolution (+ fix flipped w3j coeff of old model)
+- Lazy initialization for `IrrepsLinear` and `SelfConnection*`
+- Checkpoint things using `sevenn/checkpoint.py`
+- e3nn >= 0.5.0, to ensure changed CG coeff later on
+
+### Fixed
+- More refactor for shift scale things + few bug fixes
 
 ## [0.10.2]
 ### Added
