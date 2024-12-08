@@ -55,9 +55,10 @@ class SevenNetCalculator(Calculator):
         if isinstance(model, pathlib.PurePath):
             model = str(model)
 
+        allowed_file_types = ['checkpoint', 'torchscript', 'model_instance']
         file_type = file_type.lower()
-        if file_type not in ['checkpoint', 'torchscript', 'model_instance']:
-            raise ValueError('file_type should be checkpoint or torchscript')
+        if file_type not in allowed_file_types:
+            raise ValueError('file_type not in {allowed_file_types}')
 
         if enable_cueq and file_type in ['model_instance', 'torchscript']:
             warnings.warn(
