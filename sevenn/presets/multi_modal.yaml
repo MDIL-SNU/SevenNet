@@ -1,0 +1,108 @@
+model:
+    chemical_species: 'univ'  # Ready for 119 elements
+    cutoff: 6.0
+    channel: 128
+    is_parity: False
+    lmax: 3
+    num_convolution_layer: 3
+    irreps_manual:
+        - "128x0e"
+        - "128x0e+64x1e+32x2e+16x3e"
+        - "128x0e+64x1e+32x2e+16x3e"
+        - "128x0e"
+
+    weight_nn_hidden_neurons: [64, 64]
+    radial_basis:
+        radial_basis_name: 'bessel'
+        bessel_basis_num: 8
+    cutoff_function:
+        cutoff_function_name: 'XPLOR'
+        cutoff_on: 5.5
+
+    act_gate: {'e': 'silu', 'o': 'tanh'}
+    act_scalar: {'e': 'silu', 'o': 'tanh'}
+
+    conv_denominator: 'avg_num_neigh'
+    train_shift_scale: True
+    train_denominator: False
+    self_connection_type: 'linear'
+
+    use_modal_node_embedding: False
+    use_modal_self_inter_intro: True
+    use_modal_self_inter_outro: True
+    use_modal_output_block: True
+train:
+    train_shuffle: True
+    random_seed: 777
+    is_train_stress : True
+    epoch: 200
+
+    loss: 'Huber'
+    loss_param:
+        delta: 0.01
+
+    optimizer: 'adam'
+    optim_param:
+        lr: 0.01
+    scheduler: 'linearlr'
+    scheduler_param:
+        start_factor: 1.0
+        total_iters: 200
+        end_factor: 0.0001
+
+    force_loss_weight : 1.00
+    stress_loss_weight: 0.01
+
+    error_record:
+        - ['Energy', 'MAE']
+        - ['Force', 'MAE']
+        - ['Stress', 'MAE']
+        - ['Energy', 'Loss']
+        - ['Force', 'Loss']
+        - ['Stress', 'Loss']
+        - ['TotalLoss', 'None']
+
+    per_epoch: 10
+    use_modality: True
+    use_weight: True
+
+    continue:
+        checkpoint: './checkpoint_190.pth'
+
+data:
+    batch_size: 16
+    shift: 'elemwise_reference_energies'
+    scale: 'force_rms'
+
+    use_modal_wise_shift: True
+    use_modal_wise_scale: False
+
+    load_trainset_path:
+
+      - data_modality: pbe
+        file_list:
+          - file: "path to pbe dataset"  # ASE readable or .pt under sevenn_data
+        data_weight:
+            energy: 1.0
+            force: 0.1
+            stress: 1.0
+
+      - data_modality: scan
+        file_list:
+          - file: "path to scan dataset"
+        data_weight:
+            energy: 1.0
+            force: 10.0
+            stress: 1.0
+
+    load_pbe_validset_path:   # any name starts with 'load' and ends with 'set_path'
+      - data_modality: pbe   # modality must be given for mm valid set
+        file_list:
+          - file: "path to pbe validset"
+            data_format: graph
+
+    load_scan_validset_path:
+      - data_modality: scan
+        file_list:
+          - file: "path to scan validset"
+            data_format: ase
