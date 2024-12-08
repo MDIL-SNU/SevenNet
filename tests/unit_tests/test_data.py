@@ -1,5 +1,6 @@
 import logging
 import os
+import os.path as osp
 import uuid
 from collections import Counter
 from copy import deepcopy
@@ -17,6 +18,7 @@ from torch_geometric.loader import DataLoader
 import sevenn._keys as KEY
 import sevenn.train.dataload as dl
 import sevenn.train.graph_dataset as ds
+import sevenn.train.modal_dataset as modal_dataset
 from sevenn._const import NUM_UNIV_ELEMENT
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.util import model_from_checkpoint, pretrained_name_to_path
@@ -295,10 +297,6 @@ def test_sevenn_graph_dataset_elemwise_energies(graph_dataset_tuple):
             assert ref_e[z] == 0
 
 
-# def test_sevenn_graph_dataset_num_neigh(graph_dataset_tuple):
-#    pass
-
-
 def test_sevenn_graph_dataset_statistics(graph_dataset_tuple):
     dataset, atoms_list = graph_dataset_tuple
 
@@ -330,6 +328,53 @@ def test_sevenn_graph_dataset_statistics(graph_dataset_tuple):
         ), key
         assert np.allclose(dataset.statistics[key]['max'], dct[key].max()), key
         assert np.allclose(dataset.statistics[key]['min'], dct[key].min()), key
+
+
+def test_sevenn_mm_dataset_statistics(tmp_path):
+
+    files = osp.join(tmp_path, 'gd_one.extxyz')
+    atoms_list1 = [
+        get_atoms(atype, 'calc')[0]  # type: ignore
+        for atype in ['bulk', 'bulk', 'bulk', 'bulk']
+    ]
+    ase.io.write(files, atoms_list1, 'extxyz')
+
+    gd1 = ds.SevenNetGraphDataset(
+        cutoff=cutoff,
+        root=tmp_path,
+        files=files,
+        processed_name='gd_one.pt',
+    )
+
+    files = osp.join(tmp_path, 'gd_two.extxyz')
+    atoms_list2 = [
+        get_atoms(atype, 'calc')[0]  # type: ignore
+        for atype in ['mol', 'mol', 'bulk']
+    ]
+    ase.io.write(files, atoms_list2, 'extxyz')
+
+    gd2 = ds.SevenNetGraphDataset(
+        cutoff=cutoff,
+        root=tmp_path,
+        files=files,
+        processed_name='gd_two.pt',
+    )
+
+    ref = ds.SevenNetGraphDataset(
+        cutoff=cutoff,
+        root=tmp_path,
+        files=[gd1.processed_paths[0], gd2.processed_paths[0]],
+        processed_name='combined.pt',
+    )
+
+    mm = modal_dataset.SevenNetMultiModalDataset(
+        {'modal1': gd1, 'modal2': gd2}
+    )
+
+    assert np.allclose(ref.per_atom_energy_mean, mm.per_atom_energy_mean['total'])
+    assert np.allclose(ref.avg_num_neigh, mm.avg_num_neigh['total'])
+    assert np.allclose(ref.force_rms, mm.force_rms['total'])
+    assert set(ref.species) == set(mm.species['total'])
 
 
 @pytest.mark.parametrize(

@@ -136,6 +136,44 @@ class AtomGraphDataset:
         species = sorted(list(species))
         return species
 
+    def get_modalities(self):
+        modalities = set()
+        for data_list in self.dataset.values():
+            datum = data_list[0].to_dict()
+            if KEY.DATA_MODALITY in datum.keys():
+                modalities.add(datum[KEY.DATA_MODALITY])
+            else:
+                return []
+        return list(modalities)
+
+    def write_modal_attr(
+        self, modal_type_mapper: dict, write_modal_type: bool = False
+    ):
+        num_modalities = len(modal_type_mapper)
+        for data_list in self.dataset.values():
+            for data in data_list:
+                tmp_tensor = torch.zeros(num_modalities)
+                if data[KEY.DATA_MODALITY] != 'common':
+                    modal_idx = modal_type_mapper[data[KEY.DATA_MODALITY]]
+                    tmp_tensor[modal_idx] = 1.0
+                    if write_modal_type:
+                        data[KEY.MODAL_TYPE] = modal_idx
+                data[KEY.MODAL_ATTR] = tmp_tensor
+
+    def get_dict_sort_by_modality(self):
+        dict_sort_by_modality = {}
+        for data_list in self.dataset.values():
+            try:
+                modal_key = data_list[0].to_dict()[KEY.DATA_MODALITY]
+            except:  # Dataset is not modal
+                raise ValueError('This dataset has no modality.')
+
+            if modal_key not in dict_sort_by_modality.keys():
+                dict_sort_by_modality[modal_key] = []
+            dict_sort_by_modality[modal_key].extend(data_list)
+
+        return dict_sort_by_modality
+
     def len(self):
         if (
             len(self.dataset.keys()) == 1
@@ -372,12 +410,21 @@ class AtomGraphDataset:
                     for tensor in tensor_list
                 ]
             )
+            data_list = data_list[~torch.isnan(data_list)]
             return {
                 'mean': float(torch.mean(data_list)),
                 'std': float(torch.std(data_list)),
                 'median': float(torch.median(data_list)),
-                'max': float(torch.max(data_list)),
-                'min': float(torch.min(data_list)),
+                'max': (
+                    torch.nan
+                    if data_list.numel() == 0
+                    else float(torch.max(data_list))
+                ),
+                'min': (
+                    torch.nan
+                    if data_list.numel() == 0
+                    else float(torch.min(data_list))
+                ),
             }
 
         res = {}

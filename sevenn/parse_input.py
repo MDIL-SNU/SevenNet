@@ -185,7 +185,10 @@ def init_data_config(config: Dict):
                 extended = glob.glob(inp)
             elif type(inp) is list:
                 for i in inp:
-                    extended.extend(glob.glob(i))
+                    if isinstance(i, str):
+                        extended.extend(glob.glob(i))
+                    elif isinstance(i, dict):
+                        extended.append(i)
             if len(extended) == 0:
                 raise ValueError(
                     f'Cannot find {inp} for {load_data_key}'

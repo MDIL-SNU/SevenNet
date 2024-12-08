@@ -1,5 +1,6 @@
 import os
 import pathlib
+import warnings
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -37,6 +38,8 @@ class SevenNetCalculator(Calculator):
         model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
+        modal: Optional[str] = None,
+        enable_cueq: bool = False,
         sevennet_config: Optional[Any] = None,  # hold meta information
         **kwargs,
     ):
@@ -52,9 +55,16 @@ class SevenNetCalculator(Calculator):
         if isinstance(model, pathlib.PurePath):
             model = str(model)
 
+        allowed_file_types = ['checkpoint', 'torchscript', 'model_instance']
         file_type = file_type.lower()
-        if file_type not in ['checkpoint', 'torchscript', 'model_instance']:
-            raise ValueError('file_type should be checkpoint or torchscript')
+        if file_type not in allowed_file_types:
+            raise ValueError('file_type not in {allowed_file_types}')
+
+        if enable_cueq and file_type in ['model_instance', 'torchscript']:
+            warnings.warn(
+                'file_type should be checkpoint to enable cueq. cueq set to False'
+            )
+            enable_cueq = False
 
         if isinstance(device, str):  # TODO: do we really need this?
             if device == 'auto':
@@ -67,16 +77,19 @@ class SevenNetCalculator(Calculator):
             self.device = device
 
         if file_type == 'checkpoint' and isinstance(model, str):
-            if os.path.isfile(model):
-                checkpoint = model
-            else:
-                checkpoint = util.pretrained_name_to_path(model)
-            model_loaded, config = util.model_from_checkpoint(checkpoint)
+            cp = util.load_checkpoint(model)
+
+            backend = 'e3nn' if not enable_cueq else 'cueq'
+            model_loaded = cp.build_model(backend)
             model_loaded.set_is_batch_data(False)
-            self.type_map = config[KEY.TYPE_MAP]
-            self.cutoff = config[KEY.CUTOFF]
-            self.sevennet_config = config
+
+            self.type_map = cp.config[KEY.TYPE_MAP]
+            self.cutoff = cp.config[KEY.CUTOFF]
+            self.sevennet_config = cp.config
+
         elif file_type == 'torchscript' and isinstance(model, str):
+            if modal:
+                raise NotImplementedError()
             extra_dict = {
                 'chemical_symbols_to_index': b'',
                 'cutoff': b'',
@@ -95,6 +108,7 @@ class SevenNetCalculator(Calculator):
                 sym_to_num[sym]: i for i, sym in enumerate(chem_symbols.split())
             }
             self.cutoff = float(extra_dict['cutoff'].decode('utf-8'))
+
         elif isinstance(model, AtomGraphSequential):
             if model.type_map is None:
                 raise ValueError(
@@ -107,16 +121,26 @@ class SevenNetCalculator(Calculator):
             model_loaded = model
             self.type_map = model.type_map
             self.cutoff = model.cutoff
+
         else:
-            raise ValueError('Unexpected input combinations')
+            raise ValueError('Unexpected input combination')
 
         if self.sevennet_config is None and sevennet_config is not None:
             self.sevennet_config = sevennet_config
 
         self.model = model_loaded
 
+        if isinstance(self.model, AtomGraphSequential) and modal:
+            if self.model.modal_map is None:
+                raise ValueError('Modality given, but model has no modal_map')
+            if modal not in self.model.modal_map:
+                _modals = list(self.model.modal_map.keys())
+                raise ValueError(f'Unknown modal {modal} (not in {_modals})')
+
         self.model.to(self.device)
         self.model.eval()
+
+        self.modal = modal
 
         self.implemented_properties = [
             'free_energy',
@@ -144,7 +168,8 @@ class SevenNetCalculator(Calculator):
         data = AtomGraphData.from_numpy_dict(
             unlabeled_atoms_to_graph(atoms, self.cutoff)
         )
-
+        if self.modal:
+            data[KEY.DATA_MODALITY] = self.modal
         data.to(self.device)  # type: ignore
 
         if isinstance(self.model, torch_script_type):

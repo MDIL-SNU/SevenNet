@@ -28,7 +28,8 @@ def cmd_parse_preset(args=None):
             'sevennet-0',
             'base',
             'fine_tune_v1',
-            'base_v1'
+            'base_v1',
+            'multi_modal'
         ],
         help=preset_help
     )

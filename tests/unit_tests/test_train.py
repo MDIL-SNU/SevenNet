@@ -8,11 +8,13 @@ from torch_geometric.loader import DataLoader
 
 import sevenn.train.graph_dataset as graph_ds
 from sevenn._const import NUM_UNIV_ELEMENT
+from sevenn.error_recorder import ErrorRecorder
 from sevenn.scripts.processing_continue import processing_continue_v2
 from sevenn.scripts.processing_epoch import processing_epoch_v2
 from sevenn.sevenn_logger import Logger
 from sevenn.train.dataload import graph_build
 from sevenn.train.graph_dataset import from_config as dataset_from_config
+from sevenn.train.loss import get_loss_functions_from_config
 from sevenn.train.trainer import Trainer
 from sevenn.util import (
     chemical_species_preprocess,
@@ -48,10 +50,11 @@ def HfO2_loader():
     return DataLoader(graphs, batch_size=2)
 
 
-@pytest.fixture()
-def graph_dataset_path(tmp_path):
+@pytest.fixture(scope='module')
+def graph_dataset_path(tmp_path_factory):
+    gd_path = tmp_path_factory.mktemp('gd')
     ds = graph_ds.SevenNetGraphDataset(
-        cutoff=cutoff, root=tmp_path, files=[hfo2_path], processed_name='tmp.pt'
+        cutoff=cutoff, root=str(gd_path), files=[hfo2_path], processed_name='tmp.pt'
     )
     return ds.processed_paths[0]
 
@@ -115,6 +118,8 @@ def get_train_config():
             ('Stress', 'RMSE'),
             ('TotalLoss', 'None'),
         ],
+        'use_modality': False,
+        'use_weight': False,
         'device': 'cpu',
         'is_ddp': False,
     }
@@ -133,12 +138,13 @@ def get_data_config():
     return config
 
 
-def get_config(overwrite={}):
+def get_config(overwrite=None):
     cf = {}
     cf.update(get_model_config())
     cf.update(get_train_config())
     cf.update(get_data_config())
-    cf.update(overwrite)
+    if overwrite:
+        cf.update(overwrite)
     return cf
 
 
@@ -159,6 +165,7 @@ def test_processing_continue_v2_7net0(tmp_path):
     scale_ref = np.array([1.73] * 89)
     conv_denominator_ref = np.array([35.989574] * 5)
 
+    print(cfg)
     with Logger().switch_file(str(tmp_path / 'log.sevenn')):
         state_dicts, epoch = processing_continue_v2(cfg)
     assert epoch == 601
@@ -192,7 +199,6 @@ def test_dataset_from_config(cfg_overwrite, ds_names, tmp_path):
 
 def test_dataset_from_config_as_it_is_load(graph_dataset_path, tmp_path):
     cfg = get_config({'load_trainset_path': graph_dataset_path})
-    print(graph_dataset_path)
     new_wd = tmp_path / 'tmp_wd'
     with Logger().switch_file(str(tmp_path / 'log.sevenn')):
         _ = dataset_from_config(cfg, str(new_wd))
@@ -350,6 +356,37 @@ def test_processing_epoch_v2(HfO2_loader, tmp_path):
     assert lasts[0] == '12'
     assert lasts[1] == '0.000980'  # lr
     assert lasts[-2] == '0.087873'  # myset Force MAE
+
+
+def test_data_weight(graph_dataset_path, tmp_path):
+    cfg = get_config(
+        {
+            'load_trainset_path': [{
+                'file_list': [{'file': graph_dataset_path}],
+                'data_weight': {'energy': 0.1, 'force': 3.0, 'stress': 1.0},
+            }],
+            'error_record': [
+                ('Energy', 'Loss'),
+                ('Force', 'Loss'),
+                ('Stress', 'Loss'),
+                ('TotalLoss', 'None'),
+            ],
+            'use_weight': True
+        }
+    )
+    trainer_args, _, _ = Trainer.args_from_checkpoint(cp_0_path)
+    trainer_args['loss_functions'] = get_loss_functions_from_config(cfg)
+    trainer = Trainer(**trainer_args)
+    erc = ErrorRecorder.from_config(cfg, trainer.loss_functions)
+
+    db = graph_ds.from_config(cfg, working_dir=tmp_path)['trainset']
+    loader_w_weight = DataLoader(db, batch_size=len(db))
+
+    trainer.run_one_epoch(loader_w_weight, False, erc)
+    loss = erc.epoch_forward()
+    assert np.allclose(loss['Energy_Loss'], 839.7104492 * 0.1)
+    assert np.allclose(loss['Force_Loss'], 0.0152806 * 3.0)
+    assert np.allclose(loss['Stress_Loss'], 6017.568847 * 1.0)
 
 
 def _write_empty_checkpoint():
