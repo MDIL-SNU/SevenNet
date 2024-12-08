@@ -153,14 +153,19 @@ def sort_old_convolution(model_now, state_dict):
 
 def patch_state_dict_if_old(state_dict, config_cp, now_model):
     version = config_cp['version']
-    major, minor, _ = version.split('.')[:3]
+    vs = version.split('.')
+    vsuffix = ''
+    if len(vs) == 4:
+        vsuffix = vs[-1]
+        vs = vs[:3]
+    ver = '.'.join(vs)
 
-    if int(major) == 0 and int(minor) < 10:
+    if ver < '0.10.0':
         state_dict = map_old_model(state_dict)
 
     # TODO: change version criteria before release!!!
     #       it causes problem if model is sorted but this function is called
     #       ... more robust way? idk
-    if int(major) == 0 and int(minor) < 11:
+    if ver < '0.11.0' or ver == '0.11.0' and vsuffix == 'dev0':
         state_dict = sort_old_convolution(now_model, state_dict)
     return state_dict
