@@ -96,9 +96,9 @@ def _get_modal_weight_as_bias(
 
 
 def _append_modal_weight(
-    model_state_dct: dict,
-    key: str,
-    irreps_in: Irreps,
+    model_state_dct: dict,  # state dict to be targeted
+    key: str,  # linear weight modune name
+    irreps_in: Irreps,  # irreps_in before modality append
     irreps_out: Irreps,
     append_number: int,
 ):
@@ -262,6 +262,7 @@ def append_modality_to_model_dct(
 
     `model_state_dct`: model state dictionary from multimodal checkpoint file
     `config`: dictionary containing configuration of the checkpoint model
+            + modality appended
     `orig_num_modal`: Number of modality used in original checkpoint
     `append_modal_length`: Number of modality to be appended in new checkpoint.
     """

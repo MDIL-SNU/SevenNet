@@ -1,4 +1,4 @@
-from typing import Any, Dict, List, Union
+from typing import Any, Dict, List, Optional, Union
 
 import torch
 import torch.nn as nn
@@ -6,6 +6,16 @@ from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
 from sevenn._const import NUM_UNIV_ELEMENT, AtomGraphDataType
+
+
+def _as_univ(
+    ss: List[float], type_map: Dict[int, int], default: float
+) -> List[float]:
+    assert len(ss) <= NUM_UNIV_ELEMENT, 'shift scale is too long'
+    return [
+        ss[type_map[z]] if z in type_map else default
+        for z in range(NUM_UNIV_ELEMENT)
+    ]
 
 
 @compile_mode('script')
@@ -33,6 +43,12 @@ class Rescale(nn.Module):
         )
         self.key_input = data_key_in
         self.key_output = data_key_out
+
+    def get_shift(self) -> float:
+        return self.shift.detach().cpu().tolist()[0]
+
+    def get_scale(self) -> float:
+        return self.scale.detach().cpu().tolist()[0]
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         data[self.key_output] = data[self.key_input] * self.scale + self.shift
@@ -87,6 +103,26 @@ class SpeciesWiseRescale(nn.Module):
         self.key_input = data_key_in
         self.key_output = data_key_out
         self.key_indices = data_key_indices
+
+    def get_shift(self, type_map: Optional[Dict[int, int]] = None) -> List[float]:
+        """
+        Return shift in list of float. If type_map is given, return type_map reversed
+        shift, which index equals atomic_number. 0.0 is assigned for atomis not found
+        """
+        shift = self.shift.detach().cpu().tolist()
+        if type_map:
+            shift = _as_univ(shift, type_map, 0.0)
+        return shift
+
+    def get_scale(self, type_map: Optional[Dict[int, int]] = None) -> List[float]:
+        """
+        Return scale in list of float. If type_map is given, return type_map reversed
+        scale, which index equals atomic_number. 1.0 is assigned for atomis not found
+        """
+        scale = self.scale.detach().cpu().tolist()
+        if type_map:
+            scale = _as_univ(scale, type_map, 1.0)
+        return scale
 
     @staticmethod
     def from_mappers(
@@ -160,6 +196,45 @@ class ModalWiseRescale(nn.Module):
         self.use_modal_wise_scale = use_modal_wise_scale
         self._is_batch_data = True
 
+    def get_shift(
+        self,
+        type_map: Optional[Dict[int, int]] = None,
+        modal_map: Optional[Dict[str, int]] = None,
+    ) -> Union[List[float], Dict[str, List[float]]]:
+        """
+        Nothing is given: return as it is
+        type_map is given but not modal wise shift: return univ shift
+        both type_map and modal_map is given and modal wise shift: return fully
+            resolved modalwise univ shift
+        """
+        shift = self.shift.detach().cpu().tolist()
+        if type_map and not self.use_modal_wise_shift:
+            shift = _as_univ(shift, type_map, 0.0)
+        elif self.use_modal_wise_shift and modal_map and type_map:
+            shift = [_as_univ(s, type_map, 0.0) for s in shift]
+            shift = {modal: shift[idx] for modal, idx in modal_map.items()}
+
+        return shift
+
+    def get_scale(
+        self,
+        type_map: Optional[Dict[int, int]] = None,
+        modal_map: Optional[Dict[str, int]] = None,
+    ) -> Union[List[float], Dict[str, List[float]]]:
+        """
+        Nothing is given: return as it is
+        type_map is given but not modal wise scale: return univ scale
+        both type_map and modal_map is given and modal wise scale: return fully
+            resolved modalwise univ scale
+        """
+        scale = self.scale.detach().cpu().tolist()
+        if type_map and not self.use_modal_wise_scale:
+            scale = _as_univ(scale, type_map, 0.0)
+        elif self.use_modal_wise_scale and modal_map and type_map:
+            scale = [_as_univ(s, type_map, 0.0) for s in scale]
+            scale = {modal: scale[idx] for modal, idx in modal_map.items()}
+        return scale
+
     @staticmethod
     def from_mappers(
         shift: Union[float, List[float], Dict[str, Any]],
@@ -224,17 +299,17 @@ class ModalWiseRescale(nn.Module):
             elif isinstance(s, dict) and use_mw:
                 # solve modal dict, modal-wise: yes
                 s = solve_mapper(s, modal_map)
-                if isinstance(s[0], list) and len(s[0]) == NUM_UNIV_ELEMENT:
-                    # elem-wise: yes(univ) => solve elem map
-                    res = [solve_mapper(v, type_map) for v in s]
-                elif isinstance(s[0], float):
-                    # elem-wise: no => broadcast to elemwise
-                    res = [[v] * n_atom_types for v in s]
-                elif isinstance(s[0], list) and len(s[0]) == n_atom_types:
-                    # elem-wise: yes => not univ, already mapped => as it is
-                    res = s
-                else:
-                    raise ValueError(f'Invalid shift or scale {s}')
+                res = []
+                for v in s:
+                    if isinstance(v, list) and len(v) == NUM_UNIV_ELEMENT:
+                        # elem-wise: yes(univ) => solve elem map
+                        v = solve_mapper(v, type_map)
+                    elif isinstance(v, float):
+                        # elem-wise: no => broadcast to elemwise
+                        v = [v] * n_atom_types
+                    else:
+                        raise ValueError(f'Invalid shift or scale {s}')
+                    res.append(v)
             else:
                 raise ValueError(f'Invalid shift or scale {s}')
 
@@ -243,8 +318,8 @@ class ModalWiseRescale(nn.Module):
                     isinstance(res, list)
                     and isinstance(res[0], list)
                     and len(res) == n_modals
-                    and len(res[0]) == n_atom_types
                 )
+                assert all([len(r) == n_atom_types for r in res])  # type: ignore
             else:
                 assert (
                     isinstance(res, list)
@@ -284,3 +359,29 @@ class ModalWiseRescale(nn.Module):
         ) + shift.view(-1, 1)
 
         return data
+
+
+def get_resolved_shift_scale(
+    module: Union[Rescale, SpeciesWiseRescale, ModalWiseRescale],
+    type_map: Optional[Dict[int, int]] = None,
+    modal_map: Optional[Dict[str, int]] = None,
+):
+    """
+    Return resolved shift and scale from scale modules. For element wise case,
+    convert to list of floats where idx is atomic number. For modal wise case, return
+    dictionary of shift scale where key is modal name given in modal_map
+
+    Return:
+        Tuple of solved shift and scale
+    """
+
+    if isinstance(module, Rescale):
+        return (module.get_shift(), module.get_scale())
+    elif isinstance(module, SpeciesWiseRescale):
+        return (module.get_shift(type_map), module.get_scale(type_map))
+    elif isinstance(module, ModalWiseRescale):
+        return (
+            module.get_shift(type_map, modal_map),
+            module.get_scale(type_map, modal_map),
+        )
+    raise ValueError('Not scale module')

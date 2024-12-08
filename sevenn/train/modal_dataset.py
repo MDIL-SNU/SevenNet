@@ -266,8 +266,8 @@ def from_config(
     dataset_args = {
         'cutoff': config[KEY.CUTOFF],
         'root': working_dir,
-        'process_num_cores': config[KEY.PREPROCESS_NUM_CORES],
-        'use_data_weight': config[KEY.USE_WEIGHT],
+        'process_num_cores': config.get(KEY.PREPROCESS_NUM_CORES, 1),
+        'use_data_weight': config.get(KEY.USE_WEIGHT, False),
         **config[KEY.DATA_FORMAT_ARGS],
     }
 
@@ -285,9 +285,8 @@ def from_config(
         )
 
     train_set = datasets['trainset']
-    modals = train_set.modals
 
-    _modals_all = set()
+    modals_dataset = set()
     chem_species = set()
     # print statistics of each dataset
     for name, dataset in datasets.items():
@@ -298,21 +297,23 @@ def from_config(
             log.format_k_v(
                 '# structures (graph)', len(dataset.datasets[idx]), write=True
             )
-            _modals_all.update([modality])
+            modals_dataset.update([modality])
         chem_species.update(dataset.species['total'])
     log.bar()
 
     if (modal_map := config.get(KEY.MODAL_MAP, None)) is None:
-        modals = sorted(list(modals))
+        modals = sorted(list(modals_dataset))
         modal_map = {modal: i for i, modal in enumerate(modals)}
         config[KEY.MODAL_MAP] = modal_map
-    log.writeline(f'Modalities of this model: {modals}')
 
-    if not _modals_all.issubset(modal_map):
+    modals = list(modal_map.keys())
+    if not modals_dataset.issubset(modal_map):
         raise ValueError(
-            f'Found modalities of datasets: {_modals_all} are not subset of {modals}'
-            + '. Use a sevenn_cp cli tool to append/assign modality'
+            f'Found modalities in datasets: {modals_dataset} are not subset of'
+            + f' {modals}. Use sevenn_cp tool to append/assign modality'
         )
+
+    log.writeline(f'Modalities of this model: {modals}')
 
     config[KEY.NUM_MODALITIES] = len(modal_map)
 

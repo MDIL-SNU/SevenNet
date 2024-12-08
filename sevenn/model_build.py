@@ -144,6 +144,8 @@ def init_shift_scale(config):
     for s in (config[KEY.SHIFT], config[KEY.SCALE]):
         if hasattr(s, 'tolist'):  # numpy or torch
             s = s.tolist()
+        if isinstance(s, dict):
+            s = {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in s.items()}
         shift_scale.append(s)
     shift, scale = shift_scale
 

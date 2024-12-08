@@ -1,9 +1,11 @@
 import argparse
 import os.path as osp
 
+import torch
 import yaml
 
 from sevenn import __version__
+from sevenn.parse_input import read_config_yaml
 from sevenn.util import load_checkpoint
 
 description = (
@@ -19,12 +21,36 @@ def main(args=None):
         mode = args.get_yaml
         cfg = checkpoint.yaml_dict(mode)
         print(yaml.dump(cfg, indent=4, sort_keys=False, default_flow_style=False))
-    elif args.append_modal:
-        ref_yaml = args.append_modal
-        if not osp.exists(ref_yaml):
-            raise FileNotFoundError(f'No yaml file {ref_yaml}')
-        with open(ref_yaml, 'r') as f:
-            ref_config = yaml.safe_load(f)  # noqa
+    elif args.append_modal_yaml:
+        dst_yaml = args.append_modal_yaml
+        if not osp.exists(dst_yaml):
+            raise FileNotFoundError(f'No yaml file {dst_yaml}')
+
+        dst_config = read_config_yaml(dst_yaml, return_separately=False)
+        model_state_dict = checkpoint.append_modal(
+            dst_config, args.original_modal_name
+        )
+
+        to_save = checkpoint.get_checkpoint_dict()
+        to_save.update({'config': dst_config, 'model_state_dict': model_state_dict})
+
+        torch.save(to_save, 'checkpoint_modal_appended.pth')
+        print('checkpoint_modal_appended.pth is successfully saved.')
+        print(f'update continue of {dst_yaml} as blow (recommend) to continue')
+        cont_dct = {
+            'continue': {
+                'checkpoint': 'checkpoint_modal_appended.pth',
+                'reset_epoch': True,
+                'reset_optimizer': True,
+                'reset_scheduler': True,
+            }
+        }
+        print(
+            yaml.dump(cont_dct, indent=4, sort_keys=False, default_flow_style=False)
+        )
+
+    else:
+        print(checkpoint)
 
 
 def cmd_parse_data(args=None):
@@ -41,8 +67,17 @@ def cmd_parse_data(args=None):
     )
 
     group.add_argument(
-        '--append_modal',
-        help='append modality with given yaml. Yaml file changes in-place.',
+        '--append_modal_yaml',
+        help='append modality with given yaml.',
+        type=str,
+    )
+    ag.add_argument(
+        '--original_modal_name',
+        help=(
+            'when the append_modal is used and checkpoint is not multi-modal, '
+            + 'used to name previously trained modality. defaults to "origin"'
+        ),
+        default='origin',
         type=str,
     )
 

@@ -2,6 +2,7 @@
 Debt
 keep old pre-trained checkpoints unchanged.
 """
+
 import copy
 
 import torch
@@ -10,19 +11,25 @@ import sevenn._keys as KEY
 
 
 def patch_old_config(config):
-    if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
-        config[KEY.CUTOFF_FUNCTION].pop('poly_cut_p_value', None)
-    if KEY.TRAIN_DENOMINTAOR not in config:
-        config[KEY.TRAIN_DENOMINTAOR] = config.pop('train_avg_num_neigh', False)
-    _opt = config.pop('optimize_by_reduce', None)
-    if _opt is False:
-        raise ValueError(
-            'This checkpoint(optimize_by_reduce: False) is no longer supported'
-        )
-    if KEY.CONV_DENOMINATOR not in config:
-        config[KEY.CONV_DENOMINATOR] = 0.0
-    if KEY._NORMALIZE_SPH not in config:
-        config[KEY._NORMALIZE_SPH] = False
+    version = config['version']
+    major, minor, _ = version.split('.')[:3]
+    major, minor = int(major), int(minor)
+
+    if major == 0 and minor <= 9:
+        if config[KEY.CUTOFF_FUNCTION][KEY.CUTOFF_FUNCTION_NAME] == 'XPLOR':
+            config[KEY.CUTOFF_FUNCTION].pop('poly_cut_p_value', None)
+        if KEY.TRAIN_DENOMINTAOR not in config:
+            config[KEY.TRAIN_DENOMINTAOR] = config.pop('train_avg_num_neigh', False)
+        _opt = config.pop('optimize_by_reduce', None)
+        if _opt is False:
+            raise ValueError(
+                'This checkpoint(optimize_by_reduce: False) is no longer supported'
+            )
+        if KEY.CONV_DENOMINATOR not in config:
+            config[KEY.CONV_DENOMINATOR] = 0.0
+        if KEY._NORMALIZE_SPH not in config:
+            config[KEY._NORMALIZE_SPH] = False
+
     return config
 
 

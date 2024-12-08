@@ -1,17 +1,41 @@
 import os
 import pathlib
+import uuid
 import warnings
 from copy import deepcopy
-from typing import Any, Dict, List, Optional, Union
+from datetime import datetime
+from typing import Any, Dict, Optional, Union
 
 import pandas as pd
 from torch import Tensor
 from torch import load as torch_load
 
+import sevenn
 import sevenn._const as consts
 import sevenn._keys as KEY
 import sevenn.scripts.backward_compatibility as compat
+from sevenn import model_build
+from sevenn.nn.scale import get_resolved_shift_scale
 from sevenn.nn.sequential import AtomGraphSequential
+
+
+def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
+    import numpy as np
+
+    def acl(a, b, rtol=rtol, atol=atol):
+        return np.allclose(a, b, rtol=rtol, atol=atol)
+
+    assert len(atoms1) == len(atoms2)
+    assert acl(atoms1.get_cell(), atoms2.get_cell())
+    assert acl(atoms1.get_potential_energy(), atoms2.get_potential_energy())
+    assert acl(atoms1.get_forces(), atoms2.get_forces(), rtol * 10, atol * 10)
+    assert acl(
+        atoms1.get_stress(voigt=False),
+        atoms2.get_stress(voigt=False),
+        rtol * 10,
+        atol * 10,
+    )
+    # assert acl(atoms1.get_potential_energies(), atoms2.get_potential_energies())
 
 
 def copy_state_dict(state_dict) -> dict:
@@ -30,6 +54,13 @@ def _config_cp_routine(config):
     defaults = {**consts.model_defaults(config)}
     config = compat.patch_old_config(config)  # type: ignore
 
+    scaler = model_build.init_shift_scale(config)
+    shift, scale = get_resolved_shift_scale(
+        scaler, config.get(KEY.TYPE_MAP), config.get(KEY.MODAL_MAP, None)
+    )
+    config['shift'] = shift
+    config['scale'] = scale
+
     for k, v in defaults.items():
         if k in config:
             continue
@@ -37,9 +68,6 @@ def _config_cp_routine(config):
             warnings.warn(f'{k} not in config, use default value {v}', UserWarning)
         config[k] = v
 
-    # expect only non-tensor values in config, if exists, move to cpu
-    # This can be happen if config has torch tensor as value (shift, scale)
-    # TODO: save only non-tensors at first place is better
     for k, v in config.items():
         if isinstance(v, Tensor):
             config[k] = v.cpu()
@@ -308,6 +336,7 @@ class SevenNetCheckpoint:
         ]
 
         cfg = self.config
+        len_atoms = len(cfg[KEY.TYPE_MAP])
 
         world_size = cfg.pop(KEY.WORLD_SIZE, 1)
         cfg[KEY.BATCH_SIZE] = cfg[KEY.BATCH_SIZE] * world_size
@@ -321,7 +350,6 @@ class SevenNetCheckpoint:
         for k, v in cfg.items():
             if k.startswith('_') or k in ignore or k.endswith('set_path'):
                 continue
-
             if k in consts.DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG:
                 ret['model'][k] = v
             elif k in consts.DEFAULT_TRAINING_CONFIG:
@@ -329,8 +357,15 @@ class SevenNetCheckpoint:
             elif k in consts.DEFAULT_DATA_CONFIG:
                 ret['data'][k] = v
 
+        ret['model'][KEY.CHEMICAL_SPECIES] = (
+            'univ' if len_atoms == consts.NUM_UNIV_ELEMENT else 'auto'
+        )
         ret['data'][KEY.LOAD_TRAINSET] = '**path_to_trainset**'
         ret['data'][KEY.LOAD_VALIDSET] = '**path_to_validset**'
+
+        # TODO
+        ret['data'][KEY.SHIFT] = '**failed to infer shift, should be set**'
+        ret['data'][KEY.SCALE] = '**failed to infer scale, should be set**'
 
         if mode.startswith('continue'):
             ret['train'].update(
@@ -363,60 +398,115 @@ class SevenNetCheckpoint:
 
     def append_modal(
         self,
-        new_modal_names: List[str],
-        use_modal_node_embedding: bool = False,
-        use_modal_self_inter_intro: bool = True,
-        use_modal_self_inter_outro: bool = True,
-        use_modal_output_block: bool = True,
+        dst_config,
+        original_modal_name: str = 'origin',
+        working_dir: str = os.getcwd(),
     ):
+        """ """
+        import sevenn.train.modal_dataset as modal_dataset
+        from sevenn.model_build import init_shift_scale
         from sevenn.scripts.convert_model_modality import _append_modal_weight
 
-        # check inputs
-        if len(new_modal_names) == 0:
-            raise ValueError('No modal names is given to append')
+        src_config = self.config
+        src_has_no_modal = not src_config.get(KEY.USE_MODALITY, False)
 
-        orig_modal_map = self.config.get(KEY.MODAL_MAP, {})
+        # inherit element things first
+        chem_keys = [
+            KEY.TYPE_MAP,
+            KEY.NUM_SPECIES,
+            KEY.CHEMICAL_SPECIES,
+            KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER,
+        ]
+        dst_config.update({k: src_config[k] for k in chem_keys})
+
+        if dst_config[KEY.USE_MODAL_WISE_SHIFT] and (
+            KEY.SHIFT not in dst_config or not isinstance(dst_config[KEY.SHIFT], str)
+        ):
+            raise ValueError('To use modal wise shift, keyword shift is required')
+        if dst_config[KEY.USE_MODAL_WISE_SCALE] and (
+            KEY.SCALE not in dst_config or not isinstance(dst_config[KEY.SCALE], str)
+        ):
+            raise ValueError('To use modal wise scale, keyword scale is required')
+
+        if src_has_no_modal and not dst_config[KEY.USE_MODAL_WISE_SHIFT]:
+            dst_config[KEY.SHIFT] = src_config[KEY.SHIFT]
+        if src_has_no_modal and not dst_config[KEY.USE_MODAL_WISE_SCALE]:
+            dst_config[KEY.SCALE] = src_config[KEY.SCALE]
+
+        # get statistics of given datasets of yaml
+        # dst_config updated
+        _ = modal_dataset.from_config(dst_config, working_dir=working_dir)
+        dst_modal_map = dst_config[KEY.MODAL_MAP]
+
+        found_modal_names = list(dst_modal_map.keys())
+        if len(found_modal_names) == 0:
+            raise ValueError('No modality is found from config')
+
+        # Check difference btw given modals and new modal map
+        orig_modal_map = src_config.get(KEY.MODAL_MAP, {original_modal_name: 0})
+        assert isinstance(orig_modal_map, dict)
         new_modal_map = orig_modal_map.copy()
-        for new_modal_name in new_modal_names:
-            if new_modal_name in orig_modal_map:
-                warnings.warn(f'{new_modal_name} already exists, skipping')
+        for modal_name in found_modal_names:
+            if modal_name in orig_modal_map:  # duplicate, skipping
                 continue
-            new_modal_map[new_modal_name] = len(new_modal_map)
+            new_modal_map[modal_name] = len(new_modal_map)  # assign new
+        print(f'New modals: {list(new_modal_map.keys())}')
 
-        append_num = len(new_modal_map) - len(orig_modal_map)
+        if src_has_no_modal:
+            append_num = len(new_modal_map)
+        else:
+            append_num = len(new_modal_map) - len(orig_modal_map)
+        if append_num == 0:
+            raise ValueError('Nothing to append from checkpoint')
 
+        dst_config[KEY.NUM_MODALITIES] = len(new_modal_map)
+        dst_config[KEY.MODAL_MAP] = new_modal_map
+
+        # update dst_config's shift scales based on src_config
+        for ss_key, use_mw in (
+            (KEY.SHIFT, dst_config[KEY.USE_MODAL_WISE_SHIFT]),
+            (KEY.SCALE, dst_config[KEY.USE_MODAL_WISE_SCALE]),
+        ):
+            if not use_mw:  # not using mw ss, just assign
+                assert not isinstance(dst_config[ss_key], dict)
+                dst_config[ss_key] = src_config[ss_key]
+            elif src_has_no_modal:
+                assert isinstance(dst_config[ss_key], dict)
+                # mw ss, update by dict but use original_modal_name
+                dst_config[ss_key].update({original_modal_name: src_config[ss_key]})
+            else:
+                assert isinstance(dst_config[ss_key], dict)
+                # mw ss, update by dict
+                dst_config[ss_key].update(src_config[ss_key])
+        scaler = init_shift_scale(dst_config)
+
+        # finally, prepare updated continuable state dict using above
         orig_model = self.build_model()
         orig_state_dict = orig_model.state_dict()
-
-        new_cfg = self.config
-        new_cfg[KEY.NUM_MODALITIES] = len(new_modal_map)
-        new_cfg[KEY.MODAL_MAP] = new_modal_map
-        new_cfg[KEY.USE_MODAL_NODE_EMBEDDING] = use_modal_node_embedding
-        new_cfg[KEY.USE_MODAL_SELF_INTER_INTRO] = use_modal_self_inter_intro
-        new_cfg[KEY.USE_MODAL_SELF_INTER_OUTRO] = use_modal_self_inter_outro
-        new_cfg[KEY.USE_MODAL_OUTPUT_BLOCK] = use_modal_output_block
 
         new_state_dict = copy_state_dict(orig_state_dict)
         for stct_key in orig_state_dict:
             sp = stct_key.split('.')
             k, follower = sp[0], '.'.join(sp[1:])
-            if follower != 'linear.weight':
-                continue
-            if (
+            if k == 'rescale_atomic_energy' and follower == 'shift':
+                new_state_dict[stct_key] = scaler.shift.clone()
+            elif k == 'rescale_atomic_energy' and follower == 'scale':
+                new_state_dict[stct_key] = scaler.scale.clone()
+            elif follower == 'linear.weight' and (  # append linear layer
                 (
-                    new_cfg[KEY.USE_MODAL_NODE_EMBEDDING]
+                    dst_config[KEY.USE_MODAL_NODE_EMBEDDING]
                     and k.endswith('onehot_to_feature_x')
                 )
                 or (
-                    new_cfg[KEY.USE_MODAL_SELF_INTER_INTRO]
+                    dst_config[KEY.USE_MODAL_SELF_INTER_INTRO]
                     and k.endswith('self_interaction_1')
                 )
                 or (
-                    new_cfg[KEY.USE_MODAL_SELF_INTER_OUTRO]
+                    dst_config[KEY.USE_MODAL_SELF_INTER_OUTRO]
                     and k.endswith('self_interaction_2')
                 )
                 or (
-                    new_cfg[KEY.USE_MODAL_OUTPUT_BLOCK]
+                    dst_config[KEY.USE_MODAL_OUTPUT_BLOCK]
                     and k == 'reduce_input_to_hidden'
                 )
             ):
@@ -424,9 +514,27 @@ class SevenNetCheckpoint:
                 # assert normalization element
                 new_state_dict[stct_key] = _append_modal_weight(
                     orig_state_dict,
-                    stct_key,
+                    k,
                     orig_linear.irreps_in,
                     orig_linear.irreps_out,
                     append_num,
                 )
+
+        dst_config['version'] = sevenn.__version__
+
         return new_state_dict
+
+    def get_checkpoint_dict(self) -> dict:
+        """
+        Return duplicate of this checkpoint with new hash and time.
+        Convenient for creating variant of the checkpoint
+        """
+        return {
+            'config': self.config,
+            'epoch': self.epoch,
+            'model_state_dict': self.model_state_dict,
+            'optimizer_state_dict': self.optimizer_state_dict,
+            'scheduler_state_dict': self.scheduler_state_dict,
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'hash': uuid.uuid4().hex,
+        }

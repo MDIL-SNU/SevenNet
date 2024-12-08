@@ -63,6 +63,9 @@ def processing_continue_v2(config):  # simpler
         + f'This model knows {config[KEY.NUM_SPECIES]} species'
     )
 
+    if config_cp.get(KEY.USE_MODALITY, False) != config.get(KEY.USE_MODALITY):
+        raise ValueError('use_modality is not same. Check sevenn_cp')
+
     modal_map = config_cp.get(KEY.MODAL_MAP, {})
     config.update({KEY.MODAL_MAP: modal_map})
     if len(modal_map) > 0:
