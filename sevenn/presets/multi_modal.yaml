@@ -66,9 +66,6 @@ train:
     use_modality: True
     use_weight: True
 
-    continue:
-        checkpoint: './checkpoint_190.pth'
-
 data:
     batch_size: 16
     shift: 'elemwise_reference_energies'
@@ -81,7 +78,7 @@ data:
 
       - data_modality: pbe
         file_list:
-          - file: "path to pbe dataset"  # ASE readable or .pt under sevenn_data
+          - file: "path to pbe dataset"  # ASE readable or .pt file (graph.pt)
         data_weight:
             energy: 1.0
             force: 0.1
@@ -99,10 +96,8 @@ data:
       - data_modality: pbe   # modality must be given for mm valid set
         file_list:
           - file: "path to pbe validset"
-            data_format: graph
 
     load_scan_validset_path:
       - data_modality: scan
         file_list:
           - file: "path to scan validset"
-            data_format: ase
