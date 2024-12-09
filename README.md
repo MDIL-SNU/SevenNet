@@ -8,8 +8,8 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
 The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://lammps.org)).
 
 > [!CAUTION]
-> SevenNet+LAMMPS parallel after the commit id of 14851ef (v0.9.3 ~ 0.9.5) has a serious bug.
-> It gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug is fixed for the main branch since v0.10.0, and pip (PyPI: v0.9.3.post0).
+> SevenNet+LAMMPS parallel after the commit id of `14851ef (v0.9.3 ~ 0.9.5)` has a serious bug.
+> It gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug is fixed for the main branch since `v0.10.0`, and pip (`v0.9.3.post0`).
 
 
 ## Features
@@ -21,26 +21,29 @@ The installation and usage of SevenNet are split into two parts: training + comm
 ## Pre-trained models
 We provide three pre-trained models here.
 
-**Acknowledgments**: This work was supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
+* **l3i5 (09Dec2024)**
 
-* l3i5 (??Dec2024)
-The model architecture is modified so that spherical harmonics up to *l*=3. The other parameters are identical to SevenNet-0 (11July2024).
+The model architecture is modified so that spherical harmonics up to *l*=3. The other hyperparameters and training set are identical to **SevenNet-0 (11July2024)**.
 
-* SevenNet-0 (11July2024)
-The model architecture is identical to SevenNet-0 (22May2024). The only difference is the training set, [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11July2024).
-Matbench score?
+* **SevenNet-0 (11Jul2024)**
+
+The model architecture is identical to **SevenNet-0 (22May2024)**. The only difference is the training set, [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11July2024).
+MAE: 0.048 eV/atom, $\kappa_{\mathrm{SRME}}$: 0.767
 
     * Keywords
 `7net-0 | SevenNet-0 | 7net-0_11July2024 | SevenNet-0_11July2024`
 
-* SevenNet-0 (22May2024)
+* **SevenNet-0 (22May2024)**
+
 The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.  
-Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2). The convolutional filter employs an cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
+Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2). The convolutional filter employs an cutoff radius of 5 ${\AA}$ and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
 
 The training set is [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
     * Keywords
 `7net-0_22May2024 | SevenNet-0_22May2024`
+
+**Acknowledgments**: These works were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
 ## Contents
 - [SevenNet](#sevennet)
@@ -90,16 +93,16 @@ In thie case, as the SevenNet is under active development, we strongly recommend
 ## Usage
 ### SevenNet Calculator for ASE
 
-[ASE (Atomic Simulation Environment)](https://wiki.fysik.dtu.dk/ase/) is a set of tools and Python modules for atomistic simulations. SevenNet-0 and SevenNet-trained potentials can be used with ASE for its use in python.
+[ASE (Atomic Simulation Environment)](https://wiki.fysik.dtu.dk/ase/) is a set of tools and Python modules for atomistic simulations.
 
 For pre-trained models,
 
 ```python
 from sevenn.sevennet_calculator import SevenNetCalculator
-sevennet_0_cal = SevenNetCalculator("7net-0", device='cpu')  # 7net-0, SevenNet-0, 7net-0_22May2024, 7net-0_11July2024 ...
+sevennet_0_cal = SevenNetCalculator('7net-0', device='cpu')  # 7net-0, SevenNet-0, 7net-0_22May2024, 7net-0_11July2024 ...
 ```
 
-For user trained models,
+For user-trained models,
 
 ```python
 from sevenn.sevennet_calculator import SevenNetCalculator
@@ -176,10 +179,8 @@ These models can be used as lammps potential to run parallel MD simulations with
 - (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
 - MKL-include
 
-
-**PLEASE NOTE:** CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
-
-**PLEASE NOTE:** Virial stress (pressure) outputs of SevenNet parallel should work correctly! I have validated it several times. However, I recommend testing it by comparing outputs between serial and parallel, as the code is not yet mature.
+> [!IMPORTANT]
+> CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
 If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module. If it is unavailable, read the 'Note for MKL' section before running cmake.
 
@@ -192,7 +193,8 @@ git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Au
 sevenn_patch_lammps ./lammps_sevenn {--d3}
 ```
 
-**Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).**
+> [!TIPS]
+> Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).**
 
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
@@ -276,7 +278,8 @@ Use [sevenn_get_model](#sevenn_get_model) for deploying lammps models from check
 
 One GPU per MPI process is expected. The simulation may run inefficiently if the available GPUs are fewer than the MPI processes.
 
-**PLEASE NOTE:** Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
+> [!CAUTION]
+> Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
 
 ## Future Works
 
