@@ -3,32 +3,44 @@
 
 # SevenNet
 
-SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://docs.lammps.org/Manual.html). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
+SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network (GNN) interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://lammps.org). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
 
-The project provides parallel molecular dynamics simulations using graph neural network interatomic potentials, which enable large-scale MD simulations or faster MD simulations.
+The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://lammps.org)).
 
-The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://docs.lammps.org/Manual.html)).
-
-**PLEASE NOTE:** SevenNet+LAMMPS parallel after this commit: 14851ef (v0.9.3 ~ 0.9.5) has a serious bug:
-it gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug is fixed for the main branch, from v0.10.x, and pip (PyPI: v0.9.3.post0).
+> [!CAUTION]
+> SevenNet+LAMMPS parallel after the commit id of 14851ef (v0.9.3 ~ 0.9.5) has a serious bug.
+> It gives wrong forces when the number of mpi processes is greater than two. The corresponding pip version is yanked for this reason. The bug is fixed for the main branch since v0.10.0, and pip (PyPI: v0.9.3.post0).
 
 
 ## Features
- - Pre-trained GNN interatomic potential SevenNet-0, with fine-tuning interface
- - ASE calculator support
- - Multi-GPU accelerated molecular dynamics with LAMMPS
- - Accelerated D3 (van der Waals) dispersion, written in CUDA.
+ - Pre-trained GNN interatomic potential, SevenNet-0 with fine-tuning interface
+ - Python ASE calculator support
+ - GPU-parallelized molecular dynamics with LAMMPS
+ - CUDA-accelerated D3 (van der Waals) dispersion
 
-Supporting MD frameworks and its features. While all modes support both CPU and GPU, GPU is much faster.
-| Features        | ASE calculator   | LAMMPS serial   | LAMMPS parallel |
-|-----------------|------------------|-----------------|-----------------|
-| Working?        | ✅ | ✅ | ✅ |
-| Multi-GPU       | ❌ | ❌ | ✅ |
-| Stress          | ✅ | ✅ | ✅ |
-| D3 correction   | ⏳ | ✅ | ⏳ |
+## Pre-trained models
+We provide three pre-trained models here.
 
-✅: Support, ⏳: Planned, ❌: Not planned.
+**Acknowledgments**: This work was supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
+* l3i5 (??Dec2024)
+The model architecture is modified so that spherical harmonics up to *l*=3. The other parameters are identical to SevenNet-0 (11July2024).
+
+* SevenNet-0 (11July2024)
+The model architecture is identical to SevenNet-0 (22May2024). The only difference is the training set, [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11July2024).
+Matbench score?
+
+    * Keywords
+`7net-0 | SevenNet-0 | 7net-0_11July2024 | SevenNet-0_11July2024`
+
+* SevenNet-0 (22May2024)
+The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.  
+Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2). The convolutional filter employs an cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
+
+The training set is [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
+
+    * Keywords
+`7net-0_22May2024 | SevenNet-0_22May2024`
 
 ## Contents
 - [SevenNet](#sevennet)
@@ -50,57 +62,32 @@ Supporting MD frameworks and its features. While all modes support both CPU and 
   - [Citation](#citation)
 
 ## Installation
-
+### Requirements
 - Python >= 3.8
 - PyTorch >= 1.12.0, PyTorch < 2.5.0
 
-Please install PyTorch from [`PyTorch official`](https://pytorch.org/get-started/locally/) before installing the SevenNet.
-Note that for SevenNet, `torchvision` and `torchaudio` are redundant. You can safely exclude these packages from the installation commands.
+> [!IMPORTANT]
+> Please install PyTorch manually depending on the hardward before installing the SevenNet.
 
 Here are the recommended versions we've been using internally without any issues.
-
 - PyTorch/2.2.2 + CUDA/12.1.0
 - PyTorch/1.13.1 + CUDA/12.1.0
 - PyTorch/1.12.0 + CUDA/11.6.2
-
 Using the newer versions of CUDA with PyTorch is usually not a problem. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
 
-**PLEASE NOTE:** You must install PyTorch before installing SevenNet. They are not marked as dependencies since it is coupled with the CUDA version.
-
-After the PyTorch installation, run
+After PyTorch installation, run
 
 ```bash
 pip install sevenn
 ```
 
-To download the latest version of SevenNet(not stable!), run
+To download the latest version of SevenNet, run
 ```bash
 pip install https://github.com/MDIL-SNU/SevenNet.git
 ```
-Note that we have CHANGELOG.md. As SevenNet is under active development (again), I recommend checking it for new features and changes.
+In thie case, as the SevenNet is under active development, we strongly recommend checking `CHANGELOG.md` for new features and changes.
 
 ## Usage
-
-### SevenNet-0
-
-SevenNet-0 is a general-purpose interatomic potential trained on the [`MPF dataset of M3GNet`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) or [`MPtrj dataset of CHGNet`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
-
-While SevenNet-0 can be applied to downstream tasks as it is, it is recommended to [`fine-tune`](#training) SevenNet-0 before addressing real downstream tasks.
-
-#### SevenNet-0 (11July2024)
-
-This model was trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). We suggest starting with this model as we found that it performs better than the previous SevenNet-0 (22May2024). Check [`Matbench Discovery leaderborad`](https://matbench-discovery.materialsproject.org/) for this model's performance on materials discovery. For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11July2024).
-
-Whenever the checkpoint path is the input, this model can be loaded via `7net-0 | SevenNet-0 | 7net-0_11July2024 | SevenNet-0_11July2024` keywords.
-
-**Acknowledgments**: This work was supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
-
-#### SevenNet-0 (22May2024)
-
-This model was trained on [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599). This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
-
-Whenever the checkpoint path is the input, this model can be loaded via `7net-0_22May2024 | SevenNet-0_22May2024` keywords.
-
 ### SevenNet Calculator for ASE
 
 [ASE (Atomic Simulation Environment)](https://wiki.fysik.dtu.dk/ase/) is a set of tools and Python modules for atomistic simulations. SevenNet-0 and SevenNet-trained potentials can be used with ASE for its use in python.
@@ -134,7 +121,7 @@ To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_da
 
 #### Multi-GPU training
 
-We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use one process (or a CPU core) per GPU.
+We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use single process (or a CPU core) per GPU.
 
 ```bash
 torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
