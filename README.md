@@ -25,23 +25,24 @@ We provide three pre-trained models here.
 
 The model architecture is modified so that spherical harmonics up to *l*=3. The other hyperparameters and training set are identical to **SevenNet-0 (11July2024)**.
 
+MAE: 0.042 eV/atom, $\kappa_{\mathrm{SRME}}$: 0.560
+
 * **SevenNet-0 (11Jul2024)**
 
 The model architecture is identical to **SevenNet-0 (22May2024)**. The only difference is the training set, [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11July2024).
+
 MAE: 0.048 eV/atom, $\kappa_{\mathrm{SRME}}$: 0.767
 
-    * Keywords
-`7net-0 | SevenNet-0 | 7net-0_11July2024 | SevenNet-0_11July2024`
+Keywords: `7net-0`, `SevenNet-0`, `7net-0_11July2024`, and `SevenNet-0_11July2024`
 
 * **SevenNet-0 (22May2024)**
 
 The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.  
-Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2). The convolutional filter employs an cutoff radius of 5 ${\AA}$ and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
+Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2). The convolutional filter employs an cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
 
 The training set is [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
-    * Keywords
-`7net-0_22May2024 | SevenNet-0_22May2024`
+Keywords: `7net-0_22May2024` and `SevenNet-0_22May2024`
 
 **Acknowledgments**: These works were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
@@ -193,7 +194,7 @@ git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Au
 sevenn_patch_lammps ./lammps_sevenn {--d3}
 ```
 
-> [!TIPS]
+> [!TIP]
 > Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).**
 
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
