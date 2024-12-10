@@ -48,8 +48,8 @@ ACTIVATION_FOR_ODD = {'tanh': torch.tanh, 'abs': torch.abs}
 ACTIVATION_DICT = {'e': ACTIVATION_FOR_EVEN, 'o': ACTIVATION_FOR_ODD}
 
 _prefix = os.path.abspath(f'{os.path.dirname(__file__)}/pretrained_potentials')
-SEVENNET_0_11July2024 = (
-    f'{_prefix}/SevenNet_0__11July2024/checkpoint_sevennet_0.pth'
+SEVENNET_0_11Jul2024 = (
+    f'{_prefix}/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth'
 )
 SEVENNET_0_22May2024 = (
     f'{_prefix}/SevenNet_0__22May2024/checkpoint_sevennet_0.pth'
