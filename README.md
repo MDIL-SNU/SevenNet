@@ -19,16 +19,16 @@ The installation and usage of SevenNet are split into two parts: training + comm
  - CUDA-accelerated D3 (van der Waals) dispersion
 
 ## Pre-trained models
-Currently, we provide three pre-trained SevenNet models. Each models have different hyperparameters and training set, resulting in different accuracy and speed. Please read carefully the descriptions below and choose the model depending on purposes. 
+Currently, we provide three pre-trained SevenNet models. Each models have different hyperparameters and training set, resulting in different accuracy and speed. Please read carefully the descriptions below and choose the model depending on purposes.
 We write down the main features of models and their training energy, force, and stress MAEs.
 For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
-These models can be used as interatomic potential on LAMMPS, and loaded by calling the keywords of each model in ASE calculator. The 
+These models can be used as interatomic potential on LAMMPS, and loaded by calling the keywords of each model in ASE calculator. The
 
 * **l3i5**
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to three, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of two.
-While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)**. 
+While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)**.
 
 MAE: 0.042 eV/atom, $\kappa_{\mathrm{SRME}}$: 0.560
 
@@ -44,7 +44,7 @@ Keywords: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
 * **SevenNet-0 (22May2024)**
 
-The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.  
+The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
 Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
 The convolutional filter employs an cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
 
