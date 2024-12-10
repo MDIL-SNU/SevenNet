@@ -18,10 +18,10 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
 
 ## Pre-trained models
 So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
-We provide the training MAEs (energy, force, and stress), F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb.
+We provide the training MAEs (energy, force, and stress) F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb. For details on these metrics and performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
 These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [ASE calculator](#ase_calculator) to see the way to load a model through ASE calculator.
-For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
+Additionally, `keywords` can be called in other parts of SevenNet, such as `sevenn_inference`, `sevenn_get_model`, and `checkpoint:` key of `input.yaml` for fine-tuning.
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
@@ -31,7 +31,7 @@ For detailed performance comparisons with other pre-trained models, please visit
 > Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
-While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)** due to the increased number of parameters of 1.17 M.
+Note that the **l3i5** model provides improved accuracy in a range of systems, but the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)**.
 For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 
 * MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
@@ -44,7 +44,7 @@ For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 > Keywords in ASE: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
 Compared to **SevenNet-0 (22May2024)**, the training is changed from [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) to [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
-This model is loaded as default pre-trained model in ASE calculator.
+This model is loaded as the default pre-trained model in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
 * MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
@@ -68,12 +68,11 @@ The model was trained with [MPF.2021.2.8](https://figshare.com/articles/dataset/
 - [Installation](#installation)
 - [Usage](#usage)
   - [ASE calculator](#ase-calculator)
-  - [Training & inference](#training)
+  - [Training & inference](#training-and-inference)
   - [MD simulation with LAMMPS](#md-simulation-with-lammps)
-    - [Installation](#installation-for-lammps)
-    - [Single-GPU MD](#single-gpu_md)
-    - [Multi-GPU MD](#multi-gpu_md)
-- [Future Works](#future-works)
+    - [Installation](#installation)
+    - [Single-GPU MD](#single-gpu-md)
+    - [Multi-GPU MD](#multi-gpu-md)
 - [Citation](#citation)
 
 ## Installation<a name="installation"></a>
@@ -116,7 +115,7 @@ In this case, the path of checkpoint generated after training should be identifi
 > [!TIP]
 > When 'auto' is passed by `device`, SevenNet utilizes GPU acceleration if available.
 
-### Training & inference
+### Training and inference
 
 SevenNet provides five commands for preprocess, training, and deployment: `sevenn_preset`, `sevenn_graph_build`, `sevenn`, `sevenn_inference`, `sevenn_get_model`.
 
@@ -127,9 +126,9 @@ With the `sevenn_preset` command, the input file that sets the training paramete
 sevenn_preset {preset keyword} > input.yaml
 ```
 
-Available preset keywords are: `base`, `fine_tune`, and `sevennet-0`.
+Available preset keywords are: `base`, `fine_tune`, `sevennet-0`, and `sevennet-l3i5`.
 Check comments in the preset yaml files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
-To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
+To reuse a preprocessed training set, you can specify `sevenn_data/${dataset_name}.pt` to the `load_trainset_path:` in the `input.yaml`.
 
 #### 2. Preprocess (optional)
 
@@ -147,7 +146,7 @@ See `sevenn_graph_build --help` for more information.
 
 #### 3. Training
 
-Given that input.yaml and `sevenn_data/graph.pt` are prepared, SevenNet can be trained by the following command:
+Given that `input.yaml` and `sevenn_data/graph.pt` are prepared, SevenNet can be trained by the following command:
 
 ```bash
 sevenn input.yaml -s
@@ -221,7 +220,7 @@ sevenn_patch_lammps ./lammps_sevenn {--d3}
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
 > [!TIP]
-> Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).
+> Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style. For its usage and details, click [here](sevenn/pair_e3gnn).
 
 ```bash
 cd ./lammps_sevenn
@@ -283,7 +282,7 @@ For multi-GPU MD simulations, `e3gnn/parallel` pair_style should be used. The mi
 units       metal
 atom_style  atomic
 pair_style  e3gnn/parallel
-pair_coeff  * * {number of message-passing layers} {directory of parallel model} {chemical species separated by whitespace}
+pair_coeff  * * {number of message-passing layers} {directory of parallel model} {space separated chemical species}
 ```
 
 For example,
@@ -300,11 +299,6 @@ One GPU per MPI process is expected. The simulation may run inefficiently if the
 
 > [!CAUTION]
 > Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
-
-## Future Works<a name="fugure-works"></a>
-
-- Notebook examples and improved interface for non-command line usage
-- Development of a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
 
 ## Citation<a name="citation"></a>
 
