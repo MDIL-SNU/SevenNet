@@ -118,34 +118,34 @@ In this case, the path of checkpoint generated after training should be identifi
 
 SevenNet provides five commands for training, deployment, or convenience: `sevenn_preset`, `sevenn_graph_build`, `sevenn`, `sevenn_inference`, `sevenn_get_model`.
 
-1. Input generation
+#### 1. Input generation
 
-With `sevenn_preset`, the input file that sets the training parameters is generated automatically.
+With the `sevenn_preset` command, the input file that sets the training parameters is generated automatically.
 ```bash
-sevenn_preset fine_tune > input.yaml
+sevenn_preset {preset keyword} > input.yaml
 ```
 
-Other valid preset options are: `base`, `fine_tune`, and `sevennet-0`.
+Available preset keywords are: `base`, `fine_tune`, and `sevennet-0`.
 Check comments in the preset yaml files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
+To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
 
-2. Preprocess (optional)
-
-```bash
-sevenn_graph_build my_train_data.extxyz 5.0
-```
+#### 2. Preprocess (optional)
 
 You can preprocess the dataset with `sevenn_graph_build` to obtain `./sevenn_data/graph.pt` files. These files can be used for training (`sevenn`) or
-inference (`sevenn_inference`), skipping the graph build stage. `./sevenn_data/graph.yaml` contains statistics and meta information for the dataset.
+inference (`sevenn_inference`), skipping the graph build stage.
+
+```bash
+sevenn_graph_build {dataset path} {cutoff radius}
+```
+
+The output `./sevenn_data/graph.yaml` contains statistics and meta information for the dataset.
 These files must be located under the `sevenn_data`. If you move the dataset, move the entire `sevenn_data` directory without changing the contents.
 
 See `sevenn_graph_build --help` for more information.
 
-To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
-
-3. Training
+#### 3. Training
 
 ```bash
-sevenn_preset fine_tune > input.yaml
 sevenn input.yaml -s
 ```
 
@@ -157,7 +157,7 @@ torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPU
 
 Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 
-4. Inference
+#### 4. Inference
 
 ```bash
 sevenn_inference checkpoint_best.pth path_to_my_structures/*
@@ -166,7 +166,7 @@ sevenn_inference checkpoint_best.pth path_to_my_structures/*
 This will create dir `sevenn_infer_result`. It includes .csv files that enumerate prediction/reference results of energy and force.
 See `sevenn_inference --help` for more information.
 
-5. Deployment
+#### 5. Deployment<a name="deployment"></a>
 
 This command is for deploying lammps potentials from checkpoints. The argument is either the path to checkpoint or the name of pre-trained potential.
 
@@ -283,7 +283,7 @@ pair_coeff * * 4 ./deployed_parallel Hf O
 ```
 The number of message-passing layers is equal to the number of `*.pt` files in the `./deployed_parallel` directory.
 
-Use [sevenn_get_model](#sevenn_get_model) for deploying lammps models from checkpoint for both serial and parallel.
+Use [`sevenn_get_model`](#deployment) for deploying lammps models from checkpoint for both serial and parallel.
 
 One GPU per MPI process is expected. The simulation may run inefficiently if the available GPUs are fewer than the MPI processes.
 
