@@ -21,33 +21,33 @@ So far, we have released three pre-trained SevenNet models. Each model has vario
 In addition, as model performances, we provide the training MAEs (energy, force, and stress), F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb.
 
 For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
-These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [`ASE calculator`](#ase_calculator) to see the way to load a model through ASE calculator.
+These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [ASE calculator](#ase_calculator) to see the way to load a model through ASE calculator.
 
-1. **l3i5**
+* **l3i5**
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
 While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)** due to the increased number of parameters of 1.17 M.
 For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 
-* MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
-* F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
-* Speed: 28m 38s / epoch (with 8 A100 GPU cards)
+> * MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
+> * F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
+> * Speed: 28m 38s / epoch (with 8 A100 GPU cards)
 
 Keywords: `7net-l3i5`, `SevenNet-l3i5`
 
-2. **SevenNet-0 (11Jul2024)**
+* **SevenNet-0 (11Jul2024)**
 
-The training is changed from [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) to [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), compared to **SevenNet-0 (22May2024)**
+The training is changed from [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) to [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), compared to **SevenNet-0 (22May2024)**
 This model is default pre-trained model uploaded in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
-* MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
-* F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
-* Speed: 6m 41s / epoch (with 8 A100 GPU cards)
+> * MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
+> * F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
+> * Speed: 6m 41s / epoch (with 8 A100 GPU cards)
 
 Keywords: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
-3. **SevenNet-0 (22May2024)**
+* **SevenNet-0 (22May2024)**
 
 The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
 Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
@@ -228,8 +228,8 @@ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cm
 make -j4
 ```
 
-If the error `MKL_INCLUDE_DIR NOT-FOUND` occurs, please check the environment variable or follow the subsequent steps.
-If compilation is done without any errors, please skip the steps 2 and 3.
+If the error `MKL_INCLUDE_DIR NOT-FOUND` occurs, please check the environment variable or read the `Possible solutions` below.
+If compilation is done without any errors, please skip this.
 
 <details>
   <summary>Possible solutions</summary>
@@ -250,7 +250,8 @@ If compilation is done without any errors, please skip the steps 2 and 3.
   If PyTorch is installed using Conda, `libmkl_*.so` files can be found in `$CONDA_PREFIX/lib`.
   Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
 
-  For other error cases, the solution can be found in [`pair-nequip`](https://github.com/mir-group/pair_nequip) repository as we share the architecture.
+  > [!TIP]
+  > For other error cases, the solution can be found in [`pair-nequip`](https://github.com/mir-group/pair_nequip) repository as we share the architecture.
 </details>
 
 If the compilation is successful, the executable `lmp` can be found at `{path_to_lammps_dir}/build`.
@@ -264,6 +265,7 @@ This will allow you to run the binary using `lmp -in my_lammps_script.lmp`.
 
 #### Single-GPU MD
 
+For single-GPU MD simulations, `e3gnn` pair_style should be used. The minimal input script is provided as follows:
 ```txt
 units       metal
 atom_style  atomic
@@ -273,11 +275,12 @@ pair_coeff  * * {path to serial model} {space separated chemical species}
 
 #### Multi-GPU MD
 
+For multi-GPU MD simulations, `e3gnn/parallel` pair_style should be used. The minimal input script is provided as follows:
 ```txt
 units       metal
 atom_style  atomic
 pair_style  e3gnn/parallel
-pair_coeff  * * {number of message-passing layers} {path to the directory containing parallel model} {space separated chemical species}
+pair_coeff  * * {number of message-passing layers} {directory of parallel model} {chemical species separated by whitespace}
 ```
 
 For example,
