@@ -66,32 +66,27 @@ Keywords: `7net-0_22May2024` and `SevenNet-0_22May2024`
 - [Installation](#installation)
 - [Usage](#usage)
   - [ASE calculator](#ase-calculator)
-  - [Training sevenn](#training)
-    - [Multi-GPU training](#multi-gpu-training)
-  - [sevenn_graph_build](#sevenn_graph_build)
-  - [sevenn_inference](#sevenn_inference)
-  - [sevenn_get_model](#sevenn_get_model)
+  - [Training & inference](#training)
   - [MD simulation with LAMMPS](#md-simulation-with-lammps)
     - [Installation](#installation-for-lammps)
-      - [Installation check](#installation-check)
-    - [For serial model](#for-serial-model)
-    - [For parallel model](#for-parallel-model)
+    - [Single-GPU MD](#single-gpu_md)
+    - [Multi-GPU MD](#multi-gpu_md)
 - [Future Works](#future-works)
 - [Citation](#citation)
 
-## Installation
+## Installation<a name="installation"></a>
 ### Requirements
 - Python >= 3.8
 - PyTorch >= 1.12.0, PyTorch < 2.5.0
-
-> [!IMPORTANT]
-> Please install PyTorch manually depending on the hardware before installing the SevenNet.
 
 Here are the recommended versions we've been using internally without any issues.
 - PyTorch/2.2.2 + CUDA/12.1.0
 - PyTorch/1.13.1 + CUDA/12.1.0
 - PyTorch/1.12.0 + CUDA/11.6.2
 Using the newer versions of CUDA with PyTorch is usually not a problem. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
+
+> [!IMPORTANT]
+> Please install PyTorch manually depending on the hardware before installing the SevenNet.
 
 Give that the PyTorch is successfully installed, please run the command below.
 ```bash
@@ -100,7 +95,7 @@ pip install https://github.com/MDIL-SNU/SevenNet.git # for the latest version
 ```
 We strongly recommend checking `CHANGELOG.md` for new features and changes because the SevenNet is under active development.
 
-## Usage
+## Usage<a name="usage"></a>
 ### ASE calculator<a name="ase_calculator"></a>
 
 For a wider application in atomistic simulations, SevenNet provides the ASE interface through ASE calculator.
@@ -119,29 +114,21 @@ In this case, the path of checkpoint generated after training should be identifi
 > [!TIP]
 > When 'auto' is passed by `device`, SevenNet utilizes GPU acceleration if available.
 
-### Training
+### Training & inference
 
+SevenNet provides five commands for training, deployment, or convenience: `sevenn_preset`, `sevenn_graph_build`, `sevenn`, `sevenn_inference`, `sevenn_get_model`.
+
+1. Input generation
+
+With `sevenn_preset`, the input file that sets the training parameters is generated automatically.
 ```bash
 sevenn_preset fine_tune > input.yaml
-sevenn input.yaml -s
 ```
 
 Other valid preset options are: `base`, `fine_tune`, and `sevennet-0`.
 Check comments in the preset yaml files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
 
-To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
-
-#### Multi-GPU training
-
-We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use single process (or a CPU core) per GPU.
-
-```bash
-torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
-```
-
-Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
-
-### sevenn_graph_build
+2. Preprocess (optional)
 
 ```bash
 sevenn_graph_build my_train_data.extxyz 5.0
@@ -153,7 +140,24 @@ These files must be located under the `sevenn_data`. If you move the dataset, mo
 
 See `sevenn_graph_build --help` for more information.
 
-### sevenn_inference
+To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_data` to the `load_dataset_path:` in the `input.yaml`.
+
+3. Training
+
+```bash
+sevenn_preset fine_tune > input.yaml
+sevenn input.yaml -s
+```
+
+We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use single process (or a CPU core) per GPU.
+
+```bash
+torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
+```
+
+Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
+
+4. Inference
 
 ```bash
 sevenn_inference checkpoint_best.pth path_to_my_structures/*
@@ -162,7 +166,7 @@ sevenn_inference checkpoint_best.pth path_to_my_structures/*
 This will create dir `sevenn_infer_result`. It includes .csv files that enumerate prediction/reference results of energy and force.
 See `sevenn_inference --help` for more information.
 
-### sevenn_get_model
+5. Deployment
 
 This command is for deploying lammps potentials from checkpoints. The argument is either the path to checkpoint or the name of pre-trained potential.
 
@@ -181,12 +185,15 @@ sevenn_get_model 7net-0 -p
 This will create a directory with multiple `deployed_parallel_*.pt` files. The directory path itself is an argument for the lammps script. Please do not modify or remove files under the directory.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
-## Installation for LAMMPS
+### MD simulation with LAMMPS
 
+#### Installation
+
+##### Requirements
 - PyTorch < 2.5.0 (same version as used for training)
 - LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
-- (Optional) [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD
-- MKL-include
+- [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD (optional)
+- MKL library
 
 > [!IMPORTANT]
 > CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
@@ -217,16 +224,6 @@ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cm
 make -j4
 ```
 
-If the compilation is successful, you will find the executable at `{path_to_lammps_dir}/build/lmp`. To use this binary easily, for example, create a soft link in your bin directory (which should be included in your `$PATH`).
-
-```bash
-ln -s {absolute_path_to_lammps_dir}/build/lmp $HOME/.local/bin/lmp
-```
-
-This will allow you to run the binary using `lmp -in my_lammps_script.lmp`.
-
-### Note for MKL
-
 You may encounter `MKL_INCLUDE_DIR NOT-FOUND` during cmake. This usually means the environment variable is not set correctly, or mkl-include is not present on your system.
 
 Install mkl-include with:
@@ -246,8 +243,13 @@ Append the following to your cmake command:
 If you see hundreds of `undefined reference to XXX` errors with `libtorch_cpu.so` at the end of compilation, check your `$LD_LIBRARY_PATH`. PyTorch depends on MKL libraries (this is a default backend for torch+CPU), therefore you already have them. For example, if you installed PyTorch using Conda, you may find `libmkl_*.so` files under `$CONDA_PREFIX/lib`. Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
 
 For other error cases, you might want to check [`pair-nequip`](https://github.com/mir-group/pair_nequip), as the `pair-nequip` and SevenNet+LAMMPS shares similar requirements: torch + LAMMPS.
+If the compilation is successful, you will find the executable at `{path_to_lammps_dir}/build/lmp`. To use this binary easily, for example, create a soft link in your bin directory (which should be included in your `$PATH`).
 
-### Installation check
+```bash
+ln -s {absolute_path_to_lammps_dir}/build/lmp $HOME/.local/bin/lmp
+```
+
+This will allow you to run the binary using `lmp -in my_lammps_script.lmp`.
 
 ```bash
 {lammps_binary} -help | grep e3gnn
@@ -255,9 +257,7 @@ For other error cases, you might want to check [`pair-nequip`](https://github.co
 
 If the SevenNet is successfully installed in LAMMPS, you will see `e3gnn` and `e3gnn/parallel` as pair_style.
 
-## Usage for LAMMPS
-
-### For serial model
+#### Single-GPU MD
 
 ```txt
 units       metal
@@ -266,7 +266,7 @@ pair_style  e3gnn
 pair_coeff  * * {path to serial model} {space separated chemical species}
 ```
 
-### For parallel model
+#### Multi-GPU MD
 
 ```txt
 units       metal
@@ -290,12 +290,12 @@ One GPU per MPI process is expected. The simulation may run inefficiently if the
 > [!CAUTION]
 > Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
 
-## Future Works
+## Future Works<a name="fugure-works"></a>
 
 - Notebook examples and improved interface for non-command line usage
 - Development of a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
 
-## References
+## Citation<a name="citation"></a>
 
 If you use this code, please cite our paper:
 ```txt
