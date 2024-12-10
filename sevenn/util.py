@@ -306,7 +306,10 @@ def pretrained_name_to_path(name: str) -> str:
     name = name.lower()
     heads = ['sevennet', '7net']
     checkpoint_path = None
-    if name in [f'{n}-0_11july2024' for n in heads] or name in heads:
+    if name in [f'{n}-0_11july2024' for n in heads] or name in [
+        'sevennet-0',
+        '7net-0',
+    ]:
         checkpoint_path = _const.SEVENNET_0_11July2024
     elif name in [f'{n}-0_22may2024' for n in heads]:
         checkpoint_path = _const.SEVENNET_0_22May2024
