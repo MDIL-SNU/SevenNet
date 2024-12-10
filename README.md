@@ -3,9 +3,7 @@
 
 # SevenNet
 
-SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network (GNN) interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://lammps.org). Its underlying GNN model is based on [`nequip`](https://github.com/mir-group/nequip).
-
-The installation and usage of SevenNet are split into two parts: training + command-line interface + ASE calculator (handled by Python) and molecular dynamics (handled by [`LAMMPS`](https://lammps.org)).
+SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural network (GNN) interatomic potential package that supports parallel molecular dynamics simulations with [`LAMMPS`](https://lammps.org). Its underlying GNN model is based on [`NequIP`](https://github.com/mir-group/nequip).
 
 > [!CAUTION]
 > SevenNet+LAMMPS parallel after the commit id of `14851ef (v0.9.3 ~ 0.9.5)` has a serious bug.
@@ -14,36 +12,38 @@ The installation and usage of SevenNet are split into two parts: training + comm
 
 ## Features
  - Pre-trained GNN interatomic potential, SevenNet-0 with fine-tuning interface
- - Python ASE calculator support
+ - Python [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator support
  - GPU-parallelized molecular dynamics with LAMMPS
  - CUDA-accelerated D3 (van der Waals) dispersion
 
 ## Pre-trained models
-Currently, we release three pre-trained SevenNet models. Each model has different hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
-We write down the main features, comparing between models.
-As an evaluation, we provide the training MAEs (energy, force, and stress), F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb.
-For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
+So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
+In addition, as model performances, we provide the training MAEs (energy, force, and stress), F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb.
 
-These models can be used as interatomic potential on LAMMPS, and loaded by calling the keywords of each model in ASE calculator. The
+For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
+These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [`ASE calculator`](#ase_calculator) to see the way to load a model through ASE calculator.
 
 * **l3i5**
 
-The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to three, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of two.
-While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)**.
+The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
+While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)** due to the increased number of parameters of 1.17 M.
+For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 
     * MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
     * F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
-    * Speed: 28m 38s (/epoch with 8 A100 GPU cards)
+    * Speed: 28m 38s / epoch (with 8 A100 GPU cards)
 
-Keywords: `l3i5`
+Keywords: `7net-l3i5`, `SevenNet-l3i5`
 
 * **SevenNet-0 (11Jul2024)**
 
-The model is trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) instead of [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) used in **SevenNet-0 (22May2024)**. For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
+The training is changed from [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) to [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), compared to **SevenNet-0 (22May2024)**
+This model is default pre-trained model uploaded in ASE calculator.
+For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
     * MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
     * F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
-    * Speed: 6m 41s (/epoch with 8 A100 GPU cards)
+    * Speed: 6m 41s / epoch (with 8 A100 GPU cards)
 
 Keywords: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
@@ -51,9 +51,9 @@ Keywords: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
 The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
 Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
-The convolutional filter employs an cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
+The convolutional filter employs a cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and $l_{\mathrm{max}}$ of 2, resulting in the number of parameters is 0.84 M.
 
-The training set is [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
+The model was trained with [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. For more information, please read the [paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190) and visit [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
     * MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
     * F1 score: 0.65
@@ -93,37 +93,31 @@ Here are the recommended versions we've been using internally without any issues
 - PyTorch/1.12.0 + CUDA/11.6.2
 Using the newer versions of CUDA with PyTorch is usually not a problem. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
 
-After PyTorch installation, run
-
+Give that the PyTorch is successfully installed, please run the command below.
 ```bash
 pip install sevenn
+pip install https://github.com/MDIL-SNU/SevenNet.git # for the latest version
 ```
-
-To download the latest version of SevenNet, run
-```bash
-pip install https://github.com/MDIL-SNU/SevenNet.git
-```
-In this case, as the SevenNet is under active development, we strongly recommend checking `CHANGELOG.md` for new features and changes.
+We strongly recommend checking `CHANGELOG.md` for new features and changes because the SevenNet is under active development.
 
 ## Usage
-### SevenNet Calculator for ASE
+### ASE calculator<a name="ase_calculator"></a>
 
-[ASE (Atomic Simulation Environment)](https://wiki.fysik.dtu.dk/ase/) is a set of tools and Python modules for atomistic simulations.
-
-For pre-trained models,
-
-```python
-from sevenn.sevennet_calculator import SevenNetCalculator
-sevennet_0_cal = SevenNetCalculator('7net-0', device='cpu')  # 7net-0, SevenNet-0, 7net-0_22May2024, 7net-0_11July2024 ...
-```
-
-For user-trained models,
+For a wider application in atomistic simulations, SevenNet provides the ASE interface through ASE calculator.
+The model can be loaded through the following Python code.
 
 ```python
 from sevenn.sevennet_calculator import SevenNetCalculator
-checkpoint_path = ### PATH TO CHECKPOINT ###
-sevennet_cal = SevenNetCalculator(checkpoint_path, device='cpu')
+calculator = SevenNetCalculator(model='7net-0', device='cpu')
 ```
+
+Various pre-trained SevenNet models can be accessed by changing the `model` variable to any predefined keywords such as `7net-l3i5`, `7net-0_11Jul2024`, `7net-0_22May2024`, and so on. The default model is **SevenNet-0 (11Jul2024)**.
+
+In addition, not only pre-trained models but also user-trained models can be applied in ASE calculator.
+In this case, the path of checkpoint generated after training should be identified in `model` variable.
+
+> [!TIP]
+> When 'auto' is passed by `device`, SevenNet utilizes GPU acceleration if available.
 
 ### Training
 
