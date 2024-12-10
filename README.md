@@ -19,8 +19,9 @@ The installation and usage of SevenNet are split into two parts: training + comm
  - CUDA-accelerated D3 (van der Waals) dispersion
 
 ## Pre-trained models
-Currently, we provide three pre-trained SevenNet models. Each models have different hyperparameters and training set, resulting in different accuracy and speed. Please read carefully the descriptions below and choose the model depending on purposes.
-We write down the main features of models and their training energy, force, and stress MAEs.
+Currently, we release three pre-trained SevenNet models. Each model has different hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
+We write down the main features, comparing between models.
+As an evaluation, we provide the training MAEs (energy, force, and stress), F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb.
 For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
 These models can be used as interatomic potential on LAMMPS, and loaded by calling the keywords of each model in ASE calculator. The
@@ -30,7 +31,9 @@ These models can be used as interatomic potential on LAMMPS, and loaded by calli
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to three, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of two.
 While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)**.
 
-MAE: 0.042 eV/atom, $\kappa_{\mathrm{SRME}}$: 0.560
+    * MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
+    * F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
+    * Speed: 28m 38s (/epoch with 8 A100 GPU cards)
 
 Keywords: `l3i5`
 
@@ -38,7 +41,9 @@ Keywords: `l3i5`
 
 The model is trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) instead of [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) used in **SevenNet-0 (22May2024)**. For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
-MAE: 0.048 eV/atom, $\kappa_{\mathrm{SRME}}$: 0.767
+    * MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
+    * F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
+    * Speed: 6m 41s (/epoch with 8 A100 GPU cards)
 
 Keywords: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
@@ -49,6 +54,9 @@ Five interaction blocks with node features that consist of 128 scalars (*l*=0), 
 The convolutional filter employs an cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
 
 The training set is [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
+
+    * MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
+    * F1 score: 0.65
 
 Keywords: `7net-0_22May2024` and `SevenNet-0_22May2024`
 
@@ -63,11 +71,11 @@ Keywords: `7net-0_22May2024` and `SevenNet-0_22May2024`
   - [sevenn_graph_build](#sevenn_graph_build)
   - [sevenn_inference](#sevenn_inference)
   - [sevenn_get_model](#sevenn_get_model)
-- [MD simulation with LAMMPS](#md-simulation-with-lammps)
-  - [Installation for LAMMPS](#installation-for-lammps)
-    - [Installation check](#installation-check)
-  - [For serial model](#for-serial-model)
-  - [For parallel model](#for-parallel-model)
+  - [MD simulation with LAMMPS](#md-simulation-with-lammps)
+    - [Installation](#installation-for-lammps)
+      - [Installation check](#installation-check)
+    - [For serial model](#for-serial-model)
+    - [For parallel model](#for-parallel-model)
 - [Future Works](#future-works)
 - [Citation](#citation)
 
@@ -77,7 +85,7 @@ Keywords: `7net-0_22May2024` and `SevenNet-0_22May2024`
 - PyTorch >= 1.12.0, PyTorch < 2.5.0
 
 > [!IMPORTANT]
-> Please install PyTorch manually depending on the hardward before installing the SevenNet.
+> Please install PyTorch manually depending on the hardware before installing the SevenNet.
 
 Here are the recommended versions we've been using internally without any issues.
 - PyTorch/2.2.2 + CUDA/12.1.0
@@ -95,7 +103,7 @@ To download the latest version of SevenNet, run
 ```bash
 pip install https://github.com/MDIL-SNU/SevenNet.git
 ```
-In thie case, as the SevenNet is under active development, we strongly recommend checking `CHANGELOG.md` for new features and changes.
+In this case, as the SevenNet is under active development, we strongly recommend checking `CHANGELOG.md` for new features and changes.
 
 ## Usage
 ### SevenNet Calculator for ASE
@@ -293,10 +301,18 @@ One GPU per MPI process is expected. The simulation may run inefficiently if the
 - Notebook examples and improved interface for non-command line usage
 - Development of a tiled communication style (also known as recursive coordinate bisection, RCB) in LAMMPS.
 
-## Citation
+## References
 
-If you use SevenNet, please cite (1) parallel GNN-IP MD simulation by SevenNet or its pre-trained model SevenNet-0, (2) underlying GNN-IP architecture NequIP
-
-(1) Y. Park, J. Kim, S. Hwang, and S. Han, "Scalable Parallel Algorithm for Graph Neural Network Interatomic Potentials in Molecular Dynamics Simulations". J. Chem. Theory Comput., 20(11), 4857 (2024) (https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190)
-
-(2) S. Batzner, A. Musaelian, L. Sun, M. Geiger, J. P. Mailoa, M. Kornbluth, N. Molinari, T. E. Smidt, and B. Kozinsky, "E (3)-equivariant graph neural networks for data-efficient and accurate interatomic potentials". Nat. Commun., 13, 2453. (2022) (https://www.nature.com/articles/s41467-022-29939-5)
+If you use this code, please cite our paper:
+```txt
+@article{park_scalable_2024,
+	title = {Scalable {Parallel} {Algorithm} for {Graph} {Neural} {Network} {Interatomic} {Potentials} in {Molecular} {Dynamics} {Simulations}},
+	volume = {20},
+	doi = {10.1021/acs.jctc.4c00190},
+	number = {11},
+	journal = {J. Chem. Theory Comput.},
+	author = {Park, Yutack and Kim, Jaesun and Hwang, Seungwoo and Han, Seungwu},
+	year = {2024},
+	pages = {4857--4868},
+}
+```
