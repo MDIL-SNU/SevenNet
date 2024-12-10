@@ -28,7 +28,7 @@ For detailed performance comparisons with other pre-trained models, please visit
 ---
 
 ### **l3i5**
-> * Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
+> Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
 While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)** due to the increased number of parameters of 1.17 M.
@@ -41,7 +41,7 @@ For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 ---
 
 ### **SevenNet-0 (11Jul2024)**
-> * Keywords in ASE: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
+> Keywords in ASE: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
 Compared to **SevenNet-0 (22May2024)**, the training is changed from [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) to [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
 This model is loaded as default pre-trained model in ASE calculator.
@@ -54,7 +54,7 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 ---
 
 ### **SevenNet-0 (22May2024)**
-> * Keywords in ASE: `7net-0_22May2024` and `SevenNet-0_22May2024`
+> Keywords in ASE: `7net-0_22May2024` and `SevenNet-0_22May2024`
 
 The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
 Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
