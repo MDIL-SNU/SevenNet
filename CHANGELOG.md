@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.10.3]
+### Added
+- SevenNet-l3i5
+
 ## [0.10.2]
 ### Added
 - Accelerated graph build routine if matscipy is installed  @hexagonerose
