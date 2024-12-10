@@ -23,31 +23,31 @@ In addition, as model performances, we provide the training MAEs (energy, force,
 For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [`ASE calculator`](#ase_calculator) to see the way to load a model through ASE calculator.
 
-* **l3i5**
+1. **l3i5**
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
 While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)** due to the increased number of parameters of 1.17 M.
 For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 
-    * MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
-    * F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
-    * Speed: 28m 38s / epoch (with 8 A100 GPU cards)
+* MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
+* F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
+* Speed: 28m 38s / epoch (with 8 A100 GPU cards)
 
 Keywords: `7net-l3i5`, `SevenNet-l3i5`
 
-* **SevenNet-0 (11Jul2024)**
+2. **SevenNet-0 (11Jul2024)**
 
 The training is changed from [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) to [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), compared to **SevenNet-0 (22May2024)**
 This model is default pre-trained model uploaded in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
-    * MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
-    * F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
-    * Speed: 6m 41s / epoch (with 8 A100 GPU cards)
+* MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
+* F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
+* Speed: 6m 41s / epoch (with 8 A100 GPU cards)
 
 Keywords: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
-* **SevenNet-0 (22May2024)**
+3. **SevenNet-0 (22May2024)**
 
 The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
 Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
@@ -55,8 +55,7 @@ The convolutional filter employs a cutoff radius of 5 Angstrom and a tensor prod
 
 The model was trained with [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. For more information, please read the [paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190) and visit [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
-    * MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
-    * F1 score: 0.65
+* MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
 
 Keywords: `7net-0_22May2024` and `SevenNet-0_22May2024`
 
@@ -131,25 +130,27 @@ To reuse a preprocessed training set, you can specify `${dataset_name}.sevenn_da
 
 #### 2. Preprocess (optional)
 
-You can preprocess the dataset with `sevenn_graph_build` to obtain `./sevenn_data/graph.pt` files. These files can be used for training (`sevenn`) or
-inference (`sevenn_inference`), skipping the graph build stage.
+To obtain the preprocessed data, `sevenn_data/graph.pt`, `sevenn_graph_build` command can be used.
+The output files can be used for training (`sevenn`) or inference (`sevenn_inference`) to skip the graph build stage.
 
 ```bash
 sevenn_graph_build {dataset path} {cutoff radius}
 ```
 
-The output `./sevenn_data/graph.yaml` contains statistics and meta information for the dataset.
+The output `sevenn_data/graph.yaml` contains statistics and meta information for the dataset.
 These files must be located under the `sevenn_data`. If you move the dataset, move the entire `sevenn_data` directory without changing the contents.
 
 See `sevenn_graph_build --help` for more information.
 
 #### 3. Training
 
+Given that input.yaml and `sevenn_data/graph.pt` are prepared, SevenNet can be trained by the following command:
+
 ```bash
 sevenn input.yaml -s
 ```
 
-We support multi-GPU training features using PyTorch DDP (distributed data parallel). We use single process (or a CPU core) per GPU.
+We support multi-GPU training features using PyTorch DDP (distributed data parallel) with single process (or a CPU core) per GPU.
 
 ```bash
 torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
@@ -159,27 +160,31 @@ Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 
 #### 4. Inference
 
+Using the checkpoint after the training, the properties such as energy, force, and stress can be inferred directly. 
+
 ```bash
 sevenn_inference checkpoint_best.pth path_to_my_structures/*
 ```
 
-This will create dir `sevenn_infer_result`. It includes .csv files that enumerate prediction/reference results of energy and force.
+This will create the `sevenn_infer_result` directory, where csv files contain predicted energy, force, the stress, and their references (if available).
 See `sevenn_inference --help` for more information.
 
 #### 5. Deployment<a name="deployment"></a>
 
-This command is for deploying lammps potentials from checkpoints. The argument is either the path to checkpoint or the name of pre-trained potential.
+The checkpoint can be deployed as the LAMMPS potentials. The argument is either the path to checkpoint or the name of pre-trained potential.
 
 ```bash
 sevenn_get_model 7net-0
+sevenn_get_model {checkpoint path}
 ```
 
 This will create `deployed_serial.pt`, which can be used as lammps potential under `e3gnn` pair_style.
 
-The parallel model can be obtained in a similar way
+The potential for parallel MD simulation can be obtained in a similar way.
 
 ```bash
 sevenn_get_model 7net-0 -p
+sevenn_get_model {checkpoint path} -p
 ```
 
 This will create a directory with multiple `deployed_parallel_*.pt` files. The directory path itself is an argument for the lammps script. Please do not modify or remove files under the directory.
@@ -191,16 +196,18 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 ##### Requirements
 - PyTorch < 2.5.0 (same version as used for training)
-- LAMMPS version of 'stable_2Aug2023_update3' [`LAMMPS`](https://github.com/lammps/lammps)
-- [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD (optional)
+- LAMMPS version of `stable_2Aug2023_update3`
 - MKL library
+- [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD (optional)
+
+If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module.
+
+CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
 
 > [!IMPORTANT]
 > CUDA-aware OpenMPI does not support NVIDIA Gaming GPUs. Given that the software is closely tied to hardware specifications, please consult with your server administrator if unavailable.
 
-If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load the module. If it is unavailable, read the 'Note for MKL' section before running cmake.
-
-CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not available, in parallel mode, GPUs will communicate via CPU. It is still faster than using only one GPU, but its efficiency is low.
+1. Build LAMMPS with cmake.
 
 Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the version using git. After switching the version, run `sevenn_patch_lammps` with the lammps directory path as an argument.
 
@@ -208,13 +215,10 @@ Ensure the LAMMPS version (stable_2Aug2023_update3). You can easily switch the v
 git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Aug2023_update3 --depth=1
 sevenn_patch_lammps ./lammps_sevenn {--d3}
 ```
+You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
 > [!TIP]
 > Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).
-
-You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
-
-Build LAMMPS with cmake (example):
 
 ```bash
 cd ./lammps_sevenn
@@ -224,38 +228,39 @@ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cm
 make -j4
 ```
 
-You may encounter `MKL_INCLUDE_DIR NOT-FOUND` during cmake. This usually means the environment variable is not set correctly, or mkl-include is not present on your system.
+If the error `MKL_INCLUDE_DIR NOT-FOUND` occurs, please check the environment variable or follow the subsequent steps.
+If compilation is done without any errors, please skip the steps 2 and 3.
 
-Install mkl-include with:
+<details>
+  <summary>Possible solutions</summary>
+  2. Install mkl-include via conda
+  
+  ```bash
+  conda install -c intel mkl-include
+  conda install mkl-include # if the above failed
+  ```
+  
+  3. Append `DMKL_INCLUDE_DIR` to the cmake command and repeat step 1
+  
+  ```bash
+  cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'` -DMKL_INCLUDE_DIR=$CONDA_PREFIX/include
+  ```
+  
+  If the `undefined reference to XXX` error with `libtorch_cpu.so` occurs, check the `$LD_LIBRARY_PATH`.
+  If PyTorch is installed using Conda, `libmkl_*.so` files can be found in `$CONDA_PREFIX/lib`.
+  Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
+  
+  For other error cases, the solution can be found in [`pair-nequip`](https://github.com/mir-group/pair_nequip) repository as we share the architecture.
+</details>
+
+If the compilation is successful, the executable `lmp` can be found at `{path_to_lammps_dir}/build`.
+To use this binary easily, create a soft link in your bin directory (which should be included in your `$PATH`).
 
 ```bash
-conda install -c intel mkl-include
-```
-
-If you encounter an error, remove `-c intel`. This is a known bug in the recent Conda version.
-
-Append the following to your cmake command:
-
-```bash
--DMKL_INCLUDE_DIR=$CONDA_PREFIX/include
-```
-
-If you see hundreds of `undefined reference to XXX` errors with `libtorch_cpu.so` at the end of compilation, check your `$LD_LIBRARY_PATH`. PyTorch depends on MKL libraries (this is a default backend for torch+CPU), therefore you already have them. For example, if you installed PyTorch using Conda, you may find `libmkl_*.so` files under `$CONDA_PREFIX/lib`. Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
-
-For other error cases, you might want to check [`pair-nequip`](https://github.com/mir-group/pair_nequip), as the `pair-nequip` and SevenNet+LAMMPS shares similar requirements: torch + LAMMPS.
-If the compilation is successful, you will find the executable at `{path_to_lammps_dir}/build/lmp`. To use this binary easily, for example, create a soft link in your bin directory (which should be included in your `$PATH`).
-
-```bash
-ln -s {absolute_path_to_lammps_dir}/build/lmp $HOME/.local/bin/lmp
+ln -s {absolute_path_to_lammps_directory}/build/lmp $HOME/.local/bin/lmp
 ```
 
 This will allow you to run the binary using `lmp -in my_lammps_script.lmp`.
-
-```bash
-{lammps_binary} -help | grep e3gnn
-```
-
-If the SevenNet is successfully installed in LAMMPS, you will see `e3gnn` and `e3gnn/parallel` as pair_style.
 
 #### Single-GPU MD
 
