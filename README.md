@@ -160,7 +160,7 @@ Please note that `batch_size` in input.yaml indicates `batch_size` per GPU.
 
 #### 4. Inference
 
-Using the checkpoint after the training, the properties such as energy, force, and stress can be inferred directly. 
+Using the checkpoint after the training, the properties such as energy, force, and stress can be inferred directly.
 
 ```bash
 sevenn_inference checkpoint_best.pth path_to_my_structures/*
@@ -234,22 +234,22 @@ If compilation is done without any errors, please skip the steps 2 and 3.
 <details>
   <summary>Possible solutions</summary>
   2. Install mkl-include via conda
-  
+
   ```bash
   conda install -c intel mkl-include
   conda install mkl-include # if the above failed
   ```
-  
+
   3. Append `DMKL_INCLUDE_DIR` to the cmake command and repeat step 1
-  
+
   ```bash
   cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'` -DMKL_INCLUDE_DIR=$CONDA_PREFIX/include
   ```
-  
+
   If the `undefined reference to XXX` error with `libtorch_cpu.so` occurs, check the `$LD_LIBRARY_PATH`.
   If PyTorch is installed using Conda, `libmkl_*.so` files can be found in `$CONDA_PREFIX/lib`.
   Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
-  
+
   For other error cases, the solution can be found in [`pair-nequip`](https://github.com/mir-group/pair_nequip) repository as we share the architecture.
 </details>
 
