@@ -23,7 +23,9 @@ We provide the training MAEs (energy, force, and stress), F1 score for WBM datas
 These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [ASE calculator](#ase_calculator) to see the way to load a model through ASE calculator.
 For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
-* **l3i5**
+---
+
+### **l3i5**
   * Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
@@ -34,7 +36,9 @@ For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 > * F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
 > * Speed: 28m 38s / epoch (with 8 A100 GPU cards)
 
-* **SevenNet-0 (11Jul2024)**
+---
+
+### **SevenNet-0 (11Jul2024)**
   * Keywords in ASE: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
 The training is changed from [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) to [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), compared to **SevenNet-0 (22May2024)**
@@ -45,7 +49,9 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 > * F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
 > * Speed: 6m 41s / epoch (with 8 A100 GPU cards)
 
-* **SevenNet-0 (22May2024)**
+---
+
+### **SevenNet-0 (22May2024)**
   * Keywords in ASE: `7net-0_22May2024` and `SevenNet-0_22May2024`
 
 The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
