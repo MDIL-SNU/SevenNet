@@ -19,51 +19,57 @@ The installation and usage of SevenNet are split into two parts: training + comm
  - CUDA-accelerated D3 (van der Waals) dispersion
 
 ## Pre-trained models
-We provide three pre-trained models here.
+Currently, we provide three pre-trained SevenNet models. Each models have different hyperparameters and training set, resulting in different accuracy and speed. Please read carefully the descriptions below and choose the model depending on purposes. 
+We write down the main features of models and their training energy, force, and stress MAEs.
+For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
-* **l3i5 (09Dec2024)**
+These models can be used as interatomic potential on LAMMPS, and loaded by calling the keywords of each model in ASE calculator. The 
 
-The model architecture is modified so that spherical harmonics up to *l*=3. The other hyperparameters and training set are identical to **SevenNet-0 (11July2024)**.
+* **l3i5**
+
+The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to three, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of two.
+While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)**. 
 
 MAE: 0.042 eV/atom, $\kappa_{\mathrm{SRME}}$: 0.560
 
+Keywords: `l3i5`
+
 * **SevenNet-0 (11Jul2024)**
 
-The model architecture is identical to **SevenNet-0 (22May2024)**. The only difference is the training set, [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11July2024).
+The model is trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) instead of [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) used in **SevenNet-0 (22May2024)**. For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
 MAE: 0.048 eV/atom, $\kappa_{\mathrm{SRME}}$: 0.767
 
-Keywords: `7net-0`, `SevenNet-0`, `7net-0_11July2024`, and `SevenNet-0_11July2024`
+Keywords: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
 * **SevenNet-0 (22May2024)**
 
 The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.  
-Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2). The convolutional filter employs an cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
+Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
+The convolutional filter employs an cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and spherical harmonics up to *l*=2. The number of parameters are 0.84 M.
 
 The training set is [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. This is the model used in [our paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190). For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
 Keywords: `7net-0_22May2024` and `SevenNet-0_22May2024`
 
-**Acknowledgments**: These works were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
+**Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
 ## Contents
-- [SevenNet](#sevennet)
-  - [Installation](#installation)
-  - [Usage](#usage)
-    - [SevenNet-0](#sevennet-0)
-    - [SevenNet Calculator for ASE](#sevennet-calculator-for-ase)
-    - [Training sevenn](#training)
-      - [Multi-GPU training](#multi-gpu-training)
-    - [sevenn_graph_build](#sevenn_graph_build)
-    - [sevenn_inference](#sevenn_inference)
-    - [sevenn_get_model](#sevenn_get_model)
+- [Installation](#installation)
+- [Usage](#usage)
+  - [ASE calculator](#ase-calculator)
+  - [Training sevenn](#training)
+    - [Multi-GPU training](#multi-gpu-training)
+  - [sevenn_graph_build](#sevenn_graph_build)
+  - [sevenn_inference](#sevenn_inference)
+  - [sevenn_get_model](#sevenn_get_model)
+- [MD simulation with LAMMPS](#md-simulation-with-lammps)
   - [Installation for LAMMPS](#installation-for-lammps)
-  - [Usage for LAMMPS](#usage-for-lammps)
-    - [To check installation](#to-check-installation)
-    - [For serial model](#for-serial-model)
-    - [For parallel model](#for-parallel-model)
-  - [Future Works](#future-works)
-  - [Citation](#citation)
+    - [Installation check](#installation-check)
+  - [For serial model](#for-serial-model)
+  - [For parallel model](#for-parallel-model)
+- [Future Works](#future-works)
+- [Citation](#citation)
 
 ## Installation
 ### Requirements
@@ -195,7 +201,7 @@ sevenn_patch_lammps ./lammps_sevenn {--d3}
 ```
 
 > [!TIP]
-> Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).**
+> Add `--d3` option to install GPU accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style (currently available in main branch only, not pip). For its usage and details, click [here](sevenn/pair_e3gnn).
 
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for the detailed patch process.
 
@@ -239,32 +245,32 @@ If you see hundreds of `undefined reference to XXX` errors with `libtorch_cpu.so
 
 For other error cases, you might want to check [`pair-nequip`](https://github.com/mir-group/pair_nequip), as the `pair-nequip` and SevenNet+LAMMPS shares similar requirements: torch + LAMMPS.
 
-## Usage for LAMMPS
-
-### To check installation
+### Installation check
 
 ```bash
 {lammps_binary} -help | grep e3gnn
 ```
 
-You will see `e3gnn` and `e3gnn/parallel` as pair_style.
+If the SevenNet is successfully installed in LAMMPS, you will see `e3gnn` and `e3gnn/parallel` as pair_style.
+
+## Usage for LAMMPS
 
 ### For serial model
 
 ```txt
-units         metal
-atom_style    atomic
-pair_style e3gnn
-pair_coeff * * {path to serial model} {space separated chemical species}
+units       metal
+atom_style  atomic
+pair_style  e3gnn
+pair_coeff  * * {path to serial model} {space separated chemical species}
 ```
 
 ### For parallel model
 
 ```txt
-units         metal
-atom_style    atomic
-pair_style e3gnn/parallel
-pair_coeff * * {number of message-passing layers} {path to the directory containing parallel model} {space separated chemical species}
+units       metal
+atom_style  atomic
+pair_style  e3gnn/parallel
+pair_coeff  * * {number of message-passing layers} {path to the directory containing parallel model} {space separated chemical species}
 ```
 
 For example,
