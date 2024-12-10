@@ -18,10 +18,10 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
 
 ## Pre-trained models
 So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
-In addition, as model performances, we provide the training MAEs (energy, force, and stress), F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb.
+We provide the training MAEs (energy, force, and stress), F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb.
 
-For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [ASE calculator](#ase_calculator) to see the way to load a model through ASE calculator.
+For detailed performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
 * **l3i5**
 
@@ -29,7 +29,7 @@ The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) t
 While **l3i5** model provides significantly improved accuracy in range of systems, the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)** due to the increased number of parameters of 1.17 M.
 For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 
-Keywords: `7net-l3i5`, `SevenNet-l3i5`
+Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
 > * MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
 > * F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
@@ -41,7 +41,7 @@ The training is changed from [MPF.2021.2.8](https://figshare.com/articles/datase
 This model is default pre-trained model uploaded in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
-Keywords: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
+Keywords in ASE: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
 > * MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
 > * F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
@@ -53,11 +53,12 @@ The model architecture is mainly line with [GNoME](https://github.com/google-dee
 Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
 The convolutional filter employs a cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and $l_{\mathrm{max}}$ of 2, resulting in the number of parameters is 0.84 M.
 
-The model was trained with [`MPF.2021.2.8`](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. For more information, please read the [paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190) and visit [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
+The model was trained with [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. For more information, please read the [paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190) and visit [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
-Keywords for ASE: `7net-0_22May2024` and `SevenNet-0_22May2024`
+Keywords in ASE: `7net-0_22May2024` and `SevenNet-0_22May2024`
 
 > * MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
+> * Speed: 6m 41s / epoch (with 8 A100 GPU cards)
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
@@ -250,8 +251,8 @@ If the `undefined reference to XXX` error with `libtorch_cpu.so` occurs, check t
 If PyTorch is installed using Conda, `libmkl_*.so` files can be found in `$CONDA_PREFIX/lib`.
 Ensure that `$LD_LIBRARY_PATH` includes `$CONDA_PREFIX/lib`.
 
-> [!TIP]
-> For other error cases, the solution can be found in [`pair-nequip`](https://github.com/mir-group/pair_nequip) repository as we share the architecture.
+For other error cases, the solution can be found in [`pair-nequip`](https://github.com/mir-group/pair_nequip) repository as we share the architecture.
+
 </details>
 
 If the compilation is successful, the executable `lmp` can be found at `{path_to_lammps_dir}/build`.
