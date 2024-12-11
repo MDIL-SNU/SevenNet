@@ -18,10 +18,10 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
 
 ## Pre-trained models
 So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
-We provide the training MAEs (energy, force, and stress) F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb. For details on these metrics and performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
+We provide the training set MAEs (energy, force, and stress) F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb. For details on these metrics and performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
 These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [ASE calculator](#ase_calculator) to see the way to load a model through ASE calculator.
-Additionally, `keywords` can be called in other parts of SevenNet, such as `sevenn_inference`, `sevenn_get_model`, and `checkpoint:` key of `input.yaml` for fine-tuning.
+Additionally, `keywords` can be called in other parts of SevenNet, such as `sevenn_inference`, `sevenn_get_model`, and `checkpoint` in `input.yaml` for fine-tuning.
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
@@ -31,7 +31,7 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 > Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
-You can choose either the **SevenNet-0** or **l3i5**. While **l3i5** offers improved accuracy across various systems compared to **SevenNet-0**, it is slower.
+While **l3i5** offers improved accuracy across various systems compared to **SevenNet-0 (11Jul2024)**, it is approximately four times slower.
 
 * Training set MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
 * Matbench F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
@@ -232,7 +232,8 @@ If the error `MKL_INCLUDE_DIR NOT-FOUND` occurs, please check the environment va
 If compilation is done without any errors, please skip this.
 
 <details>
-<summary>Possible solutions</summary>
+<summary>**Possible solutions**</summary>
+
 2. Install mkl-include via conda
 
 ```bash
