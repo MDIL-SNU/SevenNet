@@ -232,7 +232,7 @@ If the error `MKL_INCLUDE_DIR NOT-FOUND` occurs, please check the environment va
 If compilation is done without any errors, please skip this.
 
 <details>
-<summary>**Possible solutions**</summary>
+<summary><b>Possible solutions</b></summary>
 
 2. Install mkl-include via conda
 
