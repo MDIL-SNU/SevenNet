@@ -36,7 +36,7 @@ For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 
 * MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
 * F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
-* Speed: 28m 38s / epoch (with 8 A100 GPU cards)
+* Speed: 28m 38s / epoch (with 32 A100 GPU cards)
 
 ---
 
@@ -49,7 +49,7 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 
 * MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
 * F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
-* Speed: 6m 41s / epoch (with 8 A100 GPU cards)
+* Speed: 6m 41s / epoch (with 32 A100 GPU cards)
 
 ---
 
@@ -62,7 +62,7 @@ The convolutional filter employs a cutoff radius of 5 Angstrom and a tensor prod
 The model was trained with [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. For more information, please read the [paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190) and visit [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
 * MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
-* Speed: 6m 41s / epoch (with 8 A100 GPU cards)
+* Speed: 6m 41s / epoch (with 4 A100 GPU cards)
 
 ## Contents
 - [Installation](#installation)
