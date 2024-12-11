@@ -16,10 +16,9 @@ It can be directly applied to any system without training and fine-tuned with an
 MAE (Mean absolute error)
 |                |Energy (eV/atom)|Force (eV/Å)|Stress (GPa)|
 |----------------|--------|-------|-------|
-|Train|0.015|0.035|0.27|
-|Valid|0.032|0.064|0.56|
+|Train|0.016|0.037|0.30|
+|Valid|0.032|0.064|0.58|
 |Test|0.025|0.070|0.68|
-
 
 ### Note
 You can obtain models for LAMMPS by running the following command (-p for parallel)
