@@ -1,9 +1,7 @@
 import argparse
 import os
 
-import sevenn.util
 from sevenn import __version__
-from sevenn.scripts.deploy import deploy, deploy_parallel
 
 description_get_model = (
     f'sevenn version={__version__}, sevenn_get_model.'
@@ -17,11 +15,15 @@ output_name_help = 'filename prefix'
 get_parallel_help = 'deploy parallel model'
 
 
-def main(args=None):
-    checkpoint, output_prefix, get_parallel, modal, save_cp = cmd_parse_get_model(
-        args
-    )
+def run(args):
+    import sevenn.util
+    from sevenn.scripts.deploy import deploy, deploy_parallel
+
+    checkpoint = args.checkpoint
+    output_prefix = args.output_prefix
+    get_parallel = args.get_parallel
     get_serial = not get_parallel
+    modal = args.modal
 
     if output_prefix is None:
         output_prefix = 'deployed_parallel' if not get_serial else 'deployed_serial'
@@ -38,7 +40,7 @@ def main(args=None):
         deploy_parallel(checkpoint_path, output_prefix, modal)
 
 
-def cmd_parse_get_model(args=None):
+def main():
     ag = argparse.ArgumentParser(description=description_get_model)
     ag.add_argument('checkpoint', help=checkpoint_help, type=str)
     ag.add_argument(
@@ -53,16 +55,6 @@ def cmd_parse_get_model(args=None):
         help='Modality of multi-modal model',
         type=str,
     )
-    ag.add_argument(
-        '-s',
-        '--save_checkpoint',
-        help='Save converted checkpoint',
-        action='store_true',
-    )
     args = ag.parse_args()
-    checkpoint = args.checkpoint
-    output_prefix = args.output_prefix
-    get_parallel = args.get_parallel
-    modal = args.modal
-    save_cp = args.save_checkpoint
-    return checkpoint, output_prefix, get_parallel, modal, save_cp
+
+    run(args)
