@@ -4,9 +4,7 @@ import os
 import sys
 from datetime import datetime
 
-import sevenn.scripts.graph_build as graph_build
 from sevenn import __version__
-from sevenn.sevenn_logger import Logger
 
 description = (
     f'sevenn version={__version__}, sevenn_graph_build.\n'
@@ -24,8 +22,10 @@ filename_help = (
 legacy_help = 'build legacy .sevenn_data'
 
 
-def main(args=None):
-    args = cmd_parse_data(args)
+def run(args):
+    import sevenn.scripts.graph_build as graph_build
+    from sevenn.sevenn_logger import Logger
+
     source = glob.glob(args.source)
     cutoff = args.cutoff
     num_cores = args.num_cores
@@ -80,7 +80,7 @@ def main(args=None):
             )
 
 
-def cmd_parse_data(args=None):
+def main():
     ag = argparse.ArgumentParser(description=description)
 
     ag.add_argument('source', help=source_help, type=str)
@@ -124,4 +124,4 @@ def cmd_parse_data(args=None):
     )
 
     args = ag.parse_args()
-    return args
+    run(args)
