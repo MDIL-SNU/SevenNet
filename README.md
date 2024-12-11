@@ -11,7 +11,7 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
 
 
 ## Features
- - Pre-trained GNN interatomic potential, SevenNet-0 with fine-tuning interface
+ - Pre-trained GNN interatomic potential and fine-tuning interface.
  - Python [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator support
  - GPU-parallelized molecular dynamics with LAMMPS
  - CUDA-accelerated D3 (van der Waals) dispersion
@@ -27,16 +27,16 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 ---
 
-### **l3i5**
+### **SevenNet-l3i5**
 > Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
 Note that the **l3i5** model provides improved accuracy in a range of systems, but the inference speed is approximately four times slower than **SevenNet-0 (11Jul2024)**.
 For more information, see [here](sevenn/pretrained_potentials/SevenNet_l3i5).
 
-* MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
-* F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
-* Speed: 28m 38s / epoch (with 32 A100 GPU cards)
+* Training set MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
+* Matbench F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
+* Training speed: 28m 38s / epoch (with 32 A100 GPU cards)
 
 ---
 
@@ -47,9 +47,9 @@ Compared to **SevenNet-0 (22May2024)**, the training is changed from [MPF.2021.2
 This model is loaded as the default pre-trained model in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
-* MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
-* F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
-* Speed: 6m 41s / epoch (with 32 A100 GPU cards)
+* Training set MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
+* Matbench F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
+* Training speed: 6m 41s / epoch (with 32 A100 GPU cards)
 
 ---
 
@@ -61,8 +61,7 @@ Five interaction blocks with node features that consist of 128 scalars (*l*=0), 
 The convolutional filter employs a cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and $l_{\mathrm{max}}$ of 2, resulting in the number of parameters is 0.84 M.
 The model was trained with [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. For more information, please read the [paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190) and visit [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
 
-* MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
-* Speed: 6m 41s / epoch (with 4 A100 GPU cards)
+* Training set MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
 
 ## Contents
 - [Installation](#installation)
@@ -305,7 +304,7 @@ One GPU per MPI process is expected. The simulation may run inefficiently if the
 If you use this code, please cite our paper:
 ```txt
 @article{park_scalable_2024,
-	title = {Scalable {Parallel} {Algorithm} for {Graph} {Neural} {Network} {Interatomic} {Potentials} in {Molecular} {Dynamics} {Simulations}},
+	title = {Scalable Parallel Algorithm for Graph Neural Network Interatomic Potentials in Molecular Dynamics Simulations},
 	volume = {20},
 	doi = {10.1021/acs.jctc.4c00190},
 	number = {11},
