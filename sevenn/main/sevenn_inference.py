@@ -3,11 +3,7 @@ import glob
 import os
 import sys
 
-import torch
-
 from sevenn import __version__
-from sevenn.scripts.inference import inference
-from sevenn.util import pretrained_name_to_path
 
 description = (
     f'sevenn version={__version__}, sevenn_inference. '
@@ -18,8 +14,12 @@ checkpoint_help = 'Checkpoint or pre-trained model name (7net-0)'
 target_help = 'Target files to evaluate'
 
 
-def main(args=None):
-    args = cmd_parse_data(args)
+def run(args):
+    import torch
+
+    from sevenn.scripts.inference import inference
+    from sevenn.util import pretrained_name_to_path
+
     out = args.output
 
     if os.path.exists(out):
@@ -59,7 +59,7 @@ def main(args=None):
     )
 
 
-def cmd_parse_data(args=None):
+def main():
     ag = argparse.ArgumentParser(description=description)
     ag.add_argument('checkpoint', type=str, help=checkpoint_help)
     ag.add_argument('targets', type=str, nargs='+', help=target_help)
@@ -105,4 +105,4 @@ def cmd_parse_data(args=None):
 
     args = ag.parse_args()
 
-    return args
+    run(args)

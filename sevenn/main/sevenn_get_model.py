@@ -1,9 +1,7 @@
 import argparse
 import os
 
-import sevenn.util
 from sevenn import __version__
-from sevenn.scripts.deploy import deploy, deploy_parallel
 
 description_get_model = (
     f'sevenn version={__version__}, sevenn_get_model.'
@@ -17,8 +15,13 @@ output_name_help = 'filename prefix'
 get_parallel_help = 'deploy parallel model'
 
 
-def main(args=None):
-    checkpoint, output_prefix, get_parallel = cmd_parse_get_model(args)
+def run(args):
+    import sevenn.util
+    from sevenn.scripts.deploy import deploy, deploy_parallel
+
+    checkpoint = args.checkpoint
+    output_prefix = args.output_prefix
+    get_parallel = args.get_parallel
     get_serial = not get_parallel
 
     if output_prefix is None:
@@ -41,7 +44,7 @@ def main(args=None):
         deploy_parallel(stct_dct, config, output_prefix)
 
 
-def cmd_parse_get_model(args=None):
+def main():
     ag = argparse.ArgumentParser(description=description_get_model)
     ag.add_argument('checkpoint', help=checkpoint_help, type=str)
     ag.add_argument(
@@ -50,8 +53,7 @@ def cmd_parse_get_model(args=None):
     ag.add_argument(
         '-p', '--get_parallel', help=get_parallel_help, action='store_true'
     )
+
     args = ag.parse_args()
-    checkpoint = args.checkpoint
-    output_prefix = args.output_prefix
-    get_parallel = args.get_parallel
-    return checkpoint, output_prefix, get_parallel
+
+    run(args)
