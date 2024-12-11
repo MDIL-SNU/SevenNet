@@ -4,7 +4,6 @@ keep old pre-trained checkpoints unchanged.
 """
 
 import copy
-import warnings
 
 import torch
 
@@ -14,8 +13,7 @@ import sevenn._keys as KEY
 def patch_old_config(config):
     version = config.get('version', None)
     if not version:
-        warnings.warn('No version found in config. Assume 0.9.0')
-        version = '0.9.0'
+        raise ValueError('No version found in config')
 
     major, minor, _ = version.split('.')[:3]
     major, minor = int(major), int(minor)
@@ -159,8 +157,7 @@ def sort_old_convolution(model_now, state_dict):
 def patch_state_dict_if_old(state_dict, config_cp, now_model):
     version = config_cp.get('version', None)
     if not version:
-        warnings.warn('No version found in config. Assume 0.9.0')
-        version = '0.9.0'
+        raise ValueError('No version found in config')
     vs = version.split('.')
     vsuffix = ''
     if len(vs) == 4:
@@ -174,6 +171,6 @@ def patch_state_dict_if_old(state_dict, config_cp, now_model):
     # TODO: change version criteria before release!!!
     #       it causes problem if model is sorted but this function is called
     #       ... more robust way? idk
-    if ver < '0.11.0' or ver == '0.11.0' and vsuffix == 'dev0':
+    if ver < '0.11.0' or (ver == '0.11.0' and vsuffix == 'dev0'):
         state_dict = sort_old_convolution(now_model, state_dict)
     return state_dict
