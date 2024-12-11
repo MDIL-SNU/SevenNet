@@ -1,0 +1,92 @@
+model:
+    chemical_species: auto
+
+    cutoff: 5.0
+    irreps_manual:
+    - 128x0e
+    - 128x0e+64x1e+32x2e+32x3e
+    - 128x0e+64x1e+32x2e+32x3e
+    - 128x0e+64x1e+32x2e+32x3e
+    - 128x0e+64x1e+32x2e+32x3e
+    - 128x0e
+    channel: 128
+    lmax: 3
+    num_convolution_layer: 5
+    is_parity: false
+    radial_basis:
+        radial_basis_name: bessel
+        bessel_basis_num: 8
+    cutoff_function:
+        cutoff_function_name: poly_cut
+        poly_cut_p_value: 6
+
+    act_radial: silu
+    weight_nn_hidden_neurons:
+    - 64
+    - 64
+    act_scalar:
+        e: silu
+        o: tanh
+    act_gate:
+        e: silu
+        o: tanh
+
+    train_denominator: false
+    train_shift_scale: false
+    use_bias_in_linear: false
+
+    readout_as_fcn: false
+    self_connection_type: linear
+    interaction_type: nequip
+
+train:
+    random_seed: 1
+    epoch: 600
+    loss: Huber
+    loss_param:
+        delta: 0.01
+    optimizer: adam
+    optim_param:
+        lr: 0.01
+    scheduler: linearlr
+    scheduler_param:
+        start_factor: 1.0
+        total_iters: 600
+        end_factor: 0.0001
+    force_loss_weight: 1.0
+    stress_loss_weight: 0.01
+    per_epoch: 10
+    is_train_stress: true
+    train_shuffle: true
+    error_record:
+    -   - Energy
+        - MAE
+    -   - Energy
+        - RMSE
+    -   - Force
+        - MAE
+    -   - Force
+        - RMSE
+    -   - Stress
+        - MAE
+    -   - Stress
+        - RMSE
+    -   - Energy
+        - Loss
+    -   - Force
+        - Loss
+    -   - Stress
+        - Loss
+    -   - TotalLoss
+        - None
+    best_metric: TotalLoss
+data:
+    data_format: ase
+    data_format_args: {}
+
+    batch_size: 1024  # global batch size, should be divided by the number of GPUs
+
+    load_trainset_path: '**path_to_trainset**'
+    load_validset_path: '**path_to_validset**'
+    shift: 'elemwise_reference_energies'
+    scale: 'force_rms'

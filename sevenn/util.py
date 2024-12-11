@@ -189,12 +189,18 @@ def pretrained_name_to_path(name: str) -> str:
     import sevenn._const as _const
 
     name = name.lower()
-    heads = ['sevennet-0', '7net-0']
+    heads = ['sevennet', '7net']
     checkpoint_path = None
-    if name in [f'{n}_11july2024' for n in heads] or name in heads:
-        checkpoint_path = _const.SEVENNET_0_11July2024
-    elif name in [f'{n}_22may2024' for n in heads]:
+    if (  # TODO: regex
+        name in [f'{n}-0_11july2024' for n in heads]
+        or name in [f'{n}-0_11jul2024' for n in heads]
+        or name in ['sevennet-0', '7net-0']
+    ):
+        checkpoint_path = _const.SEVENNET_0_11Jul2024
+    elif name in [f'{n}-0_22may2024' for n in heads]:
         checkpoint_path = _const.SEVENNET_0_22May2024
+    elif name in [f'{n}-l3i5' for n in heads]:
+        checkpoint_path = _const.SEVENNET_l3i5
     else:
         raise ValueError('Not a valid potential')
 

@@ -132,8 +132,8 @@ def inference(
     Inference model on the target dataset, writes
     per_graph, per_atom inference results in csv format
     to the output_dir
-    If given target doesn't have EFS key, it puts dummy
-    values to the it.
+    If a given target doesn't have EFS key, it puts dummy
+    values.
 
     Args:
         checkpoint: model checkpoint path,
