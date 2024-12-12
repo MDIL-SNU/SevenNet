@@ -10,6 +10,11 @@ import torch
 import sevenn._keys as KEY
 
 
+def version_tuple(v1):
+    v1 = tuple(map(int, v1.split('.')))
+    return v1
+
+
 def patch_old_config(config):
     version = config.get('version', None)
     if not version:
@@ -162,15 +167,18 @@ def patch_state_dict_if_old(state_dict, config_cp, now_model):
     vsuffix = ''
     if len(vs) == 4:
         vsuffix = vs[-1]
-        vs = vs[:3]
-    ver = '.'.join(vs)
+        vs = version_tuple('.'.join(vs[:3]))
+    else:
+        vs = version_tuple('.'.join(vs))
 
-    if ver < '0.10.0':
+    if vs < version_tuple('0.10.0'):
         state_dict = map_old_model(state_dict)
 
     # TODO: change version criteria before release!!!
     #       it causes problem if model is sorted but this function is called
     #       ... more robust way? idk
-    if ver < '0.11.0' or (ver == '0.11.0' and vsuffix == 'dev0'):
+    if vs < version_tuple('0.11.0') or (
+        vs == version_tuple('0.11.0') and vsuffix == 'dev0'
+    ):
         state_dict = sort_old_convolution(now_model, state_dict)
     return state_dict
