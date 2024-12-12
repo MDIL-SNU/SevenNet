@@ -29,6 +29,7 @@ All notable changes to this project will be documented in this file.
 ## [0.10.3]
 ### Added
 - SevenNet-l3i5, checkpoint, preset. (keywords: 7net-l3i5, sevennet-l3i5)
+- SevenNet-l3i5 test
 ### Changed
 - Now --help do not load unnecessary imports (fast!)
 - README
