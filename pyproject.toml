@@ -58,6 +58,7 @@ sevenn = [
     "presets/*.yaml",
     "pretrained_potentials/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth",
     "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth",
+    "pretrained_potentials/SevenNet_l3i5/checkpoint_l3i5.pth",
     "py.typed",
 ]
 
