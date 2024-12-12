@@ -3,7 +3,6 @@
 import pytest
 import torch
 from ase.build import bulk, molecule
-from torch_geometric.data.batch import Batch
 
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataload import unlabeled_atoms_to_graph
@@ -107,6 +106,52 @@ def test_7net0_11July2024(atoms_pbc, atoms_mol):
             [0.0, -1.3619621e01, 7.5937047e00],
             [0.0, 9.3918495e00, -1.0172190e01],
             [0.0, 4.2277718e00, 2.5784855e00],
+        ]
+    )
+
+    assert acl(g1.inferred_total_energy, g1_ref_e)
+    assert acl(g1.inferred_force, g1_ref_f)
+    assert acl(g1.inferred_stress, g1_ref_s)
+
+    assert acl(g2.inferred_total_energy, g2_ref_e)
+    assert acl(g2.inferred_force, g2_ref_f)
+
+
+def test_7net_l3i5(atoms_pbc, atoms_mol):
+    """
+    Reference from v0.9.3.post1 with sevennet_calculator
+    """
+    cp_path = pretrained_name_to_path('7net-l3i5')
+    model, config = model_from_checkpoint(cp_path)
+    cutoff = config['cutoff']
+
+    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_pbc, cutoff))
+    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_mol, cutoff))
+
+    model.set_is_batch_data(False)
+    g1 = model(g1)
+    g2 = model(g2)
+
+    model.set_is_batch_data(True)
+
+    g1_ref_e = torch.tensor([-3.611131191253662])
+    g1_ref_f = torch.tensor(
+        [
+            [13.430887, 0.08655541, 0.08754013],
+            [-13.430886, -0.08655544, -0.08754011],
+        ]
+    )
+    g1_ref_s = -1 * torch.tensor(
+        # xx, yy, zz, xy, yz, zx
+        [-0.6818918, -0.04104544, -0.04107663, 0.04794561, 0.00565416, 0.04793138]
+    )
+
+    g2_ref_e = torch.tensor([-12.700481414794922])
+    g2_ref_f = torch.tensor(
+        [
+            [0.0, -1.4547814e01, 8.1347866],
+            [0.0, 1.0308369e01, -1.0880318e01],
+            [0.0, 4.2394452, 2.7455316],
         ]
     )
 
