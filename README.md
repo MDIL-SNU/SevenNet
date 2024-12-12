@@ -27,7 +27,7 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 ---
 
-### **SevenNet-l3i5**
+### **SevenNet-l3i5 (12Dec2024)**
 > Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
