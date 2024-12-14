@@ -53,6 +53,8 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 
 ---
 
+In addition to these latest models, you can find our legacy models from [pretrained_potentials](./sevenn/pretrained_potentials).
+
 ## Contents
 - [Installation](#installation)
 - [Usage](#usage)
