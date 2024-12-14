@@ -146,6 +146,8 @@ def init_shift_scale(config):
             s = s.tolist()
         if isinstance(s, dict):
             s = {k: v.tolist() if hasattr(v, 'tolist') else v for k, v in s.items()}
+        if isinstance(s, list) and len(s) == 1:
+            s = s[0]
         shift_scale.append(s)
     shift, scale = shift_scale
 
