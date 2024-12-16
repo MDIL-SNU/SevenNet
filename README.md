@@ -31,12 +31,12 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 ### **SevenNet-MF-0 (16Dec2024)**
 > Keywords in ASE: `7net-MF-0` and `SevenNet-MF-0`
 
-The model is trained on PBE (+U) and $\rm{r}^{2}$SCAN database provided in Materials Project.
+The model is trained on PBE (+U) and $\mathrm{r}^{2}$SCAN database provided in Materials Project.
 It has the same architecture with **SevenNet-0 (11Jul2024)**, except this model contains additional 'fidelity-dependent' parameters utilized for multi-fidelity training.
 However, overhead of calculations regarding fidelity-dependent parameters are negligible, which results in almost the same inference speed with **SevenNet-0 (11Jul2024)**.
 
 
-* Training set MAE ($\rm{r}^{2}$SCAN): 10.8 meV/atom (energy), 0.018 eV/Ang. (force), and 0.58 kbar (stress)
+* Training set MAE ($\mathrm{r}^{2}$SCAN): 10.8 meV/atom (energy), 0.018 eV/Ang. (force), and 0.58 kbar (stress)
 * Training time: 6.11 GPU-days on A100
 ---
 
