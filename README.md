@@ -15,6 +15,7 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
  - Python [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator support
  - GPU-parallelized molecular dynamics with LAMMPS
  - CUDA-accelerated D3 (van der Waals) dispersion
+ - Multi-fidelity training for combining multiple database with different calculation settings.
 
 ## Pre-trained models
 So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
@@ -25,6 +26,18 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
+---
+
+### **SevenNet-MF-0 (16Dec2024)**
+> Keywords in ASE: `7net-MF-0` and `SevenNet-MF-0`
+
+The model is trained on PBE (+U) and r$^2$SCAN database provided in Materials Project.
+It has the same architecture with **SevenNet-0 (11Jul2024)**, except this model contains additional 'fidelity-dependent' parameters utilized for multi-fidelity training.
+However, overhead of calculations regarding fidelity-dependent parameters are negligible, which results in almost the same inference speed with **SevenNet-0 (11Jul2024)**.
+
+
+* Training set MAE (r$^2$SCAN): 10.8 meV/atom (energy), 0.018 eV/Ang. (force), and 0.58 kbar (stress)
+* Training time: 6.11 GPU-days on A100
 ---
 
 ### **SevenNet-l3i5 (12Dec2024)**
@@ -117,7 +130,7 @@ With the `sevenn_preset` command, the input file that sets the training paramete
 sevenn_preset {preset keyword} > input.yaml
 ```
 
-Available preset keywords are: `base`, `fine_tune`, `sevennet-0`, and `sevennet-l3i5`.
+Available preset keywords are: `base`, `fine_tune`, `multi_modal`, `sevennet-0`, and `sevennet-l3i5`.
 Check comments in the preset yaml files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
 To reuse a preprocessed training set, you can specify `sevenn_data/${dataset_name}.pt` to the `load_trainset_path:` in the `input.yaml`.
 
