@@ -57,6 +57,9 @@ SEVENNET_0_22May2024 = (
 SEVENNET_l3i5 = (
     f'{_prefix}/SevenNet_l3i5/checkpoint_l3i5.pth'
 )
+SEVENNET_MF_0 = (
+    f'{_prefix}/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth'
+)
 
 
 # to avoid torch script to compile torch_geometry.data

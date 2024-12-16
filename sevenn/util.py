@@ -201,6 +201,8 @@ def pretrained_name_to_path(name: str) -> str:
         checkpoint_path = _const.SEVENNET_0_22May2024
     elif name in [f'{n}-l3i5' for n in heads]:
         checkpoint_path = _const.SEVENNET_l3i5
+    elif name in [f'{n}-mf-0' for n in heads]:
+        checkpoint_path = _const.SEVENNET_MF_0
     else:
         raise ValueError('Not a valid potential')
 

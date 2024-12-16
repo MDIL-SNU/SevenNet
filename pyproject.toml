@@ -61,6 +61,7 @@ sevenn = [
     "pretrained_potentials/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth",
     "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth",
     "pretrained_potentials/SevenNet_l3i5/checkpoint_l3i5.pth",
+    "pretrained_potentials/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth",
     "py.typed",
 ]
 
