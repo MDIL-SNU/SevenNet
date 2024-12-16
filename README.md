@@ -35,7 +35,7 @@ While **l3i5** offers improved accuracy across various systems compared to **Sev
 
 * Training set MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
 * Matbench F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
-
+* Training time: 381 GPU-days on A100
 ---
 
 ### **SevenNet-0 (11Jul2024)**
@@ -50,7 +50,7 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 
 * Training set MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
 * Matbench F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
-
+* Training time: 90 GPU-days on A100
 ---
 
 In addition to these latest models, you can find our legacy models from [pretrained_potentials](./sevenn/pretrained_potentials).
