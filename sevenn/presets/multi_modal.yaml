@@ -27,10 +27,13 @@ model:
     train_denominator: False
     self_connection_type: 'linear'
 
-    use_modal_node_embedding: False
-    use_modal_self_inter_intro: True
-    use_modal_self_inter_outro: True
-    use_modal_output_block: True
+    # Followings are used to specify which part of the model would utilize fidelity-dependent parameters for multi-fidelity training.
+    # For detailed architecture, please refer to https://arxiv.org/abs/2409.07947
+    # Parts using fidelity-dependent weights are indicated as `Modified linear` layers in Figure 1.
+    use_modal_node_embedding: False    # If true, use modified linear layer in atom-type embedding layer.
+    use_modal_self_inter_intro: True   # If true, use modified linear layers in self-interaction block before the convolution in the interaction blocks.
+    use_modal_self_inter_outro: True   # If true, use modified linear layers in self-interaction block after the convolution in the interaction blocks.
+    use_modal_output_block: True       # If true, use modified linear layer in the output block.
 train:
     train_shuffle: True
     random_seed: 777
@@ -71,18 +74,18 @@ data:
     shift: 'elemwise_reference_energies'
     scale: 'force_rms'
 
-    use_modal_wise_shift: True
-    use_modal_wise_scale: False
+    use_modal_wise_shift: True    # If true, use different atomic energy shift for each database
+    use_modal_wise_scale: False   # If true, use different atomic energy scale for each database
 
     load_trainset_path:
 
-      - data_modality: pbe
+      - data_modality: pbe  # Name of database
         file_list:
           - file: "path to pbe dataset"  # ASE readable or .pt file (graph.pt)
         data_weight:
             energy: 1.0
-            force: 0.1
-            stress: 1.0
+            force: 0.1   # This weight would be additionally multiplied to `force_loss_weight` for this database
+            stress: 1.0  # This weight would be additionally multiplied to `stress_loss_weight` for this database
 
       - data_modality: scan
         file_list:
