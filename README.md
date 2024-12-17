@@ -35,32 +35,6 @@ The model is trained on PBE (+U) and $\mathrm{r}^{2}$ SCAN database provided in 
 It has the same architecture with **SevenNet-0 (11Jul2024)**, except this model contains additional 'fidelity-dependent' parameters utilized for multi-fidelity training.
 However, overhead of calculations regarding fidelity-dependent parameters are negligible, which results in almost the same inference speed with **SevenNet-0 (11Jul2024)**.
 
-To select the level-of-theory between PBE (+U) and $\mathrm{r}^{2}$ SCAN when using this model, following instructions can be used.
-1. Using ASE calculator
-
-Additional argument `modal` can be passed to `SevenNetCalculator` to specify the target level-of-theory.
-```python
-from sevenn.sevennet_calculator import SevenNetCalculator
-r2scan_calculator = SevenNetCalculator(model='7net-MF-0', device='cpu', modal='R2SCAN')
-pbe_calculator = SevenNetCalculator(model='7net-MF-0', device='cpu', modal='PBE')
-```
-
-2. Deploy model for LAMMPS
-
-Additional argument `--modal` would specify the target level-of-theory for deployment.
-```bash
-sevenn_get_model 7net-MF-0 --modal R2SCAN
-sevenn_get_model 7net-MF-0 --modal PBE
-```
-
-3. Inference mode from the checkpoint file
-
-Additional argument `--modal` would specify the target level-of-theory for inference.
-```bash
-sevenn_inference 7net-MF-0 r2scan_graph.pt --modal R2SCAN
-sevenn_inference 7net-MF-0 pbe_graph.pt --modal PBE
-```
-
 * Training set MAE ($\mathrm{r}^{2}$ SCAN): 10.8 meV/atom (energy), 0.018 eV/Ang. (force), and 0.58 kbar (stress)
 * Training time: 6.11 GPU-days on A100
 ---
