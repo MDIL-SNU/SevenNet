@@ -108,9 +108,12 @@ def _patch_data_info(
 ) -> None:
     keys = set()
     for graph, path in zip(graph_list, full_file_list):
+        if KEY.INFO not in graph:
+            graph[KEY.INFO] = {}
         graph[KEY.INFO].update({'file': os.path.abspath(path)})
         keys.update(graph[KEY.INFO].keys())
 
+    # save only safe subset of info (for batching)
     for graph in graph_list:
         info_dict = graph[KEY.INFO]
         info_dict.update({k: '' for k in keys if k not in info_dict})
@@ -175,7 +178,7 @@ def inference(
             processed_name='saved_graph.pt',
             **data_kwargs,
         )
-        full_file_list = dataset.full_file_list
+        full_file_list = dataset.full_file_list  # TODO: not used currently
     else:
         dataset = []
         for file in targets:
@@ -188,7 +191,11 @@ def inference(
             )
             dataset.extend(tmplist)
             full_file_list.extend([os.path.abspath(file)] * len(tmplist))
-    if full_file_list is not None and len(full_file_list) == len(dataset):
+    if (
+        full_file_list is not None
+        and len(full_file_list) == len(dataset)
+        and not isinstance(dataset, SevenNetGraphDataset)
+    ):
         _patch_data_info(dataset, full_file_list)  # type: ignore
 
     if modal:
