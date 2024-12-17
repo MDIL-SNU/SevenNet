@@ -165,7 +165,6 @@ def test_processing_continue_v2_7net0(tmp_path):
     scale_ref = np.array([1.73] * 89)
     conv_denominator_ref = np.array([35.989574] * 5)
 
-    print(cfg)
     with Logger().switch_file(str(tmp_path / 'log.sevenn')):
         state_dicts, epoch = processing_continue_v2(cfg)
     assert epoch == 601
