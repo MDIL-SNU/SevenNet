@@ -1,4 +1,6 @@
 import os
+import uuid
+from datetime import datetime
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 
 import torch
@@ -105,15 +107,12 @@ class Trainer:
                 optimizer_state_dict=optim_stct,
                 scheduler_state_dict=scheduler_stct,
         """
-        from sevenn.util import model_from_checkpoint, pretrained_name_to_path
+        from sevenn.util import load_checkpoint
 
-        if os.path.isfile(checkpoint):
-            checkpoint = checkpoint
-        else:
-            checkpoint = pretrained_name_to_path(checkpoint)
+        cp = load_checkpoint(checkpoint)
 
-        cp = torch.load(checkpoint, weights_only=False)
-        model, config = model_from_checkpoint(cp)
+        model = cp.build_model()
+        config = cp.config
         optimizer_cls = optim_dict[config[KEY.OPTIMIZER].lower()]
         scheduler_cls = scheduler_dict[config[KEY.SCHEDULER].lower()]
         loss_functions = get_loss_functions_from_config(config)
@@ -127,8 +126,8 @@ class Trainer:
                 'scheduler_cls': scheduler_cls,
                 'scheduler_args': config[KEY.SCHEDULER_PARAM],
             },
-            cp['optimizer_state_dict'],
-            cp['scheduler_state_dict'],
+            cp.optimizer_state_dict,
+            cp.scheduler_state_dict,
         )
 
     def run_one_epoch(
@@ -164,7 +163,9 @@ class Trainer:
             if is_train:
                 total_loss = torch.tensor([0.0], device=self.device)
                 for loss_def, w in self.loss_functions:
-                    total_loss += loss_def.get_loss(output, self.model) * w
+                    indv_loss = loss_def.get_loss(output, self.model)
+                    if indv_loss is not None:
+                        total_loss += (indv_loss * w)
                 total_loss.backward()
                 self.optimizer.step()
 
@@ -199,6 +200,8 @@ class Trainer:
             'scheduler_state_dict': self.scheduler.state_dict()
             if self.scheduler is not None
             else None,
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'hash': uuid.uuid4().hex,
         }
 
     def write_checkpoint(self, path: str, **extra) -> None:

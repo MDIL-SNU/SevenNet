@@ -15,6 +15,7 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
  - Python [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator support
  - GPU-parallelized molecular dynamics with LAMMPS
  - CUDA-accelerated D3 (van der Waals) dispersion
+ - Multi-fidelity training for combining multiple database with different calculation settings.
 
 ## Pre-trained models
 So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
@@ -27,7 +28,20 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 ---
 
-### **SevenNet-l3i5**
+### **SevenNet-MF-0 (16Dec2024)**
+> Keywords in ASE: `7net-MF-0` and `SevenNet-MF-0`
+
+The model is trained on PBE (+U) and $\mathrm{r}^{2}$ SCAN database provided in Materials Project.
+It has the same architecture with **SevenNet-0 (11Jul2024)**, except this model contains additional 'fidelity-dependent' parameters utilized for multi-fidelity training.
+However, overhead of calculations regarding fidelity-dependent parameters are negligible, which results in almost the same inference speed with **SevenNet-0 (11Jul2024)**.
+
+Details in using this model as well as choosing level-of-theory for inference can be found in [here](./sevenn/pretrained_potentials/SevenNet_MF_0).
+
+* Training set MAE ($\mathrm{r}^{2}$ SCAN): 10.8 meV/atom (energy), 0.018 eV/Ang. (force), and 0.58 kbar (stress)
+* Training time: 6.11 GPU-days on A100
+---
+
+### **SevenNet-l3i5 (12Dec2024)**
 > Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
 The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
@@ -35,32 +49,25 @@ While **l3i5** offers improved accuracy across various systems compared to **Sev
 
 * Training set MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
 * Matbench F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
-* Training speed: 28m 38s / epoch (with 32 A100 GPU cards)
-
+* Training time: 381 GPU-days on A100
 ---
 
 ### **SevenNet-0 (11Jul2024)**
 > Keywords in ASE: `7net-0`, `SevenNet-0`, `7net-0_11Jul2024`, and `SevenNet-0_11Jul2024`
 
-Compared to **SevenNet-0 (22May2024)**, the training is changed from [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) to [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
+The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
+Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
+The convolutional filter employs a cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and $l_{\mathrm{max}}$ of 2, resulting in the number of parameters is 0.84 M.
+The model was trained with [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
 This model is loaded as the default pre-trained model in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
 * Training set MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
 * Matbench F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
-* Training speed: 6m 41s / epoch (with 32 A100 GPU cards)
-
+* Training time: 90 GPU-days on A100
 ---
 
-### **SevenNet-0 (22May2024)**
-> Keywords in ASE: `7net-0_22May2024` and `SevenNet-0_22May2024`
-
-The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
-Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
-The convolutional filter employs a cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and $l_{\mathrm{max}}$ of 2, resulting in the number of parameters is 0.84 M.
-The model was trained with [MPF.2021.2.8](https://figshare.com/articles/dataset/MPF_2021_2_8/19470599) up to 600 epochs. For more information, please read the [paper](https://pubs.acs.org/doi/10.1021/acs.jctc.4c00190) and visit [here](sevenn/pretrained_potentials/SevenNet_0__22May2024).
-
-* Training set MAE: 16.3 meV/atom (energy), 0.037 eV/Ang. (force), and 2.96 kbar (stress)
+In addition to these latest models, you can find our legacy models from [pretrained_potentials](./sevenn/pretrained_potentials).
 
 ## Contents
 - [Installation](#installation)
@@ -124,7 +131,7 @@ With the `sevenn_preset` command, the input file that sets the training paramete
 sevenn_preset {preset keyword} > input.yaml
 ```
 
-Available preset keywords are: `base`, `fine_tune`, `sevennet-0`, and `sevennet-l3i5`.
+Available preset keywords are: `base`, `fine_tune`, `multi_modal`, `sevennet-0`, and `sevennet-l3i5`.
 Check comments in the preset yaml files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
 To reuse a preprocessed training set, you can specify `sevenn_data/${dataset_name}.pt` to the `load_trainset_path:` in the `input.yaml`.
 
@@ -313,4 +320,17 @@ If you use this code, please cite our paper:
 	year = {2024},
 	pages = {4857--4868},
 }
+```
+
+If you utilize the multi-fidelity feature of this code or the pretrained model SevenNet-MF-0, please cite the following paper:
+```txt
+@article{kim_sevennet_mf_2024,
+	title = {Data-Efficient Multifidelity Training for High-Fidelity Machine Learning Interatomic Potentials},
+	volume = {xx},
+	doi = {10.1021/jacs.4c14455},
+	number = {xx},
+	journal = {J. Am. Chem. Soc.},
+	author = {Kim, Jaesun and Kim, Jisu and Kim, Jaehoon and Lee, Jiho and Park, Yutack and Kang, Youngho and Han, Seungwu},
+	year = {2024},
+	pages = {xx--xx},
 ```

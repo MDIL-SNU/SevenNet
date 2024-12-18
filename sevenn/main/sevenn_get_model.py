@@ -23,11 +23,10 @@ def run(args):
     output_prefix = args.output_prefix
     get_parallel = args.get_parallel
     get_serial = not get_parallel
+    modal = args.modal
 
     if output_prefix is None:
-        output_prefix = (
-            'deployed_parallel' if not get_serial else 'deployed_serial'
-        )
+        output_prefix = 'deployed_parallel' if not get_serial else 'deployed_serial'
 
     checkpoint_path = None
     if os.path.isfile(checkpoint):
@@ -35,13 +34,10 @@ def run(args):
     else:
         checkpoint_path = sevenn.util.pretrained_name_to_path(checkpoint)
 
-    model, config = sevenn.util.model_from_checkpoint(checkpoint_path)
-    stct_dct = model.state_dict()
-
     if get_serial:
-        deploy(stct_dct, config, output_prefix)
+        deploy(checkpoint_path, output_prefix, modal)
     else:
-        deploy_parallel(stct_dct, config, output_prefix)
+        deploy_parallel(checkpoint_path, output_prefix, modal)
 
 
 def main():
@@ -53,7 +49,12 @@ def main():
     ag.add_argument(
         '-p', '--get_parallel', help=get_parallel_help, action='store_true'
     )
-
+    ag.add_argument(
+        '-m',
+        '--modal',
+        help='Modality of multi-modal model',
+        type=str,
+    )
     args = ag.parse_args()
 
     run(args)

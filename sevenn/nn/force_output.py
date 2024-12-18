@@ -5,7 +5,7 @@ from e3nn.util.jit import compile_mode
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
-from .util import _broadcast
+from .util import broadcast
 
 
 @compile_mode('script')
@@ -32,10 +32,17 @@ class ForceOutput(nn.Module):
         pos_tensor = [data[self.key_pos]]
         energy = [(data[self.key_energy]).sum()]
 
+        # `materialize_grads` not supported in low version of pytorch
+        # Also can not be deployed when using it.
+        # But not using it makes problem in
+        # force/stress inference in sparse systems
+        # TODO: use it only in sevennet_calculator?
         grad = torch.autograd.grad(
             energy,
             pos_tensor,
             create_graph=self.training,
+            allow_unused=True,
+            # materialize_grads=True,
         )[0]
 
         # For torchscript
@@ -74,10 +81,17 @@ class ForceStressOutput(nn.Module):
         pos_tensor = data[self.key_pos]
         energy = [(data[self.key_energy]).sum()]
 
+        # `materialize_grads` not supported in low version of pytorch
+        # Also can not be deployed when using it.
+        # But not using it makes problem in
+        # force/stress inference in sparse systems
+        # TODO: use it only in sevennet_calculator?
         grad = torch.autograd.grad(
             energy,
             [pos_tensor, data['_strain']],
             create_graph=self.training,
+            allow_unused=True,
+            # materialize_grads=True,
         )
 
         # make grad is not Optional[Tensor]
@@ -87,6 +101,12 @@ class ForceStressOutput(nn.Module):
 
         sgrad = grad[1]
         volume = data[self.key_cell_volume]
+        vlim = 1e-3  # for cell volume = 0 for non PBC structures
+        if self._is_batch_data:
+            volume[volume < vlim] = vlim
+        elif volume < vlim:
+            volume = torch.tensor(vlim)
+
         if sgrad is not None:
             if self._is_batch_data:
                 stress = sgrad / volume.view(-1, 1, 1)
@@ -164,8 +184,8 @@ class ForceStressOutputFromEdge(nn.Module):
             # compute force
             pf = torch.zeros(tot_num, 3, dtype=fij.dtype, device=fij.device)
             nf = torch.zeros(tot_num, 3, dtype=fij.dtype, device=fij.device)
-            _edge_src = _broadcast(edge_idx[0], fij, 0)
-            _edge_dst = _broadcast(edge_idx[1], fij, 0)
+            _edge_src = broadcast(edge_idx[0], fij, 0)
+            _edge_dst = broadcast(edge_idx[1], fij, 0)
             pf.scatter_reduce_(0, _edge_src, fij, reduce='sum')
             nf.scatter_reduce_(0, _edge_dst, fij, reduce='sum')
             data[self.key_force] = pf - nf
@@ -184,7 +204,7 @@ class ForceStressOutputFromEdge(nn.Module):
             ], dim=-1)
 
             _s = torch.zeros(tot_num, 6, dtype=fij.dtype, device=fij.device)
-            _edge_dst6 = _broadcast(edge_idx[1], _virial, 0)
+            _edge_dst6 = broadcast(edge_idx[1], _virial, 0)
             _s.scatter_reduce_(0, _edge_dst6, _virial, reduce='sum')
 
             if self._is_batch_data:
@@ -193,7 +213,7 @@ class ForceStressOutputFromEdge(nn.Module):
                 sout = torch.zeros(
                     (nbatch, 6), dtype=_virial.dtype, device=_virial.device
                 )
-                _batch = _broadcast(batch, _s, 0)
+                _batch = broadcast(batch, _s, 0)
                 sout.scatter_reduce_(0, _batch, _s, reduce='sum')
             else:
                 sout = torch.sum(_s, dim=0)

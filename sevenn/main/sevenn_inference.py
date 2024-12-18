@@ -47,6 +47,9 @@ def run(args):
             k, v = kwarg.split('=')
             fmt_kwargs[k] = v
 
+    if args.save_graph and args.allow_unlabeled:
+        raise ValueError('save_graph and allow_unlabeled are mutually exclusive')
+
     inference(
         cp,
         targets,
@@ -55,6 +58,8 @@ def run(args):
         device,
         args.batch,
         args.save_graph,
+        args.allow_unlabeled,
+        args.modal,
         **fmt_kwargs,
     )
 
@@ -98,11 +103,23 @@ def main():
         help='Additionally, save preprocessed graph as sevenn_data'
     )
     ag.add_argument(
+        '-au',
+        '--allow_unlabeled',
+        action='store_true',
+        help='Allow energy or force unlabeled data'
+    )
+    ag.add_argument(
+        '-m',
+        '--modal',
+        type=str,
+        default=None,
+        help='modality for multi-modal inference',
+    )
+    ag.add_argument(
         '--kwargs',
         nargs=argparse.REMAINDER,
         help='will be passed to reader, or can be used to specify EFS key',
     )
 
     args = ag.parse_args()
-
     run(args)

@@ -658,7 +658,7 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   if (lmp->logfile) {
     fprintf(lmp->logfile, "from sevenn version '%s' ",
             meta_dict["version"].c_str());
-    fprintf(lmp->logfile, "%s precision model trained at %s is loaded\n",
+    fprintf(lmp->logfile, "%s precision model, deployed when: %s\n",
             meta_dict["dtype"].c_str(), meta_dict["time"].c_str());
   }
 }

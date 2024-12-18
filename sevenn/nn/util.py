@@ -1,7 +1,7 @@
 import torch
 
 
-def _broadcast(
+def broadcast(
     src: torch.Tensor,
     other: torch.Tensor,
     dim: int

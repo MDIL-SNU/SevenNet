@@ -12,8 +12,6 @@ How to add new feature?
 
 from typing import Final
 
-from torch.jit import CompilationUnit
-
 # see
 # https://github.com/pytorch/pytorch/issues/52312
 # for FYI
@@ -40,6 +38,10 @@ ATOM_TYPE: Final[str] = 'atom_type'  # (N) one-hot index of nodes
 NODE_FEATURE: Final[str] = 'x'  # (N, ?) PyG
 NODE_FEATURE_GHOST: Final[str] = 'x_ghost'
 NODE_ATTR: Final[str] = 'node_attr'  # (N, N_species) from one_hot
+MODAL_ATTR: Final[str] = (
+    'modal_attr'  # (1, N_modalities) for handling multi-modal
+)
+MODAL_TYPE: Final[str] = 'modal_type'  # (1) one-hot index of modal
 EDGE_ATTR: Final[str] = 'edge_attr'  # (from spherical harmonics)
 EDGE_EMBEDDING: Final[str] = 'edge_embedding'  # (from edge embedding)
 
@@ -69,7 +71,11 @@ SCALED_STRESS: Final[str] = 'scaled_stress'
 NUM_ATOMS: Final[str] = 'num_atoms'  # int
 NUM_GHOSTS: Final[str] = 'num_ghosts'
 NLOCAL: Final[str] = 'nlocal'  # only for lammps parallel, must be on cpu
-USER_LABEL: Final[str] = 'user_label'  # Deprecated from v0.9.6
+USER_LABEL: Final[str] = 'user_label'
+DATA_WEIGHT: Final[str] = 'data_weight'  # weight for given data
+DATA_MODALITY: Final[str] = (
+    'data_modality'  # modality of given data. e.g. PBE and SCAN
+)
 BATCH: Final[str] = 'batch'
 
 TAG = 'tag'  # replace USER_LABEL
@@ -125,6 +131,9 @@ RESET_OPTIMIZER = 'reset_optimizer'
 RESET_SCHEDULER = 'reset_scheduler'
 RESET_EPOCH = 'reset_epoch'
 USE_STATISTIC_VALUES_OF_CHECKPOINT = 'use_statistic_values_of_checkpoint'
+USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY = (
+    'use_statistic_values_for_cp_modal_only'
+)
 
 CSV_LOG = 'csv_log'
 
@@ -140,6 +149,10 @@ IS_DDP = 'is_ddp'
 DDP_BACKEND = 'ddp_backend'
 PER_EPOCH = 'per_epoch'
 
+USE_WEIGHT = 'use_weight'
+USE_MODALITY = 'use_modality'
+DEFAULT_MODAL = 'default_modal'
+
 
 # ==================================================#
 # ~~~~~~~~ KEY for model configuration ~~~~~~~~~~~ #
@@ -149,9 +162,12 @@ PER_EPOCH = 'per_epoch'
 MODEL_TYPE = '_model_type'
 CUTOFF = 'cutoff'
 CHEMICAL_SPECIES = 'chemical_species'
+MODAL_LIST = 'modal_list'
 CHEMICAL_SPECIES_BY_ATOMIC_NUMBER = '_chemical_species_by_atomic_number'
 NUM_SPECIES = '_number_of_species'
+NUM_MODALITIES = '_number_of_modalities'
 TYPE_MAP = '_type_map'
+MODAL_MAP = '_modal_map'
 
 # ~~ E3 equivariant model build configuration keys ~~ #
 # see model_build default_config for type
@@ -181,6 +197,11 @@ CUTOFF_FUNCTION_NAME = 'cutoff_function_name'
 
 USE_BIAS_IN_LINEAR = 'use_bias_in_linear'
 
+USE_MODAL_NODE_EMBEDDING = 'use_modal_node_embedding'
+USE_MODAL_SELF_INTER_INTRO = 'use_modal_self_inter_intro'
+USE_MODAL_SELF_INTER_OUTRO = 'use_modal_self_inter_outro'
+USE_MODAL_OUTPUT_BLOCK = 'use_modal_output_block'
+
 READOUT_AS_FCN = 'readout_as_fcn'
 READOUT_FCN_HIDDEN_NEURONS = 'readout_fcn_hidden_neurons'
 READOUT_FCN_ACTIVATION = 'readout_fcn_activation'
@@ -191,11 +212,15 @@ SHIFT = 'shift'
 SCALE = 'scale'
 
 USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
+USE_MODAL_WISE_SHIFT = 'use_modal_wise_shift'
+USE_MODAL_WISE_SCALE = 'use_modal_wise_scale'
 
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_DENOMINTAOR = 'train_denominator'
 INTERACTION_TYPE = 'interaction_type'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
+
+CUEQUIVARIANCE_CONFIG = 'cuequivariance_config'
 
 _NORMALIZE_SPH = '_normalize_sph'
 OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
