@@ -16,7 +16,7 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.scripts.deploy import deploy, deploy_parallel
 from sevenn.sevennet_calculator import SevenNetCalculator
-from sevenn.util import chemical_species_preprocess
+from sevenn.util import chemical_species_preprocess, pretrained_name_to_path
 
 logger = logging.getLogger('test_lammps')
 
@@ -28,6 +28,7 @@ lmp_script_path = str(
 
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
 cp_0_path = str(data_root / 'checkpoints' / 'cp_0.pth')  # knows Hf, O
+cp_mf_path = pretrained_name_to_path('7net-mf-0')
 
 
 @pytest.fixture(scope='module')
@@ -47,8 +48,29 @@ def parallel_potential_path(tmp_path_factory):
 
 
 @pytest.fixture(scope='module')
+def serial_modal_potential_path(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp('serial_modal_potential')
+    pot_path = str(tmp / 'deployed_serial.pt')
+    deploy(cp_mf_path, pot_path, 'PBE')
+    return pot_path
+
+
+@pytest.fixture(scope='module')
+def parallel_modal_potential_path(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp('paralllel_modal_potential')
+    pot_path = str(tmp / 'deployed_parallel')
+    deploy_parallel(cp_mf_path, pot_path, 'PBE')
+    return ' '.join(['5', pot_path])
+
+
+@pytest.fixture(scope='module')
 def ref_calculator():
     return SevenNetCalculator(cp_0_path)
+
+
+@pytest.fixture(scope='module')
+def ref_modal_calculator():
+    return SevenNetCalculator(cp_mf_path, modal='PBE')
 
 
 def get_model_config():
@@ -97,7 +119,7 @@ def get_model(config_overwrite=None, use_cueq=False, cueq_config=None):
     return model
 
 
-def hfo2_bulk(replicate=(2, 2, 2), a=3.0):
+def hfo2_bulk(replicate=(2, 2, 2), a=4.0):
     atoms = bulk('HfO', 'rocksalt', a, orthorhombic=True)
     atoms = atoms * replicate
     atoms.rattle(stdev=0.10)
@@ -316,6 +338,61 @@ def test_parallel(
     assert_atoms(atoms, atoms_lammps)
 
 
+@pytest.mark.parametrize(
+    'system',
+    ['bulk', 'surface'],
+)
+def test_modal_serial(
+    system, serial_modal_potential_path, ref_modal_calculator, lammps_cmd, tmp_path
+):
+    atoms = get_system(system)
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=serial_modal_potential_path,
+        wd=tmp_path,
+        test_name='serial lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_modal_calculator
+    assert_atoms(atoms, atoms_lammps)
+
+
+@pytest.mark.parametrize(
+    'system,ncores',
+    [
+        ('bulk', 2),
+        ('surface', 2),
+    ],
+)
+def test_modal_parallel(
+    system,
+    ncores,
+    parallel_modal_potential_path,
+    ref_modal_calculator,
+    lammps_cmd,
+    mpirun_cmd,
+    tmp_path,
+):
+    if system == 'bulk':
+        rep = (6, 6, 3)
+    elif system == 'surface':
+        rep = (4, 4, 1)
+    else:
+        assert False
+    atoms = get_system(system, replicate=rep)
+    atoms_lammps = parallel_lammps_run(
+        atoms=atoms,
+        potential=parallel_modal_potential_path,
+        wd=tmp_path,
+        test_name='parallel lmp test',
+        lammps_cmd=lammps_cmd,
+        mpirun_cmd=mpirun_cmd,
+        ncores=ncores,
+    )
+    atoms.calc = ref_modal_calculator
+    assert_atoms(atoms, atoms_lammps)
+
+
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_cueq_serial(lammps_cmd, tmp_path):
@@ -328,8 +405,9 @@ def test_cueq_serial(lammps_cmd, tmp_path):
     atoms = get_system('bulk')
 
     cfg = get_model_config()
-    cfg.update({'cuequivariance_config': {'use': cueq},
-                'version': sevenn.__version__})
+    cfg.update(
+        {'cuequivariance_config': {'use': cueq}, 'version': sevenn.__version__}
+    )
 
     cp_path = str(tmp_path / 'cp.pth')
     torch.save(
@@ -363,8 +441,9 @@ def test_cueq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
     atoms = get_system('surface', replicate=(4, 4, 1))
 
     cfg = get_model_config()
-    cfg.update({'cuequivariance_config': {'use': cueq},
-                'version': sevenn.__version__})
+    cfg.update(
+        {'cuequivariance_config': {'use': cueq}, 'version': sevenn.__version__}
+    )
 
     cp_path = str(tmp_path / 'cp.pth')
     torch.save(
@@ -382,7 +461,7 @@ def test_cueq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
         test_name='cueq checkpoint parallel lmp run test',
         lammps_cmd=lammps_cmd,
         mpirun_cmd=mpirun_cmd,
-        ncores=2
+        ncores=2,
     )
     atoms.calc = ref_calc
     assert_atoms(atoms, atoms_lammps)
