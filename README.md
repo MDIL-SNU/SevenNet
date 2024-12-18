@@ -321,3 +321,16 @@ If you use this code, please cite our paper:
 	pages = {4857--4868},
 }
 ```
+
+If you utilize the multi-fidelity feature of this code or the pretrained model SevenNet-MF-0, please cite the following paper:
+```txt
+@article{kim_sevennet_mf_2024,
+	title = {Data-Efficient Multifidelity Training for High-Fidelity Machine Learning Interatomic Potentials},
+	volume = {xx},
+	doi = {10.1021/jacs.4c14455},
+	number = {xx},
+	journal = {J. Am. Chem. Soc.},
+	author = {Kim, Jaesun and Kim, Jisu and Kim, Jaehoon and Lee, Jiho and Park, Yutack and Kang, Youngho and Han, Seungwu},
+	year = {2024},
+	pages = {xx--xx},
+```
