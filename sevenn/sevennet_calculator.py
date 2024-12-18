@@ -58,7 +58,7 @@ class SevenNetCalculator(Calculator):
         allowed_file_types = ['checkpoint', 'torchscript', 'model_instance']
         file_type = file_type.lower()
         if file_type not in allowed_file_types:
-            raise ValueError('file_type not in {allowed_file_types}')
+            raise ValueError(f'file_type not in {allowed_file_types}')
 
         if enable_cueq and file_type in ['model_instance', 'torchscript']:
             warnings.warn(
