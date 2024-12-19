@@ -192,6 +192,11 @@ These models can be used as lammps potential to run parallel MD simulations with
 
 [Open in Google Colab]: https://colab.research.google.com/assets/colab-badge.svg
 
+Sometimes, the Colab environment may crash due to memory issues. If you have good GPU resources in your local environment, it is recommended to download the tutorial from GitHub and run it locally.
+```bash
+git clone https://github.com/MDIL-SNU/sevennet_tutorial.git
+```
+
 ### MD simulation with LAMMPS
 
 #### Installation
