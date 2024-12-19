@@ -60,7 +60,7 @@ In addition to these latest models, you can find our legacy models from [pretrai
 - [Usage](#usage)
   - [ASE calculator](#ase-calculator)
   - [Training & inference](#training-and-inference)
-  - [Tutorials](#tutorial)
+  - [Notebook tutorials](#notebook-tutorial)
   - [MD simulation with LAMMPS](#md-simulation-with-lammps)
     - [Installation](#installation)
     - [Single-GPU MD](#single-gpu-md)
@@ -184,10 +184,13 @@ sevenn_get_model {checkpoint path} -p
 This will create a directory with multiple `deployed_parallel_*.pt` files. The directory path itself is an argument for the lammps script. Please do not modify or remove files under the directory.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
 
-### Tutorials<a name="tutorial"></a>
+### Notebook tutorials<a name="notebook-tutorial"></a>
+
+If you want to learn how to use the `sevenn` python library instead of the CLI command, please check out the notebook tutorials below.
+
 | Notebooks | Google&nbsp;Colab | Descriptions |
 |-----------|-------------------|--------------|
-|[Python tutorial](https://github.com/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_python_tutorial.ipynb)|[![Open in Google Colab]](https://colab.research.google.com/github/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_python_tutorial.ipynb)|We can learn how to train the SevenNet, predict energy, forces, and stress using the trained model, perform structure relaxation, and draw EOS curves.|
+|[From scratch](https://github.com/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_python_tutorial.ipynb)|[![Open in Google Colab]](https://colab.research.google.com/github/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_python_tutorial.ipynb)|We can learn how to train the SevenNet from scratch, predict energy, forces, and stress using the trained model, perform structure relaxation, and draw EOS curves.|
 |[Fine-tuning](https://github.com/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_finetune_tutorial.ipynb)|[![Open in Google Colab]](https://colab.research.google.com/github/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_finetune_tutorial.ipynb)|We can learn how to fine-tune the SevenNet and compare the results of the pretrained model with the fine-tuned model.|
 
 [Open in Google Colab]: https://colab.research.google.com/assets/colab-badge.svg
