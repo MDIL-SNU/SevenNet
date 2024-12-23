@@ -38,7 +38,6 @@ However, overhead of calculations regarding fidelity-dependent parameters are ne
 Details in using this model as well as choosing level-of-theory for inference can be found in [here](./sevenn/pretrained_potentials/SevenNet_MF_0).
 
 * Training set MAE ($\mathrm{r}^{2}$ SCAN): 10.8 meV/atom (energy), 0.018 eV/Ang. (force), and 0.58 kbar (stress)
-* Training time: 6.11 GPU-days on A100
 ---
 
 ### **SevenNet-l3i5 (12Dec2024)**
