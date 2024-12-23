@@ -1,3 +1,6 @@
+SevenNet-MF-0 is a pretrained model trained on PBE (+U) and $\mathrm{r}^{2}$ SCAN crystal relaxation trajectories provided in Materials Project.
+For more detailed explanation of training set curation, please refer to [ref](https://arxiv.org/abs/2409.07947).
+
 To select the level-of-theory between PBE (+U) and $\mathrm{r}^{2}$ SCAN when using this model, following instructions can be used.
 1. Using ASE calculator
 
