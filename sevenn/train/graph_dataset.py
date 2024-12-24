@@ -501,6 +501,8 @@ class SevenNetGraphDataset(InMemoryDataset):
                 )
             )
         for graph in graph_list:
+            if KEY.INFO not in graph:
+                graph[KEY.INFO] = {}
             graph[KEY.INFO].update(data_dict_cp)
             graph[KEY.INFO].update({KEY.DATA_WEIGHT: data_weight})
 

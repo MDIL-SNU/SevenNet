@@ -499,6 +499,8 @@ def dict_reader(data_dict: dict):
         files = list(braceexpand(file_dct.pop('file')))
         if ftype == 'ase':
             ret.extend(chain(*[ase_reader(f, **file_dct) for f in files]))
+        elif ftype == 'graph':
+            continue
         else:
             raise ValueError(f'{ftype} yet')
 
