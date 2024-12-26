@@ -4,8 +4,8 @@ import numpy as np
 import pytest
 from ase.build import bulk, molecule
 
-from sevenn.scripts.deploy import deploy
 from sevenn.calculator import SevenNetCalculator
+from sevenn.scripts.deploy import deploy
 from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 
