@@ -192,10 +192,10 @@ class D3Calculator(Calculator):
         return SumCalculator([calc_1, calc_2])
 
     This calculator interfaces with the `libpaird3.so` library,
-    compiled during the package installation.
-    If you encounter any errors,
-    verify the installation process and the compilation options in `setup.py`.
-    Multi-GPU parallel MD is not supported for this mode.
+    which is compiled by nvcc during the package installation.
+    If you encounter any errors, please verify 
+    the installation process and the compilation options in `setup.py`.
+    Note: Multi-GPU parallel MD is not supported in this mode.
     """
 
     # Here, free_energy = energy
