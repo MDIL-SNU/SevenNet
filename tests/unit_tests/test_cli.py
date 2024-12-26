@@ -9,12 +9,12 @@ import pytest
 import yaml
 from ase.build import bulk
 
+from sevenn.calculator import SevenNetCalculator
 from sevenn.main.sevenn import main as sevenn_main
 from sevenn.main.sevenn_get_model import main as get_model_main
 from sevenn.main.sevenn_graph_build import main as graph_build_main
 from sevenn.main.sevenn_inference import main as inference_main
 from sevenn.sevenn_logger import Logger
-from sevenn.calculator import SevenNetCalculator
 from sevenn.util import pretrained_name_to_path
 
 main = os.path.abspath(f'{os.path.dirname(__file__)}/../../sevenn/main/')
