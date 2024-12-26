@@ -23,7 +23,7 @@ class BuildLibPairD3(build_ext):
                 'CUDA is not installed or nvcc is not available.'
                 'Skipping compilation of libpaird3.'
             )
-            raise e
+            return
 
         compile = [
             'nvcc',
@@ -48,7 +48,7 @@ class BuildLibPairD3(build_ext):
             print('libpaird3.so compiled successfully.')
         except subprocess.CalledProcessError as e:
             print(f'Failed to compile libpaird3.so: {e}')
-            raise e
+            return
 
 
 setup(
