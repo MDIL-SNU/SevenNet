@@ -193,7 +193,7 @@ class D3Calculator(Calculator):
 
     This calculator interfaces with the `libpaird3.so` library,
     which is compiled by nvcc during the package installation.
-    If you encounter any errors, please verify 
+    If you encounter any errors, please verify
     the installation process and the compilation options in `setup.py`.
     Note: Multi-GPU parallel MD is not supported in this mode.
     """
