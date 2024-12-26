@@ -18,7 +18,7 @@ class BuildLibPairD3(build_ext):
                 check=True
             )
             print('CUDA is installed. Starting compilation of libpaird3.')
-        except FileNotFoundError as e:
+        except FileNotFoundError:
             print(
                 'CUDA is not installed or nvcc is not available.'
                 'Skipping compilation of libpaird3.'
