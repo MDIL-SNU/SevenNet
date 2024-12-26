@@ -1,6 +1,9 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.10.4]
+### Changed
+- fine tunine preset to use original loss function (Huber) and loss weights
 
 ## [0.10.3]
 ### Added
