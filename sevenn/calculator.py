@@ -221,21 +221,21 @@ class D3Calculator(Calculator):
             raise FileNotFoundError(
                 'Error: libpaird3.so not found. Please check the installation.'
             )
-        self.lib = ctypes.CDLL(lib_path)
+        self._lib = ctypes.CDLL(lib_path)
 
-        self.lib.pair_init.restype = ctypes.POINTER(PairD3)
-        self.pair = self.lib.pair_init()
+        self._lib.pair_init.restype = ctypes.POINTER(PairD3)
+        self.pair = self._lib.pair_init()
 
-        self.lib.pair_set_atom.argtypes = [
+        self._lib.pair_set_atom.argtypes = [
             ctypes.POINTER(PairD3),                          # PairD3* pair
             ctypes.c_int,                                    # int natoms
             ctypes.c_int,                                    # int ntypes
             ctypes.POINTER(ctypes.c_int),                    # int* types
             ctypes.POINTER(ctypes.c_double)                  # double* x
         ]
-        self.lib.pair_set_atom.restype = None
+        self._lib.pair_set_atom.restype = None
 
-        self.lib.pair_set_domain.argtypes = [
+        self._lib.pair_set_domain.argtypes = [
             ctypes.POINTER(PairD3),                    # PairD3* pair
             ctypes.c_int,                              # int xperiodic
             ctypes.c_int,                              # int yperiodic
@@ -246,49 +246,49 @@ class D3Calculator(Calculator):
             ctypes.c_double,                           # double xz
             ctypes.c_double                            # double yz
         ]
-        self.lib.pair_set_domain.restype = None
+        self._lib.pair_set_domain.restype = None
 
-        self.lib.pair_run_settings.argtypes = [
+        self._lib.pair_run_settings.argtypes = [
             ctypes.POINTER(PairD3),                    # PairD3* pair
             ctypes.c_double,                           # double rthr
             ctypes.c_double,                           # double cnthr
             ctypes.c_char_p,                           # const char* damp_name
             ctypes.c_char_p                            # const char* func_name
         ]
-        self.lib.pair_run_settings.restype = None
+        self._lib.pair_run_settings.restype = None
 
-        self.lib.pair_run_coeff.argtypes = [
+        self._lib.pair_run_coeff.argtypes = [
             ctypes.POINTER(PairD3),                    # PairD3* pair
             ctypes.POINTER(ctypes.c_int)               # int* atomic_numbers
         ]
-        self.lib.pair_run_coeff.restype = None
+        self._lib.pair_run_coeff.restype = None
 
-        self.lib.pair_run_compute.argtypes = [ctypes.POINTER(PairD3)]
-        self.lib.pair_run_compute.restype = None
+        self._lib.pair_run_compute.argtypes = [ctypes.POINTER(PairD3)]
+        self._lib.pair_run_compute.restype = None
 
-        self.lib.pair_get_energy.argtypes = [ctypes.POINTER(PairD3)]
-        self.lib.pair_get_energy.restype = ctypes.c_double
+        self._lib.pair_get_energy.argtypes = [ctypes.POINTER(PairD3)]
+        self._lib.pair_get_energy.restype = ctypes.c_double
 
-        self.lib.pair_get_force.argtypes = [ctypes.POINTER(PairD3)]
-        self.lib.pair_get_force.restype = ctypes.POINTER(ctypes.c_double)
+        self._lib.pair_get_force.argtypes = [ctypes.POINTER(PairD3)]
+        self._lib.pair_get_force.restype = ctypes.POINTER(ctypes.c_double)
 
-        self.lib.pair_get_stress.argtypes = [ctypes.POINTER(PairD3)]
-        self.lib.pair_get_stress.restype = ctypes.POINTER(ctypes.c_double * 6)
+        self._lib.pair_get_stress.argtypes = [ctypes.POINTER(PairD3)]
+        self._lib.pair_get_stress.restype = ctypes.POINTER(ctypes.c_double * 6)
 
-        self.lib.pair_fin.argtypes = [ctypes.POINTER(PairD3)]
-        self.lib.pair_fin.restype = None
+        self._lib.pair_fin.argtypes = [ctypes.POINTER(PairD3)]
+        self._lib.pair_fin.restype = None
 
-    def idx_to_numbers(self, Z_of_atoms):
+    def _idx_to_numbers(self, Z_of_atoms):
         unique_numbers = list(dict.fromkeys(Z_of_atoms))
         return unique_numbers
 
-    def idx_to_types(self, Z_of_atoms):
+    def _idx_to_types(self, Z_of_atoms):
         unique_numbers = list(dict.fromkeys(Z_of_atoms))
         mapping = {num: idx + 1 for idx, num in enumerate(unique_numbers)}
         atom_types = [mapping[num] for num in Z_of_atoms]
         return atom_types
 
-    def convert_domain_ase2lammps(self, cell):
+    def _convert_domain_ase2lammps(self, cell):
         qtrans, ltrans = np.linalg.qr(cell.T, mode='complete')
         lammps_cell = ltrans.T
         signs = np.sign(np.diag(lammps_cell))
@@ -298,7 +298,7 @@ class D3Calculator(Calculator):
         rotator = qtrans.T
         return lammps_cell, rotator
 
-    def stress_tensor(self, stress):
+    def _stress2tensor(self, stress):
         tensor = np.array([
             [stress[0], stress[3], stress[4]],
             [stress[3], stress[1], stress[5]],
@@ -306,7 +306,7 @@ class D3Calculator(Calculator):
         ])
         return tensor
 
-    def tensor_stress(self, tensor):
+    def _tensor2stress(self, tensor):
         stress = -np.array([
             tensor[0, 0], tensor[1, 1], tensor[2, 2],
             tensor[1, 2], tensor[0, 2], tensor[0, 1]
@@ -315,18 +315,20 @@ class D3Calculator(Calculator):
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         Calculator.calculate(self, atoms, properties, system_changes)
+        if atoms is None:
+            raise ValueError('No atoms to evaluate')
 
-        cell, rotator = self.convert_domain_ase2lammps(atoms.get_cell())
+        cell, rotator = self._convert_domain_ase2lammps(atoms.get_cell())
 
         Z_of_atoms = atoms.get_atomic_numbers()
         natoms = len(atoms)
         ntypes = len(set(Z_of_atoms))
-        types = (ctypes.c_int * natoms)(*self.idx_to_types(Z_of_atoms))
+        types = (ctypes.c_int * natoms)(*self._idx_to_types(Z_of_atoms))
 
         positions = atoms.get_positions() @ rotator.T
         x_flat = (ctypes.c_double * (natoms * 3))(*positions.flatten())
 
-        atomic_numbers = (ctypes.c_int * ntypes)(*self.idx_to_numbers(Z_of_atoms))
+        atomic_numbers = (ctypes.c_int * ntypes)(*self._idx_to_numbers(Z_of_atoms))
 
         boxlo = (ctypes.c_double * 3)(0.0, 0.0, 0.0)
         boxhi = (ctypes.c_double * 3)(cell[0], cell[1], cell[2])
@@ -335,7 +337,7 @@ class D3Calculator(Calculator):
         yz = cell[5]
         xperiodic, yperiodic, zperiodic = atoms.get_pbc()
 
-        self.lib.pair_set_atom(
+        self._lib.pair_set_atom(
             self.pair,
             natoms,
             ntypes,
@@ -343,14 +345,14 @@ class D3Calculator(Calculator):
             x_flat
         )
 
-        self.lib.pair_set_domain(
+        self._lib.pair_set_domain(
             self.pair,
             xperiodic, yperiodic, zperiodic,
             boxlo, boxhi,
             xy, xz, yz
         )
 
-        self.lib.pair_run_settings(
+        self._lib.pair_run_settings(
             self.pair,
             self.rthr,
             self.cnthr,
@@ -358,15 +360,15 @@ class D3Calculator(Calculator):
             self.func_name.encode('utf-8')
         )
 
-        self.lib.pair_run_coeff(
+        self._lib.pair_run_coeff(
             self.pair,
             atomic_numbers
         )
-        self.lib.pair_run_compute(self.pair)
+        self._lib.pair_run_compute(self.pair)
 
-        result_E = self.lib.pair_get_energy(self.pair)
+        result_E = self._lib.pair_get_energy(self.pair)
 
-        result_F_ptr = self.lib.pair_get_force(self.pair)
+        result_F_ptr = self._lib.pair_get_force(self.pair)
         result_F_size = natoms * 3
         result_F = np.ctypeslib.as_array(
             result_F_ptr, shape=(result_F_size,)
@@ -374,10 +376,10 @@ class D3Calculator(Calculator):
         result_F = np.array(result_F)
         result_F = result_F @ rotator
 
-        result_S = self.lib.pair_get_stress(self.pair)
+        result_S = self._lib.pair_get_stress(self.pair)
         result_S = np.array(result_S.contents)
-        result_S = self.tensor_stress(
-            rotator.T @ self.stress_tensor(result_S) @ rotator
+        result_S = self._tensor2stress(
+            rotator.T @ self._stress2tensor(result_S) @ rotator
         ) / atoms.get_volume()
 
         self.results = {
@@ -388,4 +390,4 @@ class D3Calculator(Calculator):
         }
 
     def __del__(self):
-        self.lib.pair_fin(self.pair)
+        self._lib.pair_fin(self.pair)
