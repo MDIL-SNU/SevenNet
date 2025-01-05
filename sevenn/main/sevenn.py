@@ -1,23 +1,8 @@
 import argparse
 import os
-import random
-import sys
 import time
 
-import torch
-import torch.distributed as dist
-
-try:
-    from sevenn import __version__
-except ImportError:
-    __version__ = 'dev'
-
-
-import sevenn._keys as KEY
-from sevenn.parse_input import read_config_yaml
-from sevenn.scripts.train import train, train_v2
-from sevenn.sevenn_logger import Logger
-from sevenn.util import unique_filepath
+from sevenn import __version__
 
 description = f'sevenn version={__version__}, train model based on the input.yaml'
 
@@ -32,15 +17,26 @@ distributed_backend_help = 'backend for distributed training. Supported: nccl, m
 global_config = {
     'version': __version__,
     'when': time.ctime(),
-    KEY.MODEL_TYPE: 'E3_equivariant_model',
+    '_model_type': 'E3_equivariant_model',
 }
 
 
-def main(args=None):
+def run(args):
     """
     main function of sevenn
     """
-    args = cmd_parse_main(args)
+    import random
+    import sys
+
+    import torch
+    import torch.distributed as dist
+
+    import sevenn._keys as KEY
+    from sevenn.parse_input import read_config_yaml
+    from sevenn.scripts.train import train, train_v2
+    from sevenn.sevenn_logger import Logger
+    from sevenn.util import unique_filepath
+
     input_yaml = args.input_yaml
     mode = args.mode
     working_dir = args.working_dir
@@ -118,7 +114,7 @@ def main(args=None):
             train_v2(global_config, working_dir)
 
 
-def cmd_parse_main(args=None):
+def main():
     ag = argparse.ArgumentParser(description=description)
     ag.add_argument(
         'input_yaml',
@@ -168,7 +164,9 @@ def cmd_parse_main(args=None):
         choices=['nccl', 'mpi'],
     )
 
-    return ag.parse_args()
+    args = ag.parse_args()
+
+    run(args)
 
 
 if __name__ == '__main__':

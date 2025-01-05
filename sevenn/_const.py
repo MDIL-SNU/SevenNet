@@ -48,11 +48,14 @@ ACTIVATION_FOR_ODD = {'tanh': torch.tanh, 'abs': torch.abs}
 ACTIVATION_DICT = {'e': ACTIVATION_FOR_EVEN, 'o': ACTIVATION_FOR_ODD}
 
 _prefix = os.path.abspath(f'{os.path.dirname(__file__)}/pretrained_potentials')
-SEVENNET_0_11July2024 = (
-    f'{_prefix}/SevenNet_0__11July2024/checkpoint_sevennet_0.pth'
+SEVENNET_0_11Jul2024 = (
+    f'{_prefix}/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth'
 )
 SEVENNET_0_22May2024 = (
     f'{_prefix}/SevenNet_0__22May2024/checkpoint_sevennet_0.pth'
+)
+SEVENNET_l3i5 = (
+    f'{_prefix}/SevenNet_l3i5/checkpoint_l3i5.pth'
 )
 
 
@@ -170,7 +173,7 @@ DEFAULT_DATA_CONFIG = {
     KEY.SAVE_DATASET: False,
     KEY.SAVE_BY_LABEL: False,
     KEY.SAVE_BY_TRAIN_VALID: False,
-    KEY.RATIO: 0.1,
+    KEY.RATIO: 0.0,
     KEY.BATCH_SIZE: 6,
     KEY.PREPROCESS_NUM_CORES: 1,
     KEY.COMPUTE_STATISTICS: True,

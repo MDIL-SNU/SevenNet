@@ -1,6 +1,28 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+
+## [0.10.3]
+### Added
+- SevenNet-l3i5, checkpoint, preset. (keywords: 7net-l3i5, sevennet-l3i5)
+- SevenNet-l3i5 test
+### Changed
+- Now --help do not load unnecessary imports (fast!)
+- README
+
+
+## [0.10.2]
+### Added
+- Accelerated graph build routine if matscipy is installed  @hexagonerose
+- matscipy vs. ase neighborlist unit test
+- If valid set is not given but data_divide_ratio is given, validaset is created using random split. (shift, scale, and conv_denoiminator uses original whole statistics)
+### Changed
+- matscipy is included as dependency
+- data_divide_ration defaults to 0.0 (not used)
+### Fixed
+- For torch version >= 2.4.0, Loading graph dataset no more raises warnings.
+- Raise error when unknown element is found (SevenNetCalculator)
+
 ## [0.10.1]
 ### Added
 - experimental `SevenNetAtomsDataset` which is memory efficient, can be enabled with `dataset_type='atoms'`
@@ -9,6 +31,7 @@ All notable changes to this project will be documented in this file.
 - Save checkpoint_0.pth (model before any training)
 - `SevenNetGraphDataset._file_to_graph_list` -> `SevenNetGraphDataset.file_to_graph_list`
 - Refactoring `SevenNetGraphDataset`, skips computing statistics if it is loaded, more detailed logging
+- Prefer use .get when accessing config dict
 ### Fixed
 - Fix error when loading `SevenNetGraphDataset` with other types of data (ex: extxyz) in one dataset
 
