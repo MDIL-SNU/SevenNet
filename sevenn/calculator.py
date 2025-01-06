@@ -196,6 +196,7 @@ class D3Calculator(Calculator):
     If you encounter any errors, please verify
     the installation process and the compilation options in `setup.py`.
     Note: Multi-GPU parallel MD is not supported in this mode.
+    Note: Cffi ~
     """
 
     # Here, free_energy = energy
@@ -205,8 +206,8 @@ class D3Calculator(Calculator):
         self,
         damping_type: str = 'damp_bj',  # damp_bj, damp_zero
         functional_name: str = 'pbe',  # check the source code
-        vdw_cutoff: float = 9000,  # au^2
-        cn_cutoff: float = 1600,  # au^2
+        vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
+        cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
         **kwargs
     ):
         super().__init__(**kwargs)
@@ -216,6 +217,10 @@ class D3Calculator(Calculator):
         self.damp_name = damping_type.lower()
         self.func_name = functional_name.lower()
 
+        if self.damp_name not in ['damp_bj', 'damp_zero']:
+            raise ValueError('Error: Invalid damping type.')
+
+        self._lib = None
         lib_path = os.path.join(os.path.dirname(__file__), 'libpaird3.so')
         if not os.path.exists(lib_path):
             raise FileNotFoundError(
@@ -318,7 +323,21 @@ class D3Calculator(Calculator):
         if atoms is None:
             raise ValueError('No atoms to evaluate')
 
-        cell, rotator = self._convert_domain_ase2lammps(atoms.get_cell())
+        if atoms.get_cell().sum() == 0:
+            print('Warning: D3Calculator requires a cell.\n'
+                  'Warning: An orthogonal cell large enough is generated.')
+            positions = atoms.get_positions()
+            min_pos = positions.min(axis=0)
+            max_pos = positions.max(axis=0)
+            max_cutoff = np.sqrt(max(self.rthr, self.cnthr)) * 0.52917726
+
+            cell_lengths = max_pos - min_pos + max_cutoff + 1.0  # extra margin
+            cell = np.eye(3) * cell_lengths
+
+            atoms.set_cell(cell)
+            atoms.set_pbc([True, True, True])  # for minus positions
+
+        cell, rotator = self.convert_domain_ase2lammps(atoms.get_cell())
 
         Z_of_atoms = atoms.get_atomic_numbers()
         natoms = len(atoms)
@@ -390,4 +409,7 @@ class D3Calculator(Calculator):
         }
 
     def __del__(self):
-        self._lib.pair_fin(self.pair)
+        if self._lib is not None:
+            self._lib.pair_fin(self.pair)
+            self._lib = None
+            self.pair = None
