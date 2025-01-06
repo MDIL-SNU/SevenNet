@@ -128,6 +128,7 @@ def test_sevennet_0_cal_as_instnace(atoms_pbc):
     for k in res_cp:
         assert np.allclose(res_cp[k], res_script[k])
 
+
 def test_d3_cal_pbc(atoms_pbc, d3_cal):
     atoms1_ref = {
         'energy': -0.531393751583389,
