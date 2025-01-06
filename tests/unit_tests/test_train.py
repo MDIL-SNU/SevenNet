@@ -313,6 +313,7 @@ def test_run_one_epoch(HfO2_loader):
 
 def test_processing_epoch_v2(HfO2_loader, tmp_path):
     trainer_args, _, _ = Trainer.args_from_checkpoint(cp_0_path)
+    trainer_args['train']['energy_loss_weight'] = 1.0
     trainer = Trainer(**trainer_args)
     erc = get_error_recorder()
     start_epoch = 10
