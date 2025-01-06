@@ -111,7 +111,7 @@ def test_loss_from_config(conf):
     for loss_def, w in loss_functions:
         assert isinstance(loss_def, loss.LossDefinition)
         if isinstance(loss_def, loss.PerAtomEnergyLoss):
-            assert w == 1.0
+            assert w == conf['energy_loss_weight']
         elif isinstance(loss_def, loss.ForceLoss):
             assert w == conf['force_loss_weight']
         elif isinstance(loss_def, loss.StressLoss):
