@@ -623,8 +623,8 @@ void PairD3::setfuncpar() {
     };
     (this->*setfuncpar_damp[damping])();
 
-    rs8 = rs18; 
-    alp6 = alp; 
+    rs8 = rs18;
+    alp6 = alp;
     alp8 = alp + 2.0;
     // rs10 = rs18
     // alp10 = alp + 4.0;
@@ -1184,8 +1184,8 @@ void PairD3::load_atom_info() {
     double a[3] = { 0.0 };
     for (int iat = 0; iat < atom->natoms; iat++) {
         for (int i = 0; i < 3; i++) {
-            a[i] = lat_inv[i][0] * (atom->x)[iat][0] / AU_TO_ANG + 
-                   lat_inv[i][1] * (atom->x)[iat][1] / AU_TO_ANG + 
+            a[i] = lat_inv[i][0] * (atom->x)[iat][0] / AU_TO_ANG +
+                   lat_inv[i][1] * (atom->x)[iat][1] / AU_TO_ANG +
                    lat_inv[i][2] * (atom->x)[iat][2] / AU_TO_ANG;
             a[i] -= floor(a[i]); // replaces the code below
             //if      (a[i] > 1) { while (a[i] > 1) { a[i]--; } }
@@ -2056,4 +2056,3 @@ void PairD3::write_restart_settings(FILE *fp) {}
 ------------------------------------------------------------------------- */
 
 void PairD3::read_restart_settings(FILE *fp) {}
-
