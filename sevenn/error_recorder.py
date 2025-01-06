@@ -318,7 +318,7 @@ class ErrorRecorder:
         is_stress = config[KEY.IS_TRAIN_STRESS]
         metrics = []
         energy_metric = CustomError(criteria, **get_err_type('Energy'))
-        metrics.append((energy_metric, 1))
+        metrics.append((energy_metric, config[KEY.ENERGY_WEIGHT]))
         force_metric = CustomError(criteria, **get_err_type('Force'))
         metrics.append((force_metric, config[KEY.FORCE_WEIGHT]))
         if is_stress:

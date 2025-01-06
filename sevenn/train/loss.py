@@ -17,7 +17,7 @@ class LossDefinition:
         unit: Optional[str] = None,
         criterion: Optional[Callable] = None,
         ref_key: Optional[str] = None,
-        pred_key: Optional[str] = None
+        pred_key: Optional[str] = None,
     ):
         self.name = name
         self.unit = unit
@@ -34,9 +34,7 @@ class LossDefinition:
         self.criterion = criterion
 
     def _preprocess(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
     ):
         if self.pred_key is None or self.ref_key is None:
             raise NotImplementedError('LossDefinition is not implemented.')
@@ -44,11 +42,7 @@ class LossDefinition:
             batch_data[self.ref_key], (-1,)
         )
 
-    def get_loss(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
-    ):
+    def get_loss(self, batch_data: Dict[str, Any], model: Optional[Callable] = None):
         """
         Function that return scalar
         """
@@ -76,13 +70,11 @@ class PerAtomEnergyLoss(LossDefinition):
             unit=unit,
             criterion=criterion,
             ref_key=ref_key,
-            pred_key=pred_key
+            pred_key=pred_key,
         )
 
     def _preprocess(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
     ):
         num_atoms = batch_data[KEY.NUM_ATOMS]
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
@@ -110,13 +102,11 @@ class ForceLoss(LossDefinition):
             unit=unit,
             criterion=criterion,
             ref_key=ref_key,
-            pred_key=pred_key
+            pred_key=pred_key,
         )
 
     def _preprocess(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
     ):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
         return (
@@ -143,14 +133,12 @@ class StressLoss(LossDefinition):
             unit=unit,
             criterion=criterion,
             ref_key=ref_key,
-            pred_key=pred_key
+            pred_key=pred_key,
         )
         self.TO_KB = 1602.1766208  # eV/A^3 to kbar
 
     def _preprocess(
-        self,
-        batch_data: Dict[str, Any],
-        model: Optional[Callable] = None
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
     ):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
         return (
@@ -171,7 +159,7 @@ def get_loss_functions_from_config(config: Dict[str, Any]):
         loss_param = {}
     criterion = loss(**loss_param)
 
-    loss_functions.append((PerAtomEnergyLoss(), 1.0))
+    loss_functions.append((PerAtomEnergyLoss(), config[KEY.ENERGY_WEIGHT]))
     loss_functions.append((ForceLoss(), config[KEY.FORCE_WEIGHT]))
     if config[KEY.IS_TRAIN_STRESS]:
         loss_functions.append((StressLoss(), config[KEY.STRESS_WEIGHT]))
