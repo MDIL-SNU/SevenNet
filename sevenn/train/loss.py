@@ -34,7 +34,9 @@ class LossDefinition:
         self.criterion = criterion
 
     def _preprocess(
-        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None,
     ):
         if self.pred_key is None or self.ref_key is None:
             raise NotImplementedError('LossDefinition is not implemented.')
@@ -42,7 +44,11 @@ class LossDefinition:
             batch_data[self.ref_key], (-1,)
         )
 
-    def get_loss(self, batch_data: Dict[str, Any], model: Optional[Callable] = None):
+    def get_loss(
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None,
+    ):
         """
         Function that return scalar
         """
@@ -138,7 +144,9 @@ class StressLoss(LossDefinition):
         self.TO_KB = 1602.1766208  # eV/A^3 to kbar
 
     def _preprocess(
-        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None,
     ):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
         return (
