@@ -166,9 +166,9 @@ def test_d3_cal_mol(atoms_mol, d3_cal):
             [0.0, -1.94363451e-03, -1.27595721e-03],
         ],
     }
-    
+
     atoms_mol.calc = d3_cal
-    
+
     assert np.allclose(atoms_mol.get_potential_energy(), atoms2_ref['energy'])
     assert np.allclose(
         atoms_mol.get_potential_energy(force_consistent=True), atoms2_ref['energy']
