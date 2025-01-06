@@ -31,7 +31,10 @@ def sevennet_0_cal():
 
 @pytest.fixture(scope='module')
 def d3_cal():
-    return D3Calculator()
+    try:
+        return D3Calculator()
+    except FileNotFoundError as e:
+        pytest.skip(f"{e}")
 
 
 def test_sevennet_0_cal_pbc(atoms_pbc, sevennet_0_cal):
@@ -125,7 +128,6 @@ def test_sevennet_0_cal_as_instnace(atoms_pbc):
     for k in res_cp:
         assert np.allclose(res_cp[k], res_script[k])
 
-
 def test_d3_cal_pbc(atoms_pbc, d3_cal):
     atoms1_ref = {
         'energy': -0.531393751583389,
@@ -145,10 +147,8 @@ def test_d3_cal_pbc(atoms_pbc, d3_cal):
         ],
     }
 
-    try:
-        atoms_pbc.calc = d3_cal
-    except FileNotFoundError:
-        pytest.skip('libpaird3.so not found. Please check the installation.')
+    atoms_pbc.calc = d3_cal
+
     assert np.allclose(atoms_pbc.get_potential_energy(), atoms1_ref['energy'])
     assert np.allclose(
         atoms_pbc.get_potential_energy(force_consistent=True), atoms1_ref['energy']
@@ -166,10 +166,9 @@ def test_d3_cal_mol(atoms_mol, d3_cal):
             [0.0, -1.94363451e-03, -1.27595721e-03],
         ],
     }
-    try:
-        atoms_mol.calc = d3_cal
-    except FileNotFoundError:
-        pytest.skip('libpaird3.so not found. Please check the installation.')
+    
+    atoms_mol.calc = d3_cal
+    
     assert np.allclose(atoms_mol.get_potential_energy(), atoms2_ref['energy'])
     assert np.allclose(
         atoms_mol.get_potential_energy(force_consistent=True), atoms2_ref['energy']
