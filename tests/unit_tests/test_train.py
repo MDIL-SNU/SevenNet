@@ -97,6 +97,7 @@ def get_train_config():
         'optim_param': {},
         'scheduler': 'exponentiallr',
         'scheduler_param': {'gamma': 0.99},
+        'energy_loss_weight': 1.0,
         'force_loss_weight': 1.0,
         'stress_loss_weight': 0.1,
         'per_epoch': 1,

@@ -25,6 +25,7 @@ _default_config = {
         ('TotalLoss', 'None'),
     ],
     'is_train_stress': True,
+    'energy_loss_weight': 1.0,
     'force_loss_weight': 1.0,
     'stress_loss_weight': 0.001,
 }
@@ -111,7 +112,7 @@ def test_loss_from_config(conf):
     for loss_def, w in loss_functions:
         assert isinstance(loss_def, loss.LossDefinition)
         if isinstance(loss_def, loss.PerAtomEnergyLoss):
-            assert w == 1.0
+            assert w == conf['energy_loss_weight']
         elif isinstance(loss_def, loss.ForceLoss):
             assert w == conf['force_loss_weight']
         elif isinstance(loss_def, loss.StressLoss):
