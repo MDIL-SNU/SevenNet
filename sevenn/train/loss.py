@@ -80,7 +80,9 @@ class PerAtomEnergyLoss(LossDefinition):
         )
 
     def _preprocess(
-        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None,
     ):
         num_atoms = batch_data[KEY.NUM_ATOMS]
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
@@ -112,7 +114,9 @@ class ForceLoss(LossDefinition):
         )
 
     def _preprocess(
-        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+        self,
+        batch_data: Dict[str, Any],
+        model: Optional[Callable] = None,
     ):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
         return (
