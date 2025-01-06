@@ -145,7 +145,10 @@ def test_d3_cal_pbc(atoms_pbc, d3_cal):
         ],
     }
 
-    atoms_pbc.calc = d3_cal
+    try:
+        atoms_pbc.calc = d3_cal
+    except FileNotFoundError:
+        pytest.skip('libpaird3.so not found. Please check the installation.')
     assert np.allclose(atoms_pbc.get_potential_energy(), atoms1_ref['energy'])
     assert np.allclose(
         atoms_pbc.get_potential_energy(force_consistent=True), atoms1_ref['energy']
@@ -163,7 +166,10 @@ def test_d3_cal_mol(atoms_mol, d3_cal):
             [0.0, -1.94363451e-03, -1.27595721e-03],
         ],
     }
-    atoms_mol.calc = d3_cal
+    try:
+        atoms_mol.calc = d3_cal
+    except FileNotFoundError:
+        pytest.skip('libpaird3.so not found. Please check the installation.')
     assert np.allclose(atoms_mol.get_potential_energy(), atoms2_ref['energy'])
     assert np.allclose(
         atoms_mol.get_potential_energy(force_consistent=True), atoms2_ref['energy']
