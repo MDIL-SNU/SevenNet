@@ -7,7 +7,9 @@ import numpy as np
 import torch
 import torch.jit
 import torch.jit._script
+from ase import units
 from ase.calculators.calculator import Calculator, all_changes
+from ase.calculators.mixing import SumCalculator
 from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
@@ -415,3 +417,36 @@ class D3Calculator(Calculator):
             self._lib.pair_fin(self.pair)
             self._lib = None
             self.pair = None
+
+
+class SevenNetD3Calculator(SumCalculator):
+    def __init__(
+        self,
+        model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
+        file_type: str = 'checkpoint',
+        device: Union[torch.device, str] = 'auto',
+        sevennet_config: Optional[Any] = None,  # hold meta information
+        damping_type: str = 'damp_bj',
+        functional_name: str = 'pbe',
+        vdw_cutoff: float = 9000,
+        cn_cutoff: float = 1600,
+        **kwargs,
+    ):
+
+        d3_calc = D3Calculator(
+            damping_type=damping_type,
+            functional_name=functional_name,
+            vdw_cutoff=vdw_cutoff,
+            cn_cutoff=cn_cutoff,
+            **kwargs,
+        )
+
+        sevennet_calc = SevenNetCalculator(
+            model=model,
+            file_type=file_type,
+            device=device,
+            sevennet_config=sevennet_config,
+            **kwargs,
+        )
+
+        super().__init__([sevennet_calc, d3_calc])
