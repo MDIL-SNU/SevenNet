@@ -337,7 +337,7 @@ class D3Calculator(Calculator):
             atoms.set_cell(cell)
             atoms.set_pbc([True, True, True])  # for minus positions
 
-        cell, rotator = self.convert_domain_ase2lammps(atoms.get_cell())
+        cell, rotator = self._convert_domain_ase2lammps(atoms.get_cell())
 
         Z_of_atoms = atoms.get_atomic_numbers()
         natoms = len(atoms)
@@ -356,7 +356,9 @@ class D3Calculator(Calculator):
         yz = cell[5]
         xperiodic, yperiodic, zperiodic = atoms.get_pbc()
 
-        self._lib.pair_set_atom(
+        lib = self._lib
+        assert lib is not None
+        lib.pair_set_atom(
             self.pair,
             natoms,
             ntypes,
@@ -364,14 +366,14 @@ class D3Calculator(Calculator):
             x_flat
         )
 
-        self._lib.pair_set_domain(
+        lib.pair_set_domain(
             self.pair,
             xperiodic, yperiodic, zperiodic,
             boxlo, boxhi,
             xy, xz, yz
         )
 
-        self._lib.pair_run_settings(
+        lib.pair_run_settings(
             self.pair,
             self.rthr,
             self.cnthr,
@@ -379,15 +381,15 @@ class D3Calculator(Calculator):
             self.func_name.encode('utf-8')
         )
 
-        self._lib.pair_run_coeff(
+        lib.pair_run_coeff(
             self.pair,
             atomic_numbers
         )
-        self._lib.pair_run_compute(self.pair)
+        lib.pair_run_compute(self.pair)
 
-        result_E = self._lib.pair_get_energy(self.pair)
+        result_E = lib.pair_get_energy(self.pair)
 
-        result_F_ptr = self._lib.pair_get_force(self.pair)
+        result_F_ptr = lib.pair_get_force(self.pair)
         result_F_size = natoms * 3
         result_F = np.ctypeslib.as_array(
             result_F_ptr, shape=(result_F_size,)
@@ -395,7 +397,7 @@ class D3Calculator(Calculator):
         result_F = np.array(result_F)
         result_F = result_F @ rotator
 
-        result_S = self._lib.pair_get_stress(self.pair)
+        result_S = lib.pair_get_stress(self.pair)
         result_S = np.array(result_S.contents)
         result_S = self._tensor2stress(
             rotator.T @ self._stress2tensor(result_S) @ rotator
