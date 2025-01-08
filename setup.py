@@ -6,7 +6,12 @@ from setuptools.command.build_ext import build_ext
 
 class BuildLibPairD3(build_ext):
     def build_extension(self, ext):
-        if not ext.name == 'libpaird3':
+        """Hack: We override the build_extension method to compile the CUDA code.
+        Using torch.utils.cpp_extension.CUDAExtension is a better solution,
+        but it introduces a dependency in pip's build-isolation environment.
+        To avoid this, we manually compile the CUDA code with nvcc.
+        """
+        if not ext.name == 'sevenn.libpaird3':
             super().build_extension(ext)
             return
 
@@ -25,9 +30,11 @@ class BuildLibPairD3(build_ext):
             )
             return
 
+        target_path = self.get_ext_fullpath(ext.name)
+
         compile = [
             'nvcc',
-            '-o', 'sevenn/libpaird3.so',
+            '-o', f'{target_path}',
             '-shared',
             '-fmad=false',
             '-O3',
@@ -52,6 +59,6 @@ class BuildLibPairD3(build_ext):
 
 
 setup(
-    ext_modules=[Extension('libpaird3', sources=[])],
+    ext_modules=[Extension('sevenn.libpaird3', sources=[])],
     cmdclass={'build_ext': BuildLibPairD3},
 )

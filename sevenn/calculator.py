@@ -1,6 +1,7 @@
 import ctypes
 import os
 import pathlib
+import sysconfig
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -198,7 +199,7 @@ class D3Calculator(Calculator):
     If you encounter any errors, please verify
     the installation process and the compilation options in `setup.py`.
     Note: Multi-GPU parallel MD is not supported in this mode.
-    Note: Cffi ~
+    Note: Cffi could be used, but it was avoided to reduce dependencies.
     """
 
     # Here, free_energy = energy
@@ -222,8 +223,9 @@ class D3Calculator(Calculator):
         if self.damp_name not in ['damp_bj', 'damp_zero']:
             raise ValueError('Error: Invalid damping type.')
 
+        _ext_suffix = sysconfig.get_config_var('EXT_SUFFIX')
         self._lib = None
-        lib_path = os.path.join(os.path.dirname(__file__), 'libpaird3.so')
+        lib_path = os.path.join(os.path.dirname(__file__), f'libpaird3{_ext_suffix}')
         if not os.path.exists(lib_path):
             raise FileNotFoundError(
                 'Error: libpaird3.so not found. Please check the installation.'
