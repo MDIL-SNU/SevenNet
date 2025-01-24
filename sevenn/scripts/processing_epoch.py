@@ -3,6 +3,7 @@ from copy import deepcopy
 from typing import Optional
 
 import torch
+from torch.utils.data.distributed import DistributedSampler
 
 import sevenn._keys as KEY
 from sevenn.error_recorder import ErrorRecorder
@@ -72,8 +73,17 @@ def processing_epoch_v2(
         csv_dct = {'epoch': str(epoch), 'lr': f'{lr:8f}'}
         errors = {}
         for k, loader in loaders.items():
+            is_train = k == train_loader_key
+            if (
+                trainer.distributed
+                and isinstance(loader.sampler, DistributedSampler)
+                and is_train
+                and config.get('train_shuffle', True)
+            ):
+                loader.sampler.set_epoch(epoch)
+
             rec = recorders[k]
-            trainer.run_one_epoch(loader, k == train_loader_key, rec)
+            trainer.run_one_epoch(loader, is_train, rec)
             csv_dct.update(rec.get_dct(prefix=k))
             errors[k] = rec.epoch_forward()
         log.write_full_table(list(errors.values()), list(errors))

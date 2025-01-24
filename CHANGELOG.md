@@ -25,6 +25,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - More refactor for shift scale things + few bug fixes
+- Correctly shuffle training set when distributed training is enabled
 
 ## [0.10.3]
 ### Added
