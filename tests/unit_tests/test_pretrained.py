@@ -30,7 +30,7 @@ def atoms_mol():
 
 def test_7net0_22May2024(atoms_pbc, atoms_mol):
     """
-    Reference from v0.9.3.post1 with sevennet_calculator
+    Reference from v0.9.3.post1 with SevenNetCalculator
     """
     cp_path = pretrained_name_to_path('7net-0_22May2024')
     model, config = model_from_checkpoint(cp_path)
@@ -73,7 +73,7 @@ def test_7net0_22May2024(atoms_pbc, atoms_mol):
 
 def test_7net0_11July2024(atoms_pbc, atoms_mol):
     """
-    Reference from v0.9.3.post1 with sevennet_calculator
+    Reference from v0.9.3.post1 with SevenNetCalculator
     """
     cp_path = pretrained_name_to_path('7net-0_11July2024')
     model, config = model_from_checkpoint(cp_path)
@@ -119,7 +119,7 @@ def test_7net0_11July2024(atoms_pbc, atoms_mol):
 
 def test_7net_l3i5(atoms_pbc, atoms_mol):
     """
-    Reference from v0.9.3.post1 with sevennet_calculator
+    Reference from v0.9.3.post1 with SevenNetCalculator
     """
     cp_path = pretrained_name_to_path('7net-l3i5')
     model, config = model_from_checkpoint(cp_path)
