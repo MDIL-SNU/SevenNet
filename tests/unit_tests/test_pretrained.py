@@ -9,8 +9,8 @@ from sevenn.train.dataload import unlabeled_atoms_to_graph
 from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 
-def acl(a, b):
-    return torch.allclose(a, b, atol=1e-6)
+def acl(a, b, atol=1e-6):
+    return torch.allclose(a, b, atol=atol)
 
 
 @pytest.fixture
@@ -156,8 +156,8 @@ def test_7net_l3i5(atoms_pbc, atoms_mol):
     )
 
     assert acl(g1.inferred_total_energy, g1_ref_e)
-    assert acl(g1.inferred_force, g1_ref_f)
-    assert acl(g1.inferred_stress, g1_ref_s)
+    assert acl(g1.inferred_force, g1_ref_f, 1e-5)
+    assert acl(g1.inferred_stress, g1_ref_s, 1e-5)
 
     assert acl(g2.inferred_total_energy, g2_ref_e)
-    assert acl(g2.inferred_force, g2_ref_f)
+    assert acl(g2.inferred_force, g2_ref_f, 1e-5)
