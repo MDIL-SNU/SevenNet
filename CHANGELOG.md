@@ -6,6 +6,8 @@ All notable changes to this project will be documented in this file.
 - feats: D3 calculator
 ### Fixed
 - bug: info dict sharing (therefore energy stress) when structure_list used
+- torch >= 2.5.0 works
+- numpy >= 2.0 works (need more testing)
 ### Changed
 - sevennet_calculator.py => calculator
 - fine tunine preset to use original loss function (Huber) and loss weights
