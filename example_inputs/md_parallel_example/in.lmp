@@ -20,7 +20,7 @@
   replicate 2 2 2
 
   # Define interatomic potential.
-  pair_style       e3gnn/parallel  # Note that calculated pressure is wrong (it does not include virial part)
+  pair_style       e3gnn/parallel
   # The order of element should be the same as the order of elements in the data file (type)
   # * * {number of deployed parallel models} {path to deployed parallel models} {elements}
   pair_coeff       * * 4 ./deployed_parallel Hf O
