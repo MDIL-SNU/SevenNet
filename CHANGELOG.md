@@ -2,8 +2,12 @@
 All notable changes to this project will be documented in this file.
 
 ## [0.10.4]
+### Added
+- feats: D3 calculator
 ### Fixed
 - bug: info dict sharing (therefore energy stress) when structure_list used
+### Changed
+- sevennet_calculator.py => calculator
 
 
 ## [0.10.3]

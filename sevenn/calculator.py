@@ -8,7 +8,6 @@ import numpy as np
 import torch
 import torch.jit
 import torch.jit._script
-from ase import units
 from ase.calculators.calculator import Calculator, all_changes
 from ase.calculators.mixing import SumCalculator
 from ase.data import chemical_symbols
@@ -214,6 +213,9 @@ class D3Calculator(Calculator):
         **kwargs
     ):
         super().__init__(**kwargs)
+
+        if not torch.cuda.is_available():
+            raise NotImplementedError('CPU + D3 is not implemented yet')
 
         self.rthr = vdw_cutoff
         self.cnthr = cn_cutoff
