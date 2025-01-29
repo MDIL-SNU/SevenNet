@@ -12,42 +12,45 @@
 ------------------------------------------------------------------------- */
 
 #ifdef PAIR_CLASS
-
 PairStyle(d3, PairD3)
 
 #else
 
 #ifndef LMP_PAIR_D3
 #define LMP_PAIR_D3
-#define _USE_MATH_DEFINES
 
 #include <cmath>
-#include <algorithm>
 #include <string>
 #include <vector>
-#include <stdlib.h>
+#include <algorithm>
+#include <map>
 #include <unordered_map>
-#include <omp.h>
+#include <cuda_runtime.h>
+
 #include "pair.h"
-#include "memory.h"
-#include "atom.h"
 #include "utils.h"
+#include "atom.h"
+#include "domain.h"
 #include "error.h"
 #include "comm.h"
-#include "potential_file_reader.h"
 #include "neighbor.h"
 #include "neigh_list.h"
-#include "domain.h"
 #include "math_extra.h"
+
 #include "pair_d3_pars.h"
 
-namespace LAMMPS_NS {
+// Removed dependencies to STL
+// #include <stdlib.h> -> no more C style functions
+// #define _USE_MATH_DEFINES -> no predefined constants
 
+// Removed dependencies to LAMMPS
+// #include "potential_file_reader.h" -> removed, PotentialFileReader
+// #include "memory.h"     -> already no dependency for CUDA version
+
+namespace LAMMPS_NS {
     class PairD3 : public Pair {
     public:
-        // Constructor
         PairD3(class LAMMPS*);
-        // Destructor
         ~PairD3() override;
 
         void compute(int, int) override;
@@ -70,9 +73,13 @@ namespace LAMMPS_NS {
         void read_r0ab(int*, int);
         void get_limit_in_pars_array(int&, int&, int&, int&);
         void read_c6ab(int*, int);
-        void setfuncpar(char*);
-        /* ------- Read parameters ------- */
 
+        void setfuncpar_zero();
+        void setfuncpar_bj();
+        void setfuncpar_zerom();
+        void setfuncpar_bjm();
+        void setfuncpar();
+        /* ------- Read parameters ------- */
 
         /* ------- Lattice information ------- */
         void set_lattice_repetition_criteria(float, int*);
@@ -84,29 +91,26 @@ namespace LAMMPS_NS {
         void precalculate_tau_array();
         /* ------- Initialize & Precalculate ------- */
 
-
         /* ------- Reallocate (when number of atoms changed) ------- */
         void reallocate_arrays();
         /* ------- Reallocate (when number of atoms changed) ------- */
-
 
         /* ------- Coordination number ------- */
         void get_coordination_number();
         void get_dC6_dCNij();
         /* ------- Coordination number ------- */
 
-
         /* ------- Main workers ------- */
-        void get_forces_without_dC6_zero_damping();
-        void get_forces_without_dC6_zero_damping_modified();
-        void get_forces_without_dC6_bj_damping();
+        void get_forces_without_dC6_zero();
+        void get_forces_without_dC6_bj();
+        void get_forces_without_dC6_zerom();
+        void get_forces_without_dC6_bjm();
+        void get_forces_without_dC6();
         void get_forces_with_dC6();
         void update(int, int);
         /* ------- Main workers ------- */
 
-
         /*--------- Constants ---------*/
-
         static constexpr int MAX_ELEM = 94;          // maximum of the element number
         static constexpr int MAXC = 5;               // maximum coordination number references per element
 
@@ -117,30 +121,27 @@ namespace LAMMPS_NS {
         static constexpr float K3 = -4.0;              // global ad hoc parameters
         /*--------- Constants ---------*/
 
-
         /*--------- Parameters to read ---------*/
-        int damping_type;
+        int damping;
+        std::string functional;
         float* r2r4 = nullptr;             // scale r4/r2 values of the atoms by sqrt(Z)
         float* rcov = nullptr;             // covalent radii
         int* mxc = nullptr;                // How large the grid for c6 interpolation
         float** r0ab = nullptr;            // cut-off radii for all element pairs
         float***** c6ab = nullptr;         // C6 for all element pairs
-        float rthr;              // R^2 distance to cutoff for C calculation
-        float cn_thr;            // R^2 distance to cutoff for CN_calculation
+        float rthr;                        // R^2 distance to cutoff for C calculation
+        float cnthr;                       // R^2 distance to cutoff for CN_calculation
         float s6, s8, s18, rs6, rs8, rs18, alp, alp6, alp8, a1, a2; // parameters for D3
         /*--------- Parameters to read ---------*/
-
 
         /*--------- Lattice related values ---------*/
         double* lat_v_1 = nullptr;           // lattice coordination vector
         double* lat_v_2 = nullptr;           // lattice coordination vector
         double* lat_v_3 = nullptr;           // lattice coordination vector
-        int* rep_vdw = nullptr;             // repetition of cell for calculating D3
-        int* rep_cn = nullptr;              // repetition of cell for calculating
-                                            // coordination number
-        double** sigma = nullptr;           // virial pressure on cell
+        int* rep_vdw = nullptr;              // repetition of cell for calculating D3
+        int* rep_cn = nullptr;               // repetition of cell for calculating
+        double** sigma = nullptr;            // virial pressure on cell
         /*--------- Lattice related values ---------*/
-
 
         /*--------- Per-atom values/arrays ---------*/
         double* cn = nullptr;               // Coordination numbers
@@ -149,19 +150,16 @@ namespace LAMMPS_NS {
         double* dc6i = nullptr;             // dC6i(iat) saves dE_dsp/dCN(iat)
         /*--------- Per-atom values/arrays ---------*/
 
-
         /*--------- Per-pair values/arrays ---------*/
         float* c6_ij_tot = nullptr;
         float* dc6_iji_tot = nullptr;
         float* dc6_ijj_tot = nullptr;
         /*--------- Per-pair values/arrays ---------*/
 
-
         /*---------- Global values ---------*/
         int n_save;                         // to check whether the number of atoms has changed
         float disp_total;                   // Dispersion energy
         /*---------- Global values ---------*/
-
 
         /*--------- For loop over tau (translation of cell) ---------*/
         float**** tau_vdw = nullptr;
@@ -172,8 +170,12 @@ namespace LAMMPS_NS {
         int tau_idx_cn_total_size;
         /*--------- For loop over tau (translation of cell) ---------*/
 
+        /*--------- For cuda memory transfer (pointerized) ---------*/
+        int *atomtype;
+        double *disp;
+        /*--------- For cuda memory transfer (pointerized) ---------*/
     };
-}    // namespace LAMMPS_NS
+}
 
-#endif
-#endif
+#endif // LMP_PAIR_D3
+#endif // PAIR_CLASS

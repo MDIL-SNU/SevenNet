@@ -10,8 +10,8 @@ import pytest
 from ase.build import bulk, surface
 from ase.calculators.singlepoint import SinglePointCalculator
 
+from sevenn.calculator import SevenNetCalculator
 from sevenn.scripts.deploy import deploy, deploy_parallel
-from sevenn.sevennet_calculator import SevenNetCalculator
 from sevenn.util import model_from_checkpoint
 
 logger = logging.getLogger('test_lammps')

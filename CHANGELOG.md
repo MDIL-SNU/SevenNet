@@ -2,8 +2,14 @@
 All notable changes to this project will be documented in this file.
 
 ## [0.10.4]
+### Added
+- feats: D3 calculator
+### Fixed
+- bug: info dict sharing (therefore energy stress) when structure_list used
 ### Changed
+- sevennet_calculator.py => calculator
 - fine tunine preset to use original loss function (Huber) and loss weights
+
 
 ## [0.10.3]
 ### Added
