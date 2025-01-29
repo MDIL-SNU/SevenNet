@@ -1,6 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+
 ## WIP [0.11.0]
 ### Added
 - Build multi-fidelity model, SevenNet-MF, based on given modality in the yaml
@@ -26,6 +27,19 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - More refactor for shift scale things + few bug fixes
 - Correctly shuffle training set when distributed training is enabled
+
+
+## [0.10.4]
+### Added
+- feats: D3 calculator
+### Fixed
+- bug: info dict sharing (therefore energy stress) when structure_list used
+- torch >= 2.5.0 works
+- numpy >= 2.0 works (need more testing)
+### Changed
+- sevennet_calculator.py => calculator
+- fine tunine preset to use original loss function (Huber) and loss weights
+
 
 ## [0.10.3]
 ### Added

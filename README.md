@@ -73,6 +73,7 @@ In addition to these latest models, you can find our legacy models from [pretrai
 - [Usage](#usage)
   - [ASE calculator](#ase-calculator)
   - [Training & inference](#training-and-inference)
+  - [Notebook tutorials](#notebook-tutorial)
   - [MD simulation with LAMMPS](#md-simulation-with-lammps)
     - [Installation](#installation)
     - [Single-GPU MD](#single-gpu-md)
@@ -82,7 +83,7 @@ In addition to these latest models, you can find our legacy models from [pretrai
 ## Installation<a name="installation"></a>
 ### Requirements
 - Python >= 3.8
-- PyTorch >= 1.12.0, PyTorch < 2.5.0
+- PyTorch >= 1.12.0
 
 Here are the recommended versions we've been using internally without any issues.
 - PyTorch/2.2.2 + CUDA/12.1.0
@@ -93,12 +94,17 @@ Using the newer versions of CUDA with PyTorch is usually not a problem. For exam
 > [!IMPORTANT]
 > Please install PyTorch manually depending on the hardware before installing the SevenNet.
 
+#### Optional requirements
+- nvcc compiler
+
+This should be available when `pip install` to compile our GPU-accelerated `D3Calculator`.
+
 Give that the PyTorch is successfully installed, please run the command below.
 ```bash
 pip install sevenn
 pip install https://github.com/MDIL-SNU/SevenNet.git # for the latest version
 ```
-We strongly recommend checking `CHANGELOG.md` for new features and changes because the SevenNet is under active development.
+We strongly recommend checking `CHANGELOG.md` for new features and changes because SevenNet is under active development.
 
 ## Usage<a name="usage"></a>
 ### ASE calculator<a name="ase_calculator"></a>
@@ -107,9 +113,16 @@ For a wider application in atomistic simulations, SevenNet provides the ASE inte
 The model can be loaded through the following Python code.
 
 ```python
-from sevenn.sevennet_calculator import SevenNetCalculator
-calculator = SevenNetCalculator(model='7net-0', device='cpu')
+from sevenn.calculator import SevenNetCalculator
+calc = SevenNetCalculator(model='7net-0', device='cpu')
 ```
+
+SevenNet supports CUDA accelerated D3Calculator.
+```python
+from sevenn.calculator import SevenNetD3Calculator
+calc = SevenNetD3Calculator(model='7net-0', device='cuda')
+```
+If you encounter `Error: libpaird3.so not found. Please check the installation.`, ensure the `nvcc` compiler is available and re-install SevenNet.
 
 Various pre-trained SevenNet models can be accessed by changing the `model` variable to any predefined keywords such as `7net-l3i5`, `7net-0_11Jul2024`, `7net-0_22May2024`, and so on. The default model is **SevenNet-0 (11Jul2024)**.
 
@@ -195,6 +208,22 @@ sevenn_get_model {checkpoint path} -p
 
 This will create a directory with multiple `deployed_parallel_*.pt` files. The directory path itself is an argument for the lammps script. Please do not modify or remove files under the directory.
 These models can be used as lammps potential to run parallel MD simulations with GNN potential using multiple GPU cards.
+
+### Notebook tutorials<a name="notebook-tutorial"></a>
+
+If you want to learn how to use the `sevenn` python library instead of the CLI command, please check out the notebook tutorials below.
+
+| Notebooks | Google&nbsp;Colab | Descriptions |
+|-----------|-------------------|--------------|
+|[From scratch](https://github.com/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_python_tutorial.ipynb)|[![Open in Google Colab]](https://colab.research.google.com/github/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_python_tutorial.ipynb)|We can learn how to train the SevenNet from scratch, predict energy, forces, and stress using the trained model, perform structure relaxation, and draw EOS curves.|
+|[Fine-tuning](https://github.com/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_finetune_tutorial.ipynb)|[![Open in Google Colab]](https://colab.research.google.com/github/MDIL-SNU/sevennet_tutorial/blob/main/notebooks/SevenNet_finetune_tutorial.ipynb)|We can learn how to fine-tune the SevenNet and compare the results of the pretrained model with the fine-tuned model.|
+
+[Open in Google Colab]: https://colab.research.google.com/assets/colab-badge.svg
+
+Sometimes, the Colab environment may crash due to memory issues. If you have good GPU resources in your local environment, it is recommended to download the tutorial from GitHub and run it locally.
+```bash
+git clone https://github.com/MDIL-SNU/sevennet_tutorial.git
+```
 
 ### MD simulation with LAMMPS
 

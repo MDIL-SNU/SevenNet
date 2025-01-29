@@ -460,12 +460,12 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
                     }
                     for idx, o in enumerate(it_atoms):
                         try:
-                            istep = index.start + idx * index.step
+                            istep = index.start + idx * index.step  # type: ignore
                             atoms = o.build()
-                            atoms.info = {**info_dct_f, 'ionic_step': istep}
+                            atoms.info = {**info_dct_f, 'ionic_step': istep}.copy()
                         except TypeError:  # it is not slice of ionic steps
                             atoms = o.build()
-                            atoms.info = info_dct_f
+                            atoms.info = info_dct_f.copy()
                         stct_lists.append(atoms)
                     f_stream.close()
                 else:

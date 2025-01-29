@@ -25,13 +25,12 @@ dependencies = [
     "tqdm",
     "scikit-learn",
     "torch_geometric>=2.5.0",
-    "numpy<2.0",
+    "numpy",
     "matscipy",
     "pandas",
 ]
 [project.optional-dependencies]
 test = ["matscipy", "pytest-cov>=5"]
-
 
 [project.scripts]
 sevenn = "sevenn.main.sevenn:main"
@@ -53,6 +52,7 @@ requires = ["setuptools>=61.0"]
 [tool.setuptools.package-data]
 sevenn = [
     "logo_ascii",
+    "*.so",
     "pair_e3gnn/*.cpp",
     "pair_e3gnn/*.h",
     "pair_e3gnn/*.cu",

@@ -12,10 +12,10 @@ from ase.build import bulk, surface
 from ase.calculators.singlepoint import SinglePointCalculator
 
 import sevenn
+from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.scripts.deploy import deploy, deploy_parallel
-from sevenn.sevennet_calculator import SevenNetCalculator
 from sevenn.util import chemical_species_preprocess, pretrained_name_to_path
 
 logger = logging.getLogger('test_lammps')
