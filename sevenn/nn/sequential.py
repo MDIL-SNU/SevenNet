@@ -35,7 +35,7 @@ class AtomGraphSequential(nn.Sequential):
         data_key_node_feature: str = KEY.NODE_FEATURE,
         data_key_grad: Optional[str] = None,
     ):
-        if not isinstance(modules, OrderedDict):
+        if not isinstance(modules, OrderedDict):  # backward compat
             modules = OrderedDict(modules)
         self.cutoff = cutoff
         self.type_map = type_map
@@ -58,6 +58,8 @@ class AtomGraphSequential(nn.Sequential):
         self.key_grad = data_key_grad
 
         super().__init__(modules)
+        if not isinstance(self._modules, OrderedDict):  # backward compat
+            self._modules = OrderedDict(self._modules)
 
     def set_is_batch_data(self, flag: bool):
         # whether given data is batched or not some module have to change
