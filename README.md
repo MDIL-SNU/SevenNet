@@ -81,12 +81,17 @@ Using the newer versions of CUDA with PyTorch is usually not a problem. For exam
 > [!IMPORTANT]
 > Please install PyTorch manually depending on the hardware before installing the SevenNet.
 
+#### Optional requirements
+- nvcc compiler
+
+This should be available when `pip install` to compile our GPU-accelerated `D3Calculator`.
+
 Give that the PyTorch is successfully installed, please run the command below.
 ```bash
 pip install sevenn
 pip install https://github.com/MDIL-SNU/SevenNet.git # for the latest version
 ```
-We strongly recommend checking `CHANGELOG.md` for new features and changes because the SevenNet is under active development.
+We strongly recommend checking `CHANGELOG.md` for new features and changes because SevenNet is under active development.
 
 ## Usage<a name="usage"></a>
 ### ASE calculator<a name="ase_calculator"></a>
@@ -95,9 +100,16 @@ For a wider application in atomistic simulations, SevenNet provides the ASE inte
 The model can be loaded through the following Python code.
 
 ```python
-from sevenn.sevennet_calculator import SevenNetCalculator
-calculator = SevenNetCalculator(model='7net-0', device='cpu')
+from sevenn.calculator import SevenNetCalculator
+calc = SevenNetCalculator(model='7net-0', device='cpu')
 ```
+
+SevenNet supports CUDA accelerated D3Calculator.
+```python
+from sevenn.calculator import SevenNetD3Calculator
+calc = SevenNetD3Calculator(model='7net-0', device='cuda')
+```
+If you encounter `Error: libpaird3.so not found. Please check the installation.`, ensure the `nvcc` compiler is available and re-install SevenNet.
 
 Various pre-trained SevenNet models can be accessed by changing the `model` variable to any predefined keywords such as `7net-l3i5`, `7net-0_11Jul2024`, `7net-0_22May2024`, and so on. The default model is **SevenNet-0 (11Jul2024)**.
 
