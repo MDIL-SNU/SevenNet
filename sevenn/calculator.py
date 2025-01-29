@@ -214,6 +214,15 @@ class D3Calculator(Calculator):
     ):
         super().__init__(**kwargs)
 
+        _ext_suffix = sysconfig.get_config_var('EXT_SUFFIX')
+        self._lib = None
+        lib_path = os.path.join(os.path.dirname(__file__), f'libpaird3{_ext_suffix}')
+        if not os.path.exists(lib_path):
+            raise FileNotFoundError(
+                'Error: libpaird3.so not found. Please check the installation.'
+            )
+        self._lib = ctypes.CDLL(lib_path)
+
         if not torch.cuda.is_available():
             raise NotImplementedError('CPU + D3 is not implemented yet')
 
@@ -224,15 +233,6 @@ class D3Calculator(Calculator):
 
         if self.damp_name not in ['damp_bj', 'damp_zero']:
             raise ValueError('Error: Invalid damping type.')
-
-        _ext_suffix = sysconfig.get_config_var('EXT_SUFFIX')
-        self._lib = None
-        lib_path = os.path.join(os.path.dirname(__file__), f'libpaird3{_ext_suffix}')
-        if not os.path.exists(lib_path):
-            raise FileNotFoundError(
-                'Error: libpaird3.so not found. Please check the installation.'
-            )
-        self._lib = ctypes.CDLL(lib_path)
 
         self._lib.pair_init.restype = ctypes.POINTER(PairD3)
         self.pair = self._lib.pair_init()
