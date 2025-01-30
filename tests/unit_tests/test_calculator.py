@@ -33,8 +33,8 @@ def sevennet_0_cal():
 def d3_cal():
     try:
         return D3Calculator()
-    except FileNotFoundError as e:
-        pytest.skip(f"{e}")
+    except NotImplementedError as e:
+        pytest.skip(f'{e}')
 
 
 def test_sevennet_0_cal_pbc(atoms_pbc, sevennet_0_cal):
