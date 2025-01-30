@@ -97,7 +97,7 @@ Using the newer versions of CUDA with PyTorch is usually not a problem. For exam
 #### Optional requirements
 - nvcc compiler
 
-This should be available when `pip install` to compile our GPU-accelerated `D3Calculator`.
+This should be available to use `SevenNetD3Calculator` or `D3Calculator`.
 
 Give that the PyTorch is successfully installed, please run the command below.
 ```bash
@@ -122,7 +122,7 @@ SevenNet supports CUDA accelerated D3Calculator.
 from sevenn.calculator import SevenNetD3Calculator
 calc = SevenNetD3Calculator(model='7net-0', device='cuda')
 ```
-If you encounter `Error: libpaird3.so not found. Please check the installation.`, ensure the `nvcc` compiler is available and re-install SevenNet.
+If you encounter `CUDA is not installed or nvcc is not available`, ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
 
 Various pre-trained SevenNet models can be accessed by changing the `model` variable to any predefined keywords such as `7net-l3i5`, `7net-0_11Jul2024`, `7net-0_22May2024`, and so on. The default model is **SevenNet-0 (11Jul2024)**.
 

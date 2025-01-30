@@ -3,6 +3,7 @@ import os
 import pathlib
 import sysconfig
 import warnings
+from itertools import chain
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -204,6 +205,83 @@ class SevenNetCalculator(Calculator):
         }
 
 
+class SevenNetD3Calculator(SumCalculator):
+    def __init__(
+        self,
+        model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
+        file_type: str = 'checkpoint',
+        device: Union[torch.device, str] = 'auto',
+        sevennet_config: Optional[Any] = None,  # hold meta information
+        damping_type: str = 'damp_bj',
+        functional_name: str = 'pbe',
+        vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
+        cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
+        **kwargs,
+    ):
+        d3_calc = D3Calculator(
+            damping_type=damping_type,
+            functional_name=functional_name,
+            vdw_cutoff=vdw_cutoff,
+            cn_cutoff=cn_cutoff,
+            **kwargs,
+        )
+
+        sevennet_calc = SevenNetCalculator(
+            model=model,
+            file_type=file_type,
+            device=device,
+            sevennet_config=sevennet_config,
+            **kwargs,
+        )
+
+        super().__init__([sevennet_calc, d3_calc])
+
+
+def _compile_d3(path: str, verbose: bool = True):
+    import subprocess
+
+    if verbose:
+        print(f'Attempt D3 compilation to {path}')
+    try:
+        subprocess.run(
+            ['nvcc', '--version'],
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=True,
+        )
+        # print('CUDA is installed. Starting compilation of libpaird3.')
+        if verbose:
+            print('nvcc compiler found. start compilation')
+    except FileNotFoundError as e:
+        raise NotImplementedError(
+            'CUDA is not installed or nvcc is not available. D3 compilation failed'
+        ) from e
+    src = os.path.join(os.path.dirname(__file__), 'pair_e3gnn/pair_d3_for_ase.cu')
+    sms = [61, 70, 75, 80, 86, 89, 90]
+    compile = [  # TODO: make ruff not lint these
+        'nvcc',
+        '-o',
+        path,
+        '-shared',
+        '-fmad=false',
+        '-O3',
+        '--expt-relaxed-constexpr',
+        src,
+        '-Xcompiler',
+        '-fPIC',
+        '-lcudart',
+    ] + list(
+        chain(*[f'-gencode arch=compute_{sm},code=sm_{sm}'.split() for sm in sms])
+    )
+
+    try:
+        subprocess.run(compile, check=True)
+        if verbose:
+            print('libpaird3.so compiled successfully.')
+    except subprocess.CalledProcessError as e:
+        raise RuntimeError('Failed to compile D3 (libpaird3.so)') from e
+
+
 class PairD3(ctypes.Structure):
     pass  # Opaque structure; only used as a pointer
 
@@ -234,17 +312,18 @@ class D3Calculator(Calculator):
         functional_name: str = 'pbe',  # check the source code
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
-        **kwargs
+        verbose_compile: bool = True,
+        **kwargs,
     ):
         super().__init__(**kwargs)
 
         _ext_suffix = sysconfig.get_config_var('EXT_SUFFIX')
-        self._lib = None
         lib_path = os.path.join(os.path.dirname(__file__), f'libpaird3{_ext_suffix}')
+
+        self._lib = None
         if not os.path.exists(lib_path):
-            raise FileNotFoundError(
-                'Error: libpaird3.so not found. Please check the installation.'
-            )
+            _compile_d3(lib_path, verbose_compile)
+
         self._lib = ctypes.CDLL(lib_path)
 
         if not torch.cuda.is_available():
@@ -262,39 +341,39 @@ class D3Calculator(Calculator):
         self.pair = self._lib.pair_init()
 
         self._lib.pair_set_atom.argtypes = [
-            ctypes.POINTER(PairD3),                          # PairD3* pair
-            ctypes.c_int,                                    # int natoms
-            ctypes.c_int,                                    # int ntypes
-            ctypes.POINTER(ctypes.c_int),                    # int* types
-            ctypes.POINTER(ctypes.c_double)                  # double* x
+            ctypes.POINTER(PairD3),  # PairD3* pair
+            ctypes.c_int,  # int natoms
+            ctypes.c_int,  # int ntypes
+            ctypes.POINTER(ctypes.c_int),  # int* types
+            ctypes.POINTER(ctypes.c_double),  # double* x
         ]
         self._lib.pair_set_atom.restype = None
 
         self._lib.pair_set_domain.argtypes = [
-            ctypes.POINTER(PairD3),                    # PairD3* pair
-            ctypes.c_int,                              # int xperiodic
-            ctypes.c_int,                              # int yperiodic
-            ctypes.c_int,                              # int zperiodic
-            ctypes.POINTER(ctypes.c_double),           # double* boxlo
-            ctypes.POINTER(ctypes.c_double),           # double* boxhi
-            ctypes.c_double,                           # double xy
-            ctypes.c_double,                           # double xz
-            ctypes.c_double                            # double yz
+            ctypes.POINTER(PairD3),  # PairD3* pair
+            ctypes.c_int,  # int xperiodic
+            ctypes.c_int,  # int yperiodic
+            ctypes.c_int,  # int zperiodic
+            ctypes.POINTER(ctypes.c_double),  # double* boxlo
+            ctypes.POINTER(ctypes.c_double),  # double* boxhi
+            ctypes.c_double,  # double xy
+            ctypes.c_double,  # double xz
+            ctypes.c_double,  # double yz
         ]
         self._lib.pair_set_domain.restype = None
 
         self._lib.pair_run_settings.argtypes = [
-            ctypes.POINTER(PairD3),                    # PairD3* pair
-            ctypes.c_double,                           # double rthr
-            ctypes.c_double,                           # double cnthr
-            ctypes.c_char_p,                           # const char* damp_name
-            ctypes.c_char_p                            # const char* func_name
+            ctypes.POINTER(PairD3),  # PairD3* pair
+            ctypes.c_double,  # double rthr
+            ctypes.c_double,  # double cnthr
+            ctypes.c_char_p,  # const char* damp_name
+            ctypes.c_char_p,  # const char* func_name
         ]
         self._lib.pair_run_settings.restype = None
 
         self._lib.pair_run_coeff.argtypes = [
-            ctypes.POINTER(PairD3),                    # PairD3* pair
-            ctypes.POINTER(ctypes.c_int)               # int* atomic_numbers
+            ctypes.POINTER(PairD3),  # PairD3* pair
+            ctypes.POINTER(ctypes.c_int),  # int* atomic_numbers
         ]
         self._lib.pair_run_coeff.restype = None
 
@@ -334,18 +413,26 @@ class D3Calculator(Calculator):
         return lammps_cell, rotator
 
     def _stress2tensor(self, stress):
-        tensor = np.array([
-            [stress[0], stress[3], stress[4]],
-            [stress[3], stress[1], stress[5]],
-            [stress[4], stress[5], stress[2]]
-        ])
+        tensor = np.array(
+            [
+                [stress[0], stress[3], stress[4]],
+                [stress[3], stress[1], stress[5]],
+                [stress[4], stress[5], stress[2]],
+            ]
+        )
         return tensor
 
     def _tensor2stress(self, tensor):
-        stress = -np.array([
-            tensor[0, 0], tensor[1, 1], tensor[2, 2],
-            tensor[1, 2], tensor[0, 2], tensor[0, 1]
-        ])
+        stress = -np.array(
+            [
+                tensor[0, 0],
+                tensor[1, 1],
+                tensor[2, 2],
+                tensor[1, 2],
+                tensor[0, 2],
+                tensor[0, 1],
+            ]
+        )
         return stress
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
@@ -354,8 +441,10 @@ class D3Calculator(Calculator):
             raise ValueError('No atoms to evaluate')
 
         if atoms.get_cell().sum() == 0:
-            print('Warning: D3Calculator requires a cell.\n'
-                  'Warning: An orthogonal cell large enough is generated.')
+            print(
+                'Warning: D3Calculator requires a cell.\n'
+                'Warning: An orthogonal cell large enough is generated.'
+            )
             positions = atoms.get_positions()
             min_pos = positions.min(axis=0)
             max_pos = positions.max(axis=0)
@@ -388,19 +477,13 @@ class D3Calculator(Calculator):
 
         lib = self._lib
         assert lib is not None
-        lib.pair_set_atom(
-            self.pair,
-            natoms,
-            ntypes,
-            types,
-            x_flat
-        )
+        lib.pair_set_atom(self.pair, natoms, ntypes, types, x_flat)
 
+        xperiodic = xperiodic.astype(int)
+        yperiodic = yperiodic.astype(int)
+        zperiodic = zperiodic.astype(int)
         lib.pair_set_domain(
-            self.pair,
-            xperiodic, yperiodic, zperiodic,
-            boxlo, boxhi,
-            xy, xz, yz
+            self.pair, xperiodic, yperiodic, zperiodic, boxlo, boxhi, xy, xz, yz
         )
 
         lib.pair_run_settings(
@@ -408,13 +491,10 @@ class D3Calculator(Calculator):
             self.rthr,
             self.cnthr,
             self.damp_name.encode('utf-8'),
-            self.func_name.encode('utf-8')
+            self.func_name.encode('utf-8'),
         )
 
-        lib.pair_run_coeff(
-            self.pair,
-            atomic_numbers
-        )
+        lib.pair_run_coeff(self.pair, atomic_numbers)
         lib.pair_run_compute(self.pair)
 
         result_E = lib.pair_get_energy(self.pair)
@@ -429,15 +509,16 @@ class D3Calculator(Calculator):
 
         result_S = lib.pair_get_stress(self.pair)
         result_S = np.array(result_S.contents)
-        result_S = self._tensor2stress(
-            rotator.T @ self._stress2tensor(result_S) @ rotator
-        ) / atoms.get_volume()
+        result_S = (
+            self._tensor2stress(rotator.T @ self._stress2tensor(result_S) @ rotator)
+            / atoms.get_volume()
+        )
 
         self.results = {
             'free_energy': result_E,
             'energy': result_E,
             'forces': result_F,
-            'stress': result_S
+            'stress': result_S,
         }
 
     def __del__(self):
@@ -445,36 +526,3 @@ class D3Calculator(Calculator):
             self._lib.pair_fin(self.pair)
             self._lib = None
             self.pair = None
-
-
-class SevenNetD3Calculator(SumCalculator):
-    def __init__(
-        self,
-        model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
-        file_type: str = 'checkpoint',
-        device: Union[torch.device, str] = 'auto',
-        sevennet_config: Optional[Any] = None,  # hold meta information
-        damping_type: str = 'damp_bj',
-        functional_name: str = 'pbe',
-        vdw_cutoff: float = 9000,
-        cn_cutoff: float = 1600,
-        **kwargs,
-    ):
-
-        d3_calc = D3Calculator(
-            damping_type=damping_type,
-            functional_name=functional_name,
-            vdw_cutoff=vdw_cutoff,
-            cn_cutoff=cn_cutoff,
-            **kwargs,
-        )
-
-        sevennet_calc = SevenNetCalculator(
-            model=model,
-            file_type=file_type,
-            device=device,
-            sevennet_config=sevennet_config,
-            **kwargs,
-        )
-
-        super().__init__([sevennet_calc, d3_calc])
