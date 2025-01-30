@@ -70,7 +70,7 @@ In addition to these latest models, you can find our legacy models from [pretrai
 ## Installation<a name="installation"></a>
 ### Requirements
 - Python >= 3.8
-- PyTorch >= 1.12.0, PyTorch < 2.5.0
+- PyTorch >= 1.12.0
 
 Here are the recommended versions we've been using internally without any issues.
 - PyTorch/2.2.2 + CUDA/12.1.0
