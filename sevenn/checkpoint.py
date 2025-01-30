@@ -74,7 +74,7 @@ def _config_cp_routine(config):
     return config
 
 
-def _e3nn_to_cue(stct_src, stct_dst, src_config):
+def _convert_e3nn_and_cueq(stct_src, stct_dst, src_config, from_cueq):
     """
     manually check keys and assert if something unexpected happens
     """
@@ -103,7 +103,10 @@ def _e3nn_to_cue(stct_src, stct_dst, src_config):
     e3nn_only_linear_followers = ['linear.bias', 'linear.output_mask']
     ignores_in_linear = cue_only_linear_followers + e3nn_only_linear_followers
 
-    cue_only_conv_followers = ['convolution.f.tp.f_fx.module.c']
+    cue_only_conv_followers = [
+        'convolution.f.tp.f_fx.module.c',
+        'convolution.f.tp.module.module.f.module.module._f.data',
+    ]
     e3nn_only_conv_followers = [
         'convolution._compiled_main_left_right._w3j',
         'convolution.weight',
@@ -128,7 +131,7 @@ def _e3nn_to_cue(stct_src, stct_dst, src_config):
                     break
             if not flag and k == '.'.join([module_name, 'linear.weight']):
                 updated_keys.append(k)
-                stct_dst[k] = v.clone()
+                stct_dst[k] = v.clone().reshape(stct_dst[k].shape)
                 flag = True
             assert flag, f'Unexpected key from linear: {k}'
         elif module_name in convolution_module_names:
@@ -141,7 +144,7 @@ def _e3nn_to_cue(stct_src, stct_dst, src_config):
                 or k == '.'.join([module_name, 'denominator'])
             ):
                 updated_keys.append(k)
-                stct_dst[k] = v.clone()
+                stct_dst[k] = v.clone().reshape(stct_dst[k].shape)
                 flag = True
             assert flag, f'Unexpected key from linear: {k}'
         elif module_name in fc_tensor_product_module_names:
@@ -151,13 +154,13 @@ def _e3nn_to_cue(stct_src, stct_dst, src_config):
                     break
             if not flag and k == '.'.join([module_name, 'fc_tensor_product.weight']):
                 updated_keys.append(k)
-                stct_dst[k] = v.clone()
+                stct_dst[k] = v.clone().reshape(stct_dst[k].shape)
                 flag = True
             assert flag, f'Unexpected key from fc tensor product: {k}'
         else:
             # assert k in stct_dst
             updated_keys.append(k)
-            stct_dst[k] = v.clone()
+            stct_dst[k] = v.clone().reshape(stct_dst[k].shape)
 
     return stct_dst
 
@@ -301,7 +304,9 @@ class SevenNetCheckpoint:
             stct_src = compat.patch_state_dict_if_old(
                 self.model_state_dict, self.config, model
             )
-            state_dict = _e3nn_to_cue(stct_src, model.state_dict(), self.config)
+            state_dict = _convert_e3nn_and_cueq(
+                stct_src, model.state_dict(), self.config, from_cueq=cp_using_cue
+            )
 
         missing, not_used = model.load_state_dict(state_dict, strict=False)
         if len(not_used) > 0:

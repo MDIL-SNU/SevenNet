@@ -11,10 +11,10 @@ from torch_geometric.loader.dataloader import Collater
 import sevenn
 import sevenn.train.dataload as dl
 from sevenn.atom_graph_data import AtomGraphData
+from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.sequential import AtomGraphSequential
-from sevenn.sevennet_calculator import SevenNetCalculator
 from sevenn.util import (
     chemical_species_preprocess,
     model_from_checkpoint_with_backend,
@@ -31,7 +31,7 @@ _graph = AtomGraphData.from_numpy_dict(dl.unlabeled_atoms_to_graph(_atoms, cutof
 
 def get_graphs(batched):
     # batch size 2
-    cloned = [_graph.clone(), _graph.clone()]
+    cloned = [_graph.clone().to('cuda'), _graph.clone().to('cuda')]
     if not batched:
         return cloned
     else:
@@ -41,7 +41,7 @@ def get_graphs(batched):
 def get_model_config():
     config = {
         'cutoff': cutoff,
-        'channel': 8,
+        'channel': 32,
         'lmax': 2,
         'is_parity': True,
         'num_convolution_layer': 3,
@@ -83,17 +83,21 @@ def get_model(config_overwrite=None, use_cueq=False, cueq_config=None):
 
     model = build_E3_equivariant_model(cf, parallel=False)
     assert isinstance(model, AtomGraphSequential)
+    model.to('cuda')
     return model
 
 
-@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
+@pytest.mark.skipif(
+    not is_cue_available() or not torch.cuda.is_available(),
+    reason='cueq or gpu is not available',
+)
 @pytest.mark.parametrize(
     'cf',
     [
         ({}),
         ({'self_connection_type': 'linear'}),
         ({'is_parity': False}),
-        ({'channel': 7}),
+        ({'channel': 8}),
         ({'lmax': 3}),
         ({'num_interaction_layer': 2}),
         ({'num_interaction_layer': 4}),
@@ -115,9 +119,9 @@ def test_model_output(cf):
         cueq_f = model_cueq._modules[k]
         e3nn_out = e3nn_f(e3nn_out)  # type: ignore
         cueq_out = cueq_f(cueq_out)  # type: ignore
-        assert torch.allclose(
-            e3nn_out.x, cueq_out.x, atol=1e-6
-        ), f'{k} \n\n {e3nn_f} \n\n {cueq_f}'
+        assert torch.allclose(e3nn_out.x, cueq_out.x, atol=1e-6), (
+            f'{k} \n\n {e3nn_f} \n\n {cueq_f}'
+        )
 
     assert torch.allclose(
         e3nn_out.inferred_total_energy, cueq_out.inferred_total_energy
@@ -132,7 +136,10 @@ def test_model_output(cf):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
+@pytest.mark.skipif(
+    not is_cue_available() or not torch.cuda.is_available(),
+    reason='cueq or gpu is not available',
+)
 @pytest.mark.parametrize(
     'start_from_cueq',
     [
@@ -160,6 +167,7 @@ def test_checkpoint_convert(tmp_path, start_from_cueq):
     model_to, _ = model_from_checkpoint_with_backend(
         str(tmp_path / 'cp_from.pth'), backend
     )
+    model_to.to('cuda')
 
     model_from.set_is_batch_data(True)
     model_to.set_is_batch_data(True)
@@ -178,7 +186,10 @@ def test_checkpoint_convert(tmp_path, start_from_cueq):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
+@pytest.mark.skipif(
+    not is_cue_available() or not torch.cuda.is_available(),
+    reason='cueq or gpu is not available',
+)
 @pytest.mark.parametrize(
     'start_from_cueq',
     [
@@ -206,6 +217,7 @@ def test_checkpoint_convert_no_batch(tmp_path, start_from_cueq):
     model_to, _ = model_from_checkpoint_with_backend(
         str(tmp_path / 'cp_from.pth'), backend
     )
+    model_to.to('cuda')
 
     model_from.set_is_batch_data(False)
     model_to.set_is_batch_data(False)
@@ -241,7 +253,10 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
+@pytest.mark.skipif(
+    not is_cue_available() or not torch.cuda.is_available(),
+    reason='cueq or gpu is not available',
+)
 def test_calculator(tmp_path):
     cueq = True
     model = get_model(use_cueq=cueq)

@@ -147,7 +147,7 @@ def main():
     ag.add_argument(
         '-cueq',
         '--enable_cueq',
-        help='use cuEquivariance for training',
+        help='(Not stable!) use cuEquivariance for training',
         action='store_true'
     )
     ag.add_argument(
