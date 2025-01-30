@@ -1,3 +1,14 @@
+### **SevenNet-MF-0 (16Dec2024)**
+> Keywords in ASE: `7net-MF-0` and `SevenNet-MF-0`
+
+The model is trained on PBE (+U) and $\mathrm{r}^{2}$ SCAN database provided in Materials Project.
+It has the same architecture with **SevenNet-0 (11Jul2024)**, except this model contains additional 'fidelity-dependent' parameters utilized for multi-fidelity training.
+However, overhead of calculations regarding fidelity-dependent parameters are negligible, which results in almost the same inference speed with **SevenNet-0 (11Jul2024)**.
+
+Details in using this model as well as choosing level-of-theory for inference can be found in [here](./sevenn/pretrained_potentials/SevenNet_MF_0).
+
+* Training set MAE ($\mathrm{r}^{2}$ SCAN): 10.8 meV/atom (energy), 0.018 eV/Ang. (force), and 0.58 kbar (stress)
+
 SevenNet-MF-0 is a pretrained model trained on PBE (+U) and $\mathrm{r}^{2}$ SCAN crystal relaxation trajectories provided in Materials Project.
 For more detailed explanation of training set curation, please refer to [ref](https://arxiv.org/abs/2409.07947).
 
