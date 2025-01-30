@@ -454,6 +454,9 @@ class D3Calculator(Calculator):
         assert lib is not None
         lib.pair_set_atom(self.pair, natoms, ntypes, types, x_flat)
 
+        xperiodic = xperiodic.astype(int)
+        yperiodic = yperiodic.astype(int)
+        zperiodic = zperiodic.astype(int)
         lib.pair_set_domain(
             self.pair, xperiodic, yperiodic, zperiodic, boxlo, boxhi, xy, xz, yz
         )
