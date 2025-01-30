@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 - Loss weighting for energy, force and stress for corresponding data label
 - Ignore unlabelled data when calculating loss. (e.g. stress data for non-pbc structure)
 - Dict style dataset input for multi-modal and data-weight
+- (experimental) cuEquivariance support
 
 ### Added (code)
 - sevenn.train.modal_dataset SevenNetMultiModalDataset
