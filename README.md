@@ -26,18 +26,7 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
----
 
-### **SevenNet-MF-0 (16Dec2024)**
-> Keywords in ASE: `7net-MF-0` and `SevenNet-MF-0`
-
-The model is trained on PBE (+U) and $\mathrm{r}^{2}$ SCAN database provided in Materials Project.
-It has the same architecture with **SevenNet-0 (11Jul2024)**, except this model contains additional 'fidelity-dependent' parameters utilized for multi-fidelity training.
-However, overhead of calculations regarding fidelity-dependent parameters are negligible, which results in almost the same inference speed with **SevenNet-0 (11Jul2024)**.
-
-Details in using this model as well as choosing level-of-theory for inference can be found in [here](./sevenn/pretrained_potentials/SevenNet_MF_0).
-
-* Training set MAE ($\mathrm{r}^{2}$ SCAN): 10.8 meV/atom (energy), 0.018 eV/Ang. (force), and 0.58 kbar (stress)
 ---
 
 ### **SevenNet-l3i5 (12Dec2024)**
@@ -354,11 +343,11 @@ If you utilize the multi-fidelity feature of this code or the pretrained model S
 ```txt
 @article{kim_sevennet_mf_2024,
 	title = {Data-Efficient Multifidelity Training for High-Fidelity Machine Learning Interatomic Potentials},
-	volume = {xx},
+	volume = {147},
 	doi = {10.1021/jacs.4c14455},
-	number = {xx},
+	number = {1},
 	journal = {J. Am. Chem. Soc.},
 	author = {Kim, Jaesun and Kim, Jisu and Kim, Jaehoon and Lee, Jiho and Park, Yutack and Kang, Youngho and Han, Seungwu},
 	year = {2024},
-	pages = {xx--xx},
+	pages = {1042--1054},
 ```
