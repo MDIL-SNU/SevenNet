@@ -180,6 +180,39 @@ class SevenNetCalculator(Calculator):
         }
 
 
+class SevenNetD3Calculator(SumCalculator):
+    def __init__(
+        self,
+        model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
+        file_type: str = 'checkpoint',
+        device: Union[torch.device, str] = 'auto',
+        sevennet_config: Optional[Any] = None,  # hold meta information
+        damping_type: str = 'damp_bj',
+        functional_name: str = 'pbe',
+        vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
+        cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
+        **kwargs,
+    ):
+
+        d3_calc = D3Calculator(
+            damping_type=damping_type,
+            functional_name=functional_name,
+            vdw_cutoff=vdw_cutoff,
+            cn_cutoff=cn_cutoff,
+            **kwargs,
+        )
+
+        sevennet_calc = SevenNetCalculator(
+            model=model,
+            file_type=file_type,
+            device=device,
+            sevennet_config=sevennet_config,
+            **kwargs,
+        )
+
+        super().__init__([sevennet_calc, d3_calc])
+
+
 class PairD3(ctypes.Structure):
     pass  # Opaque structure; only used as a pointer
 
@@ -421,36 +454,3 @@ class D3Calculator(Calculator):
             self._lib.pair_fin(self.pair)
             self._lib = None
             self.pair = None
-
-
-class SevenNetD3Calculator(SumCalculator):
-    def __init__(
-        self,
-        model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
-        file_type: str = 'checkpoint',
-        device: Union[torch.device, str] = 'auto',
-        sevennet_config: Optional[Any] = None,  # hold meta information
-        damping_type: str = 'damp_bj',
-        functional_name: str = 'pbe',
-        vdw_cutoff: float = 9000,
-        cn_cutoff: float = 1600,
-        **kwargs,
-    ):
-
-        d3_calc = D3Calculator(
-            damping_type=damping_type,
-            functional_name=functional_name,
-            vdw_cutoff=vdw_cutoff,
-            cn_cutoff=cn_cutoff,
-            **kwargs,
-        )
-
-        sevennet_calc = SevenNetCalculator(
-            model=model,
-            file_type=file_type,
-            device=device,
-            sevennet_config=sevennet_config,
-            **kwargs,
-        )
-
-        super().__init__([sevennet_calc, d3_calc])
