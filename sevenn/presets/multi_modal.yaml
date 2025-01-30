@@ -27,7 +27,7 @@ model:
     train_denominator: False
     self_connection_type: 'linear'
 
-    # Followings are used to specify which part of the model would utilize fidelity-dependent parameters for multi-fidelity training.
+    # Following are used to specify which part of the model would utilize fidelity-dependent parameters for multi-fidelity training.
     # For detailed architecture, please refer to https://arxiv.org/abs/2409.07947
     # Parts using fidelity-dependent weights are indicated as `Modified linear` layers in Figure 1.
     use_modal_node_embedding: False    # If true, use modified linear layer in atom-type embedding layer.
