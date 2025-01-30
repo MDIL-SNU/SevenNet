@@ -296,6 +296,7 @@ class D3Calculator(Calculator):
         _ext_suffix = sysconfig.get_config_var('EXT_SUFFIX')
         lib_path = os.path.join(os.path.dirname(__file__), f'libpaird3{_ext_suffix}')
 
+        self._lib = None
         if not os.path.exists(lib_path):
             _compile_d3(lib_path, verbose_compile)
 
