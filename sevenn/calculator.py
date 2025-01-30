@@ -230,7 +230,7 @@ def _compile_d3(path: str, verbose: bool = True):
             print('nvcc compiler found. start compilation')
     except FileNotFoundError as e:
         raise NotImplementedError(
-            'CUDA is not installed or nvcc is not available.D3 compilation failed'
+            'CUDA is not installed or nvcc is not available. D3 compilation failed'
         ) from e
     src = os.path.join(os.path.dirname(__file__), 'pair_e3gnn/pair_d3_for_ase.cu')
     sms = [61, 70, 75, 80, 86, 89, 90]
