@@ -3,5 +3,5 @@ dist
 sevenn.egg-info
 *.swp
 dev.vim
-sevenn/libpaird3.so
+*libpaird3*
 __pycache__/
