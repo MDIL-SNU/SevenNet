@@ -15,7 +15,7 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
  - Python [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator support
  - GPU-parallelized molecular dynamics with LAMMPS
  - CUDA-accelerated D3 (van der Waals) dispersion
- - Multi-fidelity training for combining multiple database with different calculation settings.
+ - Multi-fidelity training for combining multiple database with different calculation settings. [Usage](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md).
 
 ## Pre-trained models
 So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
