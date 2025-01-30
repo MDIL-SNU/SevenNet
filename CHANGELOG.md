@@ -2,7 +2,7 @@
 All notable changes to this project will be documented in this file.
 
 
-## WIP [0.11.0]
+## [0.11.0]
 ### Added
 - Build multi-fidelity model, SevenNet-MF, based on given modality in the yaml
 - Modality support for sevenn_inference, sevenn_get_modal, and SevenNetCalculator
