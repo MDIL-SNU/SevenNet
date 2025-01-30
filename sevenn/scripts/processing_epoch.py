@@ -3,6 +3,7 @@ from copy import deepcopy
 from typing import Optional
 
 import torch
+from torch.utils.data.distributed import DistributedSampler
 
 import sevenn._keys as KEY
 from sevenn.error_recorder import ErrorRecorder
@@ -34,7 +35,9 @@ def processing_epoch_v2(
     total_epoch = total_epoch or config[KEY.EPOCH]
     per_epoch = per_epoch or config.get(KEY.PER_EPOCH, 10)
     best_metric = best_metric or config.get(KEY.BEST_METRIC, 'TotalLoss')
-    recorder = error_recorder or ErrorRecorder.from_config(config)
+    recorder = error_recorder or ErrorRecorder.from_config(
+        config, trainer.loss_functions
+    )
     recorders = {k: deepcopy(recorder) for k in loaders}
 
     best_val = float('inf')
@@ -56,8 +59,9 @@ def processing_epoch_v2(
         with open(csv_path, 'w') as f:
             f.write(','.join(head) + '\n')
 
-    path = f'{prefix}/checkpoint_0.pth'  # save first epoch
-    trainer.write_checkpoint(path, config=config, epoch=0)
+    if start_epoch == 1:
+        path = f'{prefix}/checkpoint_0.pth'  # save first epoch
+        trainer.write_checkpoint(path, config=config, epoch=0)
 
     for epoch in range(start_epoch, total_epoch + 1):  # one indexing
         log.timer_start('epoch')
@@ -69,8 +73,17 @@ def processing_epoch_v2(
         csv_dct = {'epoch': str(epoch), 'lr': f'{lr:8f}'}
         errors = {}
         for k, loader in loaders.items():
+            is_train = k == train_loader_key
+            if (
+                trainer.distributed
+                and isinstance(loader.sampler, DistributedSampler)
+                and is_train
+                and config.get('train_shuffle', True)
+            ):
+                loader.sampler.set_epoch(epoch)
+
             rec = recorders[k]
-            trainer.run_one_epoch(loader, k == train_loader_key, rec)
+            trainer.run_one_epoch(loader, is_train, rec)
             csv_dct.update(rec.get_dct(prefix=k))
             errors[k] = rec.epoch_forward()
         log.write_full_table(list(errors.values()), list(errors))

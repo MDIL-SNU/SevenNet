@@ -5,8 +5,13 @@ import pytest
 from ase.build import bulk, molecule
 
 from sevenn.calculator import D3Calculator, SevenNetCalculator
+from sevenn.nn.cue_helper import is_cue_available
 from sevenn.scripts.deploy import deploy
-from sevenn.util import model_from_checkpoint, pretrained_name_to_path
+from sevenn.util import (
+    model_from_checkpoint,
+    model_from_checkpoint_with_backend,
+    pretrained_name_to_path,
+)
 
 
 @pytest.fixture
@@ -27,6 +32,13 @@ def atoms_mol():
 @pytest.fixture(scope='module')
 def sevennet_0_cal():
     return SevenNetCalculator('7net-0_11July2024')
+
+
+@pytest.fixture(scope='module')
+def sevennet_0_cueq_cal():
+    cpp = pretrained_name_to_path('7net-0_11July2024')
+    model, _ = model_from_checkpoint_with_backend(cpp, 'cueq')
+    return SevenNetCalculator(model)
 
 
 @pytest.fixture(scope='module')
@@ -86,13 +98,9 @@ def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
     assert np.allclose(atoms_mol.get_potential_energies(), atoms2_ref['energies'])
 
 
-def test_sevennet_0_cal_deployed(tmp_path, atoms_pbc):
-    model, config = model_from_checkpoint(
-        pretrained_name_to_path('7net-0_11July2024')
-    )
-
+def test_sevennet_0_cal_deployed_consistency(tmp_path, atoms_pbc):
     fname = str(tmp_path / '7net_0.pt')
-    deploy(model.state_dict(), config, fname)
+    deploy(pretrained_name_to_path('7net-0_11July2024'), fname)
 
     calc_script = SevenNetCalculator(fname, file_type='torchscript')
     calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
@@ -109,7 +117,7 @@ def test_sevennet_0_cal_deployed(tmp_path, atoms_pbc):
         assert np.allclose(res_cp[k], res_script[k])
 
 
-def test_sevennet_0_cal_as_instnace(atoms_pbc):
+def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
     model, _ = model_from_checkpoint(
         pretrained_name_to_path('7net-0_11July2024')
     )
@@ -127,6 +135,38 @@ def test_sevennet_0_cal_as_instnace(atoms_pbc):
 
     for k in res_cp:
         assert np.allclose(res_cp[k], res_script[k])
+
+
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
+def test_sevennet_0_cal_cueq(atoms_pbc, sevennet_0_cueq_cal):
+    atoms1_ref = {
+        'energy': -3.779199,
+        'energies': [-1.8493923, -1.9298072],
+        'force': [
+            [12.666697, 0.04726403, 0.04775861],
+            [-12.666697, -0.04726403, -0.04775861],
+        ],
+        'stress': [
+            [
+                -0.6439122,
+                -0.03643947,
+                -0.03643981,
+                0.00599139,
+                0.04544507,
+                0.04543639,
+            ]
+        ],
+    }
+
+    atoms_pbc.calc = sevennet_0_cueq_cal
+
+    assert np.allclose(atoms_pbc.get_potential_energy(), atoms1_ref['energy'])
+    assert np.allclose(
+        atoms_pbc.get_potential_energy(force_consistent=True), atoms1_ref['energy']
+    )
+    assert np.allclose(atoms_pbc.get_forces(), atoms1_ref['force'])
+    assert np.allclose(atoms_pbc.get_stress(), atoms1_ref['stress'])
+    assert np.allclose(atoms_pbc.get_potential_energies(), atoms1_ref['energies'])
 
 
 def test_d3_cal_pbc(atoms_pbc, d3_cal):

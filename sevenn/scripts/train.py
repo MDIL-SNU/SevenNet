@@ -1,12 +1,14 @@
 from typing import Optional
 
 import torch.distributed as dist
-from torch.nn import Module
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
 import sevenn._keys as KEY
 from sevenn.model_build import build_E3_equivariant_model
+from sevenn.scripts.processing_continue import (
+    convert_modality_of_checkpoint_state_dct,
+)
 from sevenn.sevenn_logger import Logger
 from sevenn.train.trainer import Trainer
 
@@ -39,6 +41,7 @@ def train_v2(config, working_dir: str):
     """
     import sevenn.train.atoms_dataset as atoms_dataset
     import sevenn.train.graph_dataset as graph_dataset
+    import sevenn.train.modal_dataset as modal_dataset
 
     from .processing_continue import processing_continue_v2
     from .processing_epoch import processing_epoch_v2
@@ -59,7 +62,9 @@ def train_v2(config, working_dir: str):
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
         state_dicts, start_epoch = processing_continue_v2(config)
 
-    if config[KEY.DATASET_TYPE] == 'graph':
+    if config.get(KEY.USE_MODALITY, False):
+        datasets = modal_dataset.from_config(config, working_dir)
+    elif config[KEY.DATASET_TYPE] == 'graph':
         datasets = graph_dataset.from_config(config, working_dir)
     elif config[KEY.DATASET_TYPE] == 'atoms':
         datasets = atoms_dataset.from_config(config, working_dir)
@@ -72,7 +77,6 @@ def train_v2(config, working_dir: str):
 
     log.write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
-    assert isinstance(model, Module)
     log.print_model_info(model, config)
 
     trainer = Trainer.from_config(model, config)
@@ -114,16 +118,20 @@ def train(config, working_dir: str):
 
     log.write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
-    assert isinstance(model, Module)
 
     log.write('Model building was successful\n')
 
     trainer = Trainer.from_config(model, config)
     if state_dicts:
+        state_dicts = convert_modality_of_checkpoint_state_dct(
+            config, state_dicts
+        )
         trainer.load_state_dicts(*state_dicts, strict=False)
 
     log.print_model_info(model, config)
 
+    Logger().write('Trainer initialized, ready to training\n')
+    Logger().bar()
     log.write('Trainer initialized, ready to training\n')
     log.bar()
 

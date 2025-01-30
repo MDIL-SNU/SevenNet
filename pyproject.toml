@@ -1,6 +1,6 @@
 [project]
 name = "sevenn"
-version = "0.10.4"
+version = "0.11.0"
 authors = [
     { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
     { name = "Haekwan Jeon", email = "haekwan98@snu.ac.kr" },
@@ -21,12 +21,13 @@ dependencies = [
     "ase",
     "braceexpand",
     "pyyaml",
-    "e3nn",
+    "e3nn>=0.5.0",
     "tqdm",
     "scikit-learn",
     "torch_geometric>=2.5.0",
     "numpy",
     "matscipy",
+    "pandas",
 ]
 [project.optional-dependencies]
 test = ["matscipy", "pytest-cov>=5"]
@@ -38,6 +39,7 @@ sevenn_graph_build = "sevenn.main.sevenn_graph_build:main"
 sevenn_inference = "sevenn.main.sevenn_inference:main"
 sevenn_patch_lammps = "sevenn.main.sevenn_patch_lammps:main"
 sevenn_preset = "sevenn.main.sevenn_preset:main"
+sevenn_cp = "sevenn.main.sevenn_cp:main"
 
 [project.urls]
 Homepage = "https://github.com/MDIL-SNU/SevenNet"
@@ -59,6 +61,7 @@ sevenn = [
     "pretrained_potentials/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth",
     "pretrained_potentials/SevenNet_0__22May2024/checkpoint_sevennet_0.pth",
     "pretrained_potentials/SevenNet_l3i5/checkpoint_l3i5.pth",
+    "pretrained_potentials/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth",
     "py.typed",
 ]
 
