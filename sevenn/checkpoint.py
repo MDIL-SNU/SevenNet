@@ -7,6 +7,7 @@ from datetime import datetime
 from typing import Any, Dict, Optional, Union
 
 import pandas as pd
+from packaging.version import Version
 from torch import Tensor
 from torch import load as torch_load
 
@@ -51,6 +52,12 @@ def copy_state_dict(state_dict) -> dict:
 
 
 def _config_cp_routine(config):
+    cp_ver = Version(config.get('version', None))
+    this_ver = Version(sevenn.__version__)
+    if cp_ver > this_ver:
+        warnings.warn(f'The checkpoint version ({cp_ver}) is newer than this source'
+                      f'({this_ver}). This may cause unexpected behaviors')
+
     defaults = {**consts.model_defaults(config)}
     config = compat.patch_old_config(config)  # type: ignore
 
