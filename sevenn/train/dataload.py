@@ -1,7 +1,7 @@
 import copy
 import os.path
 from functools import partial
-from itertools import islice
+from itertools import chain, islice
 from typing import Callable, List, Optional
 
 import ase
@@ -23,6 +23,7 @@ from braceexpand import braceexpand
 from tqdm import tqdm
 
 import sevenn._keys as KEY
+from sevenn._const import LossType
 from sevenn.atom_graph_data import AtomGraphData
 
 from .dataset import AtomGraphDataset
@@ -134,6 +135,7 @@ def atoms_to_graph(
     cutoff: float,
     transfer_info: bool = True,
     y_from_calc: bool = False,
+    allow_unlabeled: bool = False,
 ):
     """
     From ase atoms, return AtomGraphData as graph based on cutoff radius
@@ -172,17 +174,14 @@ def atoms_to_graph(
         else:
             y_stress = y_stress.squeeze()
     else:
-        try:
-            y_energy = atoms.get_potential_energy(force_consistent=True)
-        except NotImplementedError:
-            y_energy = atoms.get_potential_energy()
-        y_force = atoms.get_forces(apply_constraint=False)
-        try:
-            y_stress = -1 * atoms.get_stress()  # it ensures correct shape
-            y_stress = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
-        except RuntimeError:
-            y_stress = np.full((6,), np.nan)
-    assert y_stress.shape == (6,), 'If you see this, please report to the maintainer'
+        from_calc = _y_from_calc(atoms)
+        y_energy = from_calc['energy']
+        y_force = from_calc['force']
+        y_stress = from_calc['stress']
+    assert y_stress.shape == (6,), 'If you see this, please raise a issue'
+
+    if not allow_unlabeled and (np.isnan(y_energy) or np.isnan(y_force).any()):
+        raise ValueError('Unlabeled E or F found, set allow_unlabeled True')
 
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
@@ -217,15 +216,10 @@ def atoms_to_graph(
     if transfer_info and atoms.info is not None:
         info = copy.deepcopy(atoms.info)
         # save only metadata
-        # TODO: is it really necessary?
-        if 'y_energy' in info:
-            del info['y_energy']
-        if 'y_force' in info:
-            del info['y_force']
-        if 'y_stress' in info:
-            del info['y_stress']
+        info.pop('y_energy', None)
+        info.pop('y_force', None)
+        info.pop('y_stress', None)
         data[KEY.INFO] = info
-
     else:
         data[KEY.INFO] = {}
 
@@ -238,6 +232,7 @@ def graph_build(
     num_cores: int = 1,
     transfer_info: bool = True,
     y_from_calc: bool = False,
+    allow_unlabeled: bool = False,
 ) -> List[AtomGraphData]:
     """
     parallel version of graph_build
@@ -253,7 +248,10 @@ def graph_build(
         List[AtomGraphData]: list of AtomGraphData
     """
     serial = num_cores == 1
-    inputs = [(atoms, cutoff, transfer_info, y_from_calc) for atoms in atoms_list]
+    inputs = [
+        (atoms, cutoff, transfer_info, y_from_calc, allow_unlabeled)
+        for atoms in atoms_list
+    ]
 
     if not serial:
         pool = mp.Pool(num_cores)
@@ -272,6 +270,34 @@ def graph_build(
     graph_list = [AtomGraphData.from_numpy_dict(g) for g in graph_list]
 
     return graph_list
+
+
+def _y_from_calc(atoms: ase.Atoms):
+    ret = {
+        'energy': np.nan,
+        'force': np.full((len(atoms), 3), np.nan),
+        'stress': np.full((6,), np.nan),
+    }
+
+    if atoms.calc is None:
+        return ret
+
+    try:
+        ret['energy'] = atoms.get_potential_energy(force_consistent=True)
+    except NotImplementedError:
+        ret['energy'] = atoms.get_potential_energy()
+
+    try:
+        ret['force'] = atoms.get_forces(apply_constraint=False)
+    except NotImplementedError:
+        pass
+
+    try:
+        y_stress = -1 * atoms.get_stress()  # it ensures correct shape
+        ret['stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
+    except RuntimeError:
+        pass
+    return ret
 
 
 def _set_atoms_y(
@@ -305,38 +331,23 @@ def _set_atoms_y(
     Ignore constraints like selective dynamics
     """
     for atoms in atoms_list:
-        # access energy
+        from_calc = _y_from_calc(atoms)
         if energy_key is not None:
-            atoms.info['y_energy'] = atoms.info[energy_key]
-            del atoms.info[energy_key]
+            atoms.info['y_energy'] = atoms.info.pop(energy_key)
         else:
-            try:
-                atoms.info['y_energy'] = atoms.get_potential_energy(
-                    force_consistent=True
-                )
-            except NotImplementedError:
-                atoms.info['y_energy'] = atoms.get_potential_energy()
-        # access force
+            atoms.info['y_energy'] = from_calc['energy']
+
         if force_key is not None:
-            atoms.arrays['y_force'] = atoms.arrays[force_key]
-            del atoms.arrays[force_key]
+            atoms.arrays['y_force'] = atoms.arrays.pop(force_key)
         else:
-            atoms.arrays['y_force'] = atoms.get_forces(apply_constraint=False)
-        # access stress
+            atoms.arrays['y_force'] = from_calc['force']
+
         if stress_key is not None:
-            y_stress = -1 * atoms.info[stress_key]
+            y_stress = -1 * atoms.info.pop(stress_key)
             atoms.info['y_stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
-            del atoms.info[stress_key]
         else:
-            try:
-                # xx yy zz xy yz zx order
-                # We expect this is eV/A^3 unit
-                # (ASE automatically converts vasp kB to eV/A^3)
-                # So we restore it
-                y_stress = -1 * atoms.get_stress()
-                atoms.info['y_stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
-            except RuntimeError:
-                atoms.info['y_stress'] = np.full((6,), np.nan)
+            atoms.info['y_stress'] = from_calc['stress']
+
     return atoms_list
 
 
@@ -359,9 +370,8 @@ def ase_reader(
 
 
 # Reader
-def structure_list_reader(filename: str, format_outputs='vasp-out'):
+def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
     """
-    Deprecated
     Read from structure_list using braceexpand and ASE
 
     Args:
@@ -436,16 +446,68 @@ def structure_list_reader(filename: str, format_outputs='vasp-out'):
                 }
                 for idx, o in enumerate(it_atoms):
                     try:
-                        istep = index.start + idx * index.step
-                        atoms = o.build()
-                        atoms.info = {**info_dct_f, 'ionic_step': istep}
-                    except TypeError:  # it is not slice of ionic steps
-                        atoms = o.build()
-                        atoms.info = info_dct_f
-                    stct_lists.append(atoms)
-                f_stream.close()
+                        it_atoms = islice(
+                            gen_all, index.start, index.stop, index.step
+                        )
+                    except ValueError:
+                        # TODO: support
+                        # negative index
+                        raise ValueError('Negative index is not supported yet')
+
+                    info_dct_f = {
+                        **info_dct,
+                        'file': os.path.abspath(expanded_filename),
+                    }
+                    for idx, o in enumerate(it_atoms):
+                        try:
+                            istep = index.start + idx * index.step  # type: ignore
+                            atoms = o.build()
+                            atoms.info = {**info_dct_f, 'ionic_step': istep}.copy()
+                        except TypeError:  # it is not slice of ionic steps
+                            atoms = o.build()
+                            atoms.info = info_dct_f.copy()
+                        stct_lists.append(atoms)
+                    f_stream.close()
+                else:
+                    stct_lists += ase.io.read(
+                        expanded_filename,
+                        index=index_expr,
+                        parallel=False,
+                    )
         structures_dict[title] = stct_lists
     return {k: _set_atoms_y(v) for k, v in structures_dict.items()}
+
+
+def dict_reader(data_dict: dict):
+    data_dict_cp = copy.deepcopy(data_dict)
+
+    ret = []
+    file_list = data_dict_cp.pop('file_list', None)
+    if file_list is None:
+        raise KeyError('file_list is not found')
+
+    data_weight_default = {
+        'energy': 1.0,
+        'force': 1.0,
+        'stress': 1.0,
+    }
+    data_weight = data_weight_default.copy()
+    data_weight.update(data_dict_cp.pop(KEY.DATA_WEIGHT, {}))
+
+    for file_dct in file_list:
+        ftype = file_dct.pop('data_format', 'ase')
+        files = list(braceexpand(file_dct.pop('file')))
+        if ftype == 'ase':
+            ret.extend(chain(*[ase_reader(f, **file_dct) for f in files]))
+        elif ftype == 'graph':
+            continue
+        else:
+            raise ValueError(f'{ftype} yet')
+
+    for atoms in ret:
+        atoms.info.update(data_dict_cp)
+        atoms.info.update({KEY.DATA_WEIGHT: data_weight})
+    return _set_atoms_y(ret)
 
 
 def match_reader(reader_name: str, **kwargs):
@@ -467,6 +529,8 @@ def file_to_dataset(
     reader: Callable = ase_reader,
     label: Optional[str] = None,
     transfer_info: bool = True,
+    use_weight: bool = False,
+    use_modality: bool = False,
 ):
     """
     Deprecated
@@ -498,8 +562,48 @@ def file_to_dataset(
             transfer_info=transfer_info,
             y_from_calc=False,
         )
+
+        label_info = label.split(':')
         for graph in graph_list:
-            graph[KEY.USER_LABEL] = label
-        graph_dct[label] = graph_list
+            graph[KEY.USER_LABEL] = label_info[0].strip()
+            if use_weight:
+                find_weight = False
+                for info in label_info[1:]:
+                    if 'w=' in info.lower():
+                        weights = info.split('=')[1]
+                        try:
+                            if ',' in weights:
+                                weight_list = list(map(float, weights.split(',')))
+                            else:
+                                weight_list = [float(weights)] * 3
+                            weight_dict = {}
+                            for idx, loss_type in enumerate(LossType):
+                                weight_dict[loss_type.value] = (
+                                    weight_list[idx] if idx < len(weight_list) else 1
+                                )
+                            graph[KEY.DATA_WEIGHT] = weight_dict
+                            find_weight = True
+                            break
+                        except:
+                            raise ValueError(
+                                'Weight must be a real number, but'
+                                f' {weights} is given for {label}'
+                            )
+                if not find_weight:
+                    weight_dict = {}
+                    for loss_type in LossType:
+                        weight_dict[loss_type.value] = 1
+                    graph[KEY.DATA_WEIGHT] = weight_dict
+            if use_modality:
+                find_modality = False
+                for info in label_info[1:]:
+                    if 'm=' in info.lower():
+                        graph[KEY.DATA_MODALITY] = (info.split('=')[1]).strip()
+                        find_modality = True
+                        break
+                if not find_modality:
+                    raise ValueError(f'Modality not given for {label}')
+
+        graph_dct[label_info[0].strip()] = graph_list
     db = AtomGraphDataset(graph_dct, cutoff)
     return db

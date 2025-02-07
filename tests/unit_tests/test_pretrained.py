@@ -4,13 +4,14 @@ import pytest
 import torch
 from ase.build import bulk, molecule
 
+import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.dataload import unlabeled_atoms_to_graph
 from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 
-def acl(a, b):
-    return torch.allclose(a, b, atol=1e-6)
+def acl(a, b, atol=1e-6):
+    return torch.allclose(a, b, atol=atol)
 
 
 @pytest.fixture
@@ -30,7 +31,7 @@ def atoms_mol():
 
 def test_7net0_22May2024(atoms_pbc, atoms_mol):
     """
-    Reference from v0.9.3.post1 with sevennet_calculator
+    Reference from v0.9.3.post1 with SevenNetCalculator
     """
     cp_path = pretrained_name_to_path('7net-0_22May2024')
     model, config = model_from_checkpoint(cp_path)
@@ -73,7 +74,7 @@ def test_7net0_22May2024(atoms_pbc, atoms_mol):
 
 def test_7net0_11July2024(atoms_pbc, atoms_mol):
     """
-    Reference from v0.9.3.post1 with sevennet_calculator
+    Reference from v0.9.3.post1 with SevenNetCalculator
     """
     cp_path = pretrained_name_to_path('7net-0_11July2024')
     model, config = model_from_checkpoint(cp_path)
@@ -119,7 +120,7 @@ def test_7net0_11July2024(atoms_pbc, atoms_mol):
 
 def test_7net_l3i5(atoms_pbc, atoms_mol):
     """
-    Reference from v0.9.3.post1 with sevennet_calculator
+    Reference from v0.9.3.post1 with SevenNetCalculator
     """
     cp_path = pretrained_name_to_path('7net-l3i5')
     model, config = model_from_checkpoint(cp_path)
@@ -152,6 +153,52 @@ def test_7net_l3i5(atoms_pbc, atoms_mol):
             [0.0, -1.4547814e01, 8.1347866],
             [0.0, 1.0308369e01, -1.0880318e01],
             [0.0, 4.2394452, 2.7455316],
+        ]
+    )
+
+    assert acl(g1.inferred_total_energy, g1_ref_e)
+    assert acl(g1.inferred_force, g1_ref_f, 1e-5)
+    assert acl(g1.inferred_stress, g1_ref_s, 1e-5)
+
+    assert acl(g2.inferred_total_energy, g2_ref_e)
+    assert acl(g2.inferred_force, g2_ref_f)
+
+
+def test_7net_mf_0(atoms_pbc, atoms_mol):
+    cp_path = pretrained_name_to_path('7net-mf-0')
+    model, config = model_from_checkpoint(cp_path)
+    cutoff = config['cutoff']
+
+    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_pbc, cutoff))
+    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_mol, cutoff))
+
+    g1[KEY.DATA_MODALITY] = 'R2SCAN'
+    g2[KEY.DATA_MODALITY] = 'R2SCAN'
+
+    model.set_is_batch_data(False)
+    g1 = model(g1)
+    g2 = model(g2)
+
+    model.set_is_batch_data(True)
+
+    g1_ref_e = torch.tensor([-11.607587814331055])
+    g1_ref_f = torch.tensor(
+        [
+            [8.512259, 0.07307914, 0.06676716],
+            [-8.512257, -0.07307915, -0.06676716],
+        ]
+    )
+    g1_ref_s = -1 * torch.tensor(
+        # xx, yy, zz, xy, yz, zx
+        [-0.4516204, -0.02483013, -0.02485001, 0.03247492, 0.00259375, 0.03250402]
+    )
+
+    g2_ref_e = torch.tensor([-14.172412872314453])
+    g2_ref_f = torch.tensor(
+        [
+            [4.6566129e-10, -1.3429364e+01, 6.9344816e+00],
+            [2.3283064e-09, 8.9132404e+00, -9.6807365e+00],
+            [-2.7939677e-09, 4.5161238e+00, 2.7462559e+00],
         ]
     )
 

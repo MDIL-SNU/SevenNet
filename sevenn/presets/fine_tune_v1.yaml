@@ -34,6 +34,10 @@ train:  # Customizable
     is_train_stress: True
     epoch: 100
 
+    loss: 'Huber'  # keeping original loss function give better ft result
+    loss_param:
+        delta: 0.01
+
     optimizer: 'adam'
     optim_param:
         lr: 0.004
@@ -41,8 +45,8 @@ train:  # Customizable
     scheduler_param:
         gamma: 0.99
 
-    force_loss_weight: 0.1
-    stress_loss_weight: 1e-06
+    force_loss_weight: 1.0
+    stress_loss_weight: 0.01
 
     per_epoch: 10  # Generate checkpoints every this epoch
 

@@ -2,6 +2,46 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.11.0]
+### Added
+- Build multi-fidelity model, SevenNet-MF, based on given modality in the yaml
+- Modality support for sevenn_inference, sevenn_get_modal, and SevenNetCalculator
+- [cli] sevenn_cp tool for checkpoint summary, input generation, multi-modal routines
+- Modality append / assign using sevenn_cp
+- Loss weighting for energy, force and stress for corresponding data label
+- Ignore unlabelled data when calculating loss. (e.g. stress data for non-pbc structure)
+- Dict style dataset input for multi-modal and data-weight
+- (experimental) cuEquivariance support
+
+### Added (code)
+- sevenn.train.modal_dataset SevenNetMultiModalDataset
+- sevenn.scripts.backward_compatibility.py
+- sevenn.checkpoint.py
+
+### Changed
+- Sort instructions of tensor product in convolution (+ fix flipped w3j coeff of old model)
+- Lazy initialization for `IrrepsLinear` and `SelfConnection*`
+- Checkpoint things using `sevenn/checkpoint.py`
+- e3nn >= 0.5.0, to ensure changed CG coeff later on
+- pandas as dependency
+
+### Fixed
+- More refactor for shift scale things + few bug fixes
+- Correctly shuffle training set when distributed training is enabled
+
+
+## [0.10.4]
+### Added
+- feats: D3 calculator
+### Fixed
+- bug: info dict sharing (therefore energy stress) when structure_list used
+- torch >= 2.5.0 works
+- numpy >= 2.0 works (need more testing)
+### Changed
+- sevennet_calculator.py => calculator
+- fine tunine preset to use original loss function (Huber) and loss weights
+
+
 ## [0.10.3]
 ### Added
 - SevenNet-l3i5, checkpoint, preset. (keywords: 7net-l3i5, sevennet-l3i5)

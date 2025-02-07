@@ -17,9 +17,25 @@ import sevenn.util as util
 from sevenn._const import NUM_UNIV_ELEMENT
 from sevenn.atom_graph_data import AtomGraphData
 
+_warn_avg_num_neigh = """SevenNetAtomsDataset does not provide correct avg_num_neigh
+as it does not build graph. We will compute only random 10000 structures graph to
+approximate this value. If you want more precise avg_num_neigh,
+use SevenNetGraphDataset. If it is not viable due to memory limit, you
+need online algorithm to do this , which is not yet implemented in the SevenNet"""
+
 
 class SevenNetAtomsDataset(torch.utils.data.Dataset):
-    """ """
+    """
+    Args:
+        cutoff: edge cutoff of given AtomGraphData
+        files: list of filenames or dict describing how to parse the file
+               ASE readable (with proper extension), structure_list, .sevenn_data,
+               dict containing file_list (see dict_reader of train/dataload.py)
+        info_dict_copy_keys: patch these keys from KEY.INFO to graph when accessing.
+            default is KEY.DATA_WEIGHT and KEY.DATA_MODALITY, which may accessed
+            while training.
+        **process_kwargs: keyword arguments that will be passed into ase.io.read
+    """
 
     def __init__(
         self,
@@ -27,7 +43,8 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
         files: Union[str, List[str]],
         atoms_filter: Optional[Callable] = None,
         atoms_transform: Optional[Callable] = None,
-        graph_transform: Optional[Callable] = None,
+        transform: Optional[Callable] = None,
+        use_data_weight: bool = False,
         **process_kwargs,
     ):
         self.cutoff = cutoff
@@ -36,8 +53,9 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
         files = [os.path.abspath(file) for file in files]
         self._files = files
         self.atoms_filter = atoms_filter
-        self.atoms_trasform = atoms_transform
-        self.graph_trasform = graph_transform
+        self.atoms_transform = atoms_transform
+        self.transform = transform
+        self.use_data_weight = use_data_weight
         self._scanned = False
         self._avg_num_neigh_approx = None
         self.statistics = {}
@@ -52,14 +70,16 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
         super().__init__()
 
     @staticmethod
-    def file_to_atoms_list(filename: str, **kwargs) -> List[Atoms]:
-        if 'structure_list' in filename:
-            atoms_dct = dataload.structure_list_reader(filename)
+    def file_to_atoms_list(file: Union[str, dict], **kwargs) -> List[Atoms]:
+        if isinstance(file, dict):
+            atoms_list = dataload.dict_reader(file)
+        elif 'structure_list' in file:
+            atoms_dct = dataload.structure_list_reader(file)
             atoms_list = []
             for lst in atoms_dct.values():
                 atoms_list.extend(lst)
         else:
-            atoms_list = dataload.ase_reader(filename, **kwargs)
+            atoms_list = dataload.ase_reader(file, **kwargs)
         return atoms_list
 
     def save(self, path):
@@ -76,12 +96,18 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         atoms = self._atoms_list[index]
-        if self.atoms_trasform is not None:
-            atoms = self.atoms_trasform(atoms)
+        if self.atoms_transform is not None:
+            atoms = self.atoms_transform(atoms)
 
         graph = self._graph_build(atoms)
-        if self.graph_trasform is not None:
-            graph = self.graph_trasform(graph)
+        if self.transform is not None:
+            graph = self.transform(graph)
+
+        if self.use_data_weight:
+            weight = graph[KEY.INFO].pop(
+                KEY.DATA_WEIGHT, {'energy': 1.0, 'force': 1.0, 'stress': 1.0}
+            )
+            graph[KEY.DATA_WEIGHT] = weight
 
         return AtomGraphData.from_numpy_dict(graph)
 
@@ -131,14 +157,7 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
     def avg_num_neigh(self, n_sample=10000):
         if self._avg_num_neigh_approx is None:
             if len(self) > n_sample:
-                warnings.warn(
-                    """SevenNetAtomsDataset does not provide correct avg_num_neigh
-                    as it does not build graph. We will compute only random 10000
-                    structures graph to approximate this value. If you want more
-                    precise avg_num_neigh, use SevenNetGraphDataset. If it is not
-                    viable due to memory limit, you need online algorithm to do this
-                    , which is not yet implemented in the SevenNet"""
-                )
+                warnings.warn(_warn_avg_num_neigh)
             n_sample = min(len(self), n_sample)
             indices = random.sample(range(len(self)), n_sample)
             n_neigh = []
@@ -233,6 +252,7 @@ def from_config(
     # initialize arguments for loading dataset
     dataset_args = {
         'cutoff': config[KEY.CUTOFF],
+        'use_data_weight': config.get(KEY.USE_WEIGHT, False),
         **config[KEY.DATA_FORMAT_ARGS],
     }
 
@@ -242,7 +262,7 @@ def from_config(
             continue
         if isinstance(paths, str):
             paths = [paths]
-        name = dk.split('_')[1].strip()
+        name = '_'.join([nn.strip() for nn in dk.split('_')[1:-1]])
         dataset_args.update({'files': paths})
         datasets[name] = SevenNetAtomsDataset(**dataset_args)
 

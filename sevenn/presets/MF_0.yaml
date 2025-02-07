@@ -1,0 +1,108 @@
+model:
+    chemical_species: 'univ'  # Ready for 119 elements
+    cutoff: 5.0
+    channel: 128
+    is_parity: False
+    lmax: 2
+    num_convolution_layer: 5
+    irreps_manual:
+        - "128x0e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e"
+
+    weight_nn_hidden_neurons: [64, 64]
+    radial_basis:
+        radial_basis_name: 'bessel'
+        bessel_basis_num: 8
+    cutoff_function:
+        cutoff_function_name: 'XPLOR'
+        cutoff_on: 4.5
+
+    act_gate: {'e': 'silu', 'o': 'tanh'}
+    act_scalar: {'e': 'silu', 'o': 'tanh'}
+
+    conv_denominator: 'avg_num_neigh'
+    train_shift_scale: False
+    train_denominator: False
+    self_connection_type: 'linear'
+
+    # Following are used to specify which part of the model would utilize fidelity-dependent parameters for multi-fidelity training.
+    # For detailed architecture, please refer to https://arxiv.org/abs/2409.07947
+    # Parts using fidelity-dependent weights are indicated as `Modified linear` layers in Figure 1.
+    use_modal_node_embedding: False    # If true, use modified linear layer in atom-type embedding layer.
+    use_modal_self_inter_intro: True   # If true, use modified linear layers in self-interaction block before the convolution in the interaction blocks.
+    use_modal_self_inter_outro: True   # If true, use modified linear layers in self-interaction block after the convolution in the interaction blocks.
+    use_modal_output_block: True       # If true, use modified linear layer in the output block.
+train:
+    train_shuffle: True
+    random_seed: 777
+    is_train_stress : True
+    epoch: 200
+
+    loss: 'Huber'
+    loss_param:
+        delta: 0.01
+
+    optimizer: 'adam'
+    optim_param:
+        lr: 0.01
+    scheduler: 'linearlr'
+    scheduler_param:
+        start_factor: 1.0
+        total_iters: 200
+        end_factor: 0.0001
+
+    force_loss_weight : 1.00
+    stress_loss_weight: 0.01
+
+    error_record:
+        - ['Energy', 'MAE']
+        - ['Force', 'MAE']
+        - ['Stress', 'MAE']
+        - ['Energy', 'Loss']
+        - ['Force', 'Loss']
+        - ['Stress', 'Loss']
+        - ['TotalLoss', 'None']
+
+    per_epoch: 10
+    use_modality: True
+    use_weight: True
+
+data:
+    batch_size: 64
+    shift: 'elemwise_reference_energies'
+    scale: 1.73
+
+    use_modal_wise_shift: True    # If true, use different atomic energy shift for each database
+    use_modal_wise_scale: False   # If true, use different atomic energy scale for each database
+
+    load_trainset_path:
+
+      - data_modality: pbe  # Name of database
+        file_list:
+          - file: "**path to PBE database**"  # ASE readable or .pt file (graph.pt)
+        data_weight:
+            energy: 1.0
+            force: 1.0   # This weight would be additionally multiplied to `force_loss_weight` for this database
+            stress: 1.0  # This weight would be additionally multiplied to `stress_loss_weight` for this database
+
+      - data_modality: r2scan
+        file_list:
+          - file: "**path to r2SCAN database**"
+        data_weight:
+            energy: 7.0
+            force: 7.0
+            stress: 7.0
+
+    load_pbe_validset_path:   # any name starts with 'load' and ends with 'set_path'
+      - data_modality: pbe   # modality must be given for mm valid set
+        file_list:
+          - file: "**path to PBE test set**"
+
+    load_scan_validset_path:
+      - data_modality: r2scan
+        file_list:
+          - file: "**path to r2SCAN test set**"

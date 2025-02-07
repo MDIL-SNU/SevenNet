@@ -1,19 +1,16 @@
 import csv
 import os
-import tempfile
-from typing import IO, Iterable, List, Union
+from typing import Iterable, List, Optional, Union
 
-import ase.io
 import numpy as np
-from ase.calculators.singlepoint import SinglePointCalculator
 from torch_geometric.loader import DataLoader
 from tqdm import tqdm
 
 import sevenn._keys as KEY
-import sevenn.train.dataload as dl
 import sevenn.util as util
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.graph_dataset import SevenNetGraphDataset
+from sevenn.train.modal_dataset import SevenNetMultiModalDataset
 
 
 def write_inference_csv(output_list, out):
@@ -106,61 +103,17 @@ def write_inference_csv(output_list, out):
                 writer.writerow(data)
 
 
-def _extract_unlabeled_data(targets: List[str], tmp_file: IO, **data_kwargs):
-    # for only, ase readable, it may be unlabeled
-    # extract such files and returns graph list built with these
-
-    def assign_dummy_y(atoms):
-        dummy = {'energy': np.nan, 'free_energy': np.nan}
-        dummy['forces'] = np.full((len(atoms), 3), np.nan)  # type: ignore
-        dummy['stress'] = np.full((6,), np.nan)  # type: ignore
-        calc = SinglePointCalculator(atoms, **dummy)
-        atoms = calc.get_atoms()
-        return calc.get_atoms()
-
-    new_targets = []
-    atoms_list_patched = []
-    unlabeled_file_list = []
-    for target in targets:
-        if not (
-            not target.endswith('.pt')
-            and not target.endswith('.sevenn_data')
-            and 'structure_list' not in target
-        ):
-            new_targets.append(target)
-            continue
-        # it must be ase readable
-        try:
-            _ = dl.ase_reader(target, **data_kwargs)
-            new_targets.append(target)  # No error occurred, target is labeled
-        except RuntimeError or KeyError:
-            # The data is not labeled
-            print(
-                f'{target} seems not labeled, dummy values will be used',
-                flush=True,
-            )
-            atoms_list = ase.io.read(target, index=':')
-            for atoms in atoms_list:
-                atoms_patched = assign_dummy_y(atoms)
-                atoms_patched.info.update({'y_is_dummy': 'Yes'})
-                atoms_list_patched.append(atoms_patched)
-            unlabeled_file_list.extend([target] * len(atoms_list))
-
-    if len(atoms_list_patched) > 0:
-        ase.io.write(tmp_file, atoms_list_patched, format='extxyz')
-        tmp_file.flush()
-        new_targets.append(tmp_file.name)
-    return new_targets, unlabeled_file_list
-
-
 def _patch_data_info(
     graph_list: Iterable[AtomGraphData], full_file_list: List[str]
 ) -> None:
     keys = set()
     for graph, path in zip(graph_list, full_file_list):
+        if KEY.INFO not in graph:
+            graph[KEY.INFO] = {}
         graph[KEY.INFO].update({'file': os.path.abspath(path)})
         keys.update(graph[KEY.INFO].keys())
 
+    # save only safe subset of info (for batching)
     for graph in graph_list:
         info_dict = graph[KEY.INFO]
         info_dict.update({k: '' for k in keys if k not in info_dict})
@@ -174,6 +127,8 @@ def inference(
     device: str = 'cpu',
     batch_size: int = 4,
     save_graph: bool = False,
+    allow_unlabeled: bool = False,
+    modal: Optional[str] = None,
     **data_kwargs,
 ) -> None:
     """
@@ -203,41 +158,50 @@ def inference(
     model, _ = util.model_from_checkpoint(checkpoint)
     cutoff = model.cutoff
 
+    if modal:
+        if model.modal_map is None:
+            raise ValueError('Modality given, but model has no modal_map')
+        if modal not in model.modal_map:
+            _modals = list(model.modal_map.keys())
+            raise ValueError(f'Unknown modal {modal} (not in {_modals})')
+
     if isinstance(targets, str):
         targets = [targets]
 
     full_file_list = []
-    with tempfile.NamedTemporaryFile('w+') as tmp_file:
-        targets, unlabeled_file_list = _extract_unlabeled_data(
-            targets, tmp_file, **data_kwargs
+    if save_graph:
+        dataset = SevenNetGraphDataset(
+            cutoff=cutoff,
+            root=output_dir,
+            files=targets,
+            process_num_cores=num_workers,
+            processed_name='saved_graph.pt',
+            **data_kwargs,
         )
-        if save_graph:
-            dataset = SevenNetGraphDataset(
+        full_file_list = dataset.full_file_list  # TODO: not used currently
+    else:
+        dataset = []
+        for file in targets:
+            tmplist = SevenNetGraphDataset.file_to_graph_list(
+                file,
                 cutoff=cutoff,
-                root=output_dir,
-                files=targets,
-                process_num_cores=num_workers,
-                processed_name='saved_graph.pt',
+                num_cores=num_workers,
+                allow_unlabeled=allow_unlabeled,
                 **data_kwargs,
             )
-            full_file_list = dataset.full_file_list
-        else:
-            dataset = []
-            for file in targets:
-                tmplist = SevenNetGraphDataset.file_to_graph_list(
-                    filename=file,
-                    cutoff=cutoff,
-                    num_cores=num_workers,
-                    **data_kwargs,
-                )
-                dataset.extend(tmplist)
-                full_file_list.extend([os.path.abspath(file)] * len(tmplist))
-        if len(unlabeled_file_list) > 0:
-            full_file_list = full_file_list[: -len(unlabeled_file_list)]
-            full_file_list.extend(unlabeled_file_list)
-    assert len(full_file_list) == len(dataset)
-    _patch_data_info(dataset, full_file_list)  # type: ignore
-    loader = DataLoader(dataset, batch_size=batch_size, shuffle=False)
+            dataset.extend(tmplist)
+            full_file_list.extend([os.path.abspath(file)] * len(tmplist))
+    if (
+        full_file_list is not None
+        and len(full_file_list) == len(dataset)
+        and not isinstance(dataset, SevenNetGraphDataset)
+    ):
+        _patch_data_info(dataset, full_file_list)  # type: ignore
+
+    if modal:
+        dataset = SevenNetMultiModalDataset({modal: dataset})  # type: ignore
+
+    loader = DataLoader(dataset, batch_size, shuffle=False)  # type: ignore
 
     model.to(device)
     model.set_is_batch_data(True)

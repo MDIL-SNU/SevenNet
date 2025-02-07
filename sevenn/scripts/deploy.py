@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from typing import Optional
 
 import e3nn.util.jit
 import torch
@@ -9,10 +10,10 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
+from sevenn.util import load_checkpoint
 
 
-# TODO: this is E3_equivariant specific
-def deploy(model_state_dct, config, fname):
+def deploy(checkpoint, fname='deployed_serial.pt', modal: Optional[str] = None):
     """
     This method is messy to avoid changes in pair_e3gnn.cpp, while
     refactoring python part.
@@ -22,18 +23,23 @@ def deploy(model_state_dct, config, fname):
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
 
-    model = build_E3_equivariant_model(config)
-    assert isinstance(model, torch.nn.Module)
+    cp = load_checkpoint(checkpoint)
+    model, config = cp.build_model('e3nn'), cp.config
+
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
     grad_module = ForceStressOutput()
     model.replace_module('force_output', grad_module)
     new_grad_key = grad_module.get_grad_key()
     model.key_grad = new_grad_key
-    missing, not_used = model.load_state_dict(model_state_dct, strict=False)
-    assert len(missing) == 0, f'missing keys: {missing}'
-    assert len(not_used) == 0, f'not used keys: {not_used}'
     if hasattr(model, 'eval_type_map'):
         setattr(model, 'eval_type_map', False)
+
+    if modal:
+        model.prepare_modal_deploy(modal)
+    elif model.modal_map is not None:
+        raise ValueError(
+            f'Modal is not given. It has: {list(model.modal_map.keys())}'
+        )
 
     model.set_is_batch_data(False)
     model.eval()
@@ -63,15 +69,19 @@ def deploy(model_state_dct, config, fname):
     torch.jit.save(model, fname, _extra_files=md_configs)
 
 
-# TODO: this is E3_equivariant specific
-def deploy_parallel(model_state_dct, config, fname):
+# TODO: build model only once
+def deploy_parallel(
+    checkpoint, fname='deployed_parallel', modal: Optional[str] = None
+):
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
-    # config[KEY.IS_TRACE_STRESS] = False
-    # config[KEY.IS_TRAIN_STRESS] = False  #now model_build has no dependency on this
+    cp = load_checkpoint(checkpoint)
+    model, config = cp.build_model('e3nn'), cp.config
+    config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
+    model_state_dct = model.state_dict()
+
     model_list = build_E3_equivariant_model(config, parallel=True)
-    assert isinstance(model_list, list)
     dct_temp = {}
     copy_counter = {gk: 0 for gk in GHOST_LAYERS_KEYS}
     for ghost_layer_key in GHOST_LAYERS_KEYS:
@@ -90,7 +100,14 @@ def deploy_parallel(model_state_dct, config, fname):
         if hasattr(model_part, 'eval_type_map'):
             setattr(model_part, 'eval_type_map', False)
         # Ensure all values are inserted
-        assert len(missing) == 0
+        assert len(missing) == 0, missing
+
+    if modal:
+        model_list[0].prepare_modal_deploy(modal)
+    elif model_list[0].modal_map is not None:
+        raise ValueError(
+            f'Modal is not given. It has: {list(model_list[0].modal_map.keys())}'
+        )
 
     # prepare some extra information for MD
     md_configs = {}
@@ -103,7 +120,7 @@ def deploy_parallel(model_state_dct, config, fname):
 
     comm_size = max(
         [
-            seg._modules[f'{t}_convolution']._comm_size
+            seg._modules[f'{t}_convolution']._comm_size  # type: ignore
             for t, seg in enumerate(model_list)
         ]
     )

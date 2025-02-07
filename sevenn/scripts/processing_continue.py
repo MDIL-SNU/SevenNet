@@ -5,6 +5,10 @@ import torch
 
 import sevenn._keys as KEY
 import sevenn.util as util
+from sevenn.scripts.convert_model_modality import (
+    append_modality_to_model_dct,
+    get_single_modal_model_dct,
+)
 from sevenn.sevenn_logger import Logger
 
 
@@ -17,19 +21,18 @@ def processing_continue_v2(config):  # simpler
     continue_dct = config[KEY.CONTINUE]
     log.write('\nContinue found, loading checkpoint\n')
 
-    checkpoint = torch.load(
-        continue_dct[KEY.CHECKPOINT], map_location='cpu', weights_only=False
-    )
-    model_cp, config_cp = util.model_from_checkpoint(checkpoint)
+    checkpoint = util.load_checkpoint(continue_dct[KEY.CHECKPOINT])
+    model_cp = checkpoint.build_model()
+    config_cp = checkpoint.config
     model_state_dict_cp = model_cp.state_dict()
 
     optimizer_state_dict_cp = (
-        checkpoint['optimizer_state_dict']
+        checkpoint.optimizer_state_dict
         if not continue_dct[KEY.RESET_OPTIMIZER]
         else None
     )
     scheduler_state_dict_cp = (
-        checkpoint['scheduler_state_dict']
+        checkpoint.scheduler_state_dict
         if not continue_dct[KEY.RESET_SCHEDULER]
         else None
     )
@@ -60,7 +63,18 @@ def processing_continue_v2(config):  # simpler
         + f'This model knows {config[KEY.NUM_SPECIES]} species'
     )
 
-    from_epoch = checkpoint['epoch']
+    if config_cp.get(KEY.USE_MODALITY, False) != config.get(KEY.USE_MODALITY):
+        raise ValueError('use_modality is not same. Check sevenn_cp')
+
+    modal_map = config_cp.get(KEY.MODAL_MAP, {})
+    config.update({KEY.MODAL_MAP: modal_map})
+    if len(modal_map) > 0:
+        modalities = list(modal_map.keys())
+        log.writeline(f'Multimodal model found: {modalities}')
+        log.writeline(f'{KEY.USE_MODALITY}: True')
+        config[KEY.USE_MODALITY] = True
+
+    from_epoch = checkpoint.epoch or 0
     log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
     epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
     log.writeline(f'epoch start from {epoch}')
@@ -181,6 +195,21 @@ def processing_continue(config):
     ]
     config.update({k: config_cp[k] for k in chem_keys})
 
+    if (
+        KEY.USE_MODALITY in config_cp.keys() and config_cp[KEY.USE_MODALITY]
+    ):  # checkpoint model is multimodal
+        config.update({
+            KEY.MODAL_MAP + '_cp': config_cp[KEY.MODAL_MAP],
+            KEY.USE_MODALITY + '_cp': True,
+            KEY.NUM_MODALITIES + '_cp': len(config_cp[KEY.MODAL_MAP]),
+        })
+    else:
+        config.update({
+            KEY.MODAL_MAP + '_cp': {},
+            KEY.USE_MODALITY + '_cp': False,
+            KEY.NUM_MODALITIES + '_cp': 0,
+        })
+
     log.write(f'checkpoint previous epoch was: {from_epoch}\n')
 
     # decide start epoch
@@ -210,3 +239,36 @@ def processing_continue(config):
         scheduler_state_dict_cp,
     ]
     return state_dicts, start_epoch, init_csv
+
+
+def convert_modality_of_checkpoint_state_dct(config, state_dicts):
+    # TODO: this requires updating model state dict after seeing dataset
+    model_state_dict_cp, optimizer_state_dict_cp, scheduler_state_dict_cp = (
+        state_dicts
+    )
+
+    if config[KEY.USE_MODALITY]:  # current model is multimodal
+        num_modalities_cp = len(config[KEY.MODAL_MAP + '_cp'])
+        append_modal_length = config[KEY.NUM_MODALITIES] - num_modalities_cp
+
+        model_state_dict_cp = append_modality_to_model_dct(
+            model_state_dict_cp, config, num_modalities_cp, append_modal_length
+        )
+
+    else:  # current model is single modal
+        if config[KEY.USE_MODALITY + '_cp']:  # checkpoint model is multimodal
+            # change model state dict to single modal, default = "common"
+            model_state_dict_cp = get_single_modal_model_dct(
+                model_state_dict_cp,
+                config,
+                config[KEY.DEFAULT_MODAL],
+                from_processing_cp=True,
+            )
+
+    state_dicts = (
+        model_state_dict_cp,
+        optimizer_state_dict_cp,
+        scheduler_state_dict_cp,
+    )
+
+    return state_dicts

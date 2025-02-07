@@ -15,6 +15,7 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
  - Python [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator support
  - GPU-parallelized molecular dynamics with LAMMPS
  - CUDA-accelerated D3 (van der Waals) dispersion
+ - Multi-fidelity training for combining multiple database with different calculation settings. [Usage](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md).
 
 ## Pre-trained models
 So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
@@ -24,6 +25,7 @@ These models can be used as interatomic potential on LAMMPS, and also can be loa
 Additionally, `keywords` can be called in other parts of SevenNet, such as `sevenn_inference`, `sevenn_get_model`, and `checkpoint` in `input.yaml` for fine-tuning.
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
+
 
 ---
 
@@ -70,7 +72,7 @@ In addition to these latest models, you can find our legacy models from [pretrai
 ## Installation<a name="installation"></a>
 ### Requirements
 - Python >= 3.8
-- PyTorch >= 1.12.0, PyTorch < 2.5.0
+- PyTorch >= 1.12.0
 
 Here are the recommended versions we've been using internally without any issues.
 - PyTorch/2.2.2 + CUDA/12.1.0
@@ -81,12 +83,17 @@ Using the newer versions of CUDA with PyTorch is usually not a problem. For exam
 > [!IMPORTANT]
 > Please install PyTorch manually depending on the hardware before installing the SevenNet.
 
+#### Optional requirements
+- nvcc compiler
+
+This should be available to use `SevenNetD3Calculator` or `D3Calculator`.
+
 Give that the PyTorch is successfully installed, please run the command below.
 ```bash
 pip install sevenn
 pip install https://github.com/MDIL-SNU/SevenNet.git # for the latest version
 ```
-We strongly recommend checking `CHANGELOG.md` for new features and changes because the SevenNet is under active development.
+We strongly recommend checking `CHANGELOG.md` for new features and changes because SevenNet is under active development.
 
 ## Usage<a name="usage"></a>
 ### ASE calculator<a name="ase_calculator"></a>
@@ -95,9 +102,16 @@ For a wider application in atomistic simulations, SevenNet provides the ASE inte
 The model can be loaded through the following Python code.
 
 ```python
-from sevenn.sevennet_calculator import SevenNetCalculator
-calculator = SevenNetCalculator(model='7net-0', device='cpu')
+from sevenn.calculator import SevenNetCalculator
+calc = SevenNetCalculator(model='7net-0', device='cpu')
 ```
+
+SevenNet supports CUDA accelerated D3Calculator.
+```python
+from sevenn.calculator import SevenNetD3Calculator
+calc = SevenNetD3Calculator(model='7net-0', device='cuda')
+```
+If you encounter `CUDA is not installed or nvcc is not available`, ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
 
 Various pre-trained SevenNet models can be accessed by changing the `model` variable to any predefined keywords such as `7net-l3i5`, `7net-0_11Jul2024`, `7net-0_22May2024`, and so on. The default model is **SevenNet-0 (11Jul2024)**.
 
@@ -118,7 +132,7 @@ With the `sevenn_preset` command, the input file that sets the training paramete
 sevenn_preset {preset keyword} > input.yaml
 ```
 
-Available preset keywords are: `base`, `fine_tune`, `sevennet-0`, and `sevennet-l3i5`.
+Available preset keywords are: `base`, `fine_tune`, `multi_modal`, `sevennet-0`, and `sevennet-l3i5`.
 Check comments in the preset yaml files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
 To reuse a preprocessed training set, you can specify `sevenn_data/${dataset_name}.pt` to the `load_trainset_path:` in the `input.yaml`.
 
@@ -323,4 +337,17 @@ If you use this code, please cite our paper:
 	year = {2024},
 	pages = {4857--4868},
 }
+```
+
+If you utilize the multi-fidelity feature of this code or the pretrained model SevenNet-MF-0, please cite the following paper:
+```txt
+@article{kim_sevennet_mf_2024,
+	title = {Data-Efficient Multifidelity Training for High-Fidelity Machine Learning Interatomic Potentials},
+	volume = {147},
+	doi = {10.1021/jacs.4c14455},
+	number = {1},
+	journal = {J. Am. Chem. Soc.},
+	author = {Kim, Jaesun and Kim, Jisu and Kim, Jaehoon and Lee, Jiho and Park, Yutack and Kang, Youngho and Han, Seungwu},
+	year = {2024},
+	pages = {1042--1054},
 ```
