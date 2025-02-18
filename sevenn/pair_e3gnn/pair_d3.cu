@@ -492,7 +492,7 @@ void PairD3::setfuncpar_bj() {
         {"cam-b3lyp", 36}, {"lc-wpbe", 37}, {"b2gp-plyp", 38}, {"ptpss", 39}, {"pwpb95", 40},
         {"hf/mixed", 41}, {"hf/sv", 42}, {"hf/minis", 43}, {"b3-lyp/6-31gd", 44}, {"hcth120", 45},
         {"pw1pw", 46}, {"pwgga", 47}, {"hsesol", 48}, {"hf3c", 49}, {"hf3cv", 50}, {"pbeh3c", 51},
-        {"pbeh-3c", 52}, {"omega", 53}
+        {"pbeh-3c", 52}, {"wb97m", 53}
     };
 
     int commandCode = commandMap[functional];
