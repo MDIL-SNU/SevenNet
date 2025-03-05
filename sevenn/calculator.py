@@ -264,7 +264,7 @@ def _load(name: str) -> ctypes.CDLL:
 
     if 'TORCH_CUDA_ARCH_LIST' not in os.environ:
         print("Warning: TORCH_CUDA_ARCH_LIST is not set.")
-        print("Warning: Using default CUDA architectures: 61, 70, 75, 80, 86, 89, 90")
+        print("Warning: Use default CUDA architectures: 61, 70, 75, 80, 86, 89, 90")
         os.environ['TORCH_CUDA_ARCH_LIST'] = '6.1;7.0;7.5;8.0;8.6;8.9;9.0'
 
     load(
@@ -315,8 +315,6 @@ class D3Calculator(Calculator):
     ):
         super().__init__(**kwargs)
 
-        self._lib = _load('pair_d3')
-
         if not torch.cuda.is_available():
             raise NotImplementedError('CPU + D3 is not implemented yet')
 
@@ -327,6 +325,8 @@ class D3Calculator(Calculator):
 
         if self.damp_name not in ['damp_bj', 'damp_zero']:
             raise ValueError('Error: Invalid damping type.')
+
+        self._lib = _load('pair_d3')
 
         self._lib.pair_init.restype = ctypes.POINTER(PairD3)
         self.pair = self._lib.pair_init()
