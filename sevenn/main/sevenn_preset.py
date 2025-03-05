@@ -25,11 +25,10 @@ def cmd_parse_preset(args=None):
     ag.add_argument(
         'preset', choices=[
             'fine_tune',
+            'fine_tune_le',
             'sevennet-0',
             'sevennet-l3i5',
             'base',
-            'fine_tune_v1',
-            'base_v1',
             'multi_modal'
         ],
         help=preset_help

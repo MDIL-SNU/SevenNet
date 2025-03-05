@@ -1,0 +1,83 @@
+# Application of 7net-0 on liquid electrolyte system via fine-tuning
+# Paper: https://arxiv.org/abs/2501.05211
+
+model:
+    # parameters of SevenNet-0, should not be changed
+    chemical_species: 'auto'
+    cutoff: 5.0
+    channel: 128
+    is_parity: False
+    lmax: 2
+    num_convolution_layer: 5
+    irreps_manual:
+        - "128x0e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e"
+    weight_nn_hidden_neurons: [64, 64]
+    radial_basis:
+        radial_basis_name: 'bessel'
+        bessel_basis_num: 8
+    cutoff_function:
+        cutoff_function_name: 'XPLOR'
+        cutoff_on: 4.5
+
+    act_gate: {'e': 'silu', 'o': 'tanh'}
+    act_scalar: {'e': 'silu', 'o': 'tanh'}
+
+    self_connection_type: 'linear'
+
+    # useful for fine-tuning
+    train_shift_scale: True
+    train_avg_num_neigh: True
+
+train:
+    random_seed: 1
+    is_train_stress: True
+    epoch: 100  # we went through 100 epochs and chose checkpoint at 50 epoch where the error have reached plateau.
+
+    loss: 'Huber'
+    loss_param:
+        delta: 0.01
+
+    optimizer: 'adam'
+    optim_param:
+        lr: 0.0001
+    scheduler: 'linearlr'
+    scheduler_param:
+        start_factor: 1.0
+        total_iters: 600
+        end_factor: 0.000001
+
+    force_loss_weight: 1.00
+    stress_loss_weight: 1.00  # 7net-0 quantitatively lacked accuracy on pressure histograms compared to DFT, so we increased stress loss weight
+
+    error_record:
+        - ['Energy', 'RMSE']
+        - ['Force', 'RMSE']
+        - ['Stress', 'RMSE']
+        - ['Energy', 'MAE']
+        - ['Force', 'MAE']
+        - ['Stress', 'MAE']
+        - ['Energy', 'Loss']
+        - ['Force', 'Loss']
+        - ['Stress', 'Loss']
+        - ['TotalLoss', 'None']
+
+    per_epoch: 10   # Generate epoch every this number of times
+
+    continue:
+        use_statistic_values_of_checkpoint: True
+        checkpoint: '7net-0'  # fine-tuning from 7net-0
+        reset_optimizer: True
+        reset_scheduler: True
+
+data:
+    batch_size: 1   # our fine-tuning dataset had ~360 atoms per structure, so we used batch size of 1 to avoid GPU OOM error.
+    shift: 'elemwise_reference_energies'
+    scale: 1.858
+    data_format: 'ase'
+    data_divide_ratio: 0.05
+    load_dataset_path: ["./data/total.extxyz"]

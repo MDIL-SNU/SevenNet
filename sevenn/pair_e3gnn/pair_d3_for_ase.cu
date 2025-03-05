@@ -182,6 +182,7 @@ void PairD3::allocate() {
     int n = atom->natoms;
     int np1 = atom->ntypes + 1;
     n_save = n;
+    np1_save = np1;
 
     //cudaMallocManaged(&setflag, np1 * sizeof(int*)); for (int i = 0; i < np1; i++) { cudaMallocManaged(&setflag[i], np1 * sizeof(int)); }
     //cudaMallocManaged(&cutsq, np1 * sizeof(double*)); for (int i = 0; i < np1; i++) { cudaMallocManaged(&cutsq[i], np1 * sizeof(double)); }
@@ -480,7 +481,7 @@ void PairD3::setfuncpar_bj() {
         {"cam-b3lyp", 36}, {"lc-wpbe", 37}, {"b2gp-plyp", 38}, {"ptpss", 39}, {"pwpb95", 40},
         {"hf/mixed", 41}, {"hf/sv", 42}, {"hf/minis", 43}, {"b3-lyp/6-31gd", 44}, {"hcth120", 45},
         {"pw1pw", 46}, {"pwgga", 47}, {"hsesol", 48}, {"hf3c", 49}, {"hf3cv", 50}, {"pbeh3c", 51},
-        {"pbeh-3c", 52}
+        {"pbeh-3c", 52}, {"wb97m", 53}
     };
 
     int commandCode = commandMap[functional];
@@ -546,6 +547,7 @@ void PairD3::setfuncpar_bj() {
         // special PBEh - D3 - gCP / def2 - mSVP parametrization;
         case 51: rs6 = 0.4860; s18 = 0.0000; rs18 = 4.5000; break;
         case 52: rs6 = 0.4860; s18 = 0.0000; rs18 = 4.5000; break;
+        case 53: rs6 = 0.5660; s18 = 0.3908; rs18 = 3.1280; break;
         default:
             error->all(FLERR, "Functional name unknown");
             break;
@@ -629,6 +631,7 @@ void PairD3::setfuncpar() {
 
 void PairD3::coeff(int* atomic_numbers) {
     if (!allocated) allocate();
+    if (atom->ntypes + 1 != np1_save) { reallocate_arrays_np1(); }
 
     int ntypes = atom->ntypes;
     /*
@@ -1108,6 +1111,51 @@ void PairD3::reallocate_arrays() {
     cudaMallocManaged(&c6_ij_tot,   n_ij_combination * sizeof(float));
 
     cudaMallocManaged(&atomtype, n * sizeof(int));
+    /* -------------- Create new arrays -------------- */
+}
+
+void PairD3::reallocate_arrays_np1() {
+    /* -------------- Destroy previous arrays -------------- */
+    cudaFree(r2r4);
+    cudaFree(rcov);
+    cudaFree(mxc);
+    for (int i = 0; i < np1_save; i++) { cudaFree(r0ab[i]); }; cudaFree(r0ab);
+    for (int i = 0; i < np1_save; i++) {
+        for (int j = 0; j < np1_save; j++) {
+            for (int k = 0; k < MAXC; k++) {
+                for (int l = 0; l < MAXC; l++) {
+                    cudaFree(c6ab[i][j][k][l]);
+                }
+                cudaFree(c6ab[i][j][k]);
+            }
+            cudaFree(c6ab[i][j]);
+        }
+        cudaFree(c6ab[i]);
+    }
+    cudaFree(c6ab);
+    /* -------------- Destroy previous arrays -------------- */
+
+    /* -------------- Create new arrays -------------- */
+    int np1 = atom->ntypes + 1;
+    np1_save = np1;
+
+    cudaMallocManaged(&r2r4, np1 * sizeof(float));
+    cudaMallocManaged(&rcov, np1 * sizeof(float));
+    cudaMallocManaged(&mxc, np1 * sizeof(int));
+    cudaMallocManaged(&r0ab, np1 * sizeof(float*)); for (int i = 0; i < np1; i++) { cudaMallocManaged(&r0ab[i], np1 * sizeof(float)); }
+    cudaMallocManaged(&c6ab, np1 * sizeof(float****));
+    for (int i = 0; i < np1; i++) {
+        cudaMallocManaged(&c6ab[i], np1 * sizeof(float***));
+        for (int j = 0; j < np1; j++) {
+            cudaMallocManaged(&c6ab[i][j], MAXC * sizeof(float**));
+            for (int k = 0; k < MAXC; k++) {
+                cudaMallocManaged(&c6ab[i][j][k], MAXC * sizeof(float*));
+                for (int l = 0; l < MAXC; l++) {
+                    cudaMallocManaged(&c6ab[i][j][k][l], 3 * sizeof(float));
+                }
+            }
+        }
+    }
     /* -------------- Create new arrays -------------- */
 }
 
