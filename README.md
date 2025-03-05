@@ -67,7 +67,7 @@ In addition to these latest models, you can find our legacy models from [pretrai
     - [Installation](#installation)
     - [Single-GPU MD](#single-gpu-md)
     - [Multi-GPU MD](#multi-gpu-md)
-  - [Application of SevenNet-0] (#application-of-Sevennet-0)
+  - [Application of SevenNet-0](#application-of-sevennet-0)
 - [Citation](#citation)
 
 ## Installation<a name="installation"></a>
@@ -325,12 +325,15 @@ One GPU per MPI process is expected. The simulation may run inefficiently if the
 > Currently, the parallel version raises an error when there are no atoms in one of the subdomain cells. This issue can be addressed using the `processors` command and, more optimally, the `fix balance` command in LAMMPS. This will be patched in the future.
 
 ### Application of SevenNet-0
-If you are curious about the actual application of SevenNet, refer to https://arxiv.org/abs/2501.05211 and https://zenodo.org/records/14734414.
-In the paper, SevenNet-0 was applied to the simulation of liquid electrolytes.
+If you are interested in the actual application of SevenNet, refer to [this paper](https://arxiv.org/abs/2501.05211) (data available at: [Zenodo](https://zenodo.org/records/14734414)).
+In this study, SevenNet-0 was applied to the simulation of liquid electrolytes.
 
-The fine-tuning procedure and associated inputs are provided in these links—especially Fine-tuning.tar.xz on Zenodo.
+The fine-tuning procedure and relevant input files are provided in the links above, particularly in the `Fine-tuning.tar.xz` archive on Zenodo.
 
-The inputs for using the D3 functional in LAMMPS are also provided; for example, see the MD simulation of binary solvents in Figure5ab_6c.tar.xz on Zenodo.
+The yaml file used for fine-tuning is available via the command:
+```bash
+sevenn_preset fine_tune_le > input.yaml
+```
 
 ## Citation<a name="citation"></a>
 
