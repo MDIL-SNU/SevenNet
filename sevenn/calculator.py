@@ -236,6 +236,7 @@ class SevenNetD3Calculator(SumCalculator):
 
         super().__init__([sevennet_calc, d3_calc])
 
+
 def _load(name: str) -> ctypes.CDLL:
     from torch.utils.cpp_extension import load, _get_build_directory, LIB_EXT
 
@@ -278,50 +279,6 @@ def _load(name: str) -> ctypes.CDLL:
     )
 
     return ctypes.CDLL(os.path.join(compile_dir, f'{name}{LIB_EXT}'))
-
-#def _compile_d3(path: str, verbose: bool = True):
-#    import subprocess
-#
-#    if verbose:
-#        print(f'Attempt D3 compilation to {path}')
-#    try:
-#        subprocess.run(
-#            ['nvcc', '--version'],
-#            stdout=subprocess.PIPE,
-#            stderr=subprocess.PIPE,
-#            check=True,
-#        )
-#        # print('CUDA is installed. Starting compilation of libpaird3.')
-#        if verbose:
-#            print('nvcc compiler found. start compilation')
-#    except FileNotFoundError as e:
-#        raise NotImplementedError(
-#            'CUDA is not installed or nvcc is not available. D3 compilation failed'
-#        ) from e
-#    src = os.path.join(os.path.dirname(__file__), 'pair_e3gnn/pair_d3_for_ase.cu')
-#    sms = [61, 70, 75, 80, 86, 89, 90]
-#    compile = [  # TODO: make ruff not lint these
-#        'nvcc',
-#        '-o',
-#        path,
-#        '-shared',
-#        '-fmad=false',
-#        '-O3',
-#        '--expt-relaxed-constexpr',
-#        src,
-#        '-Xcompiler',
-#        '-fPIC',
-#        '-lcudart',
-#    ] + list(
-#        chain(*[f'-gencode arch=compute_{sm},code=sm_{sm}'.split() for sm in sms])
-#    )
-#
-#    try:
-#        subprocess.run(compile, check=True)
-#        if verbose:
-#            print('libpaird3.so compiled successfully.')
-#    except subprocess.CalledProcessError as e:
-#        raise RuntimeError('Failed to compile D3 (libpaird3.so)') from e
 
 
 class PairD3(ctypes.Structure):
