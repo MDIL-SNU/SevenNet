@@ -238,7 +238,7 @@ class SevenNetD3Calculator(SumCalculator):
 
 
 def _load(name: str) -> ctypes.CDLL:
-    from torch.utils.cpp_extension import load, _get_build_directory, LIB_EXT
+    from torch.utils.cpp_extension import LIB_EXT, _get_build_directory, load
 
     # Load the library from the candidate locations
 
@@ -259,12 +259,12 @@ def _load(name: str) -> ctypes.CDLL:
     if os.access(package_dir, os.W_OK):
         compile_dir = package_dir
     else:
-        print("Warning: package directory is not writable. Using cache directory.")
+        print('Warning: package directory is not writable. Using cache directory.')
         compile_dir = cache_dir
 
     if 'TORCH_CUDA_ARCH_LIST' not in os.environ:
-        print("Warning: TORCH_CUDA_ARCH_LIST is not set.")
-        print("Warning: Use default CUDA architectures: 61, 70, 75, 80, 86, 89, 90")
+        print('Warning: TORCH_CUDA_ARCH_LIST is not set.')
+        print('Warning: Use default CUDA architectures: 61, 70, 75, 80, 86, 89, 90')
         os.environ['TORCH_CUDA_ARCH_LIST'] = '6.1;7.0;7.5;8.0;8.6;8.9;9.0'
 
     load(
