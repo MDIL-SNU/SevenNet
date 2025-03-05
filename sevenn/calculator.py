@@ -1,9 +1,7 @@
 import ctypes
 import os
 import pathlib
-import sysconfig
 import warnings
-from itertools import chain
 from typing import Any, Optional, Union
 
 import numpy as np

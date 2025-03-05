@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - sevenn.train.modal_dataset SevenNetMultiModalDataset
 - sevenn.scripts.backward_compatibility.py
 - sevenn.checkpoint.py
+- D3 wB97M param
 
 ### Changed
 - Sort instructions of tensor product in convolution (+ fix flipped w3j coeff of old model)
@@ -24,10 +25,13 @@ All notable changes to this project will be documented in this file.
 - Checkpoint things using `sevenn/checkpoint.py`
 - e3nn >= 0.5.0, to ensure changed CG coeff later on
 - pandas as dependency
+- old v1 presets are removed, liquid electrolyte fine-tune yaml is added
 
 ### Fixed
 - More refactor for shift scale things + few bug fixes
 - Correctly shuffle training set when distributed training is enabled
+- D3 calculator system swap memory error fixed
+- D3 compile uses $HOME/.cache if package directory is not writable
 
 
 ## [0.10.4]
