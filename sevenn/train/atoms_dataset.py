@@ -268,11 +268,11 @@ def from_config(
 
     if not config[KEY.COMPUTE_STATISTICS]:
         log.writeline(
-            """
-            Computing statistics is skipped, note that if any of other
-            configurations requires statistics (shift, scale, avg_num_neigh,
-            chemical_species as auto), SevenNet eventually raise an error!
-            """
+            (
+                'Computing statistics is skipped, note that if any of other'
+                'configurations requires statistics (shift, scale, avg_num_neigh,'
+                'chemical_species as auto), SevenNet eventually raise an error!'
+            )
         )
         return datasets
 

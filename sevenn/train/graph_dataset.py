@@ -645,7 +645,7 @@ def from_config(
             dataset_path = os.path.join(working_dir, 'sevenn_data', f'{name}.pt')
             if os.path.exists(dataset_path) and 'force_reload' not in dataset_args:
                 log.writeline(
-                    f'Dataset will be loaded from {dataset_path}, without update.'
+                    f'Dataset will be loaded from {dataset_path}, without update. '
                     + 'If you have changed your files to read, put force_reload=True'
                     + ' under the data_format_args key'
                 )
