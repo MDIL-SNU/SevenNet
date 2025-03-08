@@ -1,9 +1,7 @@
 import ctypes
 import os
 import pathlib
-import sysconfig
 import warnings
-from itertools import chain
 from typing import Any, Optional, Union
 
 import numpy as np
@@ -237,49 +235,48 @@ class SevenNetD3Calculator(SumCalculator):
         super().__init__([sevennet_calc, d3_calc])
 
 
-def _compile_d3(path: str, verbose: bool = True):
-    import subprocess
+def _load(name: str) -> ctypes.CDLL:
+    from torch.utils.cpp_extension import LIB_EXT, _get_build_directory, load
 
-    if verbose:
-        print(f'Attempt D3 compilation to {path}')
+    # Load the library from the candidate locations
+
+    package_dir = os.path.dirname(os.path.abspath(__file__))
     try:
-        subprocess.run(
-            ['nvcc', '--version'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        # print('CUDA is installed. Starting compilation of libpaird3.')
-        if verbose:
-            print('nvcc compiler found. start compilation')
-    except FileNotFoundError as e:
-        raise NotImplementedError(
-            'CUDA is not installed or nvcc is not available. D3 compilation failed'
-        ) from e
-    src = os.path.join(os.path.dirname(__file__), 'pair_e3gnn/pair_d3_for_ase.cu')
-    sms = [61, 70, 75, 80, 86, 89, 90]
-    compile = [  # TODO: make ruff not lint these
-        'nvcc',
-        '-o',
-        path,
-        '-shared',
-        '-fmad=false',
-        '-O3',
-        '--expt-relaxed-constexpr',
-        src,
-        '-Xcompiler',
-        '-fPIC',
-        '-lcudart',
-    ] + list(
-        chain(*[f'-gencode arch=compute_{sm},code=sm_{sm}'.split() for sm in sms])
+        return ctypes.CDLL(os.path.join(package_dir, f'{name}{LIB_EXT}'))
+    except OSError:
+        pass
+
+    cache_dir = _get_build_directory(name, verbose=False)
+    try:
+        return ctypes.CDLL(os.path.join(cache_dir, f'{name}{LIB_EXT}'))
+    except OSError:
+        pass
+
+    # Compile the library if it is not found
+
+    if os.access(package_dir, os.W_OK):
+        compile_dir = package_dir
+    else:
+        print('Warning: package directory is not writable. Using cache directory.')
+        compile_dir = cache_dir
+
+    if 'TORCH_CUDA_ARCH_LIST' not in os.environ:
+        print('Warning: TORCH_CUDA_ARCH_LIST is not set.')
+        print('Warning: Use default CUDA architectures: 61, 70, 75, 80, 86, 89, 90')
+        os.environ['TORCH_CUDA_ARCH_LIST'] = '6.1;7.0;7.5;8.0;8.6;8.9;9.0'
+
+    load(
+        name=name,
+        sources=[
+            os.path.join(package_dir, 'pair_e3gnn', 'pair_d3_for_ase.cu')
+        ],
+        extra_cuda_cflags=['-O3', '--expt-relaxed-constexpr', '-fmad=false'],
+        build_directory=compile_dir,
+        verbose=True,
+        is_python_module=False,
     )
 
-    try:
-        subprocess.run(compile, check=True)
-        if verbose:
-            print('libpaird3.so compiled successfully.')
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError('Failed to compile D3 (libpaird3.so)') from e
+    return ctypes.CDLL(os.path.join(compile_dir, f'{name}{LIB_EXT}'))
 
 
 class PairD3(ctypes.Structure):
@@ -312,19 +309,9 @@ class D3Calculator(Calculator):
         functional_name: str = 'pbe',  # check the source code
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
-        verbose_compile: bool = True,
         **kwargs,
     ):
         super().__init__(**kwargs)
-
-        _ext_suffix = sysconfig.get_config_var('EXT_SUFFIX')
-        lib_path = os.path.join(os.path.dirname(__file__), f'libpaird3{_ext_suffix}')
-
-        self._lib = None
-        if not os.path.exists(lib_path):
-            _compile_d3(lib_path, verbose_compile)
-
-        self._lib = ctypes.CDLL(lib_path)
 
         if not torch.cuda.is_available():
             raise NotImplementedError('CPU + D3 is not implemented yet')
@@ -336,6 +323,8 @@ class D3Calculator(Calculator):
 
         if self.damp_name not in ['damp_bj', 'damp_zero']:
             raise ValueError('Error: Invalid damping type.')
+
+        self._lib = _load('pair_d3')
 
         self._lib.pair_init.restype = ctypes.POINTER(PairD3)
         self.pair = self._lib.pair_init()

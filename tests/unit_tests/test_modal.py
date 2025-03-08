@@ -16,8 +16,8 @@ from ase.build import bulk
 
 import sevenn.train.graph_dataset as graph_ds
 import sevenn.util as util
+from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.sevennet_calculator import SevenNetCalculator
 
 cutoff = 5.0
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
