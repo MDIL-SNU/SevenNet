@@ -36,7 +36,7 @@ def deploy(checkpoint, fname='deployed_serial.pt', modal: Optional[str] = None):
 
     if modal:
         model.prepare_modal_deploy(modal)
-    elif model.modal_map is not None:
+    elif model.modal_map is not None and len(model.modal_map) >= 1:
         raise ValueError(
             f'Modal is not given. It has: {list(model.modal_map.keys())}'
         )
