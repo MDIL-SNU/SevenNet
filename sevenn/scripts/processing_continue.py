@@ -66,12 +66,11 @@ def processing_continue_v2(config):  # simpler
     if config_cp.get(KEY.USE_MODALITY, False) != config.get(KEY.USE_MODALITY):
         raise ValueError('use_modality is not same. Check sevenn_cp')
 
-    modal_map = config_cp.get(KEY.MODAL_MAP, {})
-    config.update({KEY.MODAL_MAP: modal_map})
-    if len(modal_map) > 0:
+    modal_map = config_cp.get(KEY.MODAL_MAP, None)  # dict | None
+    if modal_map and len(modal_map) > 0:
         modalities = list(modal_map.keys())
         log.writeline(f'Multimodal model found: {modalities}')
-        log.writeline(f'{KEY.USE_MODALITY}: True')
+        log.writeline('use_modality: True')
         config[KEY.USE_MODALITY] = True
 
     from_epoch = checkpoint.epoch or 0
