@@ -5,11 +5,11 @@ from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
 import sevenn._keys as KEY
+from sevenn.logger import Logger
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.scripts.processing_continue import (
     convert_modality_of_checkpoint_state_dct,
 )
-from sevenn.sevenn_logger import Logger
 from sevenn.train.trainer import Trainer
 
 

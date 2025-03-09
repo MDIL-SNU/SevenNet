@@ -8,7 +8,7 @@ from torch.utils.data import ConcatDataset, Dataset
 
 import sevenn._keys as KEY
 import sevenn.util as util
-from sevenn.sevenn_logger import Logger
+from sevenn.logger import Logger
 
 
 def _arrange_paths_by_modality(paths: List[dict]):

@@ -21,7 +21,7 @@ import sevenn.util as util
 from sevenn import __version__
 from sevenn._const import NUM_UNIV_ELEMENT
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.sevenn_logger import Logger
+from sevenn.logger import Logger
 
 if torch.__version__.split()[0] >= '2.4.0':
     # load graph without error

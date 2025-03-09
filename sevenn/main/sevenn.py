@@ -32,9 +32,9 @@ def run(args):
     import torch.distributed as dist
 
     import sevenn._keys as KEY
+    from sevenn.logger import Logger
     from sevenn.parse_input import read_config_yaml
     from sevenn.scripts.train import train, train_v2
-    from sevenn.sevenn_logger import Logger
     from sevenn.util import unique_filepath
 
     input_yaml = args.input_yaml

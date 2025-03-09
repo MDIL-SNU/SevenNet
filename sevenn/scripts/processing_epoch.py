@@ -7,7 +7,7 @@ from torch.utils.data.distributed import DistributedSampler
 
 import sevenn._keys as KEY
 from sevenn.error_recorder import ErrorRecorder
-from sevenn.sevenn_logger import Logger
+from sevenn.logger import Logger
 from sevenn.train.trainer import Trainer
 
 

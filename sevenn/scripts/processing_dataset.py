@@ -5,7 +5,7 @@ import torch.distributed as dist
 
 import sevenn._const as CONST
 import sevenn._keys as KEY
-from sevenn.sevenn_logger import Logger
+from sevenn.logger import Logger
 from sevenn.train.dataload import file_to_dataset, match_reader
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import chemical_species_preprocess, onehot_to_chem
