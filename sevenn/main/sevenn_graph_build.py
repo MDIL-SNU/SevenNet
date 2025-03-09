@@ -24,7 +24,7 @@ legacy_help = 'build legacy .sevenn_data'
 
 def run(args):
     import sevenn.scripts.graph_build as graph_build
-    from sevenn.sevenn_logger import Logger
+    from sevenn.logger import Logger
 
     source = glob.glob(args.source)
     cutoff = args.cutoff

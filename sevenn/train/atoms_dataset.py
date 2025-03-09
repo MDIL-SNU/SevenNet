@@ -237,7 +237,7 @@ def from_config(
     working_dir: str = os.getcwd(),
     dataset_keys: Optional[list[str]] = None,
 ):
-    from sevenn.sevenn_logger import Logger
+    from sevenn.logger import Logger
 
     log = Logger()
     if dataset_keys is None:

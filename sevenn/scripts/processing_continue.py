@@ -5,11 +5,11 @@ import torch
 
 import sevenn._keys as KEY
 import sevenn.util as util
+from sevenn.logger import Logger
 from sevenn.scripts.convert_model_modality import (
     append_modality_to_model_dct,
     get_single_modal_model_dct,
 )
-from sevenn.sevenn_logger import Logger
 
 
 def processing_continue_v2(config):  # simpler

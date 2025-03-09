@@ -1,7 +1,7 @@
 import os
 from typing import Optional
 
-from sevenn.sevenn_logger import Logger
+from sevenn.logger import Logger
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import unique_filepath
 

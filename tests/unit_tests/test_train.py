@@ -9,9 +9,9 @@ from torch_geometric.loader import DataLoader
 import sevenn.train.graph_dataset as graph_ds
 from sevenn._const import NUM_UNIV_ELEMENT
 from sevenn.error_recorder import ErrorRecorder
+from sevenn.logger import Logger
 from sevenn.scripts.processing_continue import processing_continue_v2
 from sevenn.scripts.processing_epoch import processing_epoch_v2
-from sevenn.sevenn_logger import Logger
 from sevenn.train.dataload import graph_build
 from sevenn.train.graph_dataset import from_config as dataset_from_config
 from sevenn.train.loss import get_loss_functions_from_config
