@@ -3,7 +3,7 @@ import warnings
 from collections import Counter
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional, Union
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import torch
@@ -281,7 +281,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         return self._full_file_list
 
     def process(self):
-        graph_list: list[AtomGraphData] = []
+        graph_list: List[AtomGraphData] = []
         for file in self.raw_file_names:
             tmplist = SevenNetGraphDataset.file_to_graph_list(
                 file=file,
@@ -392,7 +392,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         return self.avg_num_neigh**0.5
 
     @staticmethod
-    def _read_sevenn_data(filename: str) -> tuple[list[AtomGraphData], float]:
+    def _read_sevenn_data(filename: str) -> Tuple[List[AtomGraphData], float]:
         # backward compatibility
         from sevenn.train.dataset import AtomGraphDataset
 
@@ -409,7 +409,7 @@ class SevenNetGraphDataset(InMemoryDataset):
     @staticmethod
     def _read_structure_list(
         filename: str, cutoff: float, num_cores: int = 1
-    ) -> list[AtomGraphData]:
+    ) -> List[AtomGraphData]:
         datadct = dataload.structure_list_reader(filename)
         graph_list = []
         for tag, atoms_list in datadct.items():
@@ -426,7 +426,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         transfer_info: bool = True,
         allow_unlabeled: bool = False,
         **ase_kwargs,
-    ) -> list[AtomGraphData]:
+    ) -> List[AtomGraphData]:
         atoms_list = dataload.ase_reader(filename, **ase_kwargs)
         graph_list = dataload.graph_build(
             atoms_list,
@@ -442,7 +442,7 @@ class SevenNetGraphDataset(InMemoryDataset):
     @staticmethod
     def _read_graph_dataset(
         filename: str, cutoff: float, **kwargs
-    ) -> list[AtomGraphData]:
+    ) -> List[AtomGraphData]:
         meta_f = filename.replace('.pt', '.yaml')
         orig_cutoff = cutoff
         if not os.path.exists(filename):
@@ -519,7 +519,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         """
         if isinstance(file, str) and not os.path.isfile(file):
             raise ValueError(f'No such file: {file}')
-        graph_list: list[AtomGraphData]
+        graph_list: List[AtomGraphData]
         if isinstance(file, dict):
             graph_list = SevenNetGraphDataset._read_dict(
                 file, cutoff, num_cores, **kwargs
@@ -608,9 +608,9 @@ def _chain_data_weight_override(transform_func, data_weight):
 
 # script, return dict of SevenNetGraphDataset
 def from_config(
-    config: dict[str, Any],
+    config: Dict[str, Any],
     working_dir: str = os.getcwd(),
-    dataset_keys: Optional[list[str]] = None,
+    dataset_keys: Optional[List[str]] = None,
 ):
     log = Logger()
     if dataset_keys is None:
