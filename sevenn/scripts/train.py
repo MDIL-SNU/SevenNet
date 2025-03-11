@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import List, Optional
 
 import torch.distributed as dist
 from torch.utils.data.distributed import DistributedSampler
@@ -58,7 +58,7 @@ def train_v2(config, working_dir: str):
 
     # config updated
     start_epoch = 1
-    state_dicts: Optional[list[dict]] = None
+    state_dicts: Optional[List[dict]] = None
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
         state_dicts, start_epoch = processing_continue_v2(config)
 
@@ -101,7 +101,7 @@ def train(config, working_dir: str):
     log.timer_start('total')
 
     # config updated
-    state_dicts: Optional[list[dict]] = None
+    state_dicts: Optional[List[dict]] = None
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
         state_dicts, start_epoch, init_csv = processing_continue(config)
     else:

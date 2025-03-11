@@ -250,9 +250,9 @@ class SevenNetMultiModalDataset(ConcatDataset):
 
 
 def from_config(
-    config: dict[str, Any],
+    config: Dict[str, Any],
     working_dir: str = os.getcwd(),
-    dataset_keys: Optional[list[str]] = None,
+    dataset_keys: Optional[List[str]] = None,
 ):
     log = Logger()
     if dataset_keys is None:

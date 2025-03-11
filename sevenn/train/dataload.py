@@ -301,11 +301,11 @@ def _y_from_calc(atoms: ase.Atoms):
 
 
 def _set_atoms_y(
-    atoms_list: list[ase.Atoms],
+    atoms_list: List[ase.Atoms],
     energy_key: Optional[str] = None,
     force_key: Optional[str] = None,
     stress_key: Optional[str] = None,
-) -> list[ase.Atoms]:
+) -> List[ase.Atoms]:
     """
     Define how SevenNet reads ASE.atoms object for its y label
     If energy_key, force_key, or stress_key is given, the corresponding
@@ -358,7 +358,7 @@ def ase_reader(
     stress_key: Optional[str] = None,
     index: str = ':',
     **kwargs,
-) -> list[ase.Atoms]:
+) -> List[ase.Atoms]:
     """
     Wrapper of ase.io.read
     """
