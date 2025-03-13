@@ -48,19 +48,11 @@ ACTIVATION_FOR_ODD = {'tanh': torch.tanh, 'abs': torch.abs}
 ACTIVATION_DICT = {'e': ACTIVATION_FOR_EVEN, 'o': ACTIVATION_FOR_ODD}
 
 _prefix = os.path.abspath(f'{os.path.dirname(__file__)}/pretrained_potentials')
-SEVENNET_0_11Jul2024 = (
-    f'{_prefix}/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth'
-)
-SEVENNET_0_22May2024 = (
-    f'{_prefix}/SevenNet_0__22May2024/checkpoint_sevennet_0.pth'
-)
-SEVENNET_l3i5 = (
-    f'{_prefix}/SevenNet_l3i5/checkpoint_l3i5.pth'
-)
-SEVENNET_MF_0 = (
-    f'{_prefix}/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth'
-)
-
+SEVENNET_0_11Jul2024 = f'{_prefix}/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth'
+SEVENNET_0_22May2024 = f'{_prefix}/SevenNet_0__22May2024/checkpoint_sevennet_0.pth'
+SEVENNET_l3i5 = f'{_prefix}/SevenNet_l3i5/checkpoint_l3i5.pth'
+SEVENNET_MF_0 = f'{_prefix}/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth'
+SEVENNET_MF_OMPA = f'{_prefix}/SevenNet_MF_OMPA/checkpoint_sevennet_mf_ompa.pth'
 
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]
@@ -143,7 +135,9 @@ MODEL_CONFIG_CONDITION = {
     },
     KEY.CUTOFF: float,
     KEY.NUM_CONVOLUTION: int,
-    KEY.CONV_DENOMINATOR: lambda x: isinstance(x, float) or x in [
+    KEY.CONV_DENOMINATOR: lambda x: isinstance(x, float)
+    or x
+    in [
         'avg_num_neigh',
         'sqrt_avg_num_neigh',
     ],

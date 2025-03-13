@@ -203,6 +203,8 @@ def pretrained_name_to_path(name: str) -> str:
         checkpoint_path = _const.SEVENNET_l3i5
     elif name in [f'{n}-mf-0' for n in heads]:
         checkpoint_path = _const.SEVENNET_MF_0
+    elif name in [f'{n}-mf-ompa' for n in heads]:
+        checkpoint_path = _const.SEVENNET_MF_OMPA
     else:
         raise ValueError('Not a valid potential')
 
@@ -215,11 +217,35 @@ def load_checkpoint(checkpoint: Union[pathlib.Path, str]):
     else:
         try:
             checkpoint_path = pretrained_name_to_path(str(checkpoint))
+            if not os.path.isfile(checkpoint_path):
+                download_checkpoint(str(checkpoint))
         except ValueError:
             raise ValueError(
                 f'Given {checkpoint} is not exists and not a pre-trained name'
             )
     return SevenNetCheckpoint(checkpoint_path)
+
+
+def download_checkpoint(checkpoint_name: str):
+    import subprocess
+
+    name = checkpoint_name.lower()
+    heads = ['sevennet', '7net']
+    if name in [f'{n}-mf-ompa' for n in heads]:
+        download_url = 'https://figshare.com/ndownloader/files/52975859'
+        pretrained_pot_path = os.path.abspath(
+            f'{os.path.dirname(__file__)}/pretrained_potentials'
+        )
+        save_path = os.path.join(pretrained_pot_path, 'SevenNet_MF_OMPA')
+        os.makedirs(save_path, exist_ok=True)
+        subprocess.run(
+            [
+                'wget',
+                '-O',
+                os.path.join(save_path, 'checkpoint_sevennet_mf_ompa.pth'),
+                download_url,
+            ]
+        )
 
 
 def unique_filepath(filepath: str) -> str:
