@@ -1,5 +1,9 @@
 import os
 import pathlib
+import shutil
+import tempfile
+import urllib.error
+import urllib.request
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
@@ -7,6 +11,7 @@ import torch
 import torch.nn
 from e3nn.o3 import FullTensorProduct, Irreps
 
+import sevenn._const as CONST
 import sevenn._keys as KEY
 from sevenn.checkpoint import SevenNetCheckpoint
 
@@ -186,8 +191,6 @@ def infer_irreps_out(
 
 
 def pretrained_name_to_path(name: str) -> str:
-    import sevenn._const as _const
-
     name = name.lower()
     heads = ['sevennet', '7net']
     checkpoint_path = None
@@ -196,17 +199,21 @@ def pretrained_name_to_path(name: str) -> str:
         or name in [f'{n}-0_11jul2024' for n in heads]
         or name in ['sevennet-0', '7net-0']
     ):
-        checkpoint_path = _const.SEVENNET_0_11Jul2024
+        checkpoint_path = CONST.SEVENNET_0_11Jul2024
     elif name in [f'{n}-0_22may2024' for n in heads]:
-        checkpoint_path = _const.SEVENNET_0_22May2024
+        checkpoint_path = CONST.SEVENNET_0_22May2024
     elif name in [f'{n}-l3i5' for n in heads]:
-        checkpoint_path = _const.SEVENNET_l3i5
+        checkpoint_path = CONST.SEVENNET_l3i5
     elif name in [f'{n}-mf-0' for n in heads]:
-        checkpoint_path = _const.SEVENNET_MF_0
+        checkpoint_path = CONST.SEVENNET_MF_0
     elif name in [f'{n}-mf-ompa' for n in heads]:
-        checkpoint_path = _const.SEVENNET_MF_OMPA
+        checkpoint_path = CONST.SEVENNET_MF_OMPA
+    elif name in [f'{n}-omat' for n in heads]:
+        checkpoint_path = CONST.SEVENNET_OMAT
     else:
         raise ValueError('Not a valid potential')
+
+    checkpoint_path = check_and_download_checkpoint(checkpoint_path)
 
     return checkpoint_path
 
@@ -217,8 +224,6 @@ def load_checkpoint(checkpoint: Union[pathlib.Path, str]):
     else:
         try:
             checkpoint_path = pretrained_name_to_path(str(checkpoint))
-            if not os.path.isfile(checkpoint_path):
-                download_checkpoint(str(checkpoint))
         except ValueError:
             raise ValueError(
                 f'Given {checkpoint} is not exists and not a pre-trained name'
@@ -226,26 +231,52 @@ def load_checkpoint(checkpoint: Union[pathlib.Path, str]):
     return SevenNetCheckpoint(checkpoint_path)
 
 
-def download_checkpoint(checkpoint_name: str):
-    import subprocess
+def check_and_download_checkpoint(checkpoint_path: str):
+    # check if the file exists
+    if os.path.isfile(checkpoint_path):
+        return checkpoint_path
+    model_name = os.path.basename(os.path.dirname(checkpoint_path))
+    home_save_path = os.path.expanduser(f'~/.cache/{model_name}')
+    checkpoint_path2 = os.path.join(
+        home_save_path, os.path.basename(checkpoint_path)
+    )
+    if os.path.isfile(checkpoint_path2):
+        return checkpoint_path2
 
-    name = checkpoint_name.lower()
-    heads = ['sevennet', '7net']
-    if name in [f'{n}-mf-ompa' for n in heads]:
-        download_url = 'https://figshare.com/ndownloader/files/52975859'
-        pretrained_pot_path = os.path.abspath(
-            f'{os.path.dirname(__file__)}/pretrained_potentials'
-        )
-        save_path = os.path.join(pretrained_pot_path, 'SevenNet_MF_OMPA')
+    # download the file
+    download_url = CONST.SEVENNET_DOWNLOAD_LINK.get(checkpoint_path)
+    print(f'Downloading {model_name} checkpoint', flush=True)
+    try:
+        save_path = os.path.dirname(checkpoint_path)
         os.makedirs(save_path, exist_ok=True)
-        subprocess.run(
-            [
-                'wget',
-                '-O',
-                os.path.join(save_path, 'checkpoint_sevennet_mf_ompa.pth'),
-                download_url,
-            ]
-        )
+    except Exception:
+        try:
+            save_path = home_save_path
+            os.makedirs(save_path, exist_ok=True)
+            checkpoint_path = checkpoint_path2
+        except ValueError:
+            raise ValueError(
+                f'Failed to create save path for {model_name} checkpoint'
+            )
+    print(f'Saving to {save_path}', flush=True)
+    with tempfile.NamedTemporaryFile(delete=False, dir=save_path) as temp_file:
+        temp_path = temp_file.name
+        try:
+            _, http_msg = urllib.request.urlretrieve(download_url, temp_path)
+            print(f'Download complete to {save_path}', flush=True)
+            shutil.move(temp_path, checkpoint_path)
+        except (
+            urllib.error.URLError,
+            urllib.error.HTTPError,
+            OSError,
+            shutil.Error,
+            KeyboardInterrupt,
+        ) as e:
+            raise ValueError(f'Failed to download {model_name} checkpoint: {e}')
+        finally:
+            if os.path.isfile(temp_path):
+                os.remove(temp_path)
+    return checkpoint_path
 
 
 def unique_filepath(filepath: str) -> str:
