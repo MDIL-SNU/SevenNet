@@ -56,8 +56,8 @@ SEVENNET_MF_OMPA = f'{_prefix}/SevenNet_MF_OMPA/checkpoint_sevennet_mf_ompa.pth'
 SEVENNET_OMAT = f'{_prefix}/SevenNet_OMAT/checkpoint_sevennet_omat.pth'
 
 SEVENNET_DOWNLOAD_LINK = {
-    SEVENNET_MF_OMPA: 'https://figshare.com/ndownloader/files/52975859',
-    SEVENNET_OMAT: 'https://figshare.com/ndownloader/files/52984643',
+    SEVENNET_MF_OMPA: 'https://figshare.com/ndownloader/files/53015138',
+    SEVENNET_OMAT: 'https://figshare.com/ndownloader/files/53015129',
 }
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]

@@ -250,14 +250,10 @@ def check_and_download_checkpoint(checkpoint_path: str):
         save_path = os.path.dirname(checkpoint_path)
         os.makedirs(save_path, exist_ok=True)
     except Exception:
-        try:
-            save_path = home_save_path
-            os.makedirs(save_path, exist_ok=True)
-            checkpoint_path = checkpoint_path2
-        except ValueError:
-            raise ValueError(
-                f'Failed to create save path for {model_name} checkpoint'
-            )
+        save_path = home_save_path
+        os.makedirs(save_path, exist_ok=True)
+        checkpoint_path = checkpoint_path2
+
     print(f'Saving to {save_path}', flush=True)
     with tempfile.NamedTemporaryFile(delete=False, dir=save_path) as temp_file:
         temp_path = temp_file.name
