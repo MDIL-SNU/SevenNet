@@ -52,12 +52,13 @@ SEVENNET_0_11Jul2024 = f'{_prefix}/SevenNet_0__11Jul2024/checkpoint_sevennet_0.p
 SEVENNET_0_22May2024 = f'{_prefix}/SevenNet_0__22May2024/checkpoint_sevennet_0.pth'
 SEVENNET_l3i5 = f'{_prefix}/SevenNet_l3i5/checkpoint_l3i5.pth'
 SEVENNET_MF_0 = f'{_prefix}/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth'
-SEVENNET_MF_OMPA = f'{_prefix}/SevenNet_MF_OMPA/checkpoint_sevennet_mf_ompa.pth'
-SEVENNET_OMAT = f'{_prefix}/SevenNet_OMAT/checkpoint_sevennet_omat.pth'
+SEVENNET_MF_ompa = f'{_prefix}/SevenNet_MF_OMPA/checkpoint_sevennet_mf_ompa.pth'
+SEVENNET_omat = f'{_prefix}/SevenNet_OMAT/checkpoint_sevennet_omat.pth'
 
-SEVENNET_DOWNLOAD_LINK = {
-    SEVENNET_MF_OMPA: 'https://figshare.com/ndownloader/files/53015138',
-    SEVENNET_OMAT: 'https://figshare.com/ndownloader/files/53015129',
+_git_prefix = 'https://github.com/MDIL-SNU/SevenNet/releases/download'
+CHECKPOINT_DOWNLOAD_LINKS = {
+    SEVENNET_MF_ompa: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_mf_ompa.pth',
+    SEVENNET_omat: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_omat.pth',
 }
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]
