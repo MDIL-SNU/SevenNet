@@ -3,20 +3,19 @@ All notable changes to this project will be documented in this file.
 
 
 ## [0.11.0]
+
+Multi-fidelity learning implemented & New pretrained-models
+
 ### Added
 - Build multi-fidelity model, SevenNet-MF, based on given modality in the yaml
 - Modality support for sevenn_inference, sevenn_get_modal, and SevenNetCalculator
-- [cli] sevenn_cp tool for checkpoint summary, input generation, multi-modal routines
+- sevenn_cp tool for checkpoint summary, input generation, multi-modal routines
 - Modality append / assign using sevenn_cp
 - Loss weighting for energy, force and stress for corresponding data label
 - Ignore unlabelled data when calculating loss. (e.g. stress data for non-pbc structure)
 - Dict style dataset input for multi-modal and data-weight
 - (experimental) cuEquivariance support
-
-### Added (code)
-- sevenn.train.modal_dataset SevenNetMultiModalDataset
-- sevenn.scripts.backward_compatibility.py
-- sevenn.checkpoint.py
+- Downloading large checkpoints from url (7net-MF-ompa, 7net-omat)
 - D3 wB97M param
 
 ### Changed
