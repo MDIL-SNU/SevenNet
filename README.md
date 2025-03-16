@@ -26,9 +26,24 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
-
 ---
 
+### **SevenNet-MF-ompa (16Mar2025)**
+> Keywords in ASE: `7net-mf-ompa` and `SevenNet-mf-ompa`
+
+This model utilizes multi-fidelity learning to simultaneously train on the MPtrj, sAlex, and OMat24 datasets. This is the best-balanced model that performs well in both Matbench F1 score and thermal conductivity calculations. Since it is a multi-fidelity model, it can calculate results corresponding to both PBE52 (MPtrj, sAlex) and PBE54 (OMat24).
+
+* Training set MAE: 11.0 meV/atom (energy), 0.053 eV/Ang. (force), and 4.84 kbar (stress)
+* Matbench F1 score: 0.901, $\kappa_{\mathrm{SRME}}$: 0.314
+---
+### **SevenNet-omat (16Mar2025)**
+> Keywords in ASE: `7net-omat` and `SevenNet-omat`
+
+ This model was trained solely on OMat24 dataset. Due to the POTCAR version difference between the OMat24 data and the MPtrj data, there is no Matbench f1 score, but this model exhibits SOTA performance in thermal conductivity calculations.
+
+* Training set MAE: 14.2 meV/atom (energy), 0.072 eV/Ang. (force), and 6.36 kbar (stress)
+* $\kappa_{\mathrm{SRME}}$: 0.221
+---
 ### **SevenNet-l3i5 (12Dec2024)**
 > Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
