@@ -195,9 +195,9 @@ def infer_irreps_out(
 def download_checkpoint(path: str, url: str):
     # raises permission error if fails
     fname = osp.basename(path)
-    os.makedirs(osp.dirname(path), exist_ok=True)
     temp_path = path + '.partial'
     try:
+        os.makedirs(osp.dirname(path), exist_ok=True)
         response = requests.get(url, stream=True, timeout=30)
         response.raise_for_status()  # Raise exception for bad status codes
 
@@ -220,6 +220,8 @@ def download_checkpoint(path: str, url: str):
         shutil.move(temp_path, path)
         print(f'Checkpoint downloaded: {path}')
         return path
+    except PermissionError:
+        raise
     except Exception as e:
         # Clean up partial downloads on failure
         print(f'Download failed: {str(e)}')
@@ -269,9 +271,9 @@ def pretrained_name_to_path(name: str) -> str:
         raise FileNotFoundError(checkpoint_path)
 
     try:
-        return download_checkpoint(paths[0], url)
+        return download_checkpoint(paths[0], url)  # 7net package path
     except PermissionError:
-        return download_checkpoint(paths[1], url)
+        return download_checkpoint(paths[1], url)  # ~/.cache
 
 
 def load_checkpoint(checkpoint: Union[pathlib.Path, str]):
