@@ -16,11 +16,11 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
  - Multi-fidelity training for combining multiple database with different calculation settings. [Usage](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md).
 
 ## Pre-trained models
-So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
-We provide the training set MAEs (energy, force, and stress) F1 score, and RMSD for the WBM dataset, as well as $\kappa_{\mathrm{SRME}}$ from phonondb and CPS (Combined Performance Score). For details on these metrics and performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
+So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, leading in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
+We provide the training set MAEs (energy, force, and stress) the F1 score, and RMSD for the WBM dataset, along with $\kappa_{\mathrm{SRME}}$ from phonondb and CPS (Combined Performance Score). For details on these metrics and performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
-These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [ASE calculator](#ase_calculator) to see the way to load a model through ASE calculator.
-Additionally, `keywords` can be called in other parts of SevenNet, such as `sevenn_inference`, `sevenn_get_model`, and `checkpoint` in `input.yaml` for fine-tuning.
+These models can be used as interatomic potential in LAMMPS and can also be loaded through ASE calculator by specifying the keywords of each model. Please refer [ASE calculator](#ase_calculator) for instructions on loading a model vial ASE calculator.
+Additionally, `keywords` can be used in other parts of SevenNet, such as `sevenn_inference`, `sevenn_get_model`, and the `checkpoint` section in `input.yaml` for fine-tuning.
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program of Samsung Advanced Institute of Technology, Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
@@ -31,7 +31,7 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 **This is our recommended pre-trained model**
 
-This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to simultaneously train on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. As of March 17, 2025, it has achieved state-of-the-art performance on the [Matbench Discovery](https://matbench-discovery.materialsproject.org/) in the CPS (Combined Performance Score). We have found that this model outperforms most tasks, except for isolated molecule energy, where it performs slightly worse than SevenNet-l3i5.
+This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. As of March 17, 2025, it has achieved state-of-the-art performance on [Matbench Discovery](https://matbench-discovery.materialsproject.org/) in the CPS (Combined Performance Score). Our evaluations shows that this model outperforms most tasks, except for isolated molecule energy, where it performs slightly worse than SevenNet-l3i5.
 
 ```python
 from sevenn.calculator import SevenNetCalculator
@@ -48,17 +48,17 @@ When using the command-line interface of SevenNet, include the `--modal mpa` or 
 |:---:|:---:|:---:|:---:|
 |**0.883**|**0.901**|0.317| **0.0115** |
 
-[Detailed instructions for multi-fidelity](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md)
+[Detailed instructions for multi-fidelity learning](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md)
 
-[Link to the full-information checkpoint](https://figshare.com/articles/software/7net_MF_ompa/28590722?file=53029859)
+[Full-information checkpoint download link](https://figshare.com/articles/software/7net_MF_ompa/28590722?file=53029859)
 
 ---
 ### **SevenNet-omat (17Mar2025)**
 > Model keywords: `7net-omat` | `SevenNet-omat`
 
- This model was trained solely on the [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) dataset. It achieves state-of-the-art (SOTA) performance in $\kappa_{\mathrm{SRME}}$ on [Matbench Discovery](https://matbench-discovery.materialsproject.org/); however, the F1 score was not available due to a difference in the POTCAR version. Similar to `SevenNet-MF-ompa`, this model outperforms `SevenNet-l3i5` in most tasks, except for isolated molecule energy.
+ This model was trained exclusively on the [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) dataset. It achieves state-of-the-art (SOTA) performance in $\kappa_{\mathrm{SRME}}$ on [Matbench Discovery](https://matbench-discovery.materialsproject.org/); however, the F1 score is unavailable due to a difference in the POTCAR version. Similar to `SevenNet-MF-ompa`, this model outperforms `SevenNet-l3i5` in most tasks, except for isolated molecule energy.
 
-[Link to the full-information checkpoint](https://figshare.com/articles/software/SevenNet_omat/28593938).
+[Full-information checkpoint download link](https://figshare.com/articles/software/SevenNet_omat/28593938).
 
 #### **Matbench Discovery**
 * $\kappa_{\mathrm{SRME}}$: **0.221**
@@ -66,7 +66,7 @@ When using the command-line interface of SevenNet, include the `--modal mpa` or 
 ### **SevenNet-l3i5 (12Dec2024)**
 > Model keywords: `7net-l3i5` | `SevenNet-l3i5`
 
-The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to `SevenNet-0` with $l_{\mathrm{max}}$ of 2. While **l3i5** offers improved accuracy across various systems compared to `SevenNet-0`, it is approximately four times slower. As of March 17, 2025, this model has achieved state-of-the-art (SOTA) performance on the CPS metric among compliant models, newly introduced in this [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
+This model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to `SevenNet-0`, which has an $l_{\mathrm{max}}$ of 2. While **l3i5** offers improved accuracy across various systems compared to `SevenNet-0`, it is approximately four times slower. As of March 17, 2025, this model has achieved state-of-the-art (SOTA) performance on the CPS metric [Matbench Discovery](https://matbench-discovery.materialsproject.org/) among compliant models.
 
 #### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
@@ -78,11 +78,8 @@ The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) t
 ### **SevenNet-0 (11Jul2024)**
 > Model keywords:: `7net-0` | `SevenNet-0` | `7net-0_11Jul2024` | `SevenNet-0_11Jul2024`
 
-The model architecture is mainly line with [GNoME](https://github.com/google-deepmind/materials_discovery), a pretrained model that utilizes the NequIP architecture.
-Five interaction blocks with node features that consist of 128 scalars (*l*=0), 64 vectors (*l*=1), and 32 tensors (*l*=2).
-The convolutional filter employs a cutoff radius of 5 Angstrom and a tensor product of learnable radial functions from bases of 8 radial Bessel functions and $l_{\mathrm{max}}$ of 2, resulting in the number of parameters is 0.84 M.
-The model was trained with [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842).
-This model is loaded as the default pre-trained model in ASE calculator.
+This model is one of our eariest pre-trained models. Altough we recommend to using more recent and accurate models, it can can still be useful in certain cases, as it has the shortest inference speed.
+The model was trained with [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) and is loaded as the default pre-trained model in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
 #### **Matbench Discovery**
@@ -92,7 +89,7 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 
 ---
 
-In addition to these latest models, you can find our legacy models from [pretrained_potentials](./sevenn/pretrained_potentials).
+You can find our legacy models from [pretrained_potentials](./sevenn/pretrained_potentials).
 
 ## Contents
 - [Installation](#installation)
@@ -112,51 +109,44 @@ In addition to these latest models, you can find our legacy models from [pretrai
 - Python >= 3.8
 - PyTorch >= 1.12.0
 
-Here are the recommended versions we've been using internally without any issues.
+Here are the recommended versions we have been using internally without any issues.
 - PyTorch/2.2.2 + CUDA/12.1.0
 - PyTorch/1.13.1 + CUDA/12.1.0
 - PyTorch/1.12.0 + CUDA/11.6.2
-Using the newer versions of CUDA with PyTorch is usually not a problem. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
+Using newer versions of CUDA with PyTorch is generally not an issue. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
 
 > [!IMPORTANT]
-> Please install PyTorch manually depending on the hardware before installing the SevenNet.
+> Please install PyTorch manually based on your hardware before installing the SevenNet.
 
-#### Optional requirements
-- nvcc compiler
-
-This should be available to use `SevenNetD3Calculator` or `D3Calculator`.
-
-Give that the PyTorch is successfully installed, please run the command below.
+Once PyTorch is successfully installed, please run the following command:
 ```bash
 pip install sevenn
-pip install https://github.com/MDIL-SNU/SevenNet.git # for the latest version
+pip install https://github.com/MDIL-SNU/SevenNet.git # for developers
 ```
 We strongly recommend checking `CHANGELOG.md` for new features and changes because SevenNet is under active development.
 
 ## Usage<a name="usage"></a>
 ### ASE calculator<a name="ase_calculator"></a>
 
-For a wider application in atomistic simulations, SevenNet provides the ASE interface through ASE calculator.
-The model can be loaded through the following Python code.
-
+For broader applications in atomistic simulations, SevenNet provides an ASE interface through the ASE calculator. Models can be loaded using the following Python code:
 ```python
 from sevenn.calculator import SevenNetCalculator
-calc = SevenNetCalculator(model='7net-0', device='cpu')
+# The 'modal' argument can be omitted if the model it is not multi-fidelity trained.
+calc_mf_ompa = SevenNetCalculator(model='7net-mf-ompa', modal='mpa')
 ```
-SevenNet supports CUDA accelerated D3Calculator.
+SevenNet also supports CUDA-accelerated D3Calculator.
 ```python
 from sevenn.calculator import SevenNetD3Calculator
 calc = SevenNetD3Calculator(model='7net-0', device='cuda')
 ```
-If you encounter `CUDA is not installed or nvcc is not available`, ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
+If you encounter the error `CUDA is not installed or nvcc is not available`, ensure that the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
 
-Various pre-trained SevenNet models can be accessed by changing the `model` variable to any predefined keywords such as `7net-l3i5`, `7net-0_11Jul2024`, `7net-0_22May2024`, and so on. The default model is **SevenNet-0 (11Jul2024)**.
+Various pre-trained SevenNet models can be accessed by setting the `model` variable to any predefined keywords such as `7net-mf-ompa`, `7net-omat`, `7net-l3i5`, and `7net-0`.
 
-In addition, not only pre-trained models but also user-trained models can be applied in ASE calculator.
-In this case, the path of checkpoint generated after training should be identified in `model` variable.
+Additionally, user-trained models can also be applied in the ASE calculator. In this case, the `model` parameter should be set to the path of the checkpoint generated after training.
 
 > [!TIP]
-> When 'auto' is passed by `device`, SevenNet utilizes GPU acceleration if available.
+> When 'auto' is passed by `device`, which is the default, SevenNet utilizes GPU acceleration if available.
 
 ### Training and inference
 
@@ -170,7 +160,7 @@ sevenn_preset {preset keyword} > input.yaml
 ```
 
 Available preset keywords are: `base`, `fine_tune`, `multi_modal`, `sevennet-0`, and `sevennet-l3i5`.
-Check comments in the preset yaml files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
+Check comments in the preset YAML files for explanations. For fine-tuning, note that most model hyperparameters cannot be modified unless explicitly indicated.
 To reuse a preprocessed training set, you can specify `sevenn_data/${dataset_name}.pt` to the `load_trainset_path:` in the `input.yaml`.
 
 #### 2. Preprocess (optional)
@@ -387,7 +377,7 @@ If you use this code, please cite our paper:
 }
 ```
 
-If you utilize the multi-fidelity feature of this code or the pretrained model SevenNet-MF-0, please cite the following paper:
+If you utilize the multi-fidelity feature of this code or the pretrained model SevenNet-MF-ompa, please cite the following paper:
 ```txt
 @article{kim_sevennet_mf_2024,
 	title = {Data-Efficient Multifidelity Training for High-Fidelity Machine Learning Interatomic Potentials},
