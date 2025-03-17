@@ -2,7 +2,7 @@ import ctypes
 import os
 import pathlib
 import warnings
-from typing import Any, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
@@ -22,17 +22,12 @@ torch_script_type = torch.jit._script.RecursiveScriptModule
 
 
 class SevenNetCalculator(Calculator):
-    """ASE calculator for SevenNet models
+    """Supporting properties:
+    'free_energy', 'energy', 'forces', 'stress', 'energies'
+    free_energy equals energy. 'energies' stores atomic energy.
 
-    Multi-GPU parallel MD is not supported for this mode.
-    Use LAMMPS for multi-GPU parallel MD.
-    This class is for convenience who want to run SevenNet models with ase.
-
-    Note than ASE calculator is designed to be interface of other programs.
-    But in this class, we simply run torch model inside ASE calculator.
-    So there is no FileIO things.
-
-    Here, free_energy = energy
+    Multi-GPU acceleration is not supported with ASE calculator.
+    You should use LAMMPS for the acceleration.
     """
 
     def __init__(
@@ -42,14 +37,28 @@ class SevenNetCalculator(Calculator):
         device: Union[torch.device, str] = 'auto',
         modal: Optional[str] = None,
         enable_cueq: bool = False,
-        sevennet_config: Optional[Any] = None,  # hold meta information
+        sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
     ):
-        """Initialize the calculator
+        """Initialize SevenNetCalculator.
 
-        Args:
-            model (SevenNet): path to the checkpoint file, or pretrained
-            device (str, optional): Torch device to use. Defaults to "auto".
+        Parameters
+        ----------
+        model: str | Path | AtomGraphSequential, default='7net-0'
+            Name of pretrained models (7net-mf-ompa, 7net-omat, 7net-l3i5, 7net-0) or
+            path to the checkpoint, deployed model or the model itself
+        file_type: str, default='checkpoint'
+            one of 'checkpoint' | 'torchscript' | 'model_instance'
+        device: str | torch.device, default='auto'
+            if not given, use CUDA if available
+        modal: str | None, default=None
+            modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
+            it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
+            case insensitive
+        enable_cueq: bool, default=False
+            if True, use cuEquivariant to accelerate inference.
+        sevennet_config: dict | None, default=None
+            Not used, but can be used to carry meta information of this calculator
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
@@ -131,18 +140,21 @@ class SevenNetCalculator(Calculator):
 
         self.model = model_loaded
 
-        if isinstance(self.model, AtomGraphSequential) and modal:
-            if self.model.modal_map is None:
-                raise ValueError('Modality given, but model has no modal_map')
-            if modal not in self.model.modal_map:
-                _modals = list(self.model.modal_map.keys())
-                raise ValueError(f'Unknown modal {modal} (not in {_modals})')
+        self.modal = None
+        if isinstance(self.model, AtomGraphSequential):
+            modal_map = self.model.modal_map
+            if modal_map:
+                modal_ava = list(modal_map.keys())
+                if not modal:
+                    raise ValueError(f'modal argument missing (avail: {modal_ava})')
+                elif modal not in modal_ava:
+                    raise ValueError(f'unknown modal {modal} (not in {modal_ava})')
+                self.modal = modal
+            elif not self.model.modal_map and modal:
+                warnings.warn(f'modal={modal} is ignored as model has no modal_map')
 
         self.model.to(self.device)
         self.model.eval()
-
-        self.modal = modal
-
         self.implemented_properties = [
             'free_energy',
             'energy',
@@ -216,6 +228,31 @@ class SevenNetD3Calculator(SumCalculator):
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
         **kwargs,
     ):
+        """Initialize SevenNetD3Calculator. CUDA required.
+
+        Parameters
+        ----------
+        model: str | Path | AtomGraphSequential
+            Name of pretrained models (7net-mf-ompa, 7net-omat, 7net-l3i5, 7net-0) or
+            path to the checkpoint, deployed model or the model itself
+        file_type: str, default='checkpoint'
+            one of 'checkpoint' | 'torchscript' | 'model_instance'
+        device: str | torch.device, default='auto'
+            if not given, use CUDA if available
+        modal: str | None, default=None
+            modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
+            it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
+        enable_cueq: bool, default=False
+            if True, use cuEquivariant to accelerate inference.
+        damping_type: str, default='damp_bj'
+            Damping type of D3, one of 'damp_bj' | 'damp_zero'
+        functional_name: str, default='pbe'
+            Target functional name of D3 parameters.
+        vdw_cutoff: float, default=9000
+            vdw cutoff of D3 calculator in au
+        cn_cutoff: float, default=1600
+            cn cutoff of D3 calculator in au
+        """
         d3_calc = D3Calculator(
             damping_type=damping_type,
             functional_name=functional_name,
@@ -267,9 +304,7 @@ def _load(name: str) -> ctypes.CDLL:
 
     load(
         name=name,
-        sources=[
-            os.path.join(package_dir, 'pair_e3gnn', 'pair_d3_for_ase.cu')
-        ],
+        sources=[os.path.join(package_dir, 'pair_e3gnn', 'pair_d3_for_ase.cu')],
         extra_cuda_cflags=['-O3', '--expt-relaxed-constexpr', '-fmad=false'],
         build_directory=compile_dir,
         verbose=True,

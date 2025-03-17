@@ -2,8 +2,6 @@ import os
 import os.path as osp
 import pathlib
 import shutil
-import sys
-from pathlib import Path
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
@@ -193,10 +191,10 @@ def infer_irreps_out(
 
 
 def download_checkpoint(path: str, url: str):
-    # raises permission error if fails
     fname = osp.basename(path)
     temp_path = path + '.partial'
     try:
+        # raises permission error if fails
         os.makedirs(osp.dirname(path), exist_ok=True)
         response = requests.get(url, stream=True, timeout=30)
         response.raise_for_status()  # Raise exception for bad status codes
@@ -224,6 +222,7 @@ def download_checkpoint(path: str, url: str):
         raise
     except Exception as e:
         # Clean up partial downloads on failure
+        # May not work as errors handled internally by tqdm etc.
         print(f'Download failed: {str(e)}')
         if os.path.exists(temp_path):
             print(f'Cleaning up partial download: {temp_path}')
