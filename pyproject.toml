@@ -28,6 +28,7 @@ dependencies = [
     "numpy",
     "matscipy",
     "pandas",
+    "requests",
 ]
 [project.optional-dependencies]
 test = ["matscipy", "pytest-cov>=5"]

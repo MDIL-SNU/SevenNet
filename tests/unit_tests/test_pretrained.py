@@ -196,12 +196,146 @@ def test_7net_mf_0(atoms_pbc, atoms_mol):
     g2_ref_e = torch.tensor([-14.172412872314453])
     g2_ref_f = torch.tensor(
         [
-            [4.6566129e-10, -1.3429364e+01, 6.9344816e+00],
-            [2.3283064e-09, 8.9132404e+00, -9.6807365e+00],
-            [-2.7939677e-09, 4.5161238e+00, 2.7462559e+00],
+            [4.6566129e-10, -1.3429364e01, 6.9344816e00],
+            [2.3283064e-09, 8.9132404e00, -9.6807365e00],
+            [-2.7939677e-09, 4.5161238e00, 2.7462559e00],
         ]
     )
 
+    assert acl(g1.inferred_total_energy, g1_ref_e)
+    assert acl(g1.inferred_force, g1_ref_f)
+    assert acl(g1.inferred_stress, g1_ref_s)
+
+    assert acl(g2.inferred_total_energy, g2_ref_e)
+    assert acl(g2.inferred_force, g2_ref_f)
+
+
+def test_7net_mf_ompa_mpa(atoms_pbc, atoms_mol):
+    cp_path = pretrained_name_to_path('7net-mf-ompa')
+    model, config = model_from_checkpoint(cp_path)
+    cutoff = config['cutoff']
+
+    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_pbc, cutoff))
+    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_mol, cutoff))
+
+    # mpa
+    g1[KEY.DATA_MODALITY] = 'mpa'
+    g2[KEY.DATA_MODALITY] = 'mpa'
+
+    model.set_is_batch_data(False)
+    g1 = model(g1)
+    g2 = model(g2)
+
+    model.set_is_batch_data(True)
+
+    g1_ref_e = torch.tensor([-3.490943193435669])
+    g1_ref_f = torch.tensor(
+        [
+            [1.2680445e01, -2.7985498e-04, -2.7979910e-04],
+            [-1.2680446e01, 2.7984008e-04, 2.7981028e-04],
+        ]
+    )
+    g1_ref_s = -1 * torch.tensor(
+        # xx, yy, zz, xy, yz, zx
+        [-0.6481662, -0.02462837, -0.02462837, 0.02693467, 0.00459635, 0.02693467]
+    )
+
+    g2_ref_e = torch.tensor([-12.597525596618652])
+    g2_ref_f = torch.tensor(
+        [
+            [0.0, -12.245223, 7.26795],
+            [0.0, 8.816763, -9.423925],
+            [0.0, 3.4284601, 2.1559749],
+        ]
+    )
+    assert acl(g1.inferred_total_energy, g1_ref_e)
+    assert acl(g1.inferred_force, g1_ref_f)
+    assert acl(g1.inferred_stress, g1_ref_s)
+
+    assert acl(g2.inferred_total_energy, g2_ref_e)
+    assert acl(g2.inferred_force, g2_ref_f)
+
+
+def test_7net_mf_ompa_omat(atoms_pbc, atoms_mol):
+    cp_path = pretrained_name_to_path('7net-mf-ompa')
+    model, config = model_from_checkpoint(cp_path)
+    cutoff = config['cutoff']
+
+    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_pbc, cutoff))
+    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_mol, cutoff))
+
+    # mpa
+    g1[KEY.DATA_MODALITY] = 'omat24'
+    g2[KEY.DATA_MODALITY] = 'omat24'
+
+    model.set_is_batch_data(False)
+    g1 = model(g1)
+    g2 = model(g2)
+
+    model.set_is_batch_data(True)
+
+    g1_ref_e = torch.tensor([-3.5094668865203857])
+    g1_ref_f = torch.tensor(
+        [
+            [1.2562084e01, -1.4219694e-03, -1.4219843e-03],
+            [-1.2562084e01, 1.4219508e-03, 1.4219955e-03],
+        ]
+    )
+    g1_ref_s = -1 * torch.tensor(
+        # xx, yy, zz, xy, yz, zx
+        [-0.6430905, -0.0254128, -0.02541281, 0.0268343, 0.00460021, 0.0268343]
+    )
+
+    g2_ref_e = torch.tensor([-12.6202974319458])
+    g2_ref_f = torch.tensor(
+        [
+            [0.0, -12.205926, 7.2050343],
+            [0.0, 8.790399, -9.368677],
+            [0.0, 3.4155273, 2.163643],
+        ]
+    )
+    assert acl(g1.inferred_total_energy, g1_ref_e)
+    assert acl(g1.inferred_force, g1_ref_f)
+    assert acl(g1.inferred_stress, g1_ref_s)
+
+    assert acl(g2.inferred_total_energy, g2_ref_e)
+    assert acl(g2.inferred_force, g2_ref_f)
+
+
+def test_7net_omat(atoms_pbc, atoms_mol):
+    cp_path = pretrained_name_to_path('7net-omat')
+    model, config = model_from_checkpoint(cp_path)
+    cutoff = config['cutoff']
+
+    g1 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_pbc, cutoff))
+    g2 = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms_mol, cutoff))
+
+    model.set_is_batch_data(False)
+    g1 = model(g1)
+    g2 = model(g2)
+
+    model.set_is_batch_data(True)
+
+    g1_ref_e = torch.tensor([-3.5033323764801025])
+    g1_ref_f = torch.tensor(
+        [
+            [12.533154, 0.02358698, 0.02358694],
+            [-12.533153, -0.02358699, -0.02358697],
+        ]
+    )
+    g1_ref_s = -1 * torch.tensor(
+        # xx, yy, zz, xy, yz, zx
+        [-0.6420925, -0.02781446, -0.02781446, 0.02575445, 0.00381664, 0.02575445]
+    )
+
+    g2_ref_e = torch.tensor([-12.403768539428711])
+    g2_ref_f = torch.tensor(
+        [
+            [0, -12.848297, 7.11432],
+            [0.0, 9.265477, -9.564951],
+            [0.0, 3.58282, 2.4506311],
+        ]
+    )
     assert acl(g1.inferred_total_energy, g1_ref_e)
     assert acl(g1.inferred_force, g1_ref_f)
     assert acl(g1.inferred_stress, g1_ref_s)

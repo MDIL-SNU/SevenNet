@@ -1,12 +1,17 @@
 import os
+import os.path as osp
 import pathlib
+import shutil
 from typing import Dict, List, Tuple, Union
 
 import numpy as np
+import requests
 import torch
 import torch.nn
 from e3nn.o3 import FullTensorProduct, Irreps
+from tqdm import tqdm
 
+import sevenn._const as _const
 import sevenn._keys as KEY
 from sevenn.checkpoint import SevenNetCheckpoint
 
@@ -185,12 +190,52 @@ def infer_irreps_out(
     return Irreps(new_irreps_elem)
 
 
-def pretrained_name_to_path(name: str) -> str:
-    import sevenn._const as _const
+def download_checkpoint(path: str, url: str):
+    fname = osp.basename(path)
+    temp_path = path + '.partial'
+    try:
+        # raises permission error if fails
+        os.makedirs(osp.dirname(path), exist_ok=True)
+        response = requests.get(url, stream=True, timeout=30)
+        response.raise_for_status()  # Raise exception for bad status codes
 
+        total_size = int(response.headers.get('content-length', 0))
+        block_size = 1024  # 1 KB chunks
+
+        progress_bar = tqdm(
+            total=total_size,
+            unit='B',
+            unit_scale=True,
+            desc=f'Downloading {fname}',
+        )
+
+        with open(temp_path, 'wb') as file:
+            for data in response.iter_content(block_size):
+                progress_bar.update(len(data))
+                file.write(data)
+        progress_bar.close()
+
+        shutil.move(temp_path, path)
+        print(f'Checkpoint downloaded: {path}')
+        return path
+    except PermissionError:
+        raise
+    except Exception as e:
+        # Clean up partial downloads on failure
+        # May not work as errors handled internally by tqdm etc.
+        print(f'Download failed: {str(e)}')
+        if os.path.exists(temp_path):
+            print(f'Cleaning up partial download: {temp_path}')
+            os.remove(temp_path)
+        raise
+
+
+def pretrained_name_to_path(name: str) -> str:
     name = name.lower()
     heads = ['sevennet', '7net']
     checkpoint_path = None
+    url = None
+
     if (  # TODO: regex
         name in [f'{n}-0_11july2024' for n in heads]
         or name in [f'{n}-0_11jul2024' for n in heads]
@@ -203,21 +248,44 @@ def pretrained_name_to_path(name: str) -> str:
         checkpoint_path = _const.SEVENNET_l3i5
     elif name in [f'{n}-mf-0' for n in heads]:
         checkpoint_path = _const.SEVENNET_MF_0
+    elif name in [f'{n}-mf-ompa' for n in heads]:
+        checkpoint_path = _const.SEVENNET_MF_ompa
+    elif name in [f'{n}-omat' for n in heads]:
+        checkpoint_path = _const.SEVENNET_omat
     else:
-        raise ValueError('Not a valid potential')
+        raise ValueError('Not a valid pretrained model name')
+    url = _const.CHECKPOINT_DOWNLOAD_LINKS.get(checkpoint_path)
 
-    return checkpoint_path
+    paths = [
+        checkpoint_path,
+        checkpoint_path.replace(_const._prefix, osp.expanduser('~/.cache/sevennet')),
+    ]
+
+    for path in paths:
+        if osp.exists(path):
+            return path
+
+    # File not found check url and try download
+    if url is None:
+        raise FileNotFoundError(checkpoint_path)
+
+    try:
+        return download_checkpoint(paths[0], url)  # 7net package path
+    except PermissionError:
+        return download_checkpoint(paths[1], url)  # ~/.cache
 
 
 def load_checkpoint(checkpoint: Union[pathlib.Path, str]):
-    if os.path.isfile(checkpoint):
+    suggests = ['7net-0, 7net-l3i5, 7net-mf-ompa, 7net-omat']
+    if osp.isfile(checkpoint):
         checkpoint_path = checkpoint
     else:
         try:
             checkpoint_path = pretrained_name_to_path(str(checkpoint))
         except ValueError:
             raise ValueError(
-                f'Given {checkpoint} is not exists and not a pre-trained name'
+                f'Given {checkpoint} is not exists and not a pre-trained name.\n'
+                f'Valid pretrained model names: {suggests}'
             )
     return SevenNetCheckpoint(checkpoint_path)
 
