@@ -31,7 +31,7 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 **This is our recommended pre-trained model**
 
-This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to simultaneously train on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. As of March 17, 2025, it has achieved state-of-the-art performance on the [Matbench Discovery](https://matbench-discovery.materialsproject.org/) in the CPS (Combined Performance Score). We have found that this model outperforms most tasks, except for isolated molecule energy, where it performs slightly worse than SevenNet-l3i5. 
+This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to simultaneously train on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. As of March 17, 2025, it has achieved state-of-the-art performance on the [Matbench Discovery](https://matbench-discovery.materialsproject.org/) in the CPS (Combined Performance Score). We have found that this model outperforms most tasks, except for isolated molecule energy, where it performs slightly worse than SevenNet-l3i5.
 
 ```python
 from sevenn.calculator import SevenNetCalculator
