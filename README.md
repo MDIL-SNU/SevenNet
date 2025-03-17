@@ -19,7 +19,7 @@ SevenNet (Scalable EquiVariance Enabled Neural Network) is a graph neural networ
 
 ## Pre-trained models
 So far, we have released three pre-trained SevenNet models. Each model has various hyperparameters and training sets, resulting in different accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
-We provide the training set MAEs (energy, force, and stress) F1 score for WBM dataset and $\kappa_{\mathrm{SRME}}$ from phonondb. For details on these metrics and performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
+We provide the training set MAEs (energy, force, and stress) F1 score, and RMSD for the WBM dataset, as well as $\kappa_{\mathrm{SRME}}$ from phonondb and CPS (Combined Performance Score). For details on these metrics and performance comparisons with other pre-trained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
 These models can be used as interatomic potential on LAMMPS, and also can be loaded through ASE calculator by calling the `keywords` of each model. Please refer [ASE calculator](#ase_calculator) to see the way to load a model through ASE calculator.
 Additionally, `keywords` can be called in other parts of SevenNet, such as `sevenn_inference`, `sevenn_get_model`, and `checkpoint` in `input.yaml` for fine-tuning.
@@ -28,31 +28,55 @@ Additionally, `keywords` can be called in other parts of SevenNet, such as `seve
 
 ---
 
-### **SevenNet-MF-ompa (16Mar2025)**
+### **SevenNet-MF-ompa (17Mar2025)**
 > Keywords in ASE: `7net-mf-ompa` and `SevenNet-mf-ompa`
 
-This model utilizes multi-fidelity learning to simultaneously train on the MPtrj, sAlex, and OMat24 datasets. This is the best-balanced model that performs well in both Matbench F1 score and thermal conductivity calculations. Since it is a multi-fidelity model, it can calculate results corresponding to both PBE52 (MPtrj, sAlex) and PBE54 (OMat24).
+This model leverages multi-fidelity learning to simultaneously train on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. Although its accuracy in **molecular energy** calculations is lower, it outperforms the existing l3i5 model in other computational tasks. This model achieves high accuracy in energy and force calculations and, as of March 17, 2025, has achieved state-of-the-art (SOTA) performance on the CPS metric, newly introduced in this [Matbench Discovery](https://matbench-discovery.materialsproject.org/).<br>
+To use this model, you should specify the `modal` argument. You can use `'mpa'` for PBE52 calculations, and `'omat24'` for PBE54 calculations. Detailed usage instructions for the multi-fidelity (MF) model are available at this [link](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md).<br>
+The checkpoint available for download via GitHub has been lightweighted by removing some information. The full-information checkpoint can be downloaded through this [link](https://figshare.com/articles/software/7net_MF_ompa/28590722?file=53029859).
 
-* Training set MAE: 11.0 meV/atom (energy), 0.053 eV/Ang. (force), and 4.84 kbar (stress)
-* Matbench F1 score: 0.901, $\kappa_{\mathrm{SRME}}$: 0.314
+#### **Training set MAE**
+| Energy (meV/atom) | Force (eV/Å) | Stress (kbar) |
+|:---:|:---:|:---:|
+|11.2|0.053|4.82|
+
+#### **Matbench Discovery**
+| CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
+|:---:|:---:|:---:|:---:|
+|0.883|0.901|0.317| 0.0115 |
 ---
-### **SevenNet-omat (16Mar2025)**
+### **SevenNet-omat (17Mar2025)**
 > Keywords in ASE: `7net-omat` and `SevenNet-omat`
 
- This model was trained solely on OMat24 dataset. Due to the POTCAR version difference between the OMat24 data and the MPtrj data, there is no Matbench f1 score, but this model exhibits SOTA performance in thermal conductivity calculations.
+ This model was trained solely on [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) dataset. Although its accuracy in **molecular energy** calculations is lower, it outperforms the existing l3i5 model in other computational tasks. Due to the POTCAR version differences between the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets, no Matbench F1 score is available; however, this model shows state-of-the-art (SOTA) performance in thermal conductivity calculations.<br> The checkpoint available for download via GitHub has been lightweighted by removing some information. The full-information checkpoint can be downloaded through this [link](https://figshare.com/articles/software/SevenNet_omat/28593938).
 
-* Training set MAE: 14.2 meV/atom (energy), 0.072 eV/Ang. (force), and 6.36 kbar (stress)
+#### **Training set MAE**
+| Energy (meV/atom) | Force (eV/Å) | Stress (kbar) |
+|:---:|:---:|:---:|
+|14.9|0.073|6.53|
+
+#### **Matbench Discovery**
 * $\kappa_{\mathrm{SRME}}$: 0.221
 ---
 ### **SevenNet-l3i5 (12Dec2024)**
 > Keywords in ASE: `7net-l3i5` and `SevenNet-l3i5`
 
-The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2.
-While **l3i5** offers improved accuracy across various systems compared to **SevenNet-0 (11Jul2024)**, it is approximately four times slower.
+The model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) to 3, compared to **SevenNet-0 (11Jul2024)** with $l_{\mathrm{max}}$ of 2. While **l3i5** offers improved accuracy across various systems compared to **SevenNet-0 (11Jul2024)**, it is approximately four times slower. As of March 17, 2025, this model has achieved state-of-the-art (SOTA) performance on the CPS metric among compliant models, newly introduced in this [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
-* Training set MAE: 8.3 meV/atom (energy), 0.029 eV/Ang. (force), and 2.33 kbar (stress)
-* Matbench F1 score: 0.76, $\kappa_{\mathrm{SRME}}$: 0.560
-* Training time: 381 GPU-days on A100
+#### **Training set MAE**
+| Energy (meV/atom) | Force (eV/Å) | Stress (kbar) |
+|:---:|:---:|:---:|
+|8.3|0.029|2.33|
+
+#### **Matbench Discovery**
+| CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
+|:---:|:---:|:---:|:---:|
+|0.764 |0.76|0.55|0.0182|
+
+
+#### **Training time**
+381 GPU-days on A100
+
 ---
 
 ### **SevenNet-0 (11Jul2024)**
@@ -65,9 +89,19 @@ The model was trained with [MPtrj](https://figshare.com/articles/dataset/Materia
 This model is loaded as the default pre-trained model in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
-* Training set MAE: 11.5 meV/atom (energy), 0.041 eV/Ang. (force), and 2.78 kbar (stress)
-* Matbench F1 score: 0.67, $\kappa_{\mathrm{SRME}}$: 0.767
-* Training time: 90 GPU-days on A100
+#### **Training set MAE**
+| Energy (meV/atom) | Force (eV/Å) | Stress (kbar) |
+|:---:|:---:|:---:|
+|11.5|0.041|2.78|
+
+#### **Matbench Discovery**
+| F1 | $\kappa_{\mathrm{SRME}}$ |
+|:---:|:---:|
+|0.67|0.767|
+
+#### **Training time**
+90 GPU-days on A100
+
 ---
 
 In addition to these latest models, you can find our legacy models from [pretrained_potentials](./sevenn/pretrained_potentials).
@@ -121,7 +155,6 @@ The model can be loaded through the following Python code.
 from sevenn.calculator import SevenNetCalculator
 calc = SevenNetCalculator(model='7net-0', device='cpu')
 ```
-
 SevenNet supports CUDA accelerated D3Calculator.
 ```python
 from sevenn.calculator import SevenNetD3Calculator
