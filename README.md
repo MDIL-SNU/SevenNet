@@ -78,7 +78,7 @@ This model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) 
 ### **SevenNet-0 (11Jul2024)**
 > Model keywords:: `7net-0` | `SevenNet-0` | `7net-0_11Jul2024` | `SevenNet-0_11Jul2024`
 
-This model is one of our eariest pre-trained models. Altough we recommend to using more recent and accurate models, it can can still be useful in certain cases, as it has the shortest inference speed.
+This model is one of our eariest pre-trained models. Altough we recommend to using more recent and accurate models, it can can still be useful in certain cases, as it has the shortest inference time.
 The model was trained with [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) and is loaded as the default pre-trained model in ASE calculator.
 For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
