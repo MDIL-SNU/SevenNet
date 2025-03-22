@@ -2,6 +2,17 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.11.1]
+From here, the version of 'main' branch has 'devX' after it diverges from the latest stable version
+
+### Added
+
+### Changed
+
+### Fixed
+- Circular import in sevenn.checkpoint (dev0)
+
+
 ## [0.11.0]
 
 Multi-fidelity learning implemented & New pretrained-models
