@@ -13,7 +13,6 @@ from tqdm import tqdm
 
 import sevenn._const as _const
 import sevenn._keys as KEY
-from sevenn.checkpoint import SevenNetCheckpoint
 
 
 def to_atom_graph_list(atom_graph_batch):
@@ -276,6 +275,7 @@ def pretrained_name_to_path(name: str) -> str:
 
 
 def load_checkpoint(checkpoint: Union[pathlib.Path, str]):
+    from sevenn.checkpoint import SevenNetCheckpoint
     suggests = ['7net-0, 7net-l3i5, 7net-mf-ompa, 7net-omat']
     if osp.isfile(checkpoint):
         checkpoint_path = checkpoint

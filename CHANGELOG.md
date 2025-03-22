@@ -2,6 +2,16 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.11.1]
+
+### Added
+
+### Changed
+
+### Fixed
+- Circular import in sevenn.checkpoint
+
+
 ## [0.11.0]
 
 Multi-fidelity learning implemented & New pretrained-models
