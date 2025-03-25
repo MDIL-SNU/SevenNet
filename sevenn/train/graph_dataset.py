@@ -427,7 +427,10 @@ class SevenNetGraphDataset(InMemoryDataset):
         allow_unlabeled: bool = False,
         **ase_kwargs,
     ) -> List[AtomGraphData]:
+        pbc = ase_kwargs.pop('pbc', False)
         atoms_list = dataload.ase_reader(filename, **ase_kwargs)
+        for atoms in atoms_list:
+            atoms.pbc = pbc
         graph_list = dataload.graph_build(
             atoms_list,
             cutoff,
