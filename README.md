@@ -120,7 +120,7 @@ Using newer versions of CUDA with PyTorch is typically compatible. For example, 
 Once PyTorch is successfully installed, please run the following command:
 ```bash
 pip install sevenn
-pip install https://github.com/MDIL-SNU/SevenNet.git # for developers
+pip install git+https://github.com/MDIL-SNU/SevenNet.git # for the latest main branch
 ```
 We strongly recommend checking `CHANGELOG.md` for new features and changes, as SevenNet is under active development.
 
