@@ -260,10 +260,8 @@ class Logger(metaclass=Singleton):
         LOGO_ASCII_FILE = f'{os.path.dirname(__file__)}/logo_ascii'
         with open(LOGO_ASCII_FILE, 'r') as logo_f:
             logo_ascii = logo_f.read()
-        content = 'SevenNet: Scalable EquVariance-Enabled Neural Network\n'
+        content = 'SevenNet: Scalable EquiVariance-Enabled Neural Network\n'
         content += f'version {__version__}, {time.ctime()}\n'
-        content += f'this file: {self._filename}\n'
-        content += 'reading yaml config...'
         self.write(content)
         self.write(logo_ascii)
 
