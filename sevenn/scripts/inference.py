@@ -212,7 +212,7 @@ def inference(
 
     for batch in tqdm(loader):
         batch = batch.to(device)
-        output = model(batch)
+        output = model(batch).detach().cpu()
         rec.update(output)
         output_list.extend(util.to_atom_graph_list(output))
 
