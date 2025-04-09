@@ -39,7 +39,7 @@ from sevenn.calculator import SevenNetCalculator
 calc = SevenNetCalculator('7net-mf-ompa', modal='mpa')  # Use modal='omat24' for OMat24-trained modal weights.
 ```
 > [!NOTE]
-> Each modal is expected to produce results that are more consistent with the DFT settings in the training datasets (e.g., `mpa`, trained on the combined MPtrj and sAlex datasets; `omat24`, trained on the OMat24 dataset). A notable difference between these datasets is the choice of VASP pseudopotentials: OMat24 uses the PBE54, while MPtrj and sAlex use the PBE52.
+> Each modal is expected to produce results that are more consistent with the DFT settings in the training datasets (e.g., `mpa`, trained on the combined [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) and [sAlex](https://huggingface.co/datasets/fairchem/OMAT24) datasets; `omat24`, trained on the [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) dataset). For detailed DFT settings, please refer to their papers.
 
 When using the command-line interface of SevenNet, include the `--modal mpa` or `--modal omat24` option to select the desired modality.
 
