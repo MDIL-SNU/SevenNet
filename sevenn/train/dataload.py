@@ -2,7 +2,7 @@ import copy
 import os.path
 from functools import partial
 from itertools import chain, islice
-from typing import Callable, List, Optional
+from typing import Callable, Dict, List, Optional
 
 import ase
 import ase.io
@@ -478,7 +478,7 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
     return {k: _set_atoms_y(v) for k, v in structures_dict.items()}
 
 
-def dict_reader(data_dict: dict):
+def dict_reader(data_dict: Dict):
     data_dict_cp = copy.deepcopy(data_dict)
 
     ret = []

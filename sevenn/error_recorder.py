@@ -1,5 +1,5 @@
 from copy import deepcopy
-from typing import Any, Callable, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 import torch.distributed as dist
@@ -56,7 +56,7 @@ _ERROR_TYPES = {
 }
 
 
-def get_err_type(name: str) -> dict[str, Any]:
+def get_err_type(name: str) -> Dict[str, Any]:
     return deepcopy(_ERROR_TYPES[name])
 
 

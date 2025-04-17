@@ -8,9 +8,11 @@ From here, the version of 'main' branch has 'devX' after it diverges from the la
 ### Added
 
 ### Changed
+- pre-commit uses python3.11
 
 ### Fixed
 - Circular import in sevenn.checkpoint (dev0)
+- Fix typing issues
 
 
 ## [0.11.0]
