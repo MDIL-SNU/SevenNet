@@ -1,3 +1,4 @@
+from copy import deepcopy
 from typing import List
 
 import torch
@@ -14,16 +15,12 @@ from .util import broadcast
 
 
 def message_gather(
-    node_features: torch.Tensor,
-    edge_dst: torch.Tensor,
-    message: torch.Tensor
+    node_features: torch.Tensor, edge_dst: torch.Tensor, message: torch.Tensor
 ) -> torch.Tensor:
     index = broadcast(edge_dst, message, 0)
     out_shape = [len(node_features)] + list(message.shape[1:])
     out = torch.zeros(
-        out_shape,
-        dtype=node_features.dtype,
-        device=node_features.device
+        out_shape, dtype=node_features.dtype, device=node_features.device
     )
     out.scatter_reduce_(0, index, message, reduce='sum')
     return out
@@ -94,8 +91,7 @@ class IrrepsConvolution(nn.Module):
         )
 
         self.weight_nn_kwargs = dict(
-            hs=weight_layer_input_to_hidden + [weight_numel],
-            act=weight_layer_act
+            hs=weight_layer_input_to_hidden + [weight_numel], act=weight_layer_act
         )
 
         self.convolution = None
@@ -127,13 +123,12 @@ class IrrepsConvolution(nn.Module):
         if self.is_parallel:
             x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
 
-        # note that 1 -> src 0 -> dst
         edge_src = data[self.key_edge_idx][1]
         edge_dst = data[self.key_edge_idx][0]
 
         message = self.convolution(x[edge_src], data[self.key_filter], weight)
-
         x = message_gather(x, edge_dst, message)
+
         x = x.div(self.denominator)
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
@@ -141,11 +136,11 @@ class IrrepsConvolution(nn.Module):
         return data
 
 
-from flashTP_e3nn import uvu_TP
-
-
 @compile_mode('script')
-class FlashE3nnConv(nn.Module):
+class IrrepsScatterGatterFusedConvolution(nn.Module):
+    """
+    Same as above but forward
+    """
 
     def __init__(
         self,
@@ -160,8 +155,9 @@ class FlashE3nnConv(nn.Module):
         data_key_filter: str = KEY.EDGE_ATTR,
         data_key_weight_input: str = KEY.EDGE_EMBEDDING,
         data_key_edge_idx: str = KEY.EDGE_IDX,
+        lazy_layer_instantiate: bool = True,
         is_parallel: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         self.denominator = nn.Parameter(
             torch.FloatTensor([denominator]), requires_grad=train_denominator
@@ -190,6 +186,8 @@ class FlashE3nnConv(nn.Module):
             (i_in1, i_in2, p[i_out], mode, train)
             for i_in1, i_in2, i_out, mode, train in instructions
         ]
+
+        # From v0.11.x, to compatible with cuEquivariance
         self._instructions_before_sort = instructions
         instructions = sorted(instructions, key=lambda x: x[2])
 
@@ -206,30 +204,62 @@ class FlashE3nnConv(nn.Module):
             hs=weight_layer_input_to_hidden + [weight_numel], act=weight_layer_act
         )
 
-        self.convolution = uvu_TP(
-            i_in1=irreps_x,
-            i_in2=irreps_filter,
-            i_out=irreps_mid,
-            inst_tuple=instructions,
-            dtype=torch.float32,
-        )
-        self.weight_nn = FullyConnectedNet(**self.weight_nn_kwargs)
+        self.convolution = None
+        self.weight_nn = None
+        self.layer_instantiated = False
+        self.convolution_cls = None  # must be assigned from outside
+        self.weight_nn_cls = FullyConnectedNet
+
+        if not lazy_layer_instantiate:
+            self.instantiate()
+
         self._comm_size = irreps_x.dim  # used in parallel
 
+    @classmethod
+    def from_irreps_convolution(cls, src: IrrepsConvolution):
+        """
+        I'm looking for better idea
+        """
+        irreps_x = src.convolution_kwargs['irreps_in1']
+        ret = cls(
+            irreps_x, irreps_x, irreps_x, weight_layer_input_to_hidden=[1]
+        )
+        ret.__dict__ = deepcopy(src.__dict__)
+        return ret
+
+    def instantiate(self) -> None:
+        if self.convolution is not None:
+            raise ValueError('Convolution layer already exists')
+        if self.weight_nn is not None:
+            raise ValueError('Weight_nn layer already exists')
+
+        assert self.convolution_cls is not None
+
+        self.convolution = self.convolution_cls(**self.convolution_kwargs)
+        self.weight_nn = self.weight_nn_cls(**self.weight_nn_kwargs)
+        self.layer_instantiated = True
+
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        assert self.convolution is not None, 'Convolution is not instantiated'
+        assert self.weight_nn is not None, 'Weight_nn is not instantiated'
         weight = self.weight_nn(data[self.key_weight_input])
         x = data[self.key_x]
         if self.is_parallel:
             x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
 
-        # note that 1 -> src 0 -> dst
-        edge_src = data[self.key_edge_idx][1].to(torch.int32)
-        edge_dst = data[self.key_edge_idx][0].to(torch.int32)
+        edge_src = data[self.key_edge_idx][1]
+        edge_dst = data[self.key_edge_idx][0]
 
-        out = self.convolution(x, data[self.key_filter], weight, edge_src, edge_dst)
+        x = self.convolution(
+            x,
+            data[self.key_filter],
+            weight,
+            edge_src.to(torch.int32),  # trivial?
+            edge_dst.to(torch.int32),
+        )
 
-        out = out.div(self.denominator)
+        x = x.div(self.denominator)
         if self.is_parallel:
-            out = torch.tensor_split(out, data[KEY.NLOCAL])[0]
-        data[self.key_x] = out
+            x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
+        data[self.key_x] = x
         return data

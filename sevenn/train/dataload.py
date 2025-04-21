@@ -99,33 +99,32 @@ def _correct_scalar(v):
         assert False, f'{type(v)} is not expected'
 
 
-def unlabeled_atoms_to_graph(atoms: ase.Atoms, cutoff: float):
+def unlabeled_atoms_to_graph(
+    atoms: ase.Atoms, cutoff: float, with_shift: bool = False
+):
     pos = atoms.get_positions()
     cell = np.array(atoms.get_cell())
     pbc = atoms.get_pbc()
 
-    edge_src, edge_dst, edge_vec, shifts = _graph_build_f(cutoff, pbc, cell, pos)
+    edge_src, edge_dst, edge_vec, shift = _graph_build_f(cutoff, pbc, cell, pos)
 
     edge_idx = np.array([edge_src, edge_dst])
 
     atomic_numbers = atoms.get_atomic_numbers()
 
-    cell = np.array(cell)
-    vol = _correct_scalar(atoms.cell.volume)
-    if vol == 0:
-        vol = np.array(np.finfo(float).eps)
-
     data = {
-        KEY.NODE_FEATURE: atomic_numbers,
+        KEY.NODE_FEATURE: atomic_numbers,  # just placeholder
         KEY.ATOMIC_NUMBERS: atomic_numbers,
         KEY.POS: pos,
         KEY.EDGE_IDX: edge_idx,
         KEY.EDGE_VEC: edge_vec,
-        KEY.CELL: cell,
-        KEY.CELL_SHIFT: shifts,
-        KEY.CELL_VOLUME: vol,
+        KEY.CELL_VOLUME: _correct_scalar(atoms.cell.volume),
         KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
     }
+
+    if with_shift:
+        data[KEY.CELL_SHIFT] = shift
+        data[KEY.CELL] = cell
     data[KEY.INFO] = {}
     return data
 
@@ -136,6 +135,7 @@ def atoms_to_graph(
     transfer_info: bool = True,
     y_from_calc: bool = False,
     allow_unlabeled: bool = False,
+    with_shift: bool = False,
 ):
     """
     From ase atoms, return AtomGraphData as graph based on cutoff radius
@@ -187,18 +187,13 @@ def atoms_to_graph(
     cell = np.array(atoms.get_cell())
     pbc = atoms.get_pbc()
 
-    edge_src, edge_dst, edge_vec, shifts = _graph_build_f(cutoff, pbc, cell, pos)
+    edge_src, edge_dst, edge_vec, shift = _graph_build_f(cutoff, pbc, cell, pos)
 
     edge_idx = np.array([edge_src, edge_dst])
     atomic_numbers = atoms.get_atomic_numbers()
 
-    cell = np.array(cell)
-    vol = _correct_scalar(atoms.cell.volume)
-    if vol == 0:
-        vol = np.array(np.finfo(float).eps)
-
     data = {
-        KEY.NODE_FEATURE: atomic_numbers,
+        KEY.NODE_FEATURE: atomic_numbers,  # just placeholder
         KEY.ATOMIC_NUMBERS: atomic_numbers,
         KEY.POS: pos,
         KEY.EDGE_IDX: edge_idx,
@@ -206,12 +201,14 @@ def atoms_to_graph(
         KEY.ENERGY: _correct_scalar(y_energy),
         KEY.FORCE: y_force,
         KEY.STRESS: y_stress.reshape(1, 6),  # to make batch have (n_node, 6)
-        KEY.CELL: cell,
-        KEY.CELL_SHIFT: shifts,
-        KEY.CELL_VOLUME: vol,
+        KEY.CELL_VOLUME: _correct_scalar(atoms.cell.volume),
         KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
         KEY.PER_ATOM_ENERGY: _correct_scalar(y_energy / len(pos)),
     }
+
+    if with_shift:
+        data[KEY.CELL_SHIFT] = shift
+        data[KEY.CELL] = cell
 
     if transfer_info and atoms.info is not None:
         info = copy.deepcopy(atoms.info)
@@ -423,7 +420,7 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
     structure_list_file.close()
 
     structures_dict = {}
-    info_dct = {'data_from': 'user_OUTCAR'}
+    # info_dct = {'data_from': 'user_OUTCAR'}
     for title, file_lines in raw_str_dict.items():
         stct_lists = []
         for file_line in file_lines:
@@ -439,11 +436,11 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
                     # TODO: support
                     # negative index
                     raise ValueError('Negative index is not supported yet')
-
-                info_dct_f = {
-                    **info_dct,
-                    'file': os.path.abspath(expanded_filename),
-                }
+                # info commented out (conflict with else clause)
+                # info_dct_f = {
+                #     **info_dct,
+                #     'file': os.path.abspath(expanded_filename),
+                # }
                 for idx, o in enumerate(it_atoms):
                     try:
                         it_atoms = islice(
@@ -454,26 +451,26 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
                         # negative index
                         raise ValueError('Negative index is not supported yet')
 
-                    info_dct_f = {
-                        **info_dct,
-                        'file': os.path.abspath(expanded_filename),
-                    }
+                    # info_dct_f = {
+                    #     **info_dct,
+                    #     'file': os.path.abspath(expanded_filename),
+                    # }
                     for idx, o in enumerate(it_atoms):
                         try:
-                            istep = index.start + idx * index.step  # type: ignore
+                            # istep = index.start + idx * index.step  # type: ignore
                             atoms = o.build()
-                            atoms.info = {**info_dct_f, 'ionic_step': istep}.copy()
+                            # atoms.info = {**info_dct_f, 'ionic_step': istep}.copy()
                         except TypeError:  # it is not slice of ionic steps
                             atoms = o.build()
-                            atoms.info = info_dct_f.copy()
+                            # atoms.info = info_dct_f.copy()
                         stct_lists.append(atoms)
-                    f_stream.close()
                 else:
                     stct_lists += ase.io.read(
                         expanded_filename,
                         index=index_expr,
                         parallel=False,
                     )
+                f_stream.close()
         structures_dict[title] = stct_lists
     return {k: _set_atoms_y(v) for k, v in structures_dict.items()}
 

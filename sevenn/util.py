@@ -2,7 +2,7 @@ import os
 import os.path as osp
 import pathlib
 import shutil
-from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
 import requests
@@ -97,19 +97,12 @@ def onehot_to_chem(
 
 def model_from_checkpoint(
     checkpoint: str,
+    *,
+    enable_cueq: Optional[bool] = None,
+    enable_flash: Optional[bool] = None,
 ) -> Tuple[torch.nn.Module, Dict[str, Any]]:
     cp = load_checkpoint(checkpoint)
-    model = cp.build_model()
-
-    return model, cp.config
-
-
-def model_from_checkpoint_with_backend(
-    checkpoint: str,
-    backend: str = 'e3nn',
-) -> Tuple[torch.nn.Module, Dict[str, Any]]:
-    cp = load_checkpoint(checkpoint)
-    model = cp.build_model(backend)
+    model = cp.build_model(enable_cueq=enable_cueq, enable_flash=enable_flash)
 
     return model, cp.config
 
@@ -300,7 +293,7 @@ def load_checkpoint(checkpoint: Union[pathlib.Path, str]) -> 'SevenNetCheckpoint
             checkpoint_path = pretrained_name_to_path(str(checkpoint))
         except ValueError:
             raise ValueError(
-                f'Given {checkpoint} is not exists and not a pre-trained name.\n'
+                f'Given {checkpoint} does not exist.\n'
                 f'Valid pretrained model names: {suggests}'
             )
     return SevenNetCheckpoint(checkpoint_path)

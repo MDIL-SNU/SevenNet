@@ -203,6 +203,12 @@ class SevenNetCheckpoint:
         cfg = self.config  # just alias
         if len(cfg) == 0:
             return ''
+
+        try:
+            cp_using_cueq = self.config['cuequivariance_config']['use']
+        except KeyError:
+            cp_using_cueq = False
+
         dct = {
             'Sevennet version': cfg.get('version', 'Not found'),
             'When': self.time,
@@ -215,6 +221,8 @@ class SevenNetCheckpoint:
             'Self connection type': cfg.get('self_connection_type', 'nequip'),
             'Last epoch': self.epoch,
             'Elements': len(cfg.get('chemical_species', [])),
+            'cuEquivariance used': cp_using_cueq,
+            'FlashTP used': self.config.get('use_flash_tp', False),
         }
         if cfg.get('use_modality', False):
             dct['Modality'] = ', '.join(list(cfg.get('_modal_map', {}).keys()))
@@ -299,38 +307,56 @@ class SevenNetCheckpoint:
 
         self._loaded = True
 
-    def build_model(self, backend: Optional[str] = None) -> AtomGraphSequential:
+    def build_model(
+        self,
+        *,
+        enable_cueq: Optional[bool] = None,
+        enable_flash: Optional[bool] = None,
+        _flash_lammps: bool = False,
+    ) -> AtomGraphSequential:
+        """
+        Breaking change (backends X)
+        """
         from .model_build import build_E3_equivariant_model
 
-        use_cue = not backend or backend.lower() in ['cue', 'cueq']
         try:
-            cp_using_cue = self.config[KEY.CUEQUIVARIANCE_CONFIG]['use']
+            cp_using_cueq = self.config[KEY.CUEQUIVARIANCE_CONFIG]['use']
         except KeyError:
-            cp_using_cue = False
+            cp_using_cueq = False
+        enable_cueq = cp_using_cueq if enable_cueq is None else enable_cueq
 
-        if (not backend) or (use_cue == cp_using_cue):
+        cp_using_flash = self.config.get(KEY.USE_FLASH_TP, False)
+        enable_flash = cp_using_flash if enable_flash is None else enable_flash
+
+        assert not _flash_lammps or enable_flash
+        cfg_new = self.config
+        cfg_new['_flash_lammps'] = _flash_lammps
+
+        if (cp_using_cueq, cp_using_flash) == (enable_cueq, enable_flash):
             # backend not given, or checkpoint backend is same as requested
-            model = build_E3_equivariant_model(self.config)
+            model = build_E3_equivariant_model(cfg_new)
             state_dict = compat.patch_state_dict_if_old(
                 self.model_state_dict, self.config, model
             )
+            missing, not_used = model.load_state_dict(state_dict, strict=True)
+            assert len(missing) == 0, f'Missing keys: {missing}'
+            if len(not_used) > 0:
+                warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
         else:
-            cfg_new = self.config
-            cfg_new[KEY.CUEQUIVARIANCE_CONFIG] = {'use': use_cue}
+            print('Converting model backend...')
+
+            cfg_new[KEY.CUEQUIVARIANCE_CONFIG] = {'use': enable_cueq}
+            cfg_new[KEY.USE_FLASH_TP] = enable_flash
             model = build_E3_equivariant_model(cfg_new)
             stct_src = compat.patch_state_dict_if_old(
                 self.model_state_dict, self.config, model
             )
+
             state_dict = _convert_e3nn_and_cueq(
-                stct_src, model.state_dict(), self.config, from_cueq=cp_using_cue
+                stct_src, model.state_dict(), self.config, from_cueq=cp_using_cueq
             )
+            missing, not_used = model.load_state_dict(state_dict, strict=False)
 
-        missing, not_used = model.load_state_dict(state_dict, strict=False)
-        if len(not_used) > 0:
-            pass
-            # warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
-
-        assert len(missing) == 0, f'Missing keys: {missing}'
         return model
 
     def yaml_dict(self, mode: str) -> Dict[str, Any]:
@@ -504,7 +530,7 @@ class SevenNetCheckpoint:
         scaler = init_shift_scale(dst_config)
 
         # finally, prepare updated continuable state dict using above
-        orig_model = self.build_model()
+        orig_model = self.build_model(enable_cueq=False, enable_flash=False)
         orig_state_dict = orig_model.state_dict()
 
         new_state_dict = copy_state_dict(orig_state_dict)

@@ -1,5 +1,5 @@
 default_language_version:
-  python: python3.11
+  python: python3.9
 
 ci:
   autoupdate_schedule: quarterly
@@ -59,7 +59,7 @@ repos:
         exclude: 'sevenn/pair_e3gnn/pair_d3_pars.h'
 
   - repo: https://github.com/pycqa/flake8
-    rev: 7.2.0
+    rev: 7.3.0
     hooks:
       - id: flake8
         exclude: 'sevenn/pair_e3gnn/pair_e3gnn.cpp'

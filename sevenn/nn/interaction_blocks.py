@@ -6,7 +6,7 @@ from torch.nn import Module
 
 import sevenn._keys as KEY
 
-from .convolution import IrrepsConvolution, FlashE3nnConv
+from .convolution import IrrepsConvolution
 from .equivariant_gate import EquivariantGate
 from .linear import IrrepsLinear
 
@@ -50,16 +50,8 @@ def NequIP_interaction_block(
         biases=bias_in_linear,
     )
 
-
-    conv_cls = None
-    if os.getenv('FLASH', False):
-        conv_cls = FlashE3nnConv
-    else:
-        conv_cls = IrrepsConvolution
-
-
     # convolution part, l>lmax is dropped as defined in irreps_out
-    block[f'{t}_convolution'] = conv_cls(
+    block[f'{t}_convolution'] = IrrepsConvolution(
         irreps_x=irreps_x,
         irreps_filter=irreps_filter,
         irreps_out=irreps_out_tp,

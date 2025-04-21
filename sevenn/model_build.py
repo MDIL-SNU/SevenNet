@@ -1,4 +1,5 @@
 import copy
+import os
 import warnings
 from collections import OrderedDict
 from typing import Any, Dict, List, Literal, Tuple, Type, Union, overload
@@ -241,7 +242,7 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         warnings.warn(
             (
                 'cuEquivariance is requested, but the package is not installed. '
-                + 'Fallback to original code.'
+                + 'Fallback to e3nn.'
             )
         )
         return layers
@@ -249,9 +250,22 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     if not cue_helper.is_cue_cuda_available_model(config):
         return layers
 
+    use_scatter_fusion = (
+        os.environ.get('CUEQ_USE_SCATTER_FUSION') or
+        cue_cfg.pop('use_scatter_fusion', True)
+    )
+    if isinstance(use_scatter_fusion, str):
+        use_scatter_fusion = use_scatter_fusion.lower() in ('1', 'true', 'yes')
+
+    tp_method = (
+        os.environ.get('CUEQ_TP_METHOD') or
+        cue_cfg.pop('cueq_tp_method', 'uniform_1d')
+    )
+    assert tp_method in ('uniform_1d', 'naive', 'fused_tp', 'indexed_linear')
+
     group = 'O3' if config[KEY.IS_PARITY] else 'SO3'
-    cueq_module_params = dict(layout='mul_ir')
-    cueq_module_params.update(cue_cfg)
+    cueq_patch_kwargs = dict(layout='mul_ir')
+    cueq_patch_kwargs.update(cue_cfg)
     updates = {}
     for k, module in layers.items():
         # TODO: based on benchmark on A100 GPU & cuEq 0.4.0. (250307)
@@ -261,7 +275,7 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
             if k == 'reduce_hidden_to_energy':  # TODO: has bug with 0 shape
                 continue
             module_patched = cue_helper.patch_linear(
-                module, group, **cueq_module_params
+                module, group, **cueq_patch_kwargs
             )
             updates[k] = module_patched
             """
@@ -269,15 +283,45 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
             continue
             """
             module_patched = cue_helper.patch_fully_connected(
-                module, group, **cueq_module_params
+                module, group, **cueq_patch_kwargs
             )
             updates[k] = module_patched
             """
         elif isinstance(module, IrrepsConvolution):
             module_patched = cue_helper.patch_convolution(
-                module, group, **cueq_module_params
+                module,
+                group,
+                use_scatter_fusion=use_scatter_fusion,
+                tp_method=tp_method,
+                **cueq_patch_kwargs,
             )
             updates[k] = module_patched
+
+    layers.update(updates)
+    return layers
+
+
+def patch_flash_tp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
+    import sevenn.nn.flash_helper as flash_helper
+
+    if not config.get('use_flash_tp', False):
+        return layers
+
+    if not flash_helper.is_flash_available():
+        warnings.warn(
+            (
+                'FlashTP is requested, but the package is not installed '
+                + 'or GPU not available. Fallback to e3nn.'
+            )
+        )
+        return layers
+
+    # sevenn/checkpoint.py::build_model
+    _flash_lammps = config.get('_flash_lammps', False)
+    updates = {}
+    for k, module in layers.items():
+        if isinstance(module, IrrepsConvolution):
+            updates[k] = flash_helper.patch_convolution(module, _flash_lammps)
 
     layers.update(updates)
     return layers
@@ -286,6 +330,7 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
 def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
     layers = patch_cue(layers, config)
+    layers = patch_flash_tp(layers, config)
     return layers
 
 
