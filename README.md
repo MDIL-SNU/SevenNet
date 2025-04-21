@@ -107,13 +107,9 @@ You can find our legacy models in [pretrained_potentials](./sevenn/pretrained_po
 ## Installation<a name="installation"></a>
 ### Requirements
 - Python >= 3.8
-- PyTorch >= 1.12.0
+- PyTorch >= 2.0.0, PyTorch =< 2.5.2
 
-Here are the recommended versions we have been using internally without any issues.
-- PyTorch/2.2.2 + CUDA/12.1.0
-- PyTorch/1.13.1 + CUDA/12.1.0
-- PyTorch/1.12.0 + CUDA/11.6.2
-Using newer versions of CUDA with PyTorch is typically compatible. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
+For CUDA version, refer to PyTorch's compatibility matrix: https://github.com/pytorch/pytorch/blob/main/RELEASE.md#release-compatibility-matrix
 
 > [!IMPORTANT]
 > Please install PyTorch manually based on your hardware before installing SevenNet.
@@ -128,10 +124,10 @@ We strongly recommend checking `CHANGELOG.md` for new features and changes, as S
 ## Usage<a name="usage"></a>
 ### ASE calculator<a name="ase_calculator"></a>
 
-For broader applications in atomistic simulations, SevenNet provides an ASE interface via the ASE calculator. Models can be loaded using the following Python code:
+SevenNet provides an ASE interface via the ASE calculator. Models can be loaded using the following Python code:
 ```python
 from sevenn.calculator import SevenNetCalculator
-# The 'modal' argument can be omitted if the model it is not multi-fidelity trained.
+# The 'modal' argument is required if the model is trained with multi-fidelity learning enabled.
 calc_mf_ompa = SevenNetCalculator(model='7net-mf-ompa', modal='mpa')
 ```
 SevenNet also supports CUDA-accelerated D3 calculations.
@@ -191,7 +187,7 @@ We support multi-GPU training using PyTorch DDP (distributed data parallel) with
 torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
 ```
 
-Please note that `batch_size` in input.yaml is per GPU.
+Please note that `batch_size` in `input.yaml` refers to the per-GPU batch size.
 
 #### 4. Inference
 
@@ -215,7 +211,7 @@ sevenn_get_model {checkpoint path}
 
 This will create `deployed_serial.pt`, which can be used as a LAMMPS potential with the `e3gnn` pair_style in LAMMPS.
 
-The potential for parallel MD simulation can be obtained in a similar way.
+The potential for parallel MD simulation can be obtained similarly.
 
 ```bash
 sevenn_get_model 7net-0 -p
@@ -246,7 +242,7 @@ git clone https://github.com/MDIL-SNU/sevennet_tutorial.git
 #### Installation
 
 ##### Requirements
-- PyTorch < 2.5.0 (same version as used for training)
+- PyTorch (it is recommended to use the same version as used during training)
 - LAMMPS version of `stable_2Aug2023_update3`
 - MKL library
 - [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD (optional)
