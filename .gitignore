@@ -1,7 +1,20 @@
+# common
+dev.vim
 build/
 dist
 sevenn.egg-info
 *.swp
-dev.vim
-*libpaird3*
 __pycache__/
+
+# from uv
+uv.lock
+.python-version
+
+# downloaded models
+sevenn/pretrained_potentials/SevenNet_MF_ompa
+sevenn/pretrained_potentials/SevenNet_omat
+
+# from compile
+sevenn/pair_d3*
+*ninja*
+*libpaird3*

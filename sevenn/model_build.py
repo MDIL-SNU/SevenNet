@@ -51,18 +51,23 @@ def _insert_after(module_name_after, key_module_pair, layers):
 
 
 def init_self_connection(config):
-    self_connection_type = config[KEY.SELF_CONNECTION_TYPE]
-    intro, outro = None, None
-    if self_connection_type == 'none':
-        pass
-    elif self_connection_type == 'nequip':
-        intro, outro = SelfConnectionIntro, SelfConnectionOutro
-        return SelfConnectionIntro, SelfConnectionOutro
-    elif self_connection_type == 'linear':
-        intro, outro = SelfConnectionLinearIntro, SelfConnectionOutro
-    else:
-        raise ValueError('something went wrong...')
-    return intro, outro
+    self_connection_type_list = config[KEY.SELF_CONNECTION_TYPE]
+    num_conv = config[KEY.NUM_CONVOLUTION]
+    if isinstance(self_connection_type_list, str):
+        self_connection_type_list = [self_connection_type_list] * num_conv
+
+    io_pair_list = []
+    for sc_type in self_connection_type_list:
+        if sc_type == 'none':
+            io_pair = None
+        elif sc_type == 'nequip':
+            io_pair = SelfConnectionIntro, SelfConnectionOutro
+        elif sc_type == 'linear':
+            io_pair = SelfConnectionLinearIntro, SelfConnectionOutro
+        else:
+            raise ValueError(f'Unknown self_connection_type found: {sc_type}')
+        io_pair_list.append(io_pair)
+    return io_pair_list
 
 
 def init_edge_embedding(config):
@@ -389,7 +394,7 @@ def build_E3_equivariant_model(
         lmax_node = config[KEY.LMAX_NODE]
 
     act_radial = _const.ACTIVATION[config[KEY.ACTIVATION_RADIAL]]
-    self_connection_pair = init_self_connection(config)
+    self_connection_pair_list = init_self_connection(config)
 
     irreps_manual = None
     if config[KEY.IRREPS_MANUAL] is not False:
@@ -442,7 +447,6 @@ def build_E3_equivariant_model(
         'irreps_filter': irreps_filter,
         'weight_nn_layers': weight_nn_layers,
         'train_conv_denominator': train_conv_denominator,
-        'self_connection_pair': self_connection_pair,
         'act_radial': act_radial,
         'bias_in_linear': use_bias_in_linear,
         'num_species': num_species,
@@ -476,6 +480,7 @@ def build_E3_equivariant_model(
                 'irreps_x': irreps_x,
                 't': t,
                 'conv_denominator': conv_denominator[t],
+                'self_connection_pair': self_connection_pair_list[t],
             }
         )
         if interaction_type == 'nequip':

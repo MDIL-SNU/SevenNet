@@ -224,7 +224,7 @@ def test_sevenn_preset(preset_name, mode, data_path, tmp_path):
         yaml.dump(cfg, f)
 
     Logger().switch_file(str(tmp_path / 'log.sevenn'))
-    cli_args = ['-w', str(tmp_path), '-m', mode, input_yam]
+    cli_args = ['train', '-w', str(tmp_path), '-m', mode, input_yam]
     with mock.patch('sys.argv', [f'{main}/sevenn.py'] + cli_args):
         sevenn_main()
 

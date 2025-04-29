@@ -173,6 +173,27 @@ class SevenNetCalculator(Calculator):
                     f'Model do not know atomic number: {z}, (knows: {sp})'
                 )
 
+    def output_to_results(self, output):
+        energy = output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item()
+        num_atoms = output['num_atoms'].item()
+        atomic_energies = output[KEY.ATOMIC_ENERGY].detach().cpu().numpy().flatten()
+        forces = output[KEY.PRED_FORCE].detach().cpu().numpy()[:num_atoms, :]
+        stress = np.array(
+            (-output[KEY.PRED_STRESS])
+            .detach()
+            .cpu()
+            .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
+        )
+        # Store results
+        return {
+            'free_energy': energy,
+            'energy': energy,
+            'energies': atomic_energies,
+            'forces': forces,
+            'stress': stress,
+            'num_edges': output[KEY.EDGE_IDX].shape[1],
+        }
+
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
@@ -183,6 +204,7 @@ class SevenNetCalculator(Calculator):
         )
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
+
         data.to(self.device)  # type: ignore
 
         if isinstance(self.model, torch_script_type):
@@ -196,23 +218,7 @@ class SevenNetCalculator(Calculator):
             data = data.to_dict()
             del data['data_info']
 
-        output = self.model(data)
-        energy = output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item()
-        # Store results
-        self.results = {
-            'free_energy': energy,
-            'energy': energy,
-            'energies': (
-                output[KEY.ATOMIC_ENERGY].detach().cpu().reshape(len(atoms)).numpy()
-            ),
-            'forces': output[KEY.PRED_FORCE].detach().cpu().numpy(),
-            'stress': np.array(
-                (-output[KEY.PRED_STRESS])
-                .detach()
-                .cpu()
-                .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
-            ),
-        }
+        self.results = self.output_to_results(self.model(data))
 
 
 class SevenNetD3Calculator(SumCalculator):

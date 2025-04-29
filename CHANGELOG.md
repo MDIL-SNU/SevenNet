@@ -5,10 +5,17 @@ All notable changes to this project will be documented in this file.
 ## [0.11.1]
 From here, the version of 'main' branch has 'devX' after it diverges from the latest stable version
 
+CLI interface changed in backward-compatible manner. Now `sevenn` has subcommands for
+inference, train, etc
+
 ### Added
+- subcommand with some aliases
+- strict e3nn version requirement from __init__.py
 
 ### Changed
 - pre-commit uses python3.11
+- cuequivaraiance optional libraries
+- some gitignores
 
 ### Fixed
 - Circular import in sevenn.checkpoint (dev0)

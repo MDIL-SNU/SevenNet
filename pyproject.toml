@@ -1,6 +1,6 @@
 [project]
 name = "sevenn"
-version = "0.11.1.dev2"
+version = "0.11.1.dev3"
 authors = [
     { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
     { name = "Haekwan Jeon", email = "haekwan98@snu.ac.kr" },
@@ -29,9 +29,12 @@ dependencies = [
     "matscipy",
     "pandas",
     "requests",
+    "setuptools>=61.0"
 ]
 [project.optional-dependencies]
-test = ["matscipy", "pytest-cov>=5"]
+test = ["pytest", "pytest-cov>=5"]
+cueq12 = ["cuequivariance>=0.4.0; python_version >= '3.10'", "cuequivariance-torch>=0.4.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu12; python_version >= '3.10'"]
+cueq11 = ["cuequivariance>=0.4.0; python_version >= '3.10'", "cuequivariance-torch>=0.4.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu11; python_version >= '3.10'"]
 
 [project.scripts]
 sevenn = "sevenn.main.sevenn:main"
