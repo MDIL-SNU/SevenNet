@@ -1,7 +1,16 @@
+# common
+dev.vim
 build/
 dist
 sevenn.egg-info
 *.swp
-dev.vim
-*libpaird3*
 __pycache__/
+
+# from uv
+uv.lock
+.python-version
+
+# from compile
+sevenn/pair_d3*
+*ninja*
+*libpaird3*
