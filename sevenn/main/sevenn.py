@@ -1,10 +1,11 @@
 import argparse
 import os
+import sys
 import time
 
 from sevenn import __version__
 
-description = f'sevenn version={__version__}, train model based on the input.yaml'
+description = 'train a model given the input.yaml'
 
 input_yaml_help = 'input.yaml for training'
 mode_help = 'main training script to run. Default is train.'
@@ -48,6 +49,7 @@ def run(args):
 
     if use_cue:
         import sevenn.nn.cue_helper
+
         if not sevenn.nn.cue_helper.is_cue_available():
             raise ImportError('cuEquivariance not installed.')
 
@@ -85,8 +87,9 @@ def run(args):
             )
 
         try:
-            model_config, train_config, data_config =\
-                read_config_yaml(input_yaml, return_separately=True)
+            model_config, train_config, data_config = read_config_yaml(
+                input_yaml, return_separately=True
+            )
         except Exception as e:
             logger.writeline('Failed to parsing input.yaml')
             logger.error(e)
@@ -129,13 +132,9 @@ def run(args):
             train_v2(global_config, working_dir)
 
 
-def main():
-    ag = argparse.ArgumentParser(description=description)
-    ag.add_argument(
-        'input_yaml',
-        help=input_yaml_help,
-        type=str
-    )
+def cmd_parser_train(parser):
+    ag = parser
+    ag.add_argument('input_yaml', help=input_yaml_help, type=str)
     ag.add_argument(
         '-m',
         '--mode',
@@ -148,7 +147,7 @@ def main():
         '-cueq',
         '--enable_cueq',
         help='(Not stable!) use cuEquivariance for training',
-        action='store_true'
+        action='store_true',
     )
     ag.add_argument(
         '-w',
@@ -165,17 +164,9 @@ def main():
         help='name of logfile, default is log.sevenn',
         type=str,
     )
+    ag.add_argument('-s', '--screen', help=screen_help, action='store_true')
     ag.add_argument(
-        '-s',
-        '--screen',
-        help=screen_help,
-        action='store_true'
-    )
-    ag.add_argument(
-        '-d',
-        '--distributed',
-        help=distributed_help,
-        action='store_true'
+        '-d', '--distributed', help=distributed_help, action='store_true'
     )
     ag.add_argument(
         '--distributed_backend',
@@ -185,9 +176,72 @@ def main():
         choices=['nccl', 'mpi'],
     )
 
+
+def add_parser(subparsers):
+    ag = subparsers.add_parser('train', help=description)
+    cmd_parser_train(ag)
+
+
+def set_default_subparser(self, name, args=None, positional_args=0):
+    """default subparser selection. Call after setup, just before parse_args()
+    name: is the name of the subparser to call by default
+    args: if set is the argument list handed to parse_args()
+
+    Hack copied from stack overflow
+    """
+    subparser_found = False
+    for arg in sys.argv[1:]:
+        if arg in ['-h', '--help']:  # global help if no subparser
+            break
+    else:
+        for x in self._subparsers._actions:
+            if not isinstance(x, argparse._SubParsersAction):
+                continue
+            for sp_name in x._name_parser_map.keys():
+                if sp_name in sys.argv[1:]:
+                    subparser_found = True
+        if not subparser_found:
+            # insert default in last position before global positional
+            # arguments, this implies no global options are specified after
+            # first positional argument
+            if args is None:
+                sys.argv.insert(len(sys.argv) - positional_args, name)
+            else:
+                args.insert(len(args) - positional_args, name)
+
+
+argparse.ArgumentParser.set_default_subparser = set_default_subparser  # type: ignore
+
+
+def main():
+    import sevenn.main.sevenn_cp as checkpoint_cmd
+    import sevenn.main.sevenn_get_model as get_model_cmd
+    import sevenn.main.sevenn_graph_build as graph_build_cmd
+    import sevenn.main.sevenn_inference as inference_cmd
+    import sevenn.main.sevenn_patch_lammps as patch_lammps_cmd
+    import sevenn.main.sevenn_preset as preset_cmd
+
+    ag = argparse.ArgumentParser(f'SevenNet version={__version__}')
+
+    subparsers = ag.add_subparsers(dest='command', help='Sub-commands')
+    add_parser(subparsers)  # add 'train'
+    checkpoint_cmd.add_parser(subparsers)
+    inference_cmd.add_parser(subparsers)
+    graph_build_cmd.add_parser(subparsers)
+    preset_cmd.add_parser(subparsers)
+    get_model_cmd.add_parser(subparsers)
+    patch_lammps_cmd.add_parser(subparsers)
+
+    ag.set_default_subparser('train')  # type: ignore
     args = ag.parse_args()
 
-    run(args)
+    if args.command is None:  # backward compatibility
+        args.command = 'train'
+
+    if args.command == 'train':
+        run(args)
+    elif args.command == 'preset':
+        preset_cmd.run(args)
 
 
 if __name__ == '__main__':

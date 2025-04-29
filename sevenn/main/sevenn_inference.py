@@ -3,69 +3,20 @@ import glob
 import os
 import sys
 
-from sevenn import __version__
-
 description = (
-    f'sevenn version={__version__}, sevenn_inference. '
-    + 'Evaluate sevenn_data/ase readable '
-    + 'using the model stored in a checkpoint.'
+    'evaluate sevenn_data/ase readable with a model (checkpoint).'
 )
-checkpoint_help = 'Checkpoint or pre-trained model name (7net-0)'
+checkpoint_help = 'Checkpoint or pre-trained model name'
 target_help = 'Target files to evaluate'
 
 
-def run(args):
-    import torch
-
-    from sevenn.scripts.inference import inference
-    from sevenn.util import pretrained_name_to_path
-
-    out = args.output
-
-    if os.path.exists(out):
-        raise FileExistsError(f'Directory {out} already exists')
-
-    device = args.device
-    if device == 'auto':
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
-
-    targets = []
-    for target in args.targets:
-        targets.extend(glob.glob(target))
-
-    if len(targets) == 0:
-        print('No targets (data to inference) are found')
-        sys.exit(0)
-
-    cp = args.checkpoint
-    if not os.path.isfile(cp):
-        cp = pretrained_name_to_path(cp)  # raises value error
-
-    fmt_kwargs = {}
-    if args.kwargs:
-        for kwarg in args.kwargs:
-            k, v = kwarg.split('=')
-            fmt_kwargs[k] = v
-
-    if args.save_graph and args.allow_unlabeled:
-        raise ValueError('save_graph and allow_unlabeled are mutually exclusive')
-
-    inference(
-        cp,
-        targets,
-        out,
-        args.nworkers,
-        device,
-        args.batch,
-        args.save_graph,
-        args.allow_unlabeled,
-        args.modal,
-        **fmt_kwargs,
-    )
+def add_parser(subparsers):
+    ag = subparsers.add_parser('inference', help=description, aliases=['inf'])
+    add_args(ag)
 
 
-def main():
-    ag = argparse.ArgumentParser(description=description)
+def add_args(parser):
+    ag = parser
     ag.add_argument('checkpoint', type=str, help=checkpoint_help)
     ag.add_argument('targets', type=str, nargs='+', help=target_help)
     ag.add_argument(
@@ -121,5 +72,58 @@ def main():
         help='will be passed to reader, or can be used to specify EFS key',
     )
 
-    args = ag.parse_args()
-    run(args)
+
+def run(args):
+    import torch
+
+    from sevenn.scripts.inference import inference
+    from sevenn.util import pretrained_name_to_path
+
+    out = args.output
+
+    if os.path.exists(out):
+        raise FileExistsError(f'Directory {out} already exists')
+
+    device = args.device
+    if device == 'auto':
+        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+
+    targets = []
+    for target in args.targets:
+        targets.extend(glob.glob(target))
+
+    if len(targets) == 0:
+        print('No targets (data to inference) are found')
+        sys.exit(0)
+
+    cp = args.checkpoint
+    if not os.path.isfile(cp):
+        cp = pretrained_name_to_path(cp)  # raises value error
+
+    fmt_kwargs = {}
+    if args.kwargs:
+        for kwarg in args.kwargs:
+            k, v = kwarg.split('=')
+            fmt_kwargs[k] = v
+
+    if args.save_graph and args.allow_unlabeled:
+        raise ValueError('save_graph and allow_unlabeled are mutually exclusive')
+
+    inference(
+        cp,
+        targets,
+        out,
+        args.nworkers,
+        device,
+        args.batch,
+        args.save_graph,
+        args.allow_unlabeled,
+        args.modal,
+        **fmt_kwargs,
+    )
+
+
+def main(args=None):
+    ag = argparse.ArgumentParser(description=description)
+    add_args(ag)
+    run(ag.parse_args())

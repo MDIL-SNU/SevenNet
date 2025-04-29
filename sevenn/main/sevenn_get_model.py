@@ -4,8 +4,7 @@ import os
 from sevenn import __version__
 
 description_get_model = (
-    f'sevenn version={__version__}, sevenn_get_model.'
-    + ' Deploy model for LAMMPS from the checkpoint'
+    'deploy LAMMPS model from the checkpoint'
 )
 checkpoint_help = (
     'path to the checkpoint | SevenNet-0 | 7net-0 |'
@@ -13,6 +12,30 @@ checkpoint_help = (
 )
 output_name_help = 'filename prefix'
 get_parallel_help = 'deploy parallel model'
+
+
+def add_parser(subparsers):
+    ag = subparsers.add_parser(
+        'get_model', help=description_get_model, aliases=['deploy']
+    )
+    add_args(ag)
+
+
+def add_args(parser):
+    ag = parser
+    ag.add_argument('checkpoint', help=checkpoint_help, type=str)
+    ag.add_argument(
+        '-o', '--output_prefix', nargs='?', help=output_name_help, type=str
+    )
+    ag.add_argument(
+        '-p', '--get_parallel', help=get_parallel_help, action='store_true'
+    )
+    ag.add_argument(
+        '-m',
+        '--modal',
+        help='Modality of multi-modal model',
+        type=str,
+    )
 
 
 def run(args):
@@ -40,21 +63,8 @@ def run(args):
         deploy_parallel(checkpoint_path, output_prefix, modal)
 
 
+# legacy way
 def main():
     ag = argparse.ArgumentParser(description=description_get_model)
-    ag.add_argument('checkpoint', help=checkpoint_help, type=str)
-    ag.add_argument(
-        '-o', '--output_prefix', nargs='?', help=output_name_help, type=str
-    )
-    ag.add_argument(
-        '-p', '--get_parallel', help=get_parallel_help, action='store_true'
-    )
-    ag.add_argument(
-        '-m',
-        '--modal',
-        help='Modality of multi-modal model',
-        type=str,
-    )
-    args = ag.parse_args()
-
-    run(args)
+    add_args(ag)
+    run(ag.parse_args())
