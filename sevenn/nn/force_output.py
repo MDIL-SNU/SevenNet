@@ -19,13 +19,13 @@ class ForceOutput(nn.Module):
         data_key_pos: str = KEY.POS,
         data_key_energy: str = KEY.PRED_TOTAL_ENERGY,
         data_key_force: str = KEY.PRED_FORCE,
-    ):
+    ) -> None:
         super().__init__()
         self.key_pos = data_key_pos
         self.key_energy = data_key_energy
         self.key_force = data_key_force
 
-    def get_grad_key(self):
+    def get_grad_key(self) -> str:
         return self.key_pos
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
@@ -64,7 +64,7 @@ class ForceStressOutput(nn.Module):
         data_key_force: str = KEY.PRED_FORCE,
         data_key_stress: str = KEY.PRED_STRESS,
         data_key_cell_volume: str = KEY.CELL_VOLUME,
-    ):
+    ) -> None:
 
         super().__init__()
         self.key_pos = data_key_pos
@@ -74,7 +74,7 @@ class ForceStressOutput(nn.Module):
         self.key_cell_volume = data_key_cell_volume
         self._is_batch_data = True
 
-    def get_grad_key(self):
+    def get_grad_key(self) -> str:
         return self.key_pos
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
@@ -150,7 +150,7 @@ class ForceStressOutputFromEdge(nn.Module):
         data_key_force: str = KEY.PRED_FORCE,
         data_key_stress: str = KEY.PRED_STRESS,
         data_key_cell_volume: str = KEY.CELL_VOLUME,
-    ):
+    ) -> None:
 
         super().__init__()
         self.key_edge = data_key_edge
@@ -161,7 +161,7 @@ class ForceStressOutputFromEdge(nn.Module):
         self.key_cell_volume = data_key_cell_volume
         self._is_batch_data = True
 
-    def get_grad_key(self):
+    def get_grad_key(self) -> str:
         return self.key_edge
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:

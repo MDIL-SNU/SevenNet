@@ -26,7 +26,7 @@ class Logger(metaclass=Singleton):
 
     def __init__(
         self, filename: Optional[str] = None, screen: bool = False, rank: int = 0
-    ):
+    ) -> None:
         self.rank = rank
         self._filename = filename
         if rank == 0:
@@ -70,7 +70,7 @@ class Logger(metaclass=Singleton):
             self.logfile = None
             self.files = {}
 
-    def switch_file(self, new_filename: str):
+    def switch_file(self, new_filename: str) -> 'Logger':
         if self.rank != 0:
             return self
         if self.logfile is not None:
@@ -78,7 +78,7 @@ class Logger(metaclass=Singleton):
         self._filename = new_filename
         return self
 
-    def write(self, content: str):
+    def write(self, content: str) -> None:
         if self.rank != 0:
             return
         # no newline!
@@ -87,11 +87,11 @@ class Logger(metaclass=Singleton):
         if self.screen and self.active:
             print(content, end='')
 
-    def writeline(self, content: str):
+    def writeline(self, content: str) -> None:
         content = content + '\n'
         self.write(content)
 
-    def init_csv(self, filename: str, header: list):
+    def init_csv(self, filename, header):
         """
         Deprecated
         """
@@ -101,7 +101,7 @@ class Logger(metaclass=Singleton):
         else:
             pass
 
-    def append_csv(self, filename: str, content: list, decimal: int = 6):
+    def append_csv(self, filename, content, decimal=6) -> None:
         """
         Deprecated
         """
@@ -118,7 +118,7 @@ class Logger(metaclass=Singleton):
         else:
             pass
 
-    def natoms_write(self, natoms: Dict[str, Dict]):
+    def natoms_write(self, natoms: Dict[str, Any]) -> None:
         content = ''
         total_natom = {}
         for label, natom in natoms.items():
@@ -132,7 +132,7 @@ class Logger(metaclass=Singleton):
         content += self.format_k_v('Total', sum(total_natom.values()))
         self.write(content)
 
-    def statistic_write(self, statistic: Dict[str, Dict]):
+    def statistic_write(self, statistic: Dict[str, Any]) -> None:
         content = ''
         for label, dct in statistic.items():
             if label.startswith('_'):
@@ -176,11 +176,11 @@ class Logger(metaclass=Singleton):
 
     def write_full_table(
         self,
-        dict_list: List[Dict],
+        dict_list: List[Dict[str, Any]],
         row_labels: List[str],
         decimal_places: int = 6,
         pad: int = 2,
-    ):
+    ) -> None:
         """
         Assume data_list is list of dict with same keys
         """
@@ -221,7 +221,7 @@ class Logger(metaclass=Singleton):
             )
             self.writeline(f'{row_label.ljust(label_len)}{data_row}')
 
-    def format_k_v(self, key: Any, val: Any, write: bool = False):
+    def format_k_v(self, key: Any, val: Any, write: bool = False) -> str:
         """
         key and val should be str convertible
         """
@@ -256,7 +256,7 @@ class Logger(metaclass=Singleton):
             self.write(content)
             return ''
 
-    def greeting(self):
+    def greeting(self) -> None:
         LOGO_ASCII_FILE = f'{os.path.dirname(__file__)}/logo_ascii'
         with open(LOGO_ASCII_FILE, 'r') as logo_f:
             logo_ascii = logo_f.read()
@@ -265,7 +265,7 @@ class Logger(metaclass=Singleton):
         self.write(content)
         self.write(logo_ascii)
 
-    def bar(self):
+    def bar(self) -> None:
         content = '-' * Logger.SCREEN_WIDTH + '\n'
         self.write(content)
 
@@ -274,7 +274,7 @@ class Logger(metaclass=Singleton):
         model_config: Dict[str, Any],
         data_config: Dict[str, Any],
         train_config: Dict[str, Any],
-    ):
+    ) -> None:
         """
         print some important information from config
         """
@@ -300,10 +300,10 @@ class Logger(metaclass=Singleton):
             content += traceback.format_exc()
         self.write(content)
 
-    def timer_start(self, name: str):
+    def timer_start(self, name: str) -> None:
         self.timer_dct[name] = datetime.now()
 
-    def timer_end(self, name: str, message: str, remove: bool = True):
+    def timer_end(self, name: str, message: str, remove: bool = True) -> None:
         """
         print f"{message}: {elapsed}"
         """
@@ -315,7 +315,7 @@ class Logger(metaclass=Singleton):
 
     # TODO: print it without config
     # TODO: refactoring, readout part name :(
-    def print_model_info(self, model, config):
+    def print_model_info(self, model, config) -> None:
         from functools import partial
 
         kv_write = partial(self.format_k_v, write=True)

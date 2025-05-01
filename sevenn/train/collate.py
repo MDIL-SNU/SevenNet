@@ -18,7 +18,7 @@ class AtomsToGraphCollater(Collater):
         follow_batch: Optional[List[str]] = None,
         exclude_keys: Optional[List[str]] = None,
         y_from_calc: bool = True,
-    ):
+    ) -> None:
         # quite original collator's type mismatch with []
         super().__init__([], follow_batch, exclude_keys)
         self.dataset = dataset

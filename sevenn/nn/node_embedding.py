@@ -30,7 +30,7 @@ class OnehotEmbedding(nn.Module):
         data_key_out: Optional[str] = None,
         data_key_save: Optional[str] = None,
         data_key_additional: Optional[str] = None,  # additional output
-    ):
+    ) -> None:
         super().__init__()
         self.num_classes = num_classes
         self.key_x = data_key_x
@@ -53,7 +53,7 @@ class OnehotEmbedding(nn.Module):
         return data
 
 
-def get_type_mapper_from_specie(specie_list: List[str]):
+def get_type_mapper_from_specie(specie_list: List[str]) -> Dict[int, int]:
     """
     from ['Hf', 'O']
     return {72: 0, 8: 1}
@@ -73,7 +73,7 @@ def get_type_mapper_from_specie(specie_list: List[str]):
 # deprecated
 def one_hot_atom_embedding(
     atomic_numbers: List[int], type_map: Dict[int, int]
-):
+) -> torch.Tensor:
     """
     atomic numbers from ase.get_atomic_numbers
     type_map from get_type_mapper_from_specie()

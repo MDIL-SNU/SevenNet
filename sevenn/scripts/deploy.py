@@ -1,6 +1,7 @@
 import os
+import pathlib
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Union
 
 import e3nn.util.jit
 import torch
@@ -13,7 +14,11 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.util import load_checkpoint
 
 
-def deploy(checkpoint, fname='deployed_serial.pt', modal: Optional[str] = None):
+def deploy(
+    checkpoint: Union[pathlib.Path, str],
+    fname='deployed_serial.pt',
+    modal: Optional[str] = None,
+) -> None:
     """
     This method is messy to avoid changes in pair_e3gnn.cpp, while
     refactoring python part.
@@ -71,8 +76,10 @@ def deploy(checkpoint, fname='deployed_serial.pt', modal: Optional[str] = None):
 
 # TODO: build model only once
 def deploy_parallel(
-    checkpoint, fname='deployed_parallel', modal: Optional[str] = None
-):
+    checkpoint: Union[pathlib.Path, str],
+    fname='deployed_parallel',
+    modal: Optional[str] = None,
+) -> None:
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 

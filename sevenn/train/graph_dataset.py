@@ -43,7 +43,7 @@ def _tag_graphs(graph_list: List[AtomGraphData], tag: str):
     return graph_list
 
 
-def pt_to_args(pt_filename: str):
+def pt_to_args(pt_filename: str) -> Dict[str, str]:
     """
     Return arg dict of root and processed_name from path to .pt
     Usage:
@@ -59,12 +59,13 @@ def pt_to_args(pt_filename: str):
 
 
 def _run_stat(
-    graph_list,
-    y_keys: List[str] = [KEY.ENERGY, KEY.PER_ATOM_ENERGY, KEY.FORCE, KEY.STRESS],
+    graph_list: List[Dict[str, torch.Tensor]],
+    y_keys: Optional[List[str]] = None,
 ) -> Dict[str, Any]:
     """
     Loop over dataset and init any statistics might need
     """
+    y_keys = y_keys or [KEY.ENERGY, KEY.PER_ATOM_ENERGY, KEY.FORCE, KEY.STRESS]
     n_neigh = []
     natoms_counter = Counter()
     composition = torch.zeros((len(graph_list), NUM_UNIV_ELEMENT))
@@ -112,7 +113,9 @@ def _run_stat(
     return stats
 
 
-def _elemwise_reference_energies(composition: np.ndarray, energies: np.ndarray):
+def _elemwise_reference_energies(
+    composition: np.ndarray, energies: np.ndarray
+) -> List[float]:
     from sklearn.linear_model import Ridge
 
     c = composition
@@ -169,7 +172,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         force_reload: bool = False,
         drop_info: bool = True,
         **process_kwargs,
-    ):
+    ) -> None:
         self.cutoff = cutoff
         if files is None:
             files = []
@@ -358,7 +361,7 @@ class SevenNetGraphDataset(InMemoryDataset):
             yaml.dump(meta, f, default_flow_style=False)
 
     @property
-    def species(self):
+    def species(self) -> List[str]:
         return [z for z in self.statistics['natoms'].keys() if z != 'total']
 
     @property
@@ -366,29 +369,29 @@ class SevenNetGraphDataset(InMemoryDataset):
         return self.statistics['natoms']
 
     @property
-    def per_atom_energy_mean(self):
+    def per_atom_energy_mean(self) -> float:
         return self.statistics[KEY.PER_ATOM_ENERGY]['mean']
 
     @property
-    def elemwise_reference_energies(self):
+    def elemwise_reference_energies(self) -> List[float]:
         return self.statistics['elemwise_reference_energies']
 
     @property
-    def force_rms(self):
+    def force_rms(self) -> float:
         mean = self.statistics[KEY.FORCE]['mean']
         std = self.statistics[KEY.FORCE]['std']
         return float((mean**2 + std**2) ** (0.5))
 
     @property
-    def per_atom_energy_std(self):
+    def per_atom_energy_std(self) -> float:
         return self.statistics['per_atom_energy']['std']
 
     @property
-    def avg_num_neigh(self):
+    def avg_num_neigh(self) -> float:
         return self.statistics['num_neighbor']['mean']
 
     @property
-    def sqrt_avg_num_neigh(self):
+    def sqrt_avg_num_neigh(self) -> float:
         return self.avg_num_neigh**0.5
 
     @staticmethod
@@ -479,7 +482,7 @@ class SevenNetGraphDataset(InMemoryDataset):
         data_dict: dict,
         cutoff: float,
         num_cores: int = 1,
-    ):
+    ) -> List[AtomGraphData]:
         # logic same as the dataload dict_reader, but handles graphs
         data_dict_cp = deepcopy(data_dict)
         file_list = data_dict_cp.get('file_list', None)
@@ -615,7 +618,7 @@ def from_config(
     config: Dict[str, Any],
     working_dir: str = os.getcwd(),
     dataset_keys: Optional[List[str]] = None,
-):
+) -> Dict[str, SevenNetGraphDataset]:
     log = Logger()
     if dataset_keys is None:
         dataset_keys = []

@@ -17,7 +17,7 @@ def message_gather(
     node_features: torch.Tensor,
     edge_dst: torch.Tensor,
     message: torch.Tensor
-):
+) -> torch.Tensor:
     index = broadcast(edge_dst, message, 0)
     out_shape = [len(node_features)] + list(message.shape[1:])
     out = torch.zeros(
@@ -50,7 +50,7 @@ class IrrepsConvolution(nn.Module):
         data_key_edge_idx: str = KEY.EDGE_IDX,
         lazy_layer_instantiate: bool = True,
         is_parallel: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         self.denominator = nn.Parameter(
             torch.FloatTensor([denominator]), requires_grad=train_denominator
@@ -109,7 +109,7 @@ class IrrepsConvolution(nn.Module):
 
         self._comm_size = irreps_x.dim  # used in parallel
 
-    def instantiate(self):
+    def instantiate(self) -> None:
         if self.convolution is not None:
             raise ValueError('Convolution layer already exists')
         if self.weight_nn is not None:

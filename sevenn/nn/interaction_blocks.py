@@ -1,6 +1,7 @@
-from typing import Callable, List, Tuple
+from typing import Callable, Dict, List, Tuple
 
 from e3nn.o3 import Irreps
+from torch.nn import Module
 
 import sevenn._keys as KEY
 
@@ -18,8 +19,8 @@ def NequIP_interaction_block(
     conv_denominator: float,
     train_conv_denominator: bool,
     self_connection_pair: Tuple[Callable, Callable],
-    act_scalar: Callable,
-    act_gate: Callable,
+    act_scalar: Dict[str, Callable],
+    act_gate: Dict[str, Callable],
     act_radial: Callable,
     bias_in_linear: bool,
     num_species: int,
@@ -28,7 +29,7 @@ def NequIP_interaction_block(
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
     **conv_kwargs,
-):
+) -> Dict[str, Module]:
     block = {}
     irreps_node_attr = Irreps(f'{num_species}x0e')
     sc_intro, sc_outro = self_connection_pair

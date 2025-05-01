@@ -2,7 +2,7 @@ import os
 import os.path as osp
 import pathlib
 import shutil
-from typing import Dict, List, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
 
 import numpy as np
 import requests
@@ -13,9 +13,15 @@ from tqdm import tqdm
 
 import sevenn._const as _const
 import sevenn._keys as KEY
+from sevenn.error_recorder import ErrorRecorder
+from sevenn.train.loss import LossDefinition
+
+if TYPE_CHECKING:
+    from sevenn.atom_graph_data import AtomGraphData
+    from sevenn.checkpoint import SevenNetCheckpoint
 
 
-def to_atom_graph_list(atom_graph_batch):
+def to_atom_graph_list(atom_graph_batch) -> List[_const.AtomGraphDataType]:
     """
     torch_geometric batched data to separate list
     original to_data_list() by PyG is not enough since
@@ -47,7 +53,9 @@ def to_atom_graph_list(atom_graph_batch):
     return data_list
 
 
-def error_recorder_from_loss_functions(loss_functions):
+def error_recorder_from_loss_functions(
+    loss_functions: List[Tuple[LossDefinition, float]],
+) -> ErrorRecorder:
     from .error_recorder import ErrorRecorder, MAError, RMSError, get_err_type
     from .train.loss import ForceLoss, PerAtomEnergyLoss, StressLoss
 
@@ -78,7 +86,9 @@ def error_recorder_from_loss_functions(loss_functions):
     return ErrorRecorder(metrics)
 
 
-def onehot_to_chem(one_hot_indices: List[int], type_map: Dict[int, int]):
+def onehot_to_chem(
+    one_hot_indices: List[int], type_map: Dict[int, int]
+) -> List[str]:
     from ase.data import chemical_symbols
 
     type_map_rev = {v: k for k, v in type_map.items()}
@@ -87,7 +97,7 @@ def onehot_to_chem(one_hot_indices: List[int], type_map: Dict[int, int]):
 
 def model_from_checkpoint(
     checkpoint: str,
-) -> Tuple[torch.nn.Module, Dict]:
+) -> Tuple[torch.nn.Module, Dict[str, Any]]:
     cp = load_checkpoint(checkpoint)
     model = cp.build_model()
 
@@ -97,14 +107,16 @@ def model_from_checkpoint(
 def model_from_checkpoint_with_backend(
     checkpoint: str,
     backend: str = 'e3nn',
-) -> Tuple[torch.nn.Module, Dict]:
+) -> Tuple[torch.nn.Module, Dict[str, Any]]:
     cp = load_checkpoint(checkpoint)
     model = cp.build_model(backend)
 
     return model, cp.config
 
 
-def unlabeled_atoms_to_input(atoms, cutoff: float, grad_key: str = KEY.EDGE_VEC):
+def unlabeled_atoms_to_input(
+    atoms, cutoff: float, grad_key: str = KEY.EDGE_VEC
+) -> 'AtomGraphData':
     from .atom_graph_data import AtomGraphData
     from .train.dataload import unlabeled_atoms_to_graph
 
@@ -116,7 +128,9 @@ def unlabeled_atoms_to_input(atoms, cutoff: float, grad_key: str = KEY.EDGE_VEC)
     return atom_graph
 
 
-def chemical_species_preprocess(input_chem: List[str], universal: bool = False):
+def chemical_species_preprocess(
+    input_chem: List[str], universal: bool = False
+) -> Dict[str, Any]:
     from ase.data import atomic_numbers, chemical_symbols
 
     from .nn.node_embedding import get_type_mapper_from_specie
@@ -144,7 +158,7 @@ def dtype_correct(
     v: Union[np.ndarray, torch.Tensor, int, float],
     float_dtype: torch.dtype = torch.float32,
     int_dtype: torch.dtype = torch.int64,
-):
+) -> torch.Tensor:
     if isinstance(v, np.ndarray):
         if np.issubdtype(v.dtype, np.floating):
             return torch.from_numpy(v).to(float_dtype)
@@ -160,8 +174,9 @@ def dtype_correct(
             return torch.tensor(v, dtype=int_dtype)
         elif isinstance(v, float):
             return torch.tensor(v, dtype=float_dtype)
-        else:  # Not numeric
+        else:
             return v
+    raise ValueError()
 
 
 def infer_irreps_out(
@@ -170,7 +185,7 @@ def infer_irreps_out(
     drop_l: Union[bool, int] = False,
     parity_mode: str = 'full',
     fix_multiplicity: Union[bool, int] = False,
-):
+) -> Irreps:
     assert parity_mode in ['full', 'even', 'sph']
     # (mul, (ir, p))
     irreps_out = FullTensorProduct(irreps_x, irreps_operand).irreps_out.simplify()
@@ -186,10 +201,10 @@ def infer_irreps_out(
         if fix_multiplicity:
             elem = (fix_multiplicity, (l, p))
         new_irreps_elem.append(elem)
-    return Irreps(new_irreps_elem)
+    return Irreps(new_irreps_elem)  # type: ignore
 
 
-def download_checkpoint(path: str, url: str):
+def download_checkpoint(path: str, url: str) -> str:
     fname = osp.basename(path)
     temp_path = path + '.partial'
     try:
@@ -274,8 +289,9 @@ def pretrained_name_to_path(name: str) -> str:
         return download_checkpoint(paths[1], url)  # ~/.cache
 
 
-def load_checkpoint(checkpoint: Union[pathlib.Path, str]):
+def load_checkpoint(checkpoint: Union[pathlib.Path, str]) -> 'SevenNetCheckpoint':
     from sevenn.checkpoint import SevenNetCheckpoint
+
     suggests = ['7net-0, 7net-l3i5, 7net-mf-ompa, 7net-omat']
     if osp.isfile(checkpoint):
         checkpoint_path = checkpoint
@@ -316,7 +332,7 @@ def get_error_recorder(
         ('Force', 'MAE'),
         ('Stress', 'MAE'),
     ],
-):
+) -> ErrorRecorder:
     # TODO add criterion argument and loss recorder selections
     import sevenn.error_recorder as error_recorder
 
