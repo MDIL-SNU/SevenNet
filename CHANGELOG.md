@@ -20,6 +20,7 @@ inference, train, etc
 ### Fixed
 - Circular import in sevenn.checkpoint (dev0)
 - Fix typing issues
+- Added missing typings (especially return type)
 
 
 ## [0.11.0]
