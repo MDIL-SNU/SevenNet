@@ -220,7 +220,7 @@ def read_config_yaml(
     if return_separately:
         return model_meta, train_meta, data_meta
     else:
-        # Deprecated, should not used
+        # Deprecated, should not be used
         model_meta.update(train_meta)
         model_meta.update(data_meta)
         return model_meta  # type: ignore
