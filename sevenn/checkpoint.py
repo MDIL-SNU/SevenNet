@@ -43,7 +43,7 @@ def assert_atoms(
 
 
 def copy_state_dict(
-    state_dict: Dict[str, Any] | List[Any] | Tensor,
+    state_dict: Union[Dict[str, Any], List[Any], Tensor],
 ) -> Dict[str, Any]:
     if isinstance(state_dict, dict):
         return {key: copy_state_dict(value) for key, value in state_dict.items()}
@@ -184,7 +184,7 @@ class SevenNetCheckpoint:
     Tool box for checkpoint processed from SevenNet.
     """
 
-    def __init__(self, checkpoint_path: Union[pathlib.Path, str]):
+    def __init__(self, checkpoint_path: Union[pathlib.Path, str]) -> None:
         self._checkpoint_path = os.path.abspath(checkpoint_path)
         self._config = None
         self._epoch = None
