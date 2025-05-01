@@ -14,18 +14,14 @@ class EquivariantGate(nn.Module):
     def __init__(
         self,
         irreps_x: Irreps,
-        act_scalar_dict: Dict[int, Callable],
-        act_gate_dict: Dict[int, Callable],
+        act_scalar_dict: Dict[str, Callable],
+        act_gate_dict: Dict[str, Callable],
         data_key_x: str = KEY.NODE_FEATURE,
-    ):
+    ) -> None:
         super().__init__()
         self.key_x = data_key_x
 
-        parity_mapper = {'e': 1, 'o': -1}
-        act_scalar_dict = {
-            parity_mapper[k]: v for k, v in act_scalar_dict.items()
-        }
-        act_gate_dict = {parity_mapper[k]: v for k, v in act_gate_dict.items()}
+        parity_map = {1: 'e', -1: 'o'}
 
         irreps_gated_elem = []
         irreps_scalars_elem = []
@@ -43,8 +39,10 @@ class EquivariantGate(nn.Module):
             [(mul, (0, irreps_gates_parity)) for mul, _ in irreps_gated]
         )
 
-        act_scalars = [act_scalar_dict[p] for _, (_, p) in irreps_scalars]
-        act_gates = [act_gate_dict[p] for _, (_, p) in irreps_gates]
+        act_scalars = [
+            act_scalar_dict[parity_map[p]] for _, (_, p) in irreps_scalars
+        ]
+        act_gates = [act_gate_dict[parity_map[p]] for _, (_, p) in irreps_gates]
 
         self.gate = Gate(
             irreps_scalars, act_scalars, irreps_gates, act_gates, irreps_gated

@@ -46,7 +46,7 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
         transform: Optional[Callable] = None,
         use_data_weight: bool = False,
         **process_kwargs,
-    ):
+    ) -> None:
         self.cutoff = cutoff
         if isinstance(files, str):
             files = [files]  # user convenience
@@ -82,11 +82,11 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
             atoms_list = dataload.ase_reader(file, **kwargs)
         return atoms_list
 
-    def save(self, path):
+    def save(self, path: str) -> None:
         # Save atoms list as extxyz
         write(path, self._atoms_list, format='extxyz')
 
-    def _graph_build(self, atoms):
+    def _graph_build(self, atoms: Atoms) -> Dict[str, Any]:
         return dataload.atoms_to_graph(
             atoms, self.cutoff, transfer_info=False, y_from_calc=False
         )
@@ -112,7 +112,7 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
         return AtomGraphData.from_numpy_dict(graph)
 
     @property
-    def species(self):
+    def species(self) -> List[str]:
         self.run_stat()
         return [z for z in self.statistics['_natoms'].keys() if z != 'total']
 
@@ -122,12 +122,12 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
         return self.statistics['_natoms']
 
     @property
-    def per_atom_energy_mean(self):
+    def per_atom_energy_mean(self) -> float:
         self.run_stat()
         return self.statistics[KEY.PER_ATOM_ENERGY]['mean']
 
     @property
-    def elemwise_reference_energies(self):
+    def elemwise_reference_energies(self) -> List[float]:
         from sklearn.linear_model import Ridge
 
         c = self.statistics['_composition']
@@ -142,19 +142,19 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
         return full_coeff.tolist()  # ex: full_coeff[1] = H_reference_energy
 
     @property
-    def force_rms(self):
+    def force_rms(self) -> float:
         self.run_stat()
         mean = self.statistics[KEY.FORCE]['mean']
         std = self.statistics[KEY.FORCE]['std']
         return float((mean**2 + std**2) ** (0.5))
 
     @property
-    def per_atom_energy_std(self):
+    def per_atom_energy_std(self) -> float:
         self.run_stat()
         return self.statistics['per_atom_energy']['std']
 
     @property
-    def avg_num_neigh(self, n_sample=10000):
+    def avg_num_neigh(self, n_sample=10000) -> float:
         if self._avg_num_neigh_approx is None:
             if len(self) > n_sample:
                 warnings.warn(_warn_avg_num_neigh)
@@ -167,14 +167,14 @@ class SevenNetAtomsDataset(torch.utils.data.Dataset):
                 n_neigh.append(nn)
             n_neigh = np.concatenate(n_neigh)
             self._avg_num_neigh_approx = np.mean(n_neigh)
-        return self._avg_num_neigh_approx
+        return float(self._avg_num_neigh_approx)
 
     @property
-    def sqrt_avg_num_neigh(self):
+    def sqrt_avg_num_neigh(self) -> float:
         self.run_stat()
         return self.avg_num_neigh**0.5
 
-    def run_stat(self):
+    def run_stat(self) -> None:
         """
         Loop over dataset and init any statistics might need
         Unlink SevenNetGraphDataset, neighbors count is not computed as
@@ -236,7 +236,7 @@ def from_config(
     config: Dict[str, Any],
     working_dir: str = os.getcwd(),
     dataset_keys: Optional[List[str]] = None,
-):
+) -> Dict[str, SevenNetAtomsDataset]:
     from sevenn.logger import Logger
 
     log = Logger()

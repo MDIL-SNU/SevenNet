@@ -26,7 +26,7 @@ class IrrepsLinear(nn.Module):
         num_modalities: int = 0,
         lazy_layer_instantiate: bool = True,
         **linear_kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self.key_input = data_key_in
         if data_key_out is None:
@@ -54,7 +54,7 @@ class IrrepsLinear(nn.Module):
         if not lazy_layer_instantiate:
             self.instantiate()
 
-    def instantiate(self):
+    def instantiate(self) -> None:
         if self.linear is not None:
             raise ValueError('Linear layer already exists')
         self.linear = self.linear_cls(
@@ -62,7 +62,7 @@ class IrrepsLinear(nn.Module):
         )
         self.layer_instantiated = True
 
-    def set_num_modalities(self, num_modalities):
+    def set_num_modalities(self, num_modalities: int) -> None:
         if self.layer_instantiated:
             raise ValueError('Layer already instantiated, can not change modalities')
         irreps_in = self._irreps_in_wo_modal + Irreps(f'{num_modalities}x0e')
@@ -113,7 +113,7 @@ class AtomReduce(nn.Module):
         data_key_out: str,
         reduce: str = 'sum',
         constant: float = 1.0,
-    ):
+    ) -> None:
         super().__init__()
 
         self.key_input = data_key_in
@@ -156,7 +156,7 @@ class FCN_e3nn(nn.Module):
         data_key_in: str,
         data_key_out: Optional[str] = None,
         **e3nn_kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self.key_input = data_key_in
         self.irreps_in = irreps_in

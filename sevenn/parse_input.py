@@ -1,7 +1,7 @@
 import glob
 import os
 import warnings
-from typing import Any, Callable, Dict
+from typing import Any, Callable, Dict, Tuple
 
 import torch
 import yaml
@@ -13,10 +13,10 @@ import sevenn.util as util
 
 def config_initialize(
     key: str,
-    config: Dict,
+    config: Dict[str, Any],
     default: Any,
-    conditions: Dict,
-):
+    conditions: Dict[str, Any],
+) -> Any:
     # default value exist & no user input -> return default
     if key not in config.keys():
         return default
@@ -30,9 +30,7 @@ def config_initialize(
 
     if type(default) is dict and isinstance(condition, dict):
         for i_key, val in default.items():
-            user_input[i_key] = config_initialize(
-                i_key, user_input, val, condition
-            )
+            user_input[i_key] = config_initialize(i_key, user_input, val, condition)
         return user_input
     elif isinstance(condition, type):
         if isinstance(user_input, condition):
@@ -41,18 +39,14 @@ def config_initialize(
             try:
                 return condition(user_input)  # try type casting
             except ValueError:
-                raise ValueError(
-                    f"Expect '{user_input}' for '{key}' is {condition}"
-                )
+                raise ValueError(f"Expect '{user_input}' for '{key}' is {condition}")
     elif isinstance(condition, Callable) and condition(user_input):
         return user_input
     else:
-        raise ValueError(
-            f"Given input '{user_input}' for '{key}' is not valid"
-        )
+        raise ValueError(f"Given input '{user_input}' for '{key}' is not valid")
 
 
-def init_model_config(config: Dict):
+def init_model_config(config: Dict[str, Any]) -> Dict[str, Any]:
     # defaults = _const.model_defaults(config)
     model_meta = {}
 
@@ -72,9 +66,7 @@ def init_model_config(config: Dict):
         ):
             pass
         elif isinstance(input_chem, str):
-            input_chem = (
-                input_chem.replace('-', ',').replace(' ', ',').split(',')
-            )
+            input_chem = input_chem.replace('-', ',').replace(' ', ',').split(',')
             input_chem = [chem for chem in input_chem if len(chem) != 0]
         else:
             raise ValueError(f'given {KEY.CHEMICAL_SPECIES} input is strange')
@@ -111,9 +103,7 @@ def init_model_config(config: Dict):
             key, config, default, _const.MODEL_CONFIG_CONDITION
         )
 
-    unknown_keys = [
-        key for key in config.keys() if key not in model_meta.keys()
-    ]
+    unknown_keys = [key for key in config.keys() if key not in model_meta.keys()]
     if len(unknown_keys) != 0:
         warnings.warn(
             f'Unexpected model keys: {unknown_keys} will be ignored',
@@ -123,7 +113,7 @@ def init_model_config(config: Dict):
     return model_meta
 
 
-def init_train_config(config: Dict):
+def init_train_config(config: Dict[str, Any]) -> Dict[str, Any]:
     train_meta = {}
     # defaults = _const.train_defaults(config)
 
@@ -155,9 +145,7 @@ def init_train_config(config: Dict):
             checkpoint_file = util.pretrained_name_to_path(checkpoint)
         train_meta[KEY.CONTINUE].update({KEY.CHECKPOINT: checkpoint_file})
 
-    unknown_keys = [
-        key for key in config.keys() if key not in train_meta.keys()
-    ]
+    unknown_keys = [key for key in config.keys() if key not in train_meta.keys()]
     if len(unknown_keys) != 0:
         warnings.warn(
             f'Unexpected train keys: {unknown_keys} will be ignored',
@@ -166,7 +154,7 @@ def init_train_config(config: Dict):
     return train_meta
 
 
-def init_data_config(config: Dict):
+def init_data_config(config: Dict[str, Any]) -> Dict[str, Any]:
     data_meta = {}
     # defaults = _const.data_defaults(config)
 
@@ -203,9 +191,7 @@ def init_data_config(config: Dict):
             key, config, default, _const.DATA_CONFIG_CONDITION
         )
 
-    unknown_keys = [
-        key for key in config.keys() if key not in data_meta.keys()
-    ]
+    unknown_keys = [key for key in config.keys() if key not in data_meta.keys()]
     if len(unknown_keys) != 0:
         warnings.warn(
             f'Unexpected data keys: {unknown_keys} will be ignored',
@@ -214,7 +200,9 @@ def init_data_config(config: Dict):
     return data_meta
 
 
-def read_config_yaml(filename: str, return_separately: bool = False):
+def read_config_yaml(
+    filename: str, return_separately: bool = True
+) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
     with open(filename, 'r') as fstream:
         inputs = yaml.safe_load(fstream)
 
@@ -232,9 +220,17 @@ def read_config_yaml(filename: str, return_separately: bool = False):
     if return_separately:
         return model_meta, train_meta, data_meta
     else:
+        # Deprecated, should not be used
         model_meta.update(train_meta)
         model_meta.update(data_meta)
-        return model_meta
+        return model_meta  # type: ignore
+
+
+def read_config_yaml_global(filename: str) -> Dict[str, Any]:
+    model, train, data = read_config_yaml(filename)
+    model.update(train)
+    model.update(data)
+    return model
 
 
 def main():

@@ -22,7 +22,7 @@ class SelfConnectionIntro(nn.Module):
         data_key_operand: str = KEY.NODE_ATTR,
         lazy_layer_instantiate: bool = True,
         **kwargs,  # for compatibility
-    ):
+    ) -> None:
         super().__init__()
 
         self.fc_tensor_product = FullyConnectedTensorProduct(
@@ -43,7 +43,7 @@ class SelfConnectionIntro(nn.Module):
         if not lazy_layer_instantiate:
             self.instantiate()
 
-    def instantiate(self):
+    def instantiate(self) -> None:
         if self.fc_tensor_product is not None:
             raise ValueError('fc_tensor_product layer already exists')
         self.fc_tensor_product = self.fc_tensor_product_cls(
@@ -77,7 +77,7 @@ class SelfConnectionLinearIntro(nn.Module):
         data_key_x: str = KEY.NODE_FEATURE,
         lazy_layer_instantiate: bool = True,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__()
         self.irreps_in = irreps_in
         self.irreps_out = irreps_out
@@ -94,7 +94,7 @@ class SelfConnectionLinearIntro(nn.Module):
         if not lazy_layer_instantiate:
             self.instantiate()
 
-    def instantiate(self):
+    def instantiate(self) -> None:
         if self.linear is not None:
             raise ValueError('Linear layer already exists')
         self.linear = self.linear_cls(
@@ -118,7 +118,7 @@ class SelfConnectionOutro(nn.Module):
     def __init__(
         self,
         data_key_x: str = KEY.NODE_FEATURE,
-    ):
+    ) -> None:
         super().__init__()
         self.key_x = data_key_x
 

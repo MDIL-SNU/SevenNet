@@ -1,7 +1,7 @@
 import copy
 import warnings
 from collections import OrderedDict
-from typing import List, Literal, Union, overload
+from typing import Any, Dict, List, Literal, Tuple, Type, Union, overload
 
 from e3nn.o3 import Irreps
 
@@ -33,7 +33,7 @@ from .nn.sequential import AtomGraphSequential
 warnings.filterwarnings(
     'ignore',
     message=(
-        "The TorchScript type system doesn't " 'support instance-level annotations'
+        "The TorchScript type system doesn't support instance-level annotations"
     ),
 )
 
@@ -50,7 +50,7 @@ def _insert_after(module_name_after, key_module_pair, layers):
     return layers
 
 
-def init_self_connection(config):
+def init_self_connection(config: Dict[str, Any]) -> List[Tuple[Type, Type]]:
     self_connection_type_list = config[KEY.SELF_CONNECTION_TYPE]
     num_conv = config[KEY.NUM_CONVOLUTION]
     if isinstance(self_connection_type_list, str):
@@ -70,7 +70,7 @@ def init_self_connection(config):
     return io_pair_list
 
 
-def init_edge_embedding(config):
+def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
     _cutoff_param = {'cutoff_length': config[KEY.CUTOFF]}
     rbf, env, sph = None, None, None
 
@@ -98,7 +98,7 @@ def init_edge_embedding(config):
     return EdgeEmbedding(basis_module=rbf, cutoff_module=env, spherical_module=sph)
 
 
-def init_feature_reduce(config, irreps_x):
+def init_feature_reduce(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict:
     # features per node to scalar per node
     layers = OrderedDict()
     if config[KEY.READOUT_AS_FCN] is False:
@@ -138,7 +138,9 @@ def init_feature_reduce(config, irreps_x):
     return layers
 
 
-def init_shift_scale(config):
+def init_shift_scale(
+    config: Dict[str, Any],
+) -> Union[Rescale, SpeciesWiseRescale, ModalWiseRescale]:
     # for mm, ex, shift: modal_idx -> shifts
     shift_scale = []
     train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
@@ -179,7 +181,7 @@ def init_shift_scale(config):
     return rescale_module
 
 
-def patch_modality(layers: OrderedDict, config):
+def patch_modality(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     """
     Postprocess 7net-model to multimodal model.
     1. prepend modality one-hot embedding layer
@@ -227,7 +229,7 @@ def patch_modality(layers: OrderedDict, config):
     return layers
 
 
-def patch_cue(layers: OrderedDict, config):
+def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     import sevenn.nn.cue_helper as cue_helper
 
     cue_cfg = copy.deepcopy(config.get(KEY.CUEQUIVARIANCE_CONFIG, {}))
@@ -274,13 +276,15 @@ def patch_cue(layers: OrderedDict, config):
     return layers
 
 
-def patch_modules(layers: OrderedDict, config):
+def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
     layers = patch_cue(layers, config)
     return layers
 
 
-def _to_parallel_model(layers: OrderedDict, config):
+def _to_parallel_model(
+    layers: OrderedDict, config: Dict[str, Any]
+) -> List[OrderedDict]:
     num_classes = layers['onehot_idx_to_onehot'].num_classes
     one_hot_irreps = Irreps(f'{num_classes}x0e')
     irreps_node_zero = layers['onehot_to_feature_x'].irreps_out
@@ -519,7 +523,7 @@ def build_E3_equivariant_model(
         layers.update(interaction_builder(**param_interaction_block))
         irreps_x = irreps_out
 
-    layers.update(init_feature_reduce(config, irreps_x))
+    layers.update(init_feature_reduce(config, irreps_x))  # type: ignore
 
     layers.update(
         {

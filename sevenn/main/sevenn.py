@@ -87,9 +87,7 @@ def run(args):
             )
 
         try:
-            model_config, train_config, data_config = read_config_yaml(
-                input_yaml, return_separately=True
-            )
+            model_config, train_config, data_config = read_config_yaml(input_yaml)
         except Exception as e:
             logger.writeline('Failed to parsing input.yaml')
             logger.error(e)

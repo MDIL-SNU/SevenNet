@@ -8,6 +8,7 @@ import numpy as np
 import torch
 import torch.jit
 import torch.jit._script
+from ase.atoms import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 from ase.calculators.mixing import SumCalculator
 from ase.data import chemical_symbols
@@ -39,7 +40,7 @@ class SevenNetCalculator(Calculator):
         enable_cueq: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
-    ):
+    ) -> None:
         """Initialize SevenNetCalculator.
 
         Parameters
@@ -163,7 +164,7 @@ class SevenNetCalculator(Calculator):
             'energies',
         ]
 
-    def set_atoms(self, atoms):
+    def set_atoms(self, atoms: Atoms) -> None:
         # called by ase, when atoms.calc = calc
         zs = tuple(set(atoms.get_atomic_numbers()))
         for z in zs:
@@ -173,7 +174,7 @@ class SevenNetCalculator(Calculator):
                     f'Model do not know atomic number: {z}, (knows: {sp})'
                 )
 
-    def output_to_results(self, output):
+    def output_to_results(self, output: Dict[str, torch.Tensor]) -> Dict[str, Any]:
         energy = output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item()
         num_atoms = output['num_atoms'].item()
         atomic_energies = output[KEY.ATOMIC_ENERGY].detach().cpu().numpy().flatten()
@@ -233,7 +234,7 @@ class SevenNetD3Calculator(SumCalculator):
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
         **kwargs,
-    ):
+    ) -> None:
         """Initialize SevenNetD3Calculator. CUDA required.
 
         Parameters
@@ -351,7 +352,7 @@ class D3Calculator(Calculator):
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(**kwargs)
 
         if not torch.cuda.is_available():

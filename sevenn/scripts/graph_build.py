@@ -14,7 +14,7 @@ def build_sevennet_graph_dataset(
     filename: str,
     metadata: Optional[dict] = None,
     **fmt_kwargs,
-):
+) -> None:
     from sevenn.train.graph_dataset import SevenNetGraphDataset
 
     log = Logger()

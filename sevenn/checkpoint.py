@@ -4,9 +4,10 @@ import uuid
 import warnings
 from copy import deepcopy
 from datetime import datetime
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
+from ase.atoms import Atoms
 from packaging.version import Version
 from torch import Tensor
 from torch import load as torch_load
@@ -20,7 +21,9 @@ from sevenn.nn.scale import get_resolved_shift_scale
 from sevenn.nn.sequential import AtomGraphSequential
 
 
-def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
+def assert_atoms(
+    atoms1: Atoms, atoms2: Atoms, rtol: float = 1e-5, atol: float = 1e-6
+) -> None:
     import numpy as np
 
     def acl(a, b, rtol=rtol, atol=atol):
@@ -39,7 +42,9 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
     # assert acl(atoms1.get_potential_energies(), atoms2.get_potential_energies())
 
 
-def copy_state_dict(state_dict) -> dict:
+def copy_state_dict(
+    state_dict: Union[Dict[str, Any], List[Any], Tensor],
+) -> Dict[str, Any]:
     if isinstance(state_dict, dict):
         return {key: copy_state_dict(value) for key, value in state_dict.items()}
     elif isinstance(state_dict, list):
@@ -55,8 +60,10 @@ def _config_cp_routine(config):
     cp_ver = Version(config.get('version', None))
     this_ver = Version(sevenn.__version__)
     if cp_ver > this_ver:
-        warnings.warn(f'The checkpoint version ({cp_ver}) is newer than this source'
-                      f'({this_ver}). This may cause unexpected behaviors')
+        warnings.warn(
+            f'The checkpoint version ({cp_ver}) is newer than this source'
+            f'({this_ver}). This may cause unexpected behaviors'
+        )
 
     defaults = {**consts.model_defaults(config)}
     config = compat.patch_old_config(config)  # type: ignore
@@ -177,7 +184,7 @@ class SevenNetCheckpoint:
     Tool box for checkpoint processed from SevenNet.
     """
 
-    def __init__(self, checkpoint_path: Union[pathlib.Path, str]):
+    def __init__(self, checkpoint_path: Union[pathlib.Path, str]) -> None:
         self._checkpoint_path = os.path.abspath(checkpoint_path)
         self._config = None
         self._epoch = None
@@ -322,7 +329,7 @@ class SevenNetCheckpoint:
         assert len(missing) == 0, f'Missing keys: {missing}'
         return model
 
-    def yaml_dict(self, mode: str) -> dict:
+    def yaml_dict(self, mode: str) -> Dict[str, Any]:
         """
         Return dict for input.yaml from checkpoint config
         Dataset paths and statistic values are removed intentionally
@@ -410,10 +417,10 @@ class SevenNetCheckpoint:
 
     def append_modal(
         self,
-        dst_config,
+        dst_config: Dict[str, Any],
         original_modal_name: str = 'origin',
         working_dir: str = os.getcwd(),
-    ):
+    ) -> Dict[str, Any]:
         """ """
         import sevenn.train.modal_dataset as modal_dataset
         from sevenn.model_build import init_shift_scale
@@ -536,7 +543,7 @@ class SevenNetCheckpoint:
 
         return new_state_dict
 
-    def get_checkpoint_dict(self) -> dict:
+    def get_checkpoint_dict(self) -> Dict[str, Any]:
         """
         Return duplicate of this checkpoint with new hash and time.
         Convenient for creating variant of the checkpoint

@@ -1,6 +1,6 @@
 import itertools
 import warnings
-from typing import Iterator, Literal, Union
+from typing import Any, Callable, Dict, Iterator, Literal, Union
 
 import e3nn.o3 as o3
 import numpy as np
@@ -52,11 +52,11 @@ except ImportError:
     _CUE_AVAILABLE = False
 
 
-def is_cue_available():
+def is_cue_available() -> bool:
     return _CUE_AVAILABLE
 
 
-def cue_needed(func):
+def cue_needed(func: Callable) -> Callable:
     def wrapper(*args, **kwargs):
         if is_cue_available():
             return func(*args, **kwargs)
@@ -66,14 +66,14 @@ def cue_needed(func):
     return wrapper
 
 
-def _check_may_not_compatible(orig_kwargs, defaults):
+def _check_may_not_compatible(orig_kwargs, defaults) -> None:
     for k, v in defaults.items():
         v_given = orig_kwargs.pop(k, v)
         if v_given != v:
             warnings.warn(f'{k}: {v} is ignored to use cuEquivariance')
 
 
-def is_cue_cuda_available_model(config):
+def is_cue_cuda_available_model(config: Dict[str, Any]) -> bool:
     if config.get('use_bias_in_linear', False):
         warnings.warn('Bias in linear can not be used with cueq, fallback to e3nn')
         return False
@@ -98,7 +98,7 @@ def patch_linear(
     module: Union[IrrepsLinear, SelfConnectionLinearIntro],
     group: Literal['SO3', 'O3'],
     **cue_kwargs,
-):
+) -> Union[IrrepsLinear, SelfConnectionLinearIntro]:
     assert not module.layer_instantiated
 
     module.irreps_in = as_cue_irreps(module.irreps_in, group)  # type: ignore
@@ -127,7 +127,7 @@ def patch_convolution(
     module: IrrepsConvolution,
     group: Literal['SO3', 'O3'],
     **cue_kwargs,
-):
+) -> IrrepsConvolution:
     assert not module.layer_instantiated
 
     # conv_kwargs will be patched in place
@@ -168,7 +168,7 @@ def patch_fully_connected(
     module: SelfConnectionIntro,
     group: Literal['SO3', 'O3'],
     **cue_kwargs,
-):
+) -> SelfConnectionIntro:
     assert not module.layer_instantiated
 
     module.irreps_in1 = as_cue_irreps(module.irreps_in1, group)  # type: ignore

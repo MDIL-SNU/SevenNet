@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import torch
 import torch_geometric.data
@@ -33,7 +33,7 @@ class AtomGraphData(torch_geometric.data.Data):
         pos: Optional[torch.Tensor] = None,
         edge_attr: Optional[torch.Tensor] = None,
         **kwargs
-    ):
+    ) -> None:
         super(AtomGraphData, self).__init__(x, edge_index, edge_attr, pos=pos)
         self[KEY.NODE_ATTR] = x  # ?
         for k, v in kwargs.items():
@@ -47,7 +47,7 @@ class AtomGraphData(torch_geometric.data.Data):
         }
         return dct
 
-    def fit_dimension(self):
+    def fit_dimension(self) -> 'AtomGraphData':
         per_atom_keys = [
             KEY.ATOMIC_NUMBERS,
             KEY.ATOMIC_ENERGY,
@@ -66,7 +66,7 @@ class AtomGraphData(torch_geometric.data.Data):
         return self
 
     @staticmethod
-    def from_numpy_dict(dct):
+    def from_numpy_dict(dct: Dict[str, Any]) -> 'AtomGraphData':
         for k, v in dct.items():
             if k == KEY.CELL_SHIFT:
                 dct[k] = torch.Tensor(v)  # this is special

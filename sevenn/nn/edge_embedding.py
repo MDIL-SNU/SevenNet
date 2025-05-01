@@ -16,7 +16,7 @@ class EdgePreprocess(nn.Module):
     currently used in sevenn/scripts/deploy for lammps serial model
     """
 
-    def __init__(self, is_stress: bool):
+    def __init__(self, is_stress: bool) -> None:
         super().__init__()
         # controlled by 'AtomGraphSequential'
         self.is_stress = is_stress
@@ -88,7 +88,7 @@ class BesselBasis(nn.Module):
         cutoff_length: float,
         bessel_basis_num: int = 8,
         trainable_coeff: bool = True,
-    ):
+    ) -> None:
         super().__init__()
         self.num_basis = bessel_basis_num
         self.prefactor = 2.0 / cutoff_length
@@ -113,7 +113,7 @@ class PolynomialCutoff(nn.Module):
         self,
         cutoff_length: float,
         poly_cut_p_value: int = 6,
-    ):
+    ) -> None:
         super().__init__()
         p = poly_cut_p_value
         self.cutoff_length = cutoff_length
@@ -141,7 +141,7 @@ class XPLORCutoff(nn.Module):
         self,
         cutoff_length: float,
         cutoff_on: float,
-    ):
+    ) -> None:
         super().__init__()
         self.r_on = cutoff_on
         self.r_cut = cutoff_length
@@ -168,7 +168,7 @@ class SphericalEncoding(nn.Module):
         parity: int = -1,
         normalization: str = 'component',
         normalize: bool = True,
-    ):
+    ) -> None:
         super().__init__()
         self.lmax = lmax
         self.normalization = normalization
@@ -198,7 +198,7 @@ class EdgeEmbedding(nn.Module):
         basis_module: nn.Module,
         cutoff_module: nn.Module,
         spherical_module: nn.Module,
-    ):
+    ) -> None:
         super().__init__()
         self.basis_function = basis_module
         self.cutoff_function = cutoff_module

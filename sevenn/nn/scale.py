@@ -32,7 +32,7 @@ class Rescale(nn.Module):
         data_key_out: str = KEY.ATOMIC_ENERGY,
         train_shift_scale: bool = False,
         **kwargs,
-    ):
+    ) -> None:
         assert isinstance(shift, float) and isinstance(scale, float)
         super().__init__()
         self.shift = nn.Parameter(
@@ -72,7 +72,7 @@ class SpeciesWiseRescale(nn.Module):
         data_key_out: str = KEY.ATOMIC_ENERGY,
         data_key_indices: str = KEY.ATOM_TYPE,
         train_shift_scale: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         assert isinstance(shift, float) or isinstance(shift, list)
         assert isinstance(scale, float) or isinstance(scale, list)
@@ -130,7 +130,7 @@ class SpeciesWiseRescale(nn.Module):
         scale: Union[float, List[float]],
         type_map: Dict[int, int],
         **kwargs,
-    ):
+    ) -> 'SpeciesWiseRescale':
         """
         Fit dimensions or mapping raw shift scale values to that is valid under
         the given type_map: (atomic_numbers -> type_indices)
@@ -180,7 +180,7 @@ class ModalWiseRescale(nn.Module):
         use_modal_wise_shift: bool = False,
         use_modal_wise_scale: bool = False,
         train_shift_scale: bool = False,
-    ):
+    ) -> None:
         super().__init__()
         self.shift = nn.Parameter(
             torch.FloatTensor(shift), requires_grad=train_shift_scale
@@ -244,7 +244,7 @@ class ModalWiseRescale(nn.Module):
         type_map: Dict[int, int],
         modal_map: Dict[str, int],
         **kwargs,
-    ):
+    ) -> 'ModalWiseRescale':
         """
         Fit dimensions or mapping raw shift scale values to that is valid under
         the given type_map: (atomic_numbers -> type_indices)
