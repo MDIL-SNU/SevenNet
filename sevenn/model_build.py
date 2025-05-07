@@ -254,18 +254,25 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     cueq_module_params.update(cue_cfg)
     updates = {}
     for k, module in layers.items():
+        # TODO: based on benchmark on A100 GPU & cuEq 0.4.0. (250307)
         if isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
+            continue
+            """
             if k == 'reduce_hidden_to_energy':  # TODO: has bug with 0 shape
                 continue
             module_patched = cue_helper.patch_linear(
                 module, group, **cueq_module_params
             )
             updates[k] = module_patched
+            """
         elif isinstance(module, SelfConnectionIntro):
+            continue
+            """
             module_patched = cue_helper.patch_fully_connected(
                 module, group, **cueq_module_params
             )
             updates[k] = module_patched
+            """
         elif isinstance(module, IrrepsConvolution):
             module_patched = cue_helper.patch_convolution(
                 module, group, **cueq_module_params
