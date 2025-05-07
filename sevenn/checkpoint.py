@@ -101,12 +101,15 @@ def _convert_e3nn_and_cueq(stct_src, stct_dst, src_config, from_cueq):
     ]
     convolution_module_names = []
     fc_tensor_product_module_names = []
+    sc_types = src_config.get(KEY.SELF_CONNECTION_TYPE)
+    if isinstance(sc_types, str):
+        sc_types = [sc_types] * n_layer
     for i in range(n_layer):
         linear_module_names.append(f'{i}_self_interaction_1')
         linear_module_names.append(f'{i}_self_interaction_2')
-        if src_config.get(KEY.SELF_CONNECTION_TYPE) == 'linear':
+        if sc_types[i] == 'linear':
             linear_module_names.append(f'{i}_self_connection_intro')
-        elif src_config.get(KEY.SELF_CONNECTION_TYPE) == 'nequip':
+        elif sc_types[i] == 'nequip':
             fc_tensor_product_module_names.append(f'{i}_self_connection_intro')
         convolution_module_names.append(f'{i}_convolution')
 
