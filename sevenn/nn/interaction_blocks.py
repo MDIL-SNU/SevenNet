@@ -6,7 +6,7 @@ from torch.nn import Module
 
 import sevenn._keys as KEY
 
-from .convolution import IrrepsConvolution, FlashE3nnConv
+from .convolution import FlashE3nnConv, IrrepsConvolution
 from .equivariant_gate import EquivariantGate
 from .linear import IrrepsLinear
 
