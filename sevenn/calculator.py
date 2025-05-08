@@ -37,7 +37,8 @@ class SevenNetCalculator(Calculator):
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
         modal: Optional[str] = None,
-        enable_cueq: bool = False,
+        enable_cueq: Optional[bool] = None,
+        enable_flash: Optional[bool] = None,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
     ) -> None:
@@ -56,8 +57,10 @@ class SevenNetCalculator(Calculator):
             modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
             it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
             case insensitive
-        enable_cueq: bool, default=False
+        enable_cueq: bool, default=None (use the checkpoint's backend)
             if True, use cuEquivariant to accelerate inference.
+        enable_flash: bool, default=None (use the checkpoint's backend)
+            if True, use FlashTP to accelerate inference.
         sevennet_config: dict | None, default=None
             Not used, but can be used to carry meta information of this calculator
         """
@@ -71,6 +74,13 @@ class SevenNetCalculator(Calculator):
         file_type = file_type.lower()
         if file_type not in allowed_file_types:
             raise ValueError(f'file_type not in {allowed_file_types}')
+
+        enable_cueq = os.getenv("SEVENNET_ENABLE_CUEQ") == "1" or enable_cueq
+        enable_flash = os.getenv("SEVENNET_ENABLE_FLASH") == "1" or enable_flash
+        print("cueq")
+        print(enable_cueq)
+        print("flash")
+        print(enable_flash)
 
         if enable_cueq and file_type in ['model_instance', 'torchscript']:
             warnings.warn(
@@ -91,8 +101,9 @@ class SevenNetCalculator(Calculator):
         if file_type == 'checkpoint' and isinstance(model, str):
             cp = util.load_checkpoint(model)
 
-            backend = 'e3nn' if not enable_cueq else 'cueq'
-            model_loaded = cp.build_model(backend)
+            model_loaded = cp.build_model(
+                enable_cueq=enable_cueq, enable_flash=enable_flash
+            )
             model_loaded.set_is_batch_data(False)
 
             self.type_map = cp.config[KEY.TYPE_MAP]
