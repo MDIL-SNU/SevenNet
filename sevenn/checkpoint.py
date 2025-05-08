@@ -327,7 +327,8 @@ class SevenNetCheckpoint:
 
         missing, not_used = model.load_state_dict(state_dict, strict=False)
         if len(not_used) > 0:
-            warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
+            pass
+            # warnings.warn(f'Some keys are not used: {not_used}', UserWarning)
 
         assert len(missing) == 0, f'Missing keys: {missing}'
         return model
