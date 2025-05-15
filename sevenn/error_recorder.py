@@ -1,5 +1,14 @@
 from copy import deepcopy
-from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Callable,
+    Dict,
+    List,
+    Optional,
+    Tuple,
+    Union,
+)
 
 import torch
 import torch.distributed as dist
@@ -7,8 +16,10 @@ import torch.distributed as dist
 import sevenn._keys as KEY
 from sevenn.train.loss import LossDefinition
 
-from .atom_graph_data import AtomGraphData
 from .train.optim import loss_dict
+
+if TYPE_CHECKING:
+    from .atom_graph_data import AtomGraphData
 
 _ERROR_TYPES = {
     'TotalEnergy': {
@@ -116,10 +127,12 @@ class ErrorMetric:
         self.ignore_unlabeled = ignore_unlabeled
         self.value = AverageNumber()
 
-    def update(self, output: AtomGraphData) -> None:
+    def update(self, output: 'AtomGraphData') -> None:
         raise NotImplementedError
 
-    def _retrieve(self, output: AtomGraphData) -> Tuple[torch.Tensor, torch.Tensor]:
+    def _retrieve(
+        self, output: 'AtomGraphData'
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
         y_ref = output[self.ref_key] * self.coeff
         y_pred = output[self.pred_key] * self.coeff
         if self.per_atom:
@@ -167,7 +180,7 @@ class RMSError(ErrorMetric):
     ) -> torch.Tensor:
         return self._se(y_ref.view(-1, vdim), y_pred.view(-1, vdim)).sum(dim=1)
 
-    def update(self, output: AtomGraphData) -> None:
+    def update(self, output: 'AtomGraphData') -> None:
         y_ref, y_pred = self._retrieve(output)
         se = self._square_error(y_ref, y_pred, self.vdim)
         self.value.update(se)
@@ -191,7 +204,7 @@ class ComponentRMSError(ErrorMetric):
     ) -> torch.Tensor:
         return self._se(y_ref, y_pred)
 
-    def update(self, output: AtomGraphData) -> None:
+    def update(self, output: 'AtomGraphData') -> None:
         y_ref, y_pred = self._retrieve(output)
         y_ref = y_ref.view(-1)
         y_pred = y_pred.view(-1)
@@ -215,7 +228,7 @@ class MAError(ErrorMetric):
     ) -> torch.Tensor:
         return torch.abs(y_ref - y_pred)
 
-    def update(self, output: AtomGraphData) -> None:
+    def update(self, output: 'AtomGraphData') -> None:
         y_ref, y_pred = self._retrieve(output)
         y_ref = y_ref.reshape((-1,))
         y_pred = y_pred.reshape((-1,))
@@ -235,7 +248,7 @@ class CustomError(ErrorMetric):
         super().__init__(**kwargs)
         self.func = func
 
-    def update(self, output: AtomGraphData) -> None:
+    def update(self, output: 'AtomGraphData') -> None:
         y_ref, y_pred = self._retrieve(output)
         se = self.func(y_ref, y_pred) if len(y_ref) > 0 else torch.tensor([])
         self.value.update(se)
@@ -259,7 +272,7 @@ class LossError(ErrorMetric):
         )
         self.loss_def = loss_def
 
-    def update(self, output: AtomGraphData) -> None:
+    def update(self, output: 'AtomGraphData') -> None:
         loss = self.loss_def.get_loss(output)  # type: ignore
         self.value.update(loss)  # type: ignore
 
@@ -275,7 +288,7 @@ class CombinedError(ErrorMetric):
         self.metrics = metrics
         assert kwargs['unit'] is None
 
-    def update(self, output: AtomGraphData) -> None:
+    def update(self, output: 'AtomGraphData') -> None:
         for metric, _ in self.metrics:
             metric.update(output)
 
@@ -310,11 +323,11 @@ class ErrorRecorder:
         self.history = []
         self.metrics = metrics
 
-    def _update(self, output: AtomGraphData) -> None:
+    def _update(self, output: 'AtomGraphData') -> None:
         for metric in self.metrics:
             metric.update(output)
 
-    def update(self, output: AtomGraphData, no_grad=True) -> None:
+    def update(self, output: 'AtomGraphData', no_grad=True) -> None:
         if no_grad:
             with torch.no_grad():
                 self._update(output)

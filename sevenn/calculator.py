@@ -196,19 +196,21 @@ class SevenNetCalculator(Calculator):
         }
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
+        is_ts_type = isinstance(self.model, torch_script_type)
+
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
         if atoms is None:
             raise ValueError('No atoms to evaluate')
         data = AtomGraphData.from_numpy_dict(
-            unlabeled_atoms_to_graph(atoms, self.cutoff)
+            unlabeled_atoms_to_graph(atoms, self.cutoff, with_shift=is_ts_type)
         )
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
 
         data.to(self.device)  # type: ignore
 
-        if isinstance(self.model, torch_script_type):
+        if is_ts_type:
             data[KEY.NODE_FEATURE] = torch.tensor(
                 [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]],
                 dtype=torch.int64,
