@@ -16,9 +16,12 @@ inference, train, etc
 - pre-commit uses python3.11
 - cuequivaraiance optional libraries
 - some gitignores
+- assign cell volume 0 instead of eps for non-pbc system
+- remove redundant CELL and CELL_SHIFT
 
 ### Fixed
 - Circular import in sevenn.checkpoint (dev0)
+- Circular import in error_recorder
 - Fix typing issues
 - Added missing typings (especially return type)
 
