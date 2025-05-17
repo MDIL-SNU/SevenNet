@@ -347,7 +347,7 @@ It is expected that there is one GPU per MPI process. If the number of available
 > Currently, the parallel version encounters an error when one of the subdomain cells contains no atoms. This issue can be addressed using the `processors` command and, more effectively, the `fix balance` command in LAMMPS. A patch for this issue will be released in a future update.
 
 ### Application of SevenNet-0
-If you are interested in practical applications of SevenNet, please refer to [this paper](https://arxiv.org/abs/2501.05211) (data available on [Zenodo](https://doi.org/10.5281/zenodo.15205477)).
+If you are interested in practical applications of SevenNet, you may want to check [this paper](https://pubs.rsc.org/en/content/articlehtml/2025/dd/d5dd00025d) (data available on [Zenodo](https://doi.org/10.5281/zenodo.15205477)).
 This study utilized SevenNet-0 for simulating liquid electrolytes.
 
 The fine-tuning procedure and associated input files are accessible through the links above, specifically within the `Fine-tuning.tar.xz` archive on Zenodo.
