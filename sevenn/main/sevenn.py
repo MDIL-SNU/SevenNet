@@ -144,7 +144,7 @@ def cmd_parser_train(parser):
     ag.add_argument(
         '-cueq',
         '--enable_cueq',
-        help='(Not stable!) use cuEquivariance for training',
+        help='use cuEq accelerations for training',
         action='store_true',
     )
     ag.add_argument(
