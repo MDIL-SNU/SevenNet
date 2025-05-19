@@ -73,6 +73,7 @@ train:
         checkpoint: '7net-0'  # fine-tuning from 7net-0
         reset_optimizer: True
         reset_scheduler: True
+        reset_epoch: True
 
 data:
     batch_size: 1   # our fine-tuning dataset had ~360 atoms per structure, so we used batch size of 1 to avoid GPU OOM error.
