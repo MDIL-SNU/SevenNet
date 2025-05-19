@@ -238,6 +238,16 @@ def main():
 
     if args.command == 'train':
         run(args)
+    elif args.command in ['checkpoint', 'cp']:
+        checkpoint_cmd.run(args)
+    elif args.command in ['get_model', 'deploy']:
+        get_model_cmd.run(args)
+    elif args.command == 'graph_build':
+        graph_build_cmd.run(args)
+    elif args.command in ['inference', 'inf']:
+        inference_cmd.run(args)
+    elif args.command == 'patch_lammps':
+        patch_lammps_cmd.run(args)
     elif args.command == 'preset':
         preset_cmd.run(args)
 
