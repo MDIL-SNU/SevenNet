@@ -8,6 +8,9 @@ SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural networ
 > [!NOTE]
 > We will soon release a CUDA-accelerated version of SevenNet, which will significantly increase the speed of our pretrained models on [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
+> [!TIP]
+> SevenNet supports NVIDIA's [cuEquivariance](https://github.com/NVIDIA/cuEquivariance) for acceleartion. In our benchmarks, we found that the cuEquivariance improves inference speed by a factor of three for the SevenNet-MF-ompa potential. See [Installation](#installation) for details.
+
 ## Features
  - Pretrained GNN interatomic potential and fine-tuning interface
  - Support for the Python [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator
@@ -108,6 +111,7 @@ You can find our legacy models in [pretrained_potentials](./sevenn/pretrained_po
 ### Requirements
 - Python >= 3.8
 - PyTorch >= 2.0.0, PyTorch =< 2.5.2
+- [Optional] cuEquivariance >= 0.4.0
 
 For CUDA version, refer to PyTorch's compatibility matrix: https://github.com/pytorch/pytorch/blob/main/RELEASE.md#release-compatibility-matrix
 
@@ -119,7 +123,12 @@ Once PyTorch is successfully installed, please run the following command:
 pip install sevenn
 pip install git+https://github.com/MDIL-SNU/SevenNet.git # for the latest main branch
 ```
-We strongly recommend checking `CHANGELOG.md` for new features and changes, as SevenNet is under active development.
+
+For cuEquivariance
+```bash
+pip install sevenn --extra cueq12  # cueq11 for CUDA version 11.*
+```
+The cuEquivariance can be enabled using `--enable_cueq` when training with `sevenn` via command line, and by setting `enable_cueq=True` in the `SevenNetCalculator`.
 
 ## Usage<a name="usage"></a>
 ### ASE calculator<a name="ase_calculator"></a>
