@@ -156,7 +156,7 @@ Additionally, user-trained models can be applied with the ASE calculator. In thi
 
 ### Training and inference
 
-SevenNet provides five commands for preprocessing, training, and deployment: `sevenn preset`, `sevenn graph_build`, `sevenn`, `sevenn inference`, and `sevenn get_model`.
+SevenNet provides five commands for preprocessing, training, and deployment: `sevenn_preset`, `sevenn_graph_build`, `sevenn`, `sevenn_inference`, and `sevenn_get_model`.
 
 #### 1. Input generation
 
