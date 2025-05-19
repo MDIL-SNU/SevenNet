@@ -160,7 +160,7 @@ SevenNet provides five commands for preprocessing, training, and deployment: `se
 
 #### 1. Input generation
 
-With the `sevenn preset` command, the input file setting the training parameters is generated automatically.
+With the `sevenn_preset` command, the input file setting the training parameters is generated automatically.
 ```bash
 sevenn_preset {preset keyword} > input.yaml
 ```
@@ -171,17 +171,17 @@ To reuse a preprocessed training set, you can specify `sevenn_data/${dataset_nam
 
 #### 2. Preprocess (optional)
 
-To obtain the preprocessed data, `sevenn_data/graph.pt`, `sevenn graph_build` command can be used.
+To obtain the preprocessed data, `sevenn_data/graph.pt`, `sevenn_graph_build` command can be used.
 The output files can be used for training (`sevenn`) or inference (`sevenn_inference`) to skip the graph build stage.
 
 ```bash
-sevenn graph_build {dataset path} {cutoff radius}
+sevenn_graph_build {dataset path} {cutoff radius}
 ```
 
 The output `sevenn_data/graph.yaml` contains statistics and meta information about the dataset.
 These files must be located in the `sevenn_data` directory. If you move the dataset, move the entire `sevenn_data` directory without changing the contents.
 
-See `sevenn graph_build --help` for more information.
+See `sevenn_graph_build --help` for more information.
 
 #### 3. Training
 
@@ -204,19 +204,19 @@ Please note that `batch_size` in `input.yaml` refers to the per-GPU batch size.
 Using the checkpoint after training, the properties such as energy, force, and stress can be inferred directly.
 
 ```bash
-sevenn inference checkpoint_best.pth path_to_my_structures/*
+sevenn_inference checkpoint_best.pth path_to_my_structures/*
 ```
 
 This will create the `sevenn_infer_result` directory, where CSV files contain predicted energy, force, stress, and their references (if available).
-See `sevenn inference --help` for more information.
+See `sevenn_inference --help` for more information.
 
 #### 5. Deployment<a name="deployment"></a>
 
 The checkpoint can be deployed as LAMMPS potentials. The argument is either the path to the checkpoint or the name of a pretrained potential.
 
 ```bash
-sevenn get_model 7net-0  # For pre-trained models
-sevenn get_model {checkpoint path}  # For user-trained models
+sevenn_get_model 7net-0  # For pre-trained models
+sevenn_get_model {checkpoint path}  # For user-trained models
 ```
 
 This will create `deployed_serial.pt`, which can be used as a LAMMPS potential with the `e3gnn` pair_style in LAMMPS.
@@ -224,8 +224,8 @@ This will create `deployed_serial.pt`, which can be used as a LAMMPS potential w
 The potential for parallel MD simulation can be obtained similarly.
 
 ```bash
-sevenn get_model 7net-0 -p
-sevenn get_model {checkpoint path} -p
+sevenn_get_model 7net-0 -p
+sevenn_get_model {checkpoint path} -p
 ```
 
 This will create a directory with several `deployed_parallel_*.pt` files. The directory path itself is an argument for the LAMMPS script. Please do not modify or remove files in the directory.
