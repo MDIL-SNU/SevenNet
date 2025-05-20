@@ -180,13 +180,14 @@ def add_parser(subparsers):
     cmd_parser_train(ag)
 
 
-def set_default_subparser(self, name, args=None, positional_args=0):
+def set_default_subparser(self, name):
     """default subparser selection. Call after setup, just before parse_args()
     name: is the name of the subparser to call by default
     args: if set is the argument list handed to parse_args()
 
     Hack copied from stack overflow
     """
+
     subparser_found = False
     for arg in sys.argv[1:]:
         if arg in ['-h', '--help']:  # global help if no subparser
@@ -199,13 +200,8 @@ def set_default_subparser(self, name, args=None, positional_args=0):
                 if sp_name in sys.argv[1:]:
                     subparser_found = True
         if not subparser_found:
-            # insert default in last position before global positional
-            # arguments, this implies no global options are specified after
-            # first positional argument
-            if args is None:
-                sys.argv.insert(len(sys.argv) - positional_args, name)
-            else:
-                args.insert(len(args) - positional_args, name)
+            # we don't have global option except -h. So simply put 'train' to 1
+            sys.argv.insert(1, name)
 
 
 argparse.ArgumentParser.set_default_subparser = set_default_subparser  # type: ignore
@@ -232,9 +228,6 @@ def main():
 
     ag.set_default_subparser('train')  # type: ignore
     args = ag.parse_args()
-
-    if args.command is None:  # backward compatibility
-        args.command = 'train'
 
     if args.command == 'train':
         run(args)
