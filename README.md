@@ -50,7 +50,12 @@ When using the command-line interface of SevenNet, include the `--modal mpa` or 
 #### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
-|**0.883**|**0.901**|0.317| **0.0115** |
+|**0.845**|**0.901**|0.317| **0.064** |
+
+**Maximum Atoms Supported**
+
+~ **1,000 atoms** (Bulk / ASE `SevenNetCalculator` / single 24GB VRAM GPU) \
+※ This number is approximate and may vary depending on your specific GPU memory (VRAM) capacity and execution environment (e.g., calculation with LAMMPS, multi-GPU...).
 
 [Detailed instructions for multi-fidelity learning](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md)
 
@@ -66,6 +71,11 @@ When using the command-line interface of SevenNet, include the `--modal mpa` or 
 
 #### **Matbench Discovery**
 * $\kappa_{\mathrm{SRME}}$: **0.221**
+
+#### **Maximum Atoms Supported**
+
+~ **1,600 atoms** (Bulk / ASE `SevenNetCalculator` / single 24GB VRAM GPU)
+
 ---
 ### **SevenNet-l3i5 (12Dec2024)**
 > Model keywords: `7net-l3i5` | `SevenNet-l3i5`
@@ -75,7 +85,11 @@ This model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) 
 #### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
-|0.764 |0.76|0.55|0.0182|
+|0.714 |0.760|0.550|0.085|
+
+#### **Maximum Atoms Supported**
+
+~ **2,800 atoms** (Bulk / ASE `SevenNetCalculator` / single 24GB VRAM GPU)
 
 ---
 
@@ -90,8 +104,11 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 |:---:|:---:|
 |0.67|0.767|
 
----
+#### **Maximum Atoms Supported**
 
+~ **6,500 atoms** (Bulk / ASE `SevenNetCalculator` / single 24GB VRAM GPU)
+
+---
 You can find our legacy models in [pretrained_potentials](./sevenn/pretrained_potentials).
 
 ## Contents
