@@ -125,7 +125,7 @@ pip install git+https://github.com/MDIL-SNU/SevenNet.git # for the latest main b
 
 For cuEquivariance
 ```bash
-pip install sevenn --extra cueq12  # cueq11 for CUDA version 11.*
+pip install sevenn[cueq12]  # cueq11 for CUDA version 11.*
 ```
 The cuEquivariance can be enabled using `--enable_cueq` when training with `sevenn` via command line, and by setting `enable_cueq=True` in the `SevenNetCalculator`.
 Note that you need Python version >= 3.10 to use cuEquivariance.
