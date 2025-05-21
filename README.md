@@ -46,16 +46,10 @@ calc = SevenNetCalculator('7net-mf-ompa', modal='mpa')  # Use modal='omat24' for
 
 When using the command-line interface of SevenNet, include the `--modal mpa` or `--modal omat24` option to select the desired modality.
 
-
 #### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
 |**0.845**|**0.901**|0.317| **0.064** |
-
-**Maximum Atoms Supported**
-
-~ **1,000 atoms** (Bulk / ASE `SevenNetCalculator` / single 24GB VRAM GPU) \
-※ This number is approximate and may vary depending on your specific GPU memory (VRAM) capacity and execution environment (e.g., calculation with LAMMPS, multi-GPU...).
 
 [Detailed instructions for multi-fidelity learning](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md)
 
@@ -72,10 +66,6 @@ When using the command-line interface of SevenNet, include the `--modal mpa` or 
 #### **Matbench Discovery**
 * $\kappa_{\mathrm{SRME}}$: **0.221**
 
-#### **Maximum Atoms Supported**
-
-~ **1,600 atoms** (Bulk / ASE `SevenNetCalculator` / single 24GB VRAM GPU)
-
 ---
 ### **SevenNet-l3i5 (12Dec2024)**
 > Model keywords: `7net-l3i5` | `SevenNet-l3i5`
@@ -86,10 +76,6 @@ This model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) 
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
 |0.714 |0.760|0.550|0.085|
-
-#### **Maximum Atoms Supported**
-
-~ **2,800 atoms** (Bulk / ASE `SevenNetCalculator` / single 24GB VRAM GPU)
 
 ---
 
@@ -103,10 +89,6 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 | F1 | $\kappa_{\mathrm{SRME}}$ |
 |:---:|:---:|
 |0.67|0.767|
-
-#### **Maximum Atoms Supported**
-
-~ **6,500 atoms** (Bulk / ASE `SevenNetCalculator` / single 24GB VRAM GPU)
 
 ---
 You can find our legacy models in [pretrained_potentials](./sevenn/pretrained_potentials).
@@ -165,6 +147,16 @@ calc = SevenNetD3Calculator(model='7net-0', device='cuda')
 If you encounter the error `CUDA is not installed or nvcc is not available`, please ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
 
 Various pretrained SevenNet models can be accessed by setting the model variable to predefined keywords like `7net-mf-ompa`, `7net-omat`, `7net-l3i5`, and `7net-0`.
+
+The following table provides **approximate** maximum atom counts of **A100 GPU (80GB)** in a bulk system.
+| Model | Max atoms |
+|:---:|:---:|
+|7net-0|~ 21,500|
+|7net-l3i5|~ 9,300|
+|7net-omat|~ 5,300|
+|7net-mf-ompa|~ 3,300|
+
+Note that this value depends on the target system. The limitation can be overcome by leveraging multi-GPUs with LAMMPS.
 
 Additionally, user-trained models can be applied with the ASE calculator. In this case, the `model` parameter should be set to the checkpoint path from training.
 
