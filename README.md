@@ -155,8 +155,7 @@ The following table provides **approximate** maximum atom counts of **A100 GPU (
 |7net-l3i5|~ 9,300|
 |7net-omat|~ 5,300|
 |7net-mf-ompa|~ 3,300|
-
-Note that this value depends on the target system. The limitation can be overcome by leveraging multi-GPUs with LAMMPS.
+Note: These limits vary depending on the target system. To handle larger systems, multi-GPU parallelization using LAMMPS can be employed.
 
 Additionally, user-trained models can be applied with the ASE calculator. In this case, the `model` parameter should be set to the checkpoint path from training.
 
