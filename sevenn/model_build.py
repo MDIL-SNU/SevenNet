@@ -283,9 +283,30 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     return layers
 
 
+def patch_flash_tp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
+    import os
+
+    import sevenn.nn.flash_helper as flash_helper
+
+    if os.environ.get('FLASH', False):
+        config['use_flash_tp'] = True
+
+    if not config.get('use_flash_tp', False):
+        return layers
+
+    updates = {}
+    for k, module in layers.items():
+        if isinstance(module, IrrepsConvolution):
+            updates[k] = flash_helper.patch_convolution(module)
+
+    layers.update(updates)
+    return layers
+
+
 def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
     layers = patch_cue(layers, config)
+    layers = patch_flash_tp(layers, config)
     return layers
 
 

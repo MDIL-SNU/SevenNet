@@ -300,7 +300,7 @@ def load_checkpoint(checkpoint: Union[pathlib.Path, str]) -> 'SevenNetCheckpoint
             checkpoint_path = pretrained_name_to_path(str(checkpoint))
         except ValueError:
             raise ValueError(
-                f'Given {checkpoint} is not exists and not a pre-trained name.\n'
+                f'Given {checkpoint} does not exist.\n'
                 f'Valid pretrained model names: {suggests}'
             )
     return SevenNetCheckpoint(checkpoint_path)
