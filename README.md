@@ -8,6 +8,9 @@ SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural networ
 > [!NOTE]
 > We will soon release a CUDA-accelerated version of SevenNet, which will significantly increase the speed of our pretrained models on [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
+> [!TIP]
+> SevenNet supports NVIDIA's [cuEquivariance](https://github.com/NVIDIA/cuEquivariance) for acceleration. In our benchmarks, we found that the cuEquivariance improves inference speed by a factor of three for the SevenNet-MF-ompa potential. See [Installation](#installation) for details.
+
 ## Features
  - Pretrained GNN interatomic potential and fine-tuning interface
  - Support for the Python [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator
@@ -43,11 +46,10 @@ calc = SevenNetCalculator('7net-mf-ompa', modal='mpa')  # Use modal='omat24' for
 
 When using the command-line interface of SevenNet, include the `--modal mpa` or `--modal omat24` option to select the desired modality.
 
-
 #### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
-|**0.883**|**0.901**|0.317| **0.0115** |
+|**0.845**|**0.901**|0.317| **0.064** |
 
 [Detailed instructions for multi-fidelity learning](https://github.com/MDIL-SNU/SevenNet/blob/main/sevenn/pretrained_potentials/SevenNet_MF_0/README.md)
 
@@ -63,6 +65,7 @@ When using the command-line interface of SevenNet, include the `--modal mpa` or 
 
 #### **Matbench Discovery**
 * $\kappa_{\mathrm{SRME}}$: **0.221**
+
 ---
 ### **SevenNet-l3i5 (12Dec2024)**
 > Model keywords: `7net-l3i5` | `SevenNet-l3i5`
@@ -72,7 +75,7 @@ This model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) 
 #### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
-|0.764 |0.76|0.55|0.0182|
+|0.714 |0.760|0.550|0.085|
 
 ---
 
@@ -88,7 +91,6 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 |0.67|0.767|
 
 ---
-
 You can find our legacy models in [pretrained_potentials](./sevenn/pretrained_potentials).
 
 ## Contents
@@ -107,13 +109,10 @@ You can find our legacy models in [pretrained_potentials](./sevenn/pretrained_po
 ## Installation<a name="installation"></a>
 ### Requirements
 - Python >= 3.8
-- PyTorch >= 1.12.0
+- PyTorch >= 2.0.0, PyTorch =< 2.5.2
+- [Optional] cuEquivariance >= 0.4.0
 
-Here are the recommended versions we have been using internally without any issues.
-- PyTorch/2.2.2 + CUDA/12.1.0
-- PyTorch/1.13.1 + CUDA/12.1.0
-- PyTorch/1.12.0 + CUDA/11.6.2
-Using newer versions of CUDA with PyTorch is typically compatible. For example, you can compile and use `PyTorch/1.13.1+cu117` with `CUDA/12.1.0`.
+For CUDA version, refer to PyTorch's compatibility matrix: https://github.com/pytorch/pytorch/blob/main/RELEASE.md#release-compatibility-matrix
 
 > [!IMPORTANT]
 > Please install PyTorch manually based on your hardware before installing SevenNet.
@@ -123,15 +122,21 @@ Once PyTorch is successfully installed, please run the following command:
 pip install sevenn
 pip install git+https://github.com/MDIL-SNU/SevenNet.git # for the latest main branch
 ```
-We strongly recommend checking `CHANGELOG.md` for new features and changes, as SevenNet is under active development.
+
+For cuEquivariance
+```bash
+pip install sevenn[cueq12]  # cueq11 for CUDA version 11.*
+```
+The cuEquivariance can be enabled using `--enable_cueq` when training with `sevenn` via command line, and by setting `enable_cueq=True` in the `SevenNetCalculator`.
+Note that you need Python version >= 3.10 to use cuEquivariance.
 
 ## Usage<a name="usage"></a>
 ### ASE calculator<a name="ase_calculator"></a>
 
-For broader applications in atomistic simulations, SevenNet provides an ASE interface via the ASE calculator. Models can be loaded using the following Python code:
+SevenNet provides an ASE interface via the ASE calculator. Models can be loaded using the following Python code:
 ```python
 from sevenn.calculator import SevenNetCalculator
-# The 'modal' argument can be omitted if the model it is not multi-fidelity trained.
+# The 'modal' argument is required if the model is trained with multi-fidelity learning enabled.
 calc_mf_ompa = SevenNetCalculator(model='7net-mf-ompa', modal='mpa')
 ```
 SevenNet also supports CUDA-accelerated D3 calculations.
@@ -142,6 +147,16 @@ calc = SevenNetD3Calculator(model='7net-0', device='cuda')
 If you encounter the error `CUDA is not installed or nvcc is not available`, please ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
 
 Various pretrained SevenNet models can be accessed by setting the model variable to predefined keywords like `7net-mf-ompa`, `7net-omat`, `7net-l3i5`, and `7net-0`.
+
+The following table provides **approximate** maximum atom counts of **A100 GPU (80GB)** in a bulk system.
+| Model | Max atoms |
+|:---:|:---:|
+|7net-0|~ 21,500|
+|7net-l3i5|~ 9,300|
+|7net-omat|~ 5,300|
+|7net-mf-ompa|~ 3,300|
+
+Note: These limits vary depending on the target system. To handle larger systems, multi-GPU parallelization using LAMMPS can be employed.
 
 Additionally, user-trained models can be applied with the ASE calculator. In this case, the `model` parameter should be set to the checkpoint path from training.
 
@@ -191,7 +206,7 @@ We support multi-GPU training using PyTorch DDP (distributed data parallel) with
 torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
 ```
 
-Please note that `batch_size` in input.yaml is per GPU.
+Please note that `batch_size` in `input.yaml` refers to the per-GPU batch size.
 
 #### 4. Inference
 
@@ -209,13 +224,13 @@ See `sevenn_inference --help` for more information.
 The checkpoint can be deployed as LAMMPS potentials. The argument is either the path to the checkpoint or the name of a pretrained potential.
 
 ```bash
-sevenn_get_model 7net-0
-sevenn_get_model {checkpoint path}
+sevenn_get_model 7net-0  # For pre-trained models
+sevenn_get_model {checkpoint path}  # For user-trained models
 ```
 
 This will create `deployed_serial.pt`, which can be used as a LAMMPS potential with the `e3gnn` pair_style in LAMMPS.
 
-The potential for parallel MD simulation can be obtained in a similar way.
+The potential for parallel MD simulation can be obtained similarly.
 
 ```bash
 sevenn_get_model 7net-0 -p
@@ -246,7 +261,7 @@ git clone https://github.com/MDIL-SNU/sevennet_tutorial.git
 #### Installation
 
 ##### Requirements
-- PyTorch < 2.5.0 (same version as used for training)
+- PyTorch (it is recommended to use the same version as used during training)
 - LAMMPS version of `stable_2Aug2023_update3`
 - MKL library
 - [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD (optional)
@@ -351,7 +366,7 @@ It is expected that there is one GPU per MPI process. If the number of available
 > Currently, the parallel version encounters an error when one of the subdomain cells contains no atoms. This issue can be addressed using the `processors` command and, more effectively, the `fix balance` command in LAMMPS. A patch for this issue will be released in a future update.
 
 ### Application of SevenNet-0
-If you are interested in practical applications of SevenNet, please refer to [this paper](https://arxiv.org/abs/2501.05211) (data available on [Zenodo](https://zenodo.org/records/14734414)).
+If you are interested in practical applications of SevenNet, you may want to check [this paper](https://pubs.rsc.org/en/content/articlehtml/2025/dd/d5dd00025d) (data available on [Zenodo](https://doi.org/10.5281/zenodo.15205477)).
 This study utilized SevenNet-0 for simulating liquid electrolytes.
 
 The fine-tuning procedure and associated input files are accessible through the links above, specifically within the `Fine-tuning.tar.xz` archive on Zenodo.

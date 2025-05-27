@@ -79,12 +79,8 @@ def write_inference_csv(output_list, out):
         sfx_list = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']  # for stress
         writer = None
         for output in output_list:
-            cell_dct = {KEY.CELL: output[KEY.CELL]}
-            cell_dct = unfold_dct_val(cell_dct, [KEY.CELL], ['a', 'b', 'c'])
-            data = {
-                **unfold_dct_val(output, per_graph_keys, sfx_list),
-                **cell_dct,
-            }
+            data = unfold_dct_val(output, per_graph_keys, sfx_list)
+
             if writer is None:
                 writer = csv.DictWriter(f, fieldnames=data.keys())
                 writer.writeheader()
