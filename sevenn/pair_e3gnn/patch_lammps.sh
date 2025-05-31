@@ -117,8 +117,6 @@ EOF
 
 if [ "$flashTP_dir" != "NONE" ]; then
 
-echo "FFFFF"
-
 cat >> $lammps_root/cmake/CMakeLists.txt << "EOF"
 
 find_package(Python3 REQUIRED COMPONENTS Development)

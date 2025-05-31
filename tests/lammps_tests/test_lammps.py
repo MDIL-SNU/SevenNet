@@ -15,6 +15,7 @@ import sevenn
 from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.cue_helper import is_cue_available
+from sevenn.nn.flash_helper import is_flash_available
 from sevenn.scripts.deploy import deploy, deploy_parallel
 from sevenn.util import chemical_species_preprocess, pretrained_name_to_path
 
@@ -28,6 +29,7 @@ lmp_script_path = str(
 
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
 cp_0_path = str(data_root / 'checkpoints' / 'cp_0.pth')  # knows Hf, O
+cp_7net0_path = pretrained_name_to_path('7net-0')
 cp_mf_path = pretrained_name_to_path('7net-mf-0')
 
 
@@ -36,6 +38,14 @@ def serial_potential_path(tmp_path_factory):
     tmp = tmp_path_factory.mktemp('serial_potential')
     pot_path = str(tmp / 'deployed_serial.pt')
     deploy(cp_0_path, pot_path)
+    return pot_path
+
+
+@pytest.fixture(scope='module')
+def serial_potential_path_flash(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp('serial_potential_flash')
+    pot_path = str(tmp / 'deployed_serial.pt')
+    deploy(cp_7net0_path, pot_path, use_flash=True)
     return pot_path
 
 
@@ -66,6 +76,11 @@ def parallel_modal_potential_path(tmp_path_factory):
 @pytest.fixture(scope='module')
 def ref_calculator():
     return SevenNetCalculator(cp_0_path)
+
+
+@pytest.fixture(scope='module')
+def ref_7net0_calculator():
+    return SevenNetCalculator(cp_7net0_path)
 
 
 @pytest.fixture(scope='module')
@@ -295,6 +310,29 @@ def test_serial(system, serial_potential_path, ref_calculator, lammps_cmd, tmp_p
     )
     atoms.calc = ref_calculator
     assert_atoms(atoms, atoms_lammps)
+
+
+@pytest.mark.skipif(
+    not is_flash_available() or not torch.cuda.is_available(),
+    reason='flashTP or gpu is not available',
+)
+@pytest.mark.parametrize(
+    'system',
+    ['bulk', 'surface'],
+)
+def test_serial_flash(
+    system, serial_potential_path_flash, ref_7net0_calculator, lammps_cmd, tmp_path
+):
+    atoms = get_system(system)
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=serial_potential_path_flash,
+        wd=tmp_path,
+        test_name='serial lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lammps, atol=1e-5)
 
 
 @pytest.mark.parametrize(
