@@ -18,6 +18,7 @@ def deploy(
     checkpoint: Union[pathlib.Path, str],
     fname='deployed_serial.pt',
     modal: Optional[str] = None,
+    use_flash: bool = False,
 ) -> None:
     """
     This method is messy to avoid changes in pair_e3gnn.cpp, while
@@ -29,7 +30,11 @@ def deploy(
     from sevenn.nn.force_output import ForceStressOutput
 
     cp = load_checkpoint(checkpoint)
-    model, config = cp.build_model('e3nn'), cp.config
+    # TODO: LAMMPS integration for them
+    model, config = (
+        cp.build_model(enable_cueq=False, enable_flash=use_flash),
+        cp.config,
+    )
 
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
     grad_module = ForceStressOutput()
@@ -79,12 +84,16 @@ def deploy_parallel(
     checkpoint: Union[pathlib.Path, str],
     fname='deployed_parallel',
     modal: Optional[str] = None,
+    use_flash: bool = False,
 ) -> None:
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
     cp = load_checkpoint(checkpoint)
-    model, config = cp.build_model('e3nn'), cp.config
+    model, config = (
+        cp.build_model(enable_cueq=False, enable_flash=use_flash),
+        cp.config,
+    )
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
     model_state_dct = model.state_dict()
 
@@ -107,7 +116,7 @@ def deploy_parallel(
         if hasattr(model_part, 'eval_type_map'):
             setattr(model_part, 'eval_type_map', False)
         # Ensure all values are inserted
-        assert len(missing) == 0, missing
+        assert len(missing) == 0 or use_flash, missing
 
     if modal:
         model_list[0].prepare_modal_deploy(modal)

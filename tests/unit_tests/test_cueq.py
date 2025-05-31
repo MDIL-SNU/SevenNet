@@ -15,10 +15,7 @@ from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.sequential import AtomGraphSequential
-from sevenn.util import (
-    chemical_species_preprocess,
-    model_from_checkpoint_with_backend,
-)
+from sevenn.util import chemical_species_preprocess, model_from_checkpoint
 
 cutoff = 4.0
 
@@ -163,9 +160,8 @@ def test_checkpoint_convert(tmp_path, start_from_cueq):
         tmp_path / 'cp_from.pth',
     )
 
-    backend = 'e3nn' if start_from_cueq else 'cueq'
-    model_to, _ = model_from_checkpoint_with_backend(
-        str(tmp_path / 'cp_from.pth'), backend
+    model_to, _ = model_from_checkpoint(
+        str(tmp_path / 'cp_from.pth'), enable_cueq=(not start_from_cueq)
     )
     model_to.to('cuda')
 
@@ -213,9 +209,8 @@ def test_checkpoint_convert_no_batch(tmp_path, start_from_cueq):
         tmp_path / 'cp_from.pth',
     )
 
-    backend = 'e3nn' if start_from_cueq else 'cueq'
-    model_to, _ = model_from_checkpoint_with_backend(
-        str(tmp_path / 'cp_from.pth'), backend
+    model_to, _ = model_from_checkpoint(
+        str(tmp_path / 'cp_from.pth'), enable_cueq=(not start_from_cueq)
     )
     model_to.to('cuda')
 

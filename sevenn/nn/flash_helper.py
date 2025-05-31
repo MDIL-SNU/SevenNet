@@ -1,5 +1,7 @@
 from typing import Callable
 
+import torch.cuda
+
 from sevenn.nn.convolution import IrrepsConvolution
 
 try:
@@ -12,7 +14,7 @@ except ImportError:
 
 
 def is_flash_available() -> bool:
-    return _FLASH_AVAILABLE
+    return _FLASH_AVAILABLE and torch.cuda.is_available()
 
 
 def flash_needed(func: Callable) -> Callable:
@@ -20,18 +22,22 @@ def flash_needed(func: Callable) -> Callable:
         if is_flash_available():
             return func(*args, **kwargs)
         else:
-            raise ImportError('cue is not available')
+            raise ImportError('FlashTP is not available')
 
     return wrapper
 
 
 @flash_needed
 def patch_convolution(irreps_convolution: IrrepsConvolution):
+    from sevenn.nn.convolution import IrrepsScatterGatterFusedConvolution
 
     assert not irreps_convolution.layer_instantiated
 
-    irreps_convolution.convolution_cls = uvu_TP  # type: ignore
+    ret = IrrepsScatterGatterFusedConvolution.from_irreps_convolution(
+        irreps_convolution
+    )
+    ret.convolution_cls = uvu_TP  # type: ignore
+    del ret.convolution_kwargs['shared_weights']
+    del ret.convolution_kwargs['internal_weights']
 
-    del irreps_convolution.convolution_kwargs['shared_weights']
-    del irreps_convolution.convolution_kwargs['internal_weights']
-    return irreps_convolution
+    return ret

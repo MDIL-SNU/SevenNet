@@ -241,7 +241,7 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         warnings.warn(
             (
                 'cuEquivariance is requested, but the package is not installed. '
-                + 'Fallback to original code.'
+                + 'Fallback to e3nn.'
             )
         )
         return layers
@@ -284,14 +284,18 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
 
 
 def patch_flash_tp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
-    import os
-
     import sevenn.nn.flash_helper as flash_helper
 
-    if os.environ.get('FLASH', False):
-        config['use_flash_tp'] = True
-
     if not config.get('use_flash_tp', False):
+        return layers
+
+    if not flash_helper.is_flash_available():
+        warnings.warn(
+            (
+                'FlashTP is requested, but the package is not installed '
+                + 'or GPU not available. Fallback to e3nn.'
+            )
+        )
         return layers
 
     updates = {}
