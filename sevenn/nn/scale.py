@@ -153,11 +153,11 @@ class SpeciesWiseRescale(nn.Module):
         return SpeciesWiseRescale(shift, scale, **kwargs)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        indices = data[self.key_indices]
-        data[self.key_output] = data[self.key_input] * self.scale[indices].view(
-            -1, 1
-        ) + self.shift[indices].view(-1, 1)
+        indices = data[self.key_indices].view(-1)
+        scale = torch.index_select(self.scale, 0, indices).view(-1, 1)
+        shift = torch.index_select(self.shift, 0, indices).view(-1, 1)
 
+        data[self.key_output] = data[self.key_input] * scale + shift
         return data
 
 

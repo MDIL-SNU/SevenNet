@@ -35,7 +35,6 @@ class AtomGraphData(torch_geometric.data.Data):
         **kwargs
     ) -> None:
         super(AtomGraphData, self).__init__(x, edge_index, edge_attr, pos=pos)
-        self[KEY.NODE_ATTR] = x  # ?
         for k, v in kwargs.items():
             self[k] = v
 
