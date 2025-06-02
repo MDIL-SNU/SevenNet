@@ -83,7 +83,7 @@ class IrrepsLinear(nn.Module):
             )
         else:
             modality_onehot = data[self.key_modal_attr].expand(
-                len(data[self.key_input]), -1
+                data[self.key_input].size(0), -1
             )
             modality_onehot = modality_onehot.type(data[self.key_input].dtype)
             data[self.key_input] = torch.cat(

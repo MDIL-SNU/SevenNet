@@ -31,7 +31,7 @@ class _ModalInputPrepare(nn.Module):
         data[KEY.MODAL_TYPE] = torch.tensor(
             self.modal_idx,
             dtype=torch.int64,
-            device=data['x'].device,
+            device=data['edge_index'].device,  # any, but the one with never change
         )
         return data
 
@@ -60,7 +60,7 @@ class AtomGraphSequential(nn.Sequential):
         eval_type_map: bool = True,
         eval_modal_map: bool = False,
         data_key_atomic_numbers: str = KEY.ATOMIC_NUMBERS,
-        data_key_node_feature: str = KEY.NODE_FEATURE,
+        data_key_node_feature: str = KEY.ATOM_TYPE,
         data_key_grad: Optional[str] = None,
     ):
         if not isinstance(modules, OrderedDict):  # backward compat
