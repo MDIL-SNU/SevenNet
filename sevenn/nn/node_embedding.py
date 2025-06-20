@@ -7,10 +7,38 @@ from ase.symbols import symbols2numbers
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
-from sevenn._const import AtomGraphDataType
+from sevenn._const import NUM_UNIV_ELEMENT, AtomGraphDataType
 
 
-# TODO: put this to model_build and do not preprocess data by onehot
+@compile_mode('script')
+class NodeEmbedding(nn.Module):
+    def __init__(
+        self,
+        num_features: int,
+        num_classes: int = NUM_UNIV_ELEMENT,
+        data_key_in: str = KEY.ATOM_TYPE,
+        data_key_out: str = KEY.NODE_FEATURE,
+        data_key_addi: Optional[str] = None,
+    ) -> None:
+        super().__init__()
+        self.num_classes = num_classes
+        self.key_in = data_key_in
+        self.key_out = data_key_out
+        self.key_addi = data_key_addi
+
+        self.embedding = torch.nn.Embedding(
+            num_embeddings=self.num_classes, embedding_dim=num_features
+        )
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        inp: torch.Tensor = data[self.key_in].view(-1)
+        embedded = self.embedding(inp)
+        data[self.key_out] = embedded
+        if self.key_addi:
+            data[self.key_addi] = embedded
+        return data
+
+
 @compile_mode('script')
 class OnehotEmbedding(nn.Module):
     """
@@ -80,9 +108,7 @@ def one_hot_atom_embedding(
     """
     num_classes = len(type_map)
     try:
-        type_numbers = torch.LongTensor(
-            [type_map[num] for num in atomic_numbers]
-        )
+        type_numbers = torch.LongTensor([type_map[num] for num in atomic_numbers])
     except KeyError as e:
         raise ValueError(f'Atomic number {e.args[0]} is not expected')
     embd = torch.nn.functional.one_hot(type_numbers, num_classes)
