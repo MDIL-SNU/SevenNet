@@ -1,27 +1,26 @@
-from typing import Optional
+from typing import Any, Dict, List, Optional
 
 import torch.distributed as dist
+from torch.utils.data.dataset import Dataset
 from torch.utils.data.distributed import DistributedSampler
 from torch_geometric.loader import DataLoader
 
 import sevenn._keys as KEY
+from sevenn.logger import Logger
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.scripts.processing_continue import (
     convert_modality_of_checkpoint_state_dct,
 )
-from sevenn.sevenn_logger import Logger
 from sevenn.train.trainer import Trainer
 
 
-def loader_from_config(config, dataset, is_train=False):
+def loader_from_config(
+    config: Dict[str, Any], dataset: Dataset, is_train: bool = False
+) -> DataLoader:
     batch_size = config[KEY.BATCH_SIZE]
     shuffle = is_train and config[KEY.TRAIN_SHUFFLE]
     sampler = None
-    loader_args = {
-        'dataset': dataset,
-        'batch_size': batch_size,
-        'shuffle': shuffle
-    }
+    loader_args = {'dataset': dataset, 'batch_size': batch_size, 'shuffle': shuffle}
     if KEY.NUM_WORKERS in config and config[KEY.NUM_WORKERS] > 0:
         loader_args.update({'num_workers': config[KEY.NUM_WORKERS]})
 
@@ -35,7 +34,7 @@ def loader_from_config(config, dataset, is_train=False):
     return DataLoader(**loader_args)
 
 
-def train_v2(config, working_dir: str):
+def train_v2(config: Dict[str, Any], working_dir: str) -> None:
     """
     Main program flow, since v0.9.6
     """
@@ -58,7 +57,7 @@ def train_v2(config, working_dir: str):
 
     # config updated
     start_epoch = 1
-    state_dicts: Optional[list[dict]] = None
+    state_dicts: Optional[List[dict]] = None
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
         state_dicts, start_epoch = processing_continue_v2(config)
 
@@ -101,7 +100,7 @@ def train(config, working_dir: str):
     log.timer_start('total')
 
     # config updated
-    state_dicts: Optional[list[dict]] = None
+    state_dicts: Optional[List[dict]] = None
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
         state_dicts, start_epoch, init_csv = processing_continue(config)
     else:
@@ -123,9 +122,7 @@ def train(config, working_dir: str):
 
     trainer = Trainer.from_config(model, config)
     if state_dicts:
-        state_dicts = convert_modality_of_checkpoint_state_dct(
-            config, state_dicts
-        )
+        state_dicts = convert_modality_of_checkpoint_state_dct(config, state_dicts)
         trainer.load_state_dicts(*state_dicts, strict=False)
 
     log.print_model_info(model, config)

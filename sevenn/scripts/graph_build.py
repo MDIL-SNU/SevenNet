@@ -1,20 +1,20 @@
 import os
-from typing import Optional
+from typing import List, Optional
 
-from sevenn.sevenn_logger import Logger
+from sevenn.logger import Logger
 from sevenn.train.dataset import AtomGraphDataset
 from sevenn.util import unique_filepath
 
 
 def build_sevennet_graph_dataset(
-    source: list[str],
+    source: List[str],
     cutoff: float,
     num_cores: int,
     out: str,
     filename: str,
     metadata: Optional[dict] = None,
     **fmt_kwargs,
-):
+) -> None:
     from sevenn.train.graph_dataset import SevenNetGraphDataset
 
     log = Logger()
@@ -74,7 +74,7 @@ def dataset_finalize(dataset, metadata, out):
 
 
 def build_script(
-    source: list[str],
+    source: List[str],
     cutoff: float,
     num_cores: int,
     out: str,

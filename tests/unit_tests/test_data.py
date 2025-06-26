@@ -114,7 +114,7 @@ def test_atoms_to_graph(atoms_type, init_y_as):
     assert graph['per_atom_energy'] == (graph['total_energy'] / len(atoms))
     assert graph['num_atoms'] == len(atoms)
     if not is_stress:
-        assert graph['cell_volume'] == np.finfo(float).eps
+        assert graph['cell_volume'] == 0.0
 
 
 @pytest.mark.parametrize('atoms_type', ['bulk', 'mol', 'isolated'])
@@ -142,7 +142,7 @@ def test_unlabeled_atoms_to_graph(atoms_type):
 
     assert graph['num_atoms'] == len(atoms)
     if not atoms.pbc.all():
-        assert graph['cell_volume'] == np.finfo(float).eps
+        assert graph['cell_volume'] == 0.0
 
 
 @pytest.mark.parametrize('init_y_as', ['calc', 'info'])
@@ -470,8 +470,6 @@ def test_graph_build_ase_and_matscipy(atoms_type):
     atomic_numbers = atoms.get_atomic_numbers()
     cell = np.array(cell)
     vol = dl._correct_scalar(atoms.cell.volume)
-    if vol == 0:
-        vol = np.array(np.finfo(float).eps)
 
     data_ase = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -479,8 +477,6 @@ def test_graph_build_ase_and_matscipy(atoms_type):
         KEY.POS: pos,
         KEY.EDGE_IDX: edge_idx_ase,
         KEY.EDGE_VEC: edge_vec_ase,
-        KEY.CELL: cell,
-        KEY.CELL_SHIFT: shifts_ase,
         KEY.CELL_VOLUME: vol,
         KEY.NUM_ATOMS: dl._correct_scalar(len(atomic_numbers)),
     }
@@ -496,8 +492,6 @@ def test_graph_build_ase_and_matscipy(atoms_type):
     atomic_numbers = atoms.get_atomic_numbers()
     cell = np.array(cell)
     vol = dl._correct_scalar(atoms.cell.volume)
-    if vol == 0:
-        vol = np.array(np.finfo(float).eps)
 
     data_matsci = {
         KEY.NODE_FEATURE: atomic_numbers,
@@ -505,8 +499,6 @@ def test_graph_build_ase_and_matscipy(atoms_type):
         KEY.POS: pos,
         KEY.EDGE_IDX: edge_idx_matsci,
         KEY.EDGE_VEC: edge_vec_matsci,
-        KEY.CELL: cell,
-        KEY.CELL_SHIFT: shifts_matsci,
         KEY.CELL_VOLUME: vol,
         KEY.NUM_ATOMS: dl._correct_scalar(len(atomic_numbers)),
     }
@@ -518,4 +510,5 @@ def test_graph_build_ase_and_matscipy(atoms_type):
     matsci_pred_stress = output_matsci[KEY.PRED_STRESS]
     assert torch.equal(ase_pred_energy, matsci_pred_energy)
     assert torch.allclose(ase_pred_force, matsci_pred_force, atol=1e-06)
-    assert torch.allclose(ase_pred_stress, matsci_pred_stress)
+    if vol != 0:  # pbc system
+        assert torch.allclose(ase_pred_stress, matsci_pred_stress)

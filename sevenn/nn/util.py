@@ -5,7 +5,7 @@ def broadcast(
     src: torch.Tensor,
     other: torch.Tensor,
     dim: int
-):
+) -> torch.Tensor:
     if dim < 0:
         dim = other.dim() + dim
     if src.dim() == 1:

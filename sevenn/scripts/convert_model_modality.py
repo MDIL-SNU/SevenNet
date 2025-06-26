@@ -1,5 +1,5 @@
 import math
-from typing import List
+from typing import Any, Dict, List
 
 import torch
 import torch.nn as nn
@@ -16,7 +16,7 @@ modal_module_dict = {
 }
 
 
-def _get_scalar_index(irreps: Irreps):
+def _get_scalar_index(irreps: Irreps) -> List[int]:
     scalar_indices = []
     for idx, (_, (l, p)) in enumerate(irreps):  # noqa
         if (
@@ -36,12 +36,12 @@ def _reshape_weight_of_linear(
 
 
 def _erase_linear_modal_params(
-    model_state_dct: dict,
+    model_state_dct: Dict[str, torch.Tensor],
     erase_modal_indices: List[int],
     key: str,
     irreps_in: Irreps,
     irreps_out: Irreps,
-):
+) -> torch.Tensor:
     orig_input_dim = irreps_in.count('0e')
     new_input_dim = orig_input_dim - len(erase_modal_indices)
 
@@ -72,12 +72,12 @@ def _erase_linear_modal_params(
 
 
 def _get_modal_weight_as_bias(
-    model_state_dct: dict,
+    model_state_dct: Dict[str, torch.Tensor],
     key: str,
     ref_index: int,
     irreps_in: Irreps,
     irreps_out: Irreps,
-):
+) -> torch.Tensor:
     assert ref_index != -1
     input_dim = irreps_in.count('0e')
     output_dim = irreps_out.count('0e')
@@ -96,12 +96,12 @@ def _get_modal_weight_as_bias(
 
 
 def _append_modal_weight(
-    model_state_dct: dict,  # state dict to be targeted
+    model_state_dct: Dict[str, torch.Tensor],  # state dict to be targeted
     key: str,  # linear weight modune name
     irreps_in: Irreps,  # irreps_in before modality append
     irreps_out: Irreps,
     append_number: int,
-):
+) -> torch.Tensor:
     # This works for normalization = `element`, default in SEVENNet.
     # (normalization = `path` is curruently deprecated in SEVENNet.)
     input_dim = irreps_in.count('0e')
@@ -140,12 +140,12 @@ def _append_modal_weight(
 
 
 def get_single_modal_model_dct(
-    model_state_dct: dict,
-    config: dict,
+    model_state_dct: Dict[str, torch.Tensor],
+    config: Dict[str, Any],
     ref_modal: str,
     from_processing_cp: bool = False,
     is_deploy: bool = False,
-):
+) -> Dict[str, torch.Tensor]:
     """
     Convert multimodal model state dictionary to single modal model.
     Modal is selected by `ref_modal`
@@ -251,11 +251,11 @@ def get_single_modal_model_dct(
 
 
 def append_modality_to_model_dct(
-    model_state_dct: dict,
-    config: dict,
+    model_state_dct: Dict[str, torch.Tensor],
+    config: Dict[str, Any],
     orig_num_modal: int,
     append_modal_length: int,
-):
+) -> Dict[str, torch.Tensor]:
     """
     Append modal-wise parameters to the original linear layers.
     This enables expanding modal to single/multi modal model checkpoint.

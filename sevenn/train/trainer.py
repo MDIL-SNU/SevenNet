@@ -39,13 +39,13 @@ class Trainer:
         model: torch.nn.Module,
         loss_functions: List[Tuple[LossDefinition, float]],
         optimizer_cls,
-        optimizer_args: Optional[dict] = None,
+        optimizer_args: Optional[Dict[str, Any]] = None,
         scheduler_cls=None,
-        scheduler_args: Optional[dict] = None,
+        scheduler_args: Optional[Dict[str, Any]] = None,
         device: Union[torch.device, str] = 'auto',
         distributed: bool = False,
         distributed_backend: str = 'nccl',
-    ):
+    ) -> None:
         if device == 'auto':
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
             if distributed_backend == 'mpi':
@@ -68,12 +68,14 @@ class Trainer:
             self.model.set_is_batch_data(True)
             self.rank = 0
 
-        self.device = device
+        self.device = torch.device(device)
         self.distributed = distributed
 
+        optimizer_args = optimizer_args or {}
         param = [p for p in self.model.parameters() if p.requires_grad]
         self.optimizer = optimizer_cls(param, **optimizer_args)
         if scheduler_cls is not None:
+            scheduler_args = scheduler_args or {}
             self.scheduler = scheduler_cls(self.optimizer, **scheduler_args)
         else:
             self.scheduler = None
@@ -189,7 +191,7 @@ class Trainer:
             # metric.value._ddp_reduce(self.device)
             metric.ddp_reduce(self.device)
 
-    def get_checkpoint_dict(self) -> dict:
+    def get_checkpoint_dict(self) -> Dict[str, Any]:
         if self.distributed:
             model_state_dct = self.model.module.state_dict()
         else:

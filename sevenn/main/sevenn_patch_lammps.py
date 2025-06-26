@@ -9,13 +9,22 @@ from sevenn import __version__
 # but it changes so frequently to use
 pair_e3gnn_dir = os.path.abspath(f'{os.path.dirname(__file__)}/../pair_e3gnn')
 
-description = (
-    f'sevenn version={__version__}, patch LAMMPS for pair_e3gnn styles'
-)
+description = 'patch LAMMPS with e3gnn(7net) pair-styles before compile'
 
 
-def main(args=None):
-    args = cmd_parse_main(args)
+def add_parser(subparsers):
+    ag = subparsers.add_parser('patch_lammps', help=description)
+    add_args(ag)
+
+
+def add_args(parser):
+    ag = parser
+    ag.add_argument('lammps_dir', help='Path to LAMMPS source', type=str)
+    ag.add_argument('--d3', help='Enable D3 support', action='store_true')
+    # cxx_standard is detected automatically
+
+
+def run(args):
     lammps_dir = os.path.abspath(args.lammps_dir)
 
     print('Patching LAMMPS with the following settings:')
@@ -36,13 +45,10 @@ def main(args=None):
     return res.returncode  # is it meaningless?
 
 
-def cmd_parse_main(args=None):
+def main(args=None):
     ag = argparse.ArgumentParser(description=description)
-    ag.add_argument('lammps_dir', help='Path to LAMMPS source', type=str)
-    ag.add_argument('--d3', help='Enable D3 support', action='store_true')
-    # cxx_standard is detected automatically
-    args = ag.parse_args()
-    return args
+    add_args(ag)
+    run(ag.parse_args())
 
 
 if __name__ == '__main__':

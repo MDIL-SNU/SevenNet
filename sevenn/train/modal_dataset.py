@@ -8,7 +8,7 @@ from torch.utils.data import ConcatDataset, Dataset
 
 import sevenn._keys as KEY
 import sevenn.util as util
-from sevenn.sevenn_logger import Logger
+from sevenn.logger import Logger
 
 
 def _arrange_paths_by_modality(paths: List[dict]):
@@ -97,7 +97,7 @@ class SevenNetMultiModalDataset(ConcatDataset):
     def __init__(
         self,
         modal_dataset_dict: Dict[str, Dataset],
-    ):
+    ) -> None:
         datasets = []
         modals = []
         for modal, dataset in modal_dataset_dict.items():
@@ -113,7 +113,7 @@ class SevenNetMultiModalDataset(ConcatDataset):
         graph[KEY.DATA_MODALITY] = modality
         return graph
 
-    def _modal_wise_property(self, attribute_name: str):
+    def _modal_wise_property(self, attribute_name: str) -> Dict[str, Any]:
         dct = {}
         for modal, dataset in zip(self.modals, self.datasets):
             try:
@@ -124,14 +124,14 @@ class SevenNetMultiModalDataset(ConcatDataset):
         return dct
 
     @property
-    def dataset_dict(self):
+    def dataset_dict(self) -> Dict[str, Dataset]:
         arr = {}
         for idx, modality in enumerate(self.modals):
             arr[modality] = self.datasets[idx]
         return arr
 
     @property
-    def species(self):
+    def species(self) -> Dict[str, Any]:
         dct = self._modal_wise_property('species')
         tot = set()
         for sp in dct.values():
@@ -140,11 +140,11 @@ class SevenNetMultiModalDataset(ConcatDataset):
         return dct
 
     @property
-    def natoms(self):
+    def natoms(self) -> Dict[str, Any]:
         return self._modal_wise_property('natoms')
 
     @property
-    def per_atom_energy_mean(self):
+    def per_atom_energy_mean(self) -> Dict[str, float]:
         dct = self._modal_wise_property('per_atom_energy_mean')
         try:
             means = []
@@ -161,12 +161,12 @@ class SevenNetMultiModalDataset(ConcatDataset):
         return dct
 
     @property
-    def elemwise_reference_energies(self):
+    def elemwise_reference_energies(self) -> Dict[str, List[float]]:
         # total is not supported (it is expensive and complex, but useless)
         return self._modal_wise_property('elemwise_reference_energies')
 
     @property
-    def force_rms(self):
+    def force_rms(self) -> Dict[str, float]:
         dct = self._modal_wise_property('force_rms')
         try:
             means = []
@@ -183,7 +183,7 @@ class SevenNetMultiModalDataset(ConcatDataset):
         return dct
 
     @property
-    def per_atom_energy_std(self):
+    def per_atom_energy_std(self) -> Dict[str, float]:
         dct = self._modal_wise_property('per_atom_energy_std')
         try:
             means = []
@@ -202,7 +202,7 @@ class SevenNetMultiModalDataset(ConcatDataset):
         return dct
 
     @property
-    def avg_num_neigh(self):
+    def avg_num_neigh(self) -> Dict[str, float]:
         dct = self._modal_wise_property('avg_num_neigh')
         try:
             means = []
@@ -219,19 +219,19 @@ class SevenNetMultiModalDataset(ConcatDataset):
         return dct
 
     @property
-    def sqrt_avg_num_neigh(self):
+    def sqrt_avg_num_neigh(self) -> Dict[str, float]:
         avg_nn = self.avg_num_neigh
         return {k: v**0.5 for k, v in avg_nn.items()}
 
     @property
-    def statistics(self):
+    def statistics(self) -> Dict[str, Dict[str, Any]]:
         return self._modal_wise_property('statistics')
 
     @staticmethod
     def as_graph_dataset(
         paths: List[dict],
         **graph_dataset_kwargs,
-    ):
+    ) -> 'SevenNetMultiModalDataset':
         import sevenn.train.graph_dataset as gd
 
         modal_paths = _arrange_paths_by_modality(paths)
@@ -250,10 +250,10 @@ class SevenNetMultiModalDataset(ConcatDataset):
 
 
 def from_config(
-    config: dict[str, Any],
+    config: Dict[str, Any],
     working_dir: str = os.getcwd(),
-    dataset_keys: Optional[list[str]] = None,
-):
+    dataset_keys: Optional[List[str]] = None,
+) -> Dict[str, SevenNetMultiModalDataset]:
     log = Logger()
     if dataset_keys is None:
         dataset_keys = [

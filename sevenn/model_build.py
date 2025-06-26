@@ -1,7 +1,7 @@
 import copy
 import warnings
 from collections import OrderedDict
-from typing import List, Literal, Union, overload
+from typing import Any, Dict, List, Literal, Tuple, Type, Union, overload
 
 from e3nn.o3 import Irreps
 
@@ -33,7 +33,7 @@ from .nn.sequential import AtomGraphSequential
 warnings.filterwarnings(
     'ignore',
     message=(
-        "The TorchScript type system doesn't " 'support instance-level annotations'
+        "The TorchScript type system doesn't support instance-level annotations"
     ),
 )
 
@@ -50,22 +50,27 @@ def _insert_after(module_name_after, key_module_pair, layers):
     return layers
 
 
-def init_self_connection(config):
-    self_connection_type = config[KEY.SELF_CONNECTION_TYPE]
-    intro, outro = None, None
-    if self_connection_type == 'none':
-        pass
-    elif self_connection_type == 'nequip':
-        intro, outro = SelfConnectionIntro, SelfConnectionOutro
-        return SelfConnectionIntro, SelfConnectionOutro
-    elif self_connection_type == 'linear':
-        intro, outro = SelfConnectionLinearIntro, SelfConnectionOutro
-    else:
-        raise ValueError('something went wrong...')
-    return intro, outro
+def init_self_connection(config: Dict[str, Any]) -> List[Tuple[Type, Type]]:
+    self_connection_type_list = config[KEY.SELF_CONNECTION_TYPE]
+    num_conv = config[KEY.NUM_CONVOLUTION]
+    if isinstance(self_connection_type_list, str):
+        self_connection_type_list = [self_connection_type_list] * num_conv
+
+    io_pair_list = []
+    for sc_type in self_connection_type_list:
+        if sc_type == 'none':
+            io_pair = None
+        elif sc_type == 'nequip':
+            io_pair = SelfConnectionIntro, SelfConnectionOutro
+        elif sc_type == 'linear':
+            io_pair = SelfConnectionLinearIntro, SelfConnectionOutro
+        else:
+            raise ValueError(f'Unknown self_connection_type found: {sc_type}')
+        io_pair_list.append(io_pair)
+    return io_pair_list
 
 
-def init_edge_embedding(config):
+def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
     _cutoff_param = {'cutoff_length': config[KEY.CUTOFF]}
     rbf, env, sph = None, None, None
 
@@ -93,7 +98,7 @@ def init_edge_embedding(config):
     return EdgeEmbedding(basis_module=rbf, cutoff_module=env, spherical_module=sph)
 
 
-def init_feature_reduce(config, irreps_x):
+def init_feature_reduce(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict:
     # features per node to scalar per node
     layers = OrderedDict()
     if config[KEY.READOUT_AS_FCN] is False:
@@ -133,7 +138,9 @@ def init_feature_reduce(config, irreps_x):
     return layers
 
 
-def init_shift_scale(config):
+def init_shift_scale(
+    config: Dict[str, Any],
+) -> Union[Rescale, SpeciesWiseRescale, ModalWiseRescale]:
     # for mm, ex, shift: modal_idx -> shifts
     shift_scale = []
     train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
@@ -174,7 +181,7 @@ def init_shift_scale(config):
     return rescale_module
 
 
-def patch_modality(layers: OrderedDict, config):
+def patch_modality(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     """
     Postprocess 7net-model to multimodal model.
     1. prepend modality one-hot embedding layer
@@ -222,7 +229,7 @@ def patch_modality(layers: OrderedDict, config):
     return layers
 
 
-def patch_cue(layers: OrderedDict, config):
+def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     import sevenn.nn.cue_helper as cue_helper
 
     cue_cfg = copy.deepcopy(config.get(KEY.CUEQUIVARIANCE_CONFIG, {}))
@@ -247,18 +254,25 @@ def patch_cue(layers: OrderedDict, config):
     cueq_module_params.update(cue_cfg)
     updates = {}
     for k, module in layers.items():
+        # TODO: based on benchmark on A100 GPU & cuEq 0.4.0. (250307)
         if isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
+            continue
+            """
             if k == 'reduce_hidden_to_energy':  # TODO: has bug with 0 shape
                 continue
             module_patched = cue_helper.patch_linear(
                 module, group, **cueq_module_params
             )
             updates[k] = module_patched
+            """
         elif isinstance(module, SelfConnectionIntro):
+            continue
+            """
             module_patched = cue_helper.patch_fully_connected(
                 module, group, **cueq_module_params
             )
             updates[k] = module_patched
+            """
         elif isinstance(module, IrrepsConvolution):
             module_patched = cue_helper.patch_convolution(
                 module, group, **cueq_module_params
@@ -269,13 +283,15 @@ def patch_cue(layers: OrderedDict, config):
     return layers
 
 
-def patch_modules(layers: OrderedDict, config):
+def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
     layers = patch_cue(layers, config)
     return layers
 
 
-def _to_parallel_model(layers: OrderedDict, config):
+def _to_parallel_model(
+    layers: OrderedDict, config: Dict[str, Any]
+) -> List[OrderedDict]:
     num_classes = layers['onehot_idx_to_onehot'].num_classes
     one_hot_irreps = Irreps(f'{num_classes}x0e')
     irreps_node_zero = layers['onehot_to_feature_x'].irreps_out
@@ -389,7 +405,7 @@ def build_E3_equivariant_model(
         lmax_node = config[KEY.LMAX_NODE]
 
     act_radial = _const.ACTIVATION[config[KEY.ACTIVATION_RADIAL]]
-    self_connection_pair = init_self_connection(config)
+    self_connection_pair_list = init_self_connection(config)
 
     irreps_manual = None
     if config[KEY.IRREPS_MANUAL] is not False:
@@ -442,7 +458,6 @@ def build_E3_equivariant_model(
         'irreps_filter': irreps_filter,
         'weight_nn_layers': weight_nn_layers,
         'train_conv_denominator': train_conv_denominator,
-        'self_connection_pair': self_connection_pair,
         'act_radial': act_radial,
         'bias_in_linear': use_bias_in_linear,
         'num_species': num_species,
@@ -476,6 +491,7 @@ def build_E3_equivariant_model(
                 'irreps_x': irreps_x,
                 't': t,
                 'conv_denominator': conv_denominator[t],
+                'self_connection_pair': self_connection_pair_list[t],
             }
         )
         if interaction_type == 'nequip':
@@ -514,7 +530,7 @@ def build_E3_equivariant_model(
         layers.update(interaction_builder(**param_interaction_block))
         irreps_x = irreps_out
 
-    layers.update(init_feature_reduce(config, irreps_x))
+    layers.update(init_feature_reduce(config, irreps_x))  # type: ignore
 
     layers.update(
         {

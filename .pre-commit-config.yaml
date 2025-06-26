@@ -1,5 +1,5 @@
 default_language_version:
-  python: python3
+  python: python3.11
 
 ci:
   autoupdate_schedule: quarterly
@@ -42,7 +42,7 @@ repos:
       - id: seed-isort-config
 
   - repo: https://github.com/PyCQA/isort
-    rev: 5.13.2
+    rev: 6.0.1
     hooks:
       - id: isort
         exclude: 'sevenn/pair_e3gnn/pair_e3gnn.cpp'
@@ -59,7 +59,7 @@ repos:
         exclude: 'sevenn/pair_e3gnn/pair_d3_pars.h'
 
   - repo: https://github.com/pycqa/flake8
-    rev: 7.1.1
+    rev: 7.2.0
     hooks:
       - id: flake8
         exclude: 'sevenn/pair_e3gnn/pair_e3gnn.cpp'
@@ -77,7 +77,7 @@ repos:
         require_serial: true
 
   - repo: https://github.com/codespell-project/codespell
-    rev: v2.3.0
+    rev: v2.4.1
     hooks:
       - id: codespell
         stages: [pre-commit, commit-msg]

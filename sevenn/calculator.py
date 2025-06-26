@@ -1,15 +1,14 @@
 import ctypes
 import os
 import pathlib
-import sysconfig
 import warnings
-from itertools import chain
-from typing import Any, Optional, Union
+from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
 import torch.jit
 import torch.jit._script
+from ase.atoms import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 from ase.calculators.mixing import SumCalculator
 from ase.data import chemical_symbols
@@ -24,17 +23,12 @@ torch_script_type = torch.jit._script.RecursiveScriptModule
 
 
 class SevenNetCalculator(Calculator):
-    """ASE calculator for SevenNet models
+    """Supporting properties:
+    'free_energy', 'energy', 'forces', 'stress', 'energies'
+    free_energy equals energy. 'energies' stores atomic energy.
 
-    Multi-GPU parallel MD is not supported for this mode.
-    Use LAMMPS for multi-GPU parallel MD.
-    This class is for convenience who want to run SevenNet models with ase.
-
-    Note than ASE calculator is designed to be interface of other programs.
-    But in this class, we simply run torch model inside ASE calculator.
-    So there is no FileIO things.
-
-    Here, free_energy = energy
+    Multi-GPU acceleration is not supported with ASE calculator.
+    You should use LAMMPS for the acceleration.
     """
 
     def __init__(
@@ -44,14 +38,28 @@ class SevenNetCalculator(Calculator):
         device: Union[torch.device, str] = 'auto',
         modal: Optional[str] = None,
         enable_cueq: bool = False,
-        sevennet_config: Optional[Any] = None,  # hold meta information
+        sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
-    ):
-        """Initialize the calculator
+    ) -> None:
+        """Initialize SevenNetCalculator.
 
-        Args:
-            model (SevenNet): path to the checkpoint file, or pretrained
-            device (str, optional): Torch device to use. Defaults to "auto".
+        Parameters
+        ----------
+        model: str | Path | AtomGraphSequential, default='7net-0'
+            Name of pretrained models (7net-mf-ompa, 7net-omat, 7net-l3i5, 7net-0) or
+            path to the checkpoint, deployed model or the model itself
+        file_type: str, default='checkpoint'
+            one of 'checkpoint' | 'torchscript' | 'model_instance'
+        device: str | torch.device, default='auto'
+            if not given, use CUDA if available
+        modal: str | None, default=None
+            modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
+            it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
+            case insensitive
+        enable_cueq: bool, default=False
+            if True, use cuEquivariant to accelerate inference.
+        sevennet_config: dict | None, default=None
+            Not used, but can be used to carry meta information of this calculator
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
@@ -133,18 +141,21 @@ class SevenNetCalculator(Calculator):
 
         self.model = model_loaded
 
-        if isinstance(self.model, AtomGraphSequential) and modal:
-            if self.model.modal_map is None:
-                raise ValueError('Modality given, but model has no modal_map')
-            if modal not in self.model.modal_map:
-                _modals = list(self.model.modal_map.keys())
-                raise ValueError(f'Unknown modal {modal} (not in {_modals})')
+        self.modal = None
+        if isinstance(self.model, AtomGraphSequential):
+            modal_map = self.model.modal_map
+            if modal_map:
+                modal_ava = list(modal_map.keys())
+                if not modal:
+                    raise ValueError(f'modal argument missing (avail: {modal_ava})')
+                elif modal not in modal_ava:
+                    raise ValueError(f'unknown modal {modal} (not in {modal_ava})')
+                self.modal = modal
+            elif not self.model.modal_map and modal:
+                warnings.warn(f'modal={modal} is ignored as model has no modal_map')
 
         self.model.to(self.device)
         self.model.eval()
-
-        self.modal = modal
-
         self.implemented_properties = [
             'free_energy',
             'energy',
@@ -153,7 +164,7 @@ class SevenNetCalculator(Calculator):
             'energies',
         ]
 
-    def set_atoms(self, atoms):
+    def set_atoms(self, atoms: Atoms) -> None:
         # called by ase, when atoms.calc = calc
         zs = tuple(set(atoms.get_atomic_numbers()))
         for z in zs:
@@ -163,19 +174,43 @@ class SevenNetCalculator(Calculator):
                     f'Model do not know atomic number: {z}, (knows: {sp})'
                 )
 
+    def output_to_results(self, output: Dict[str, torch.Tensor]) -> Dict[str, Any]:
+        energy = output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item()
+        num_atoms = output['num_atoms'].item()
+        atomic_energies = output[KEY.ATOMIC_ENERGY].detach().cpu().numpy().flatten()
+        forces = output[KEY.PRED_FORCE].detach().cpu().numpy()[:num_atoms, :]
+        stress = np.array(
+            (-output[KEY.PRED_STRESS])
+            .detach()
+            .cpu()
+            .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
+        )
+        # Store results
+        return {
+            'free_energy': energy,
+            'energy': energy,
+            'energies': atomic_energies,
+            'forces': forces,
+            'stress': stress,
+            'num_edges': output[KEY.EDGE_IDX].shape[1],
+        }
+
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
+        is_ts_type = isinstance(self.model, torch_script_type)
+
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
         if atoms is None:
             raise ValueError('No atoms to evaluate')
         data = AtomGraphData.from_numpy_dict(
-            unlabeled_atoms_to_graph(atoms, self.cutoff)
+            unlabeled_atoms_to_graph(atoms, self.cutoff, with_shift=is_ts_type)
         )
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
+
         data.to(self.device)  # type: ignore
 
-        if isinstance(self.model, torch_script_type):
+        if is_ts_type:
             data[KEY.NODE_FEATURE] = torch.tensor(
                 [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]],
                 dtype=torch.int64,
@@ -186,23 +221,7 @@ class SevenNetCalculator(Calculator):
             data = data.to_dict()
             del data['data_info']
 
-        output = self.model(data)
-        energy = output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item()
-        # Store results
-        self.results = {
-            'free_energy': energy,
-            'energy': energy,
-            'energies': (
-                output[KEY.ATOMIC_ENERGY].detach().cpu().reshape(len(atoms)).numpy()
-            ),
-            'forces': output[KEY.PRED_FORCE].detach().cpu().numpy(),
-            'stress': np.array(
-                (-output[KEY.PRED_STRESS])
-                .detach()
-                .cpu()
-                .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
-            ),
-        }
+        self.results = self.output_to_results(self.model(data))
 
 
 class SevenNetD3Calculator(SumCalculator):
@@ -217,7 +236,32 @@ class SevenNetD3Calculator(SumCalculator):
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
         **kwargs,
-    ):
+    ) -> None:
+        """Initialize SevenNetD3Calculator. CUDA required.
+
+        Parameters
+        ----------
+        model: str | Path | AtomGraphSequential
+            Name of pretrained models (7net-mf-ompa, 7net-omat, 7net-l3i5, 7net-0) or
+            path to the checkpoint, deployed model or the model itself
+        file_type: str, default='checkpoint'
+            one of 'checkpoint' | 'torchscript' | 'model_instance'
+        device: str | torch.device, default='auto'
+            if not given, use CUDA if available
+        modal: str | None, default=None
+            modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
+            it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
+        enable_cueq: bool, default=False
+            if True, use cuEquivariant to accelerate inference.
+        damping_type: str, default='damp_bj'
+            Damping type of D3, one of 'damp_bj' | 'damp_zero'
+        functional_name: str, default='pbe'
+            Target functional name of D3 parameters.
+        vdw_cutoff: float, default=9000
+            vdw cutoff of D3 calculator in au
+        cn_cutoff: float, default=1600
+            cn cutoff of D3 calculator in au
+        """
         d3_calc = D3Calculator(
             damping_type=damping_type,
             functional_name=functional_name,
@@ -237,49 +281,46 @@ class SevenNetD3Calculator(SumCalculator):
         super().__init__([sevennet_calc, d3_calc])
 
 
-def _compile_d3(path: str, verbose: bool = True):
-    import subprocess
+def _load(name: str) -> ctypes.CDLL:
+    from torch.utils.cpp_extension import LIB_EXT, _get_build_directory, load
 
-    if verbose:
-        print(f'Attempt D3 compilation to {path}')
+    # Load the library from the candidate locations
+
+    package_dir = os.path.dirname(os.path.abspath(__file__))
     try:
-        subprocess.run(
-            ['nvcc', '--version'],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            check=True,
-        )
-        # print('CUDA is installed. Starting compilation of libpaird3.')
-        if verbose:
-            print('nvcc compiler found. start compilation')
-    except FileNotFoundError as e:
-        raise NotImplementedError(
-            'CUDA is not installed or nvcc is not available. D3 compilation failed'
-        ) from e
-    src = os.path.join(os.path.dirname(__file__), 'pair_e3gnn/pair_d3_for_ase.cu')
-    sms = [61, 70, 75, 80, 86, 89, 90]
-    compile = [  # TODO: make ruff not lint these
-        'nvcc',
-        '-o',
-        path,
-        '-shared',
-        '-fmad=false',
-        '-O3',
-        '--expt-relaxed-constexpr',
-        src,
-        '-Xcompiler',
-        '-fPIC',
-        '-lcudart',
-    ] + list(
-        chain(*[f'-gencode arch=compute_{sm},code=sm_{sm}'.split() for sm in sms])
+        return ctypes.CDLL(os.path.join(package_dir, f'{name}{LIB_EXT}'))
+    except OSError:
+        pass
+
+    cache_dir = _get_build_directory(name, verbose=False)
+    try:
+        return ctypes.CDLL(os.path.join(cache_dir, f'{name}{LIB_EXT}'))
+    except OSError:
+        pass
+
+    # Compile the library if it is not found
+
+    if os.access(package_dir, os.W_OK):
+        compile_dir = package_dir
+    else:
+        print('Warning: package directory is not writable. Using cache directory.')
+        compile_dir = cache_dir
+
+    if 'TORCH_CUDA_ARCH_LIST' not in os.environ:
+        print('Warning: TORCH_CUDA_ARCH_LIST is not set.')
+        print('Warning: Use default CUDA architectures: 61, 70, 75, 80, 86, 89, 90')
+        os.environ['TORCH_CUDA_ARCH_LIST'] = '6.1;7.0;7.5;8.0;8.6;8.9;9.0'
+
+    load(
+        name=name,
+        sources=[os.path.join(package_dir, 'pair_e3gnn', 'pair_d3_for_ase.cu')],
+        extra_cuda_cflags=['-O3', '--expt-relaxed-constexpr', '-fmad=false'],
+        build_directory=compile_dir,
+        verbose=True,
+        is_python_module=False,
     )
 
-    try:
-        subprocess.run(compile, check=True)
-        if verbose:
-            print('libpaird3.so compiled successfully.')
-    except subprocess.CalledProcessError as e:
-        raise RuntimeError('Failed to compile D3 (libpaird3.so)') from e
+    return ctypes.CDLL(os.path.join(compile_dir, f'{name}{LIB_EXT}'))
 
 
 class PairD3(ctypes.Structure):
@@ -312,19 +353,9 @@ class D3Calculator(Calculator):
         functional_name: str = 'pbe',  # check the source code
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
-        verbose_compile: bool = True,
         **kwargs,
-    ):
+    ) -> None:
         super().__init__(**kwargs)
-
-        _ext_suffix = sysconfig.get_config_var('EXT_SUFFIX')
-        lib_path = os.path.join(os.path.dirname(__file__), f'libpaird3{_ext_suffix}')
-
-        self._lib = None
-        if not os.path.exists(lib_path):
-            _compile_d3(lib_path, verbose_compile)
-
-        self._lib = ctypes.CDLL(lib_path)
 
         if not torch.cuda.is_available():
             raise NotImplementedError('CPU + D3 is not implemented yet')
@@ -336,6 +367,8 @@ class D3Calculator(Calculator):
 
         if self.damp_name not in ['damp_bj', 'damp_zero']:
             raise ValueError('Error: Invalid damping type.')
+
+        self._lib = _load('pair_d3')
 
         self._lib.pair_init.restype = ctypes.POINTER(PairD3)
         self.pair = self._lib.pair_init()

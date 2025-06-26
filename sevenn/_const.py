@@ -48,20 +48,18 @@ ACTIVATION_FOR_ODD = {'tanh': torch.tanh, 'abs': torch.abs}
 ACTIVATION_DICT = {'e': ACTIVATION_FOR_EVEN, 'o': ACTIVATION_FOR_ODD}
 
 _prefix = os.path.abspath(f'{os.path.dirname(__file__)}/pretrained_potentials')
-SEVENNET_0_11Jul2024 = (
-    f'{_prefix}/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth'
-)
-SEVENNET_0_22May2024 = (
-    f'{_prefix}/SevenNet_0__22May2024/checkpoint_sevennet_0.pth'
-)
-SEVENNET_l3i5 = (
-    f'{_prefix}/SevenNet_l3i5/checkpoint_l3i5.pth'
-)
-SEVENNET_MF_0 = (
-    f'{_prefix}/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth'
-)
+SEVENNET_0_11Jul2024 = f'{_prefix}/SevenNet_0__11Jul2024/checkpoint_sevennet_0.pth'
+SEVENNET_0_22May2024 = f'{_prefix}/SevenNet_0__22May2024/checkpoint_sevennet_0.pth'
+SEVENNET_l3i5 = f'{_prefix}/SevenNet_l3i5/checkpoint_l3i5.pth'
+SEVENNET_MF_0 = f'{_prefix}/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth'
+SEVENNET_MF_ompa = f'{_prefix}/SevenNet_MF_ompa/checkpoint_sevennet_mf_ompa.pth'
+SEVENNET_omat = f'{_prefix}/SevenNet_omat/checkpoint_sevennet_omat.pth'
 
-
+_git_prefix = 'https://github.com/MDIL-SNU/SevenNet/releases/download'
+CHECKPOINT_DOWNLOAD_LINKS = {
+    SEVENNET_MF_ompa: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_mf_ompa.pth',
+    SEVENNET_omat: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_omat.pth',
+}
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]
 
@@ -143,7 +141,9 @@ MODEL_CONFIG_CONDITION = {
     },
     KEY.CUTOFF: float,
     KEY.NUM_CONVOLUTION: int,
-    KEY.CONV_DENOMINATOR: lambda x: isinstance(x, float) or x in [
+    KEY.CONV_DENOMINATOR: lambda x: isinstance(x, float)
+    or x
+    in [
         'avg_num_neigh',
         'sqrt_avg_num_neigh',
     ],
@@ -159,7 +159,13 @@ MODEL_CONFIG_CONDITION = {
     KEY.READOUT_FCN_HIDDEN_NEURONS: list,
     KEY.READOUT_FCN_ACTIVATION: str,
     KEY.ACTIVATION_RADIAL: str,
-    KEY.SELF_CONNECTION_TYPE: lambda x: x in IMPLEMENTED_SELF_CONNECTION_TYPE,
+    KEY.SELF_CONNECTION_TYPE: lambda x: (
+        x in IMPLEMENTED_SELF_CONNECTION_TYPE
+        or (
+            isinstance(x, list)
+            and all(sc in IMPLEMENTED_SELF_CONNECTION_TYPE for sc in x)
+        )
+    ),
     KEY.INTERACTION_TYPE: lambda x: x in IMPLEMENTED_INTERACTION_TYPE,
     KEY._NORMALIZE_SPH: bool,
     KEY.CUEQUIVARIANCE_CONFIG: dict,

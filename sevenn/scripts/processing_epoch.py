@@ -1,20 +1,20 @@
 import os
 from copy import deepcopy
-from typing import Optional
+from typing import Any, Dict, Iterable, Optional
 
 import torch
 from torch.utils.data.distributed import DistributedSampler
 
 import sevenn._keys as KEY
 from sevenn.error_recorder import ErrorRecorder
-from sevenn.sevenn_logger import Logger
+from sevenn.logger import Logger
 from sevenn.train.trainer import Trainer
 
 
 def processing_epoch_v2(
-    config: dict,
+    config: Dict[str, Any],
     trainer: Trainer,
-    loaders: dict,  # dict[str, Dataset]
+    loaders: Dict[str, Iterable],  # dict[str, Dataset]
     start_epoch: int = 1,
     train_loader_key: str = 'trainset',
     error_recorder: Optional[ErrorRecorder] = None,
@@ -24,7 +24,7 @@ def processing_epoch_v2(
     best_metric: Optional[str] = None,
     write_csv: bool = True,
     working_dir: Optional[str] = None,
-):
+) -> Trainer:
     from sevenn.util import unique_filepath
 
     log = Logger()
@@ -33,8 +33,10 @@ def processing_epoch_v2(
     prefix = f'{os.path.abspath(working_dir)}/'
 
     total_epoch = total_epoch or config[KEY.EPOCH]
+    assert isinstance(total_epoch, int)
     per_epoch = per_epoch or config.get(KEY.PER_EPOCH, 10)
     best_metric = best_metric or config.get(KEY.BEST_METRIC, 'TotalLoss')
+    assert isinstance(best_metric, str)
     recorder = error_recorder or ErrorRecorder.from_config(
         config, trainer.loss_functions
     )
@@ -76,7 +78,10 @@ def processing_epoch_v2(
             is_train = k == train_loader_key
             if (
                 trainer.distributed
-                and isinstance(loader.sampler, DistributedSampler)
+                and (
+                    hasattr(loader, 'sampler')
+                    and isinstance(getattr(loader, 'sampler'), DistributedSampler)
+                )
                 and is_train
                 and config.get('train_shuffle', True)
             ):

@@ -1,21 +1,54 @@
 import argparse
 import os.path as osp
 
-import torch
-import yaml
-
 from sevenn import __version__
-from sevenn.parse_input import read_config_yaml
-from sevenn.util import load_checkpoint
 
 description = (
-    f'sevenn version={__version__}, sevenn_cp.\n'
-    + 'tool box for checkpoints generated from sevennet'
+    'tool box for sevennet checkpoints'
 )
 
 
-def main(args=None):
-    args = cmd_parse_data(args)
+def add_parser(subparsers):
+    ag = subparsers.add_parser('checkpoint', help=description, aliases=['cp'])
+    add_args(ag)
+
+
+def add_args(parser):
+    ag = parser
+
+    ag.add_argument('checkpoint', help='checkpoint or pretrained', type=str)
+
+    group = ag.add_mutually_exclusive_group(required=False)
+    group.add_argument(
+        '--get_yaml',
+        choices=['reproduce', 'continue', 'continue_modal'],
+        help='create input.yaml based on the given checkpoint',
+        type=str,
+    )
+
+    group.add_argument(
+        '--append_modal_yaml',
+        help='append modality with given yaml.',
+        type=str,
+    )
+    ag.add_argument(
+        '--original_modal_name',
+        help=(
+            'when the append_modal is used and checkpoint is not multi-modal, '
+            + 'used to name previously trained modality. defaults to "origin"'
+        ),
+        default='origin',
+        type=str,
+    )
+
+
+def run(args):
+    import torch
+    import yaml
+
+    from sevenn.parse_input import read_config_yaml
+    from sevenn.util import load_checkpoint
+
     checkpoint = load_checkpoint(args.checkpoint)
     if args.get_yaml:
         mode = args.get_yaml
@@ -53,33 +86,7 @@ def main(args=None):
         print(checkpoint)
 
 
-def cmd_parse_data(args=None):
+def main(args=None):
     ag = argparse.ArgumentParser(description=description)
-
-    ag.add_argument('checkpoint', help='checkpoint or pretrained', type=str)
-
-    group = ag.add_mutually_exclusive_group(required=False)
-    group.add_argument(
-        '--get_yaml',
-        choices=['reproduce', 'continue', 'continue_modal'],
-        help='create input.yaml based on the given checkpoint',
-        type=str,
-    )
-
-    group.add_argument(
-        '--append_modal_yaml',
-        help='append modality with given yaml.',
-        type=str,
-    )
-    ag.add_argument(
-        '--original_modal_name',
-        help=(
-            'when the append_modal is used and checkpoint is not multi-modal, '
-            + 'used to name previously trained modality. defaults to "origin"'
-        ),
-        default='origin',
-        type=str,
-    )
-
-    args = ag.parse_args()
-    return args
+    add_args(ag)
+    run(ag.parse_args())

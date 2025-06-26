@@ -2,21 +2,52 @@
 All notable changes to this project will be documented in this file.
 
 
+## [0.11.2]
+### Changed
+- change cueq default config
+- assign cell volume 0 instead of eps for non-pbc system
+- remove redundant CELL and CELL_SHIFT
+
+### Fixed
+- Circular import in error_recorder
+
+
+## [0.11.1]
+From here, the version of 'main' branch has 'devX' after it diverges from the latest stable version
+
+CLI interface changed in backward-compatible manner. Now `sevenn` has subcommands for
+inference, train, etc
+
+### Added
+- subcommand with some aliases
+- strict e3nn version requirement from __init__.py
+
+### Changed
+- pre-commit uses python3.11
+- cuequivaraiance optional libraries
+- some gitignores
+
+### Fixed
+- Circular import in sevenn.checkpoint (dev0)
+- Fix typing issues
+- Added missing typings (especially return type)
+
+
 ## [0.11.0]
+
+Multi-fidelity learning implemented & New pretrained-models
+
 ### Added
 - Build multi-fidelity model, SevenNet-MF, based on given modality in the yaml
 - Modality support for sevenn_inference, sevenn_get_modal, and SevenNetCalculator
-- [cli] sevenn_cp tool for checkpoint summary, input generation, multi-modal routines
+- sevenn_cp tool for checkpoint summary, input generation, multi-modal routines
 - Modality append / assign using sevenn_cp
 - Loss weighting for energy, force and stress for corresponding data label
 - Ignore unlabelled data when calculating loss. (e.g. stress data for non-pbc structure)
 - Dict style dataset input for multi-modal and data-weight
 - (experimental) cuEquivariance support
-
-### Added (code)
-- sevenn.train.modal_dataset SevenNetMultiModalDataset
-- sevenn.scripts.backward_compatibility.py
-- sevenn.checkpoint.py
+- Downloading large checkpoints from url (7net-MF-ompa, 7net-omat)
+- D3 wB97M param
 
 ### Changed
 - Sort instructions of tensor product in convolution (+ fix flipped w3j coeff of old model)
@@ -24,10 +55,13 @@ All notable changes to this project will be documented in this file.
 - Checkpoint things using `sevenn/checkpoint.py`
 - e3nn >= 0.5.0, to ensure changed CG coeff later on
 - pandas as dependency
+- old v1 presets are removed, liquid electrolyte fine-tune yaml is added
 
 ### Fixed
 - More refactor for shift scale things + few bug fixes
 - Correctly shuffle training set when distributed training is enabled
+- D3 calculator system swap memory error fixed
+- D3 compile uses $HOME/.cache if package directory is not writable
 
 
 ## [0.10.4]

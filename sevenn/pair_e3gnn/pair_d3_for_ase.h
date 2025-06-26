@@ -175,6 +175,7 @@ protected:
 
     /* ------- Reallocate (when number of atoms changed) ------- */
     void reallocate_arrays();
+    void reallocate_arrays_np1();
     /* ------- Reallocate (when number of atoms changed) ------- */
 
     /* ------- Coordination number ------- */
@@ -240,6 +241,7 @@ protected:
 
     /*---------- Global values ---------*/
     int n_save;                         // to check whether the number of atoms has changed
+    int np1_save;                       // to check whether the number of types has changed
     float disp_total;                   // Dispersion energy
     /*---------- Global values ---------*/
 

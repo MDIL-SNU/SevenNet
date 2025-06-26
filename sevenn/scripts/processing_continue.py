@@ -1,18 +1,21 @@
 import os
 import warnings
+from typing import Any, Dict, List, Tuple
 
 import torch
 
 import sevenn._keys as KEY
 import sevenn.util as util
+from sevenn.logger import Logger
 from sevenn.scripts.convert_model_modality import (
     append_modality_to_model_dct,
     get_single_modal_model_dct,
 )
-from sevenn.sevenn_logger import Logger
 
 
-def processing_continue_v2(config):  # simpler
+def processing_continue_v2(
+    config: Dict[str, Any],
+) -> Tuple[List[Dict[str, torch.Tensor]], int]:  # simpler
     """
     Replacement of processing_continue,
     Skips model compatibility
@@ -66,12 +69,11 @@ def processing_continue_v2(config):  # simpler
     if config_cp.get(KEY.USE_MODALITY, False) != config.get(KEY.USE_MODALITY):
         raise ValueError('use_modality is not same. Check sevenn_cp')
 
-    modal_map = config_cp.get(KEY.MODAL_MAP, {})
-    config.update({KEY.MODAL_MAP: modal_map})
-    if len(modal_map) > 0:
+    modal_map = config_cp.get(KEY.MODAL_MAP, None)  # dict | None
+    if modal_map and len(modal_map) > 0:
         modalities = list(modal_map.keys())
         log.writeline(f'Multimodal model found: {modalities}')
-        log.writeline(f'{KEY.USE_MODALITY}: True')
+        log.writeline('use_modality: True')
         config[KEY.USE_MODALITY] = True
 
     from_epoch = checkpoint.epoch or 0
@@ -89,7 +91,7 @@ def processing_continue_v2(config):  # simpler
     return state_dicts, epoch
 
 
-def check_config_compatible(config, config_cp):
+def check_config_compatible(config: Dict[str, Any], config_cp: Dict[str, Any]):
     # TODO: check more
     SHOULD_BE_SAME = [
         KEY.NODE_FEATURE_MULTIPLICITY,
@@ -135,7 +137,7 @@ def check_config_compatible(config, config_cp):
     # TODO add conition for changed optim/scheduler but not reset
 
 
-def processing_continue(config):
+def processing_continue(config: Dict[str, Any]):
     log = Logger()
     continue_dct = config[KEY.CONTINUE]
     log.write('\nContinue found, loading checkpoint\n')
@@ -181,11 +183,13 @@ def processing_continue(config):
         del model_state_dict_cp[f'{i}_convolution.denominator']
 
     # Further handled by processing_dataset.py
-    config.update({
-        KEY.SHIFT + '_cp': shift_cp,
-        KEY.SCALE + '_cp': scale_cp,
-        KEY.CONV_DENOMINATOR + '_cp': conv_denominators,
-    })
+    config.update(
+        {
+            KEY.SHIFT + '_cp': shift_cp,
+            KEY.SCALE + '_cp': scale_cp,
+            KEY.CONV_DENOMINATOR + '_cp': conv_denominators,
+        }
+    )
 
     chem_keys = [
         KEY.TYPE_MAP,
@@ -198,17 +202,21 @@ def processing_continue(config):
     if (
         KEY.USE_MODALITY in config_cp.keys() and config_cp[KEY.USE_MODALITY]
     ):  # checkpoint model is multimodal
-        config.update({
-            KEY.MODAL_MAP + '_cp': config_cp[KEY.MODAL_MAP],
-            KEY.USE_MODALITY + '_cp': True,
-            KEY.NUM_MODALITIES + '_cp': len(config_cp[KEY.MODAL_MAP]),
-        })
+        config.update(
+            {
+                KEY.MODAL_MAP + '_cp': config_cp[KEY.MODAL_MAP],
+                KEY.USE_MODALITY + '_cp': True,
+                KEY.NUM_MODALITIES + '_cp': len(config_cp[KEY.MODAL_MAP]),
+            }
+        )
     else:
-        config.update({
-            KEY.MODAL_MAP + '_cp': {},
-            KEY.USE_MODALITY + '_cp': False,
-            KEY.NUM_MODALITIES + '_cp': 0,
-        })
+        config.update(
+            {
+                KEY.MODAL_MAP + '_cp': {},
+                KEY.USE_MODALITY + '_cp': False,
+                KEY.NUM_MODALITIES + '_cp': 0,
+            }
+        )
 
     log.write(f'checkpoint previous epoch was: {from_epoch}\n')
 

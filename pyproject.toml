@@ -1,6 +1,6 @@
 [project]
 name = "sevenn"
-version = "0.11.0"
+version = "0.11.2.post1"
 authors = [
     { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
     { name = "Haekwan Jeon", email = "haekwan98@snu.ac.kr" },
@@ -14,7 +14,7 @@ license = { file = "LICENSE" }
 requires-python = ">=3.8"
 classifiers = [
     "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: GNU General Public License v3 (GPLv3)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
 ]
 dependencies = [
@@ -28,9 +28,13 @@ dependencies = [
     "numpy",
     "matscipy",
     "pandas",
+    "requests",
+    "setuptools>=61.0"
 ]
 [project.optional-dependencies]
-test = ["matscipy", "pytest-cov>=5"]
+test = ["pytest", "pytest-cov>=5"]
+cueq12 = ["cuequivariance>=0.4.0; python_version >= '3.10'", "cuequivariance-torch>=0.4.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu12; python_version >= '3.10'"]
+cueq11 = ["cuequivariance>=0.4.0; python_version >= '3.10'", "cuequivariance-torch>=0.4.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu11; python_version >= '3.10'"]
 
 [project.scripts]
 sevenn = "sevenn.main.sevenn:main"
