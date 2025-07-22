@@ -48,7 +48,7 @@ train:
     random_seed: 777
     epoch: 2
     loss: 'Huber'
-    loss_param: 
+    loss_param:
         delta: 0.01
     optimizer: adamw
     optim_param:
@@ -58,7 +58,7 @@ train:
     scheduler_param:
         gamma: 0.99
     force_loss_weight: 1.0
-    stress_loss_weight: 0.01 
+    stress_loss_weight: 0.01
     csv_log: log.csv
     num_workers: 0
     is_train_stress: true
@@ -107,6 +107,3 @@ data:
       - data_modality: 'mpa'
         file_list:
           - file: '../data/sevenn_data/graph.pt'
-
-
-
