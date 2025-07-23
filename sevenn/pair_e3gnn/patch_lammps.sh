@@ -3,7 +3,7 @@
 lammps_root=$1
 cxx_standard=$2 # 14, 17
 d3_support=$3 # 1, 0
-flashTP_dir="${4:-NONE}"
+flashTP_so="${4:-NONE}"
 SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
 
 ###########################################
@@ -12,7 +12,7 @@ SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
 
 # Check the number of arguments
 if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
-    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support} {flashTP_dir}"
+    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support} {flashTP_so}"
     echo "  {lammps_root}: Root directory of LAMMPS source"
     echo "  {cxx_standard}: C++ standard (14, 17)"
     echo "  {d3_support}: Support for pair_d3 (1, 0)"
@@ -37,10 +37,10 @@ if [ ! -f "${SCRIPT_DIR}/pair_e3gnn.cpp" ]; then
     exit 1
 fi
 
-if [ "$flashTP_dir" != "NONE" ] && [ -d "$flashTP_dir" ]; then
-    echo "Using flashTP_dir: $flashTP_dir"
+if [ "$flashTP_so" != "NONE" ] && [ -f "$flashTP_so" ]; then
+    echo "Using flashTP_so: $flashTP_so"
 else
-    echo "Invalid or missing flashTP_dir given"
+    echo "Invalid or missing flashTP_so given"
     exit 1
 fi
 
@@ -115,18 +115,23 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
 EOF
 
-if [ "$flashTP_dir" != "NONE" ]; then
+if [ "$flashTP_so" != "NONE" ]; then
 
 cat >> $lammps_root/cmake/CMakeLists.txt << "EOF"
 
 find_package(Python3 REQUIRED COMPONENTS Development)
-add_subdirectory(sptp_exp_opt_large)
-target_link_libraries(lammps PUBLIC -Wl,--no-as-needed sptp_exp_opt_large)
+target_link_libraries(lammps PUBLIC -Wl,--no-as-needed
+    ${CMAKE_CURRENT_LIST_DIR}/flashTP/libflashtp_large_kernel_lammps.so
+    Python3::Python
+)
+set_target_properties(lammps PROPERTIES
+    BUILD_RPATH "${CMAKE_CURRENT_LIST_DIR}/flashTP"
+)
 EOF
 
 echo "[FlashTP] CMakeLists.txt is patched"
 
-cp -r $flashTP_dir $lammps_root/cmake/ && echo "[FlashTP] sub directory copied"
+mkdir -p $lammps_root/cmake/flashTP && cp $flashTP_so $lammps_root/cmake/flashTP/libflashtp_large_kernel_lammps.so && echo "[FlashTP] flashTP so file copied"
 
 fi
 

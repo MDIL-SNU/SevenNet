@@ -1,6 +1,13 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.12.0]
+### Added
+- FlashTP support (https://github.com/SNU-ARC/flashTP)
+
+### Changed
+- ninja dependency added
+
 
 ## [0.11.2]
 ### Changed

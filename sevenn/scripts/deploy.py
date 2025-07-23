@@ -5,7 +5,6 @@ from typing import Optional, Union
 
 import e3nn.util.jit
 import torch
-import torch.nn
 from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
@@ -20,19 +19,15 @@ def deploy(
     modal: Optional[str] = None,
     use_flash: bool = False,
 ) -> None:
-    """
-    This method is messy to avoid changes in pair_e3gnn.cpp, while
-    refactoring python part.
-    If changes the behavior, and accordingly pair_e3gnn.cpp,
-    we have to recompile LAMMPS (which I always want to procrastinate)
-    """
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
 
     cp = load_checkpoint(checkpoint)
-    # TODO: LAMMPS integration for them
+
     model, config = (
-        cp.build_model(enable_cueq=False, enable_flash=use_flash),
+        cp.build_model(
+            enable_cueq=False, enable_flash=use_flash, _flash_lammps=use_flash
+        ),
         cp.config,
     )
 
@@ -67,6 +62,7 @@ def deploy(
     md_configs.update({'chemical_symbols_to_index': chem_list})
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
+    md_configs.update({'flashTP': 'yes' if use_flash else 'no'})
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )
@@ -86,6 +82,7 @@ def deploy_parallel(
     modal: Optional[str] = None,
     use_flash: bool = False,
 ) -> None:
+    assert use_flash is False, "TODO"
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
@@ -145,6 +142,7 @@ def deploy_parallel(
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
     md_configs.update({'comm_size': str(comm_size)})
+    md_configs.update({'flashTP': 'yes' if use_flash else 'no'})
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )

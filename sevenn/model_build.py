@@ -298,10 +298,12 @@ def patch_flash_tp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         )
         return layers
 
+    # sevenn/checkpoint.py::build_model
+    _flash_lammps = config.get("_flash_lammps", False)
     updates = {}
     for k, module in layers.items():
         if isinstance(module, IrrepsConvolution):
-            updates[k] = flash_helper.patch_convolution(module)
+            updates[k] = flash_helper.patch_convolution(module, _flash_lammps)
 
     layers.update(updates)
     return layers

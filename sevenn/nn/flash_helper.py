@@ -28,7 +28,9 @@ def flash_needed(func: Callable) -> Callable:
 
 
 @flash_needed
-def patch_convolution(irreps_convolution: IrrepsConvolution):
+def patch_convolution(
+    irreps_convolution: IrrepsConvolution, _flash_lammps: bool = False
+):
     from sevenn.nn.convolution import IrrepsScatterGatterFusedConvolution
 
     assert not irreps_convolution.layer_instantiated
@@ -37,6 +39,7 @@ def patch_convolution(irreps_convolution: IrrepsConvolution):
         irreps_convolution
     )
     ret.convolution_cls = uvu_TP  # type: ignore
+    ret.convolution_kwargs["use_lammps"] = _flash_lammps
     del ret.convolution_kwargs['shared_weights']
     del ret.convolution_kwargs['internal_weights']
 

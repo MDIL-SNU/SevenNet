@@ -1,5 +1,6 @@
 import argparse
 import os
+import os.path as osp
 import subprocess
 
 from sevenn import __version__
@@ -40,6 +41,7 @@ def run(args):
         d3_support = '0'
         print('  - D3 support disabled')
 
+    so_lammps = ""
     if args.flashTP:
         import sevenn.nn.flash_helper
 
@@ -48,9 +50,28 @@ def run(args):
 
         import flashTP_e3nn.flashTP as hook
 
-        flash_dir = os.path.join(
-            os.path.dirname(hook.__file__), 'sptp_exp_opt_large'
-        )
+        flash_dir = osp.abspath(osp.dirname(hook.__file__))
+
+        so_files = []
+        so_lammps = []
+        for ls in os.listdir(flash_dir):
+            fpath = osp.join(flash_dir, ls)
+            if ls.endswith('.so'):
+                so_files.append(fpath)
+                if 'lammps' in ls:
+                    so_lammps.append(fpath)
+        if len(so_files) == 0:
+            raise ValueError(
+                f'FlashTP .so file not found. The dir searched: {flash_dir}'
+            )
+        if len(so_lammps) == 0:
+            raise ValueError(
+                f'FlashTP lammps .so file not found  The dir searched: {flash_dir}'
+            )
+        elif len(so_lammps) > 1:
+            raise ValueError(f'More than 1 lammps .so files are found: {so_lammps}')
+        so_lammps = so_lammps[0]
+
         print('  - FlashTP support enabled.')
     else:
         flash_dir = None
@@ -58,8 +79,9 @@ def run(args):
     script = f'{pair_e3gnn_dir}/patch_lammps.sh'
     cmd = f'{script} {lammps_dir} {cxx_standard} {d3_support}'
 
-    if flash_dir is not None:
-        cmd += f' {flash_dir}'
+    if args.flashTP:
+        assert osp.isfile(so_lammps)
+        cmd += f' {so_lammps}'
 
     res = subprocess.run(cmd.split())
     return res.returncode  # is it meaningless?
