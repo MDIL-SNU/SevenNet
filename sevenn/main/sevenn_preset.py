@@ -25,7 +25,8 @@ def add_args(parser):
             'sevennet-0',
             'sevennet-l3i5',
             'base',
-            'multi_modal'
+            'multi_modal',
+            'mf_ompa_fine_tune',
         ],
         help=preset_help
     )
