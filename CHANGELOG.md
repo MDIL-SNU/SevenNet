@@ -9,6 +9,14 @@ All notable changes to this project will be documented in this file.
 - ninja dependency added
 
 
+## [0.12.0-dev]
+### Added
+- Example config for fine-tuning the SevenNet-MF-ompa model
+
+### Fixed
+- Multi modal model finetuning: Pass modal_map into config during multi-fidelity continual training #232
+
+
 ## [0.11.2]
 ### Changed
 - change cueq default config
