@@ -1,17 +1,14 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [0.12.0]
-### Added
-- FlashTP support (https://github.com/SNU-ARC/flashTP)
-
-### Changed
-- ninja dependency added
-
 
 ## [0.12.0-dev]
 ### Added
 - Example config for fine-tuning the SevenNet-MF-ompa model
+- FlashTP support (https://github.com/SNU-ARC/flashTP)
+
+### Changed
+- ninja dependency added
 
 ### Fixed
 - Multi modal model finetuning: Pass modal_map into config during multi-fidelity continual training #232
