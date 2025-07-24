@@ -6,8 +6,8 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Example config for fine-tuning the SevenNet-MF-ompa model
 
-### Changed
-- Pass modal_map into config during multi-fidelity continual training
+### Fixed
+- Multi modal model finetuning: Pass modal_map into config during multi-fidelity continual training #232
 
 
 ## [0.11.2]
