@@ -41,7 +41,7 @@ def run(args):
         d3_support = '0'
         print('  - D3 support disabled')
 
-    so_lammps = ""
+    so_lammps = ''
     if args.flashTP:
         import sevenn.nn.flash_helper
 

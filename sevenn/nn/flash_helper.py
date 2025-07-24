@@ -39,7 +39,7 @@ def patch_convolution(
         irreps_convolution
     )
     ret.convolution_cls = uvu_TP  # type: ignore
-    ret.convolution_kwargs["use_lammps"] = _flash_lammps
+    ret.convolution_kwargs['use_lammps'] = _flash_lammps
     del ret.convolution_kwargs['shared_weights']
     del ret.convolution_kwargs['internal_weights']
 

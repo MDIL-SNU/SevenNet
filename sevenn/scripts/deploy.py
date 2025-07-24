@@ -82,7 +82,7 @@ def deploy_parallel(
     modal: Optional[str] = None,
     use_flash: bool = False,
 ) -> None:
-    assert use_flash is False, "TODO"
+    assert use_flash is False, 'TODO'
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 

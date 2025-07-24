@@ -330,7 +330,7 @@ class SevenNetCheckpoint:
 
         assert not _flash_lammps or enable_flash
         cfg_new = self.config
-        cfg_new["_flash_lammps"] = _flash_lammps
+        cfg_new['_flash_lammps'] = _flash_lammps
 
         if (cp_using_cueq, cp_using_flash) == (enable_cueq, enable_flash):
             # backend not given, or checkpoint backend is same as requested
