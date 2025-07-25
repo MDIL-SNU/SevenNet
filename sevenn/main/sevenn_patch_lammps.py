@@ -43,12 +43,10 @@ def run(args):
 
     so_lammps = ''
     if args.flashTP:
-        import sevenn.nn.flash_helper
-
-        if not sevenn.nn.flash_helper.is_flash_available():
-            raise ImportError('FlashTP not installed or no GPU found.')
-
-        import flashTP_e3nn.flashTP as hook
+        try:
+            import flashTP_e3nn.flashTP as hook
+        except ImportError
+            raise ImportError('FlashTP is not installed')
 
         flash_dir = osp.abspath(osp.dirname(hook.__file__))
 
