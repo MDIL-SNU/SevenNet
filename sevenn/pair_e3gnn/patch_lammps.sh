@@ -3,6 +3,7 @@
 lammps_root=$1
 cxx_standard=$2 # 14, 17
 d3_support=$3 # 1, 0
+flashTP_so="${4:-NONE}"
 SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
 
 ###########################################
@@ -10,8 +11,8 @@ SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
 ###########################################
 
 # Check the number of arguments
-if [ "$#" -ne 3 ]; then
-    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support}"
+if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
+    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support} {flashTP_so}"
     echo "  {lammps_root}: Root directory of LAMMPS source"
     echo "  {cxx_standard}: C++ standard (14, 17)"
     echo "  {d3_support}: Support for pair_d3 (1, 0)"
@@ -33,6 +34,13 @@ fi
 # Check if the script is being run from the root of SevenNet
 if [ ! -f "${SCRIPT_DIR}/pair_e3gnn.cpp" ]; then
     echo "Error: Script executed in a wrong directory"
+    exit 1
+fi
+
+if [ "$flashTP_so" != "NONE" ] && [ -f "$flashTP_so" ]; then
+    echo "Using flashTP_so: $flashTP_so"
+else
+    echo "Invalid or missing flashTP_so given"
     exit 1
 fi
 
@@ -106,6 +114,27 @@ find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
 EOF
+
+if [ "$flashTP_so" != "NONE" ]; then
+
+cat >> $lammps_root/cmake/CMakeLists.txt << "EOF"
+
+find_package(Python3 REQUIRED COMPONENTS Development)
+target_link_libraries(lammps PUBLIC -Wl,--no-as-needed
+    ${CMAKE_CURRENT_LIST_DIR}/flashTP/libflashtp_large_kernel_lammps.so
+    Python3::Python
+)
+set_target_properties(lammps PROPERTIES
+    BUILD_RPATH "${CMAKE_CURRENT_LIST_DIR}/flashTP"
+)
+EOF
+
+echo "[FlashTP] CMakeLists.txt is patched"
+
+mkdir -p $lammps_root/cmake/flashTP && cp $flashTP_so $lammps_root/cmake/flashTP/libflashtp_large_kernel_lammps.so && echo "[FlashTP] flashTP so file copied"
+
+fi
+
 
 ###########################################
 # Patch LAMMPS source code: d3            #

@@ -37,7 +37,8 @@ class SevenNetCalculator(Calculator):
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
         modal: Optional[str] = None,
-        enable_cueq: bool = False,
+        enable_cueq: Optional[bool] = None,
+        enable_flash: Optional[bool] = None,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
     ) -> None:
@@ -91,8 +92,9 @@ class SevenNetCalculator(Calculator):
         if file_type == 'checkpoint' and isinstance(model, str):
             cp = util.load_checkpoint(model)
 
-            backend = 'e3nn' if not enable_cueq else 'cueq'
-            model_loaded = cp.build_model(backend)
+            model_loaded = cp.build_model(
+                enable_cueq=enable_cueq, enable_flash=enable_flash
+            )
             model_loaded.set_is_batch_data(False)
 
             self.type_map = cp.config[KEY.TYPE_MAP]

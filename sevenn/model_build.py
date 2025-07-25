@@ -241,7 +241,7 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         warnings.warn(
             (
                 'cuEquivariance is requested, but the package is not installed. '
-                + 'Fallback to original code.'
+                + 'Fallback to e3nn.'
             )
         )
         return layers
@@ -283,9 +283,36 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     return layers
 
 
+def patch_flash_tp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
+    import sevenn.nn.flash_helper as flash_helper
+
+    if not config.get('use_flash_tp', False):
+        return layers
+
+    if not flash_helper.is_flash_available():
+        warnings.warn(
+            (
+                'FlashTP is requested, but the package is not installed '
+                + 'or GPU not available. Fallback to e3nn.'
+            )
+        )
+        return layers
+
+    # sevenn/checkpoint.py::build_model
+    _flash_lammps = config.get('_flash_lammps', False)
+    updates = {}
+    for k, module in layers.items():
+        if isinstance(module, IrrepsConvolution):
+            updates[k] = flash_helper.patch_convolution(module, _flash_lammps)
+
+    layers.update(updates)
+    return layers
+
+
 def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
     layers = patch_cue(layers, config)
+    layers = patch_flash_tp(layers, config)
     return layers
 
 

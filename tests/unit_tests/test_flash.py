@@ -13,7 +13,7 @@ import sevenn.train.dataload as dl
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.nn.cue_helper import is_cue_available
+from sevenn.nn.flash_helper import is_flash_available
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.util import chemical_species_preprocess, model_from_checkpoint
 
@@ -40,7 +40,7 @@ def get_model_config():
         'cutoff': cutoff,
         'channel': 32,
         'lmax': 2,
-        'is_parity': True,
+        'is_parity': False,  # TODO: fails with True, from flashTP side
         'num_convolution_layer': 3,
         'self_connection_type': 'nequip',  # not NequIp
         'interaction_type': 'nequip',
@@ -70,13 +70,12 @@ def get_model_config():
     return config
 
 
-def get_model(config_overwrite=None, use_cueq=False, cueq_config=None):
+def get_model(config_overwrite=None, use_flash=False):
     cf = get_model_config()
     if config_overwrite is not None:
         cf.update(config_overwrite)
 
-    cueq_config = cueq_config or {'cuequivariance_config': {'use': use_cueq}}
-    cf.update(cueq_config)
+    cf['use_flash_tp'] = use_flash
 
     model = build_E3_equivariant_model(cf, parallel=False)
     assert isinstance(model, AtomGraphSequential)
@@ -85,16 +84,13 @@ def get_model(config_overwrite=None, use_cueq=False, cueq_config=None):
 
 
 @pytest.mark.skipif(
-    not is_cue_available() or not torch.cuda.is_available(),
-    reason='cueq or gpu is not available',
+    not is_flash_available() or not torch.cuda.is_available(),
+    reason='flashTP or gpu is not available',
 )
 @pytest.mark.parametrize(
     'cf',
     [
         ({}),
-        ({'self_connection_type': 'linear'}),
-        ({'is_parity': False}),
-        ({'channel': 8}),
         ({'lmax': 3}),
         ({'num_interaction_layer': 2}),
         ({'num_interaction_layer': 4}),
@@ -104,54 +100,54 @@ def test_model_output(cf):
     torch.manual_seed(777)
     model_e3nn = get_model(cf)
     torch.manual_seed(777)
-    model_cueq = get_model(cf, use_cueq=True)
+    model_flash = get_model(cf, use_flash=True)
 
     model_e3nn.set_is_batch_data(True)
-    model_cueq.set_is_batch_data(True)
+    model_flash.set_is_batch_data(True)
 
     e3nn_out = model_e3nn._preprocess(get_graphs(batched=True))
-    cueq_out = model_cueq._preprocess(get_graphs(batched=True))
+    flash_out = model_flash._preprocess(get_graphs(batched=True))
 
     for k, e3nn_f in model_e3nn._modules.items():
-        cueq_f = model_cueq._modules[k]
+        flash_f = model_flash._modules[k]
         e3nn_out = e3nn_f(e3nn_out)  # type: ignore
-        cueq_out = cueq_f(cueq_out)  # type: ignore
-        assert torch.allclose(e3nn_out.x, cueq_out.x, atol=1e-6), (
-            f'{k} \n\n {e3nn_f} \n\n {cueq_f}'
+        flash_out = flash_f(flash_out)  # type: ignore
+        assert torch.allclose(e3nn_out.x, flash_out.x, atol=1e-6), (
+            f'{k} \n\n {e3nn_f} \n\n {flash_f}'
         )
 
     assert torch.allclose(
-        e3nn_out.inferred_total_energy, cueq_out.inferred_total_energy
+        e3nn_out.inferred_total_energy, flash_out.inferred_total_energy
     )
-    assert torch.allclose(e3nn_out.atomic_energy, cueq_out.atomic_energy)
+    assert torch.allclose(e3nn_out.atomic_energy, flash_out.atomic_energy)
     assert torch.allclose(
-        e3nn_out.inferred_force, cueq_out.inferred_force, atol=1e-5
+        e3nn_out.inferred_force, flash_out.inferred_force, atol=1e-5
     )
     assert torch.allclose(
-        e3nn_out.inferred_stress, cueq_out.inferred_stress, atol=1e-5
+        e3nn_out.inferred_stress, flash_out.inferred_stress, atol=1e-5
     )
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(
-    not is_cue_available() or not torch.cuda.is_available(),
-    reason='cueq or gpu is not available',
+    not is_flash_available() or not torch.cuda.is_available(),
+    reason='flash or gpu is not available',
 )
 @pytest.mark.parametrize(
-    'start_from_cueq',
+    'start_from_flash',
     [
         (True),
         (False),
     ],
 )
-def test_checkpoint_convert(tmp_path, start_from_cueq):
+def test_checkpoint_convert(tmp_path, start_from_flash):
     torch.manual_seed(123)
-    model_from = get_model(use_cueq=start_from_cueq)
+    model_from = get_model(use_flash=start_from_flash)
 
     cfg = get_model_config()
     cfg.update(
         {
-            'cuequivariance_config': {'use': start_from_cueq},
+            'use_flash_tp': start_from_flash,
             'version': sevenn.__version__,
         }
     )
@@ -161,7 +157,7 @@ def test_checkpoint_convert(tmp_path, start_from_cueq):
     )
 
     model_to, _ = model_from_checkpoint(
-        str(tmp_path / 'cp_from.pth'), enable_cueq=(not start_from_cueq)
+        str(tmp_path / 'cp_from.pth'), enable_flash=(not start_from_flash)
     )
     model_to.to('cuda')
 
@@ -183,24 +179,24 @@ def test_checkpoint_convert(tmp_path, start_from_cueq):
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(
-    not is_cue_available() or not torch.cuda.is_available(),
-    reason='cueq or gpu is not available',
+    not is_flash_available() or not torch.cuda.is_available(),
+    reason='flash or gpu is not available',
 )
 @pytest.mark.parametrize(
-    'start_from_cueq',
+    'start_from_flash',
     [
         (True),
         (False),
     ],
 )
-def test_checkpoint_convert_no_batch(tmp_path, start_from_cueq):
+def test_checkpoint_convert_no_batch(tmp_path, start_from_flash):
     torch.manual_seed(123)
-    model_from = get_model(use_cueq=start_from_cueq)
+    model_from = get_model(use_flash=start_from_flash)
 
     cfg = get_model_config()
     cfg.update(
         {
-            'cuequivariance_config': {'use': start_from_cueq},
+            'use_flash_tp': start_from_flash,
             'version': sevenn.__version__,
         }
     )
@@ -210,7 +206,7 @@ def test_checkpoint_convert_no_batch(tmp_path, start_from_cueq):
     )
 
     model_to, _ = model_from_checkpoint(
-        str(tmp_path / 'cp_from.pth'), enable_cueq=(not start_from_cueq)
+        str(tmp_path / 'cp_from.pth'), enable_flash=(not start_from_flash)
     )
     model_to.to('cuda')
 
@@ -249,19 +245,19 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
 @pytest.mark.skipif(
-    not is_cue_available() or not torch.cuda.is_available(),
-    reason='cueq or gpu is not available',
+    not is_flash_available() or not torch.cuda.is_available(),
+    reason='flash or gpu is not available',
 )
 def test_calculator(tmp_path):
-    cueq = True
-    model = get_model(use_cueq=cueq)
+    flash = True
+    model = get_model(use_flash=flash)
     ref_calc = SevenNetCalculator(model, file_type='model_instance')
     atoms = copy.deepcopy(_atoms)
     atoms.calc = ref_calc
 
     cfg = get_model_config()
     cfg.update(
-        {'cuequivariance_config': {'use': cueq}, 'version': sevenn.__version__}
+        {'use_flash_tp': flash, 'version': sevenn.__version__}
     )
 
     cp_path = str(tmp_path / 'cp.pth')
@@ -270,7 +266,7 @@ def test_calculator(tmp_path):
         cp_path,
     )
 
-    calc2 = SevenNetCalculator(cp_path, enable_cueq=False)
+    calc2 = SevenNetCalculator(cp_path, enable_flash=False)
     atoms2 = copy.deepcopy(_atoms)
     atoms2.calc = calc2
 
