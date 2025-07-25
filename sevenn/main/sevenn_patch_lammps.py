@@ -45,7 +45,7 @@ def run(args):
     if args.flashTP:
         try:
             import flashTP_e3nn.flashTP as hook
-        except ImportError
+        except ImportError:
             raise ImportError('FlashTP is not installed')
 
         flash_dir = osp.abspath(osp.dirname(hook.__file__))
