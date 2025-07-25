@@ -82,7 +82,6 @@ def deploy_parallel(
     modal: Optional[str] = None,
     use_flash: bool = False,
 ) -> None:
-    assert use_flash is False, 'TODO'
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
@@ -92,6 +91,7 @@ def deploy_parallel(
         cp.config,
     )
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
+    config[KEY.USE_FLASH_TP] = use_flash
     model_state_dct = model.state_dict()
 
     model_list = build_E3_equivariant_model(config, parallel=True)
