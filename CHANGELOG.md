@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Multi modal model finetuning: Pass modal_map into config during multi-fidelity continual training #232
+- omat deploy parallel fixed
 
 
 ## [0.11.2]
