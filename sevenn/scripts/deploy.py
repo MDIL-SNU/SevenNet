@@ -117,7 +117,7 @@ def deploy_parallel(
 
     if modal:
         model_list[0].prepare_modal_deploy(modal)
-    elif model_list[0].modal_map is not None:
+    elif model.modal_map is not None and len(model.modal_map) >= 1:
         raise ValueError(
             f'Modal is not given. It has: {list(model_list[0].modal_map.keys())}'
         )
