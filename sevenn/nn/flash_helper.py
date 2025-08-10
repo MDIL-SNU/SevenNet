@@ -22,7 +22,9 @@ def flash_needed(func: Callable) -> Callable:
         if is_flash_available():
             return func(*args, **kwargs)
         else:
-            raise ImportError('FlashTP is not available')
+            raise ImportError(
+                'FlashTP is not available (no GPU found or import fail)'
+            )
 
     return wrapper
 
