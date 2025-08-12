@@ -159,7 +159,7 @@ def is_cue_cuda_available_model(config: Dict[str, Any]) -> bool:
 
 
 @cue_needed
-def as_cue_irreps(irreps: o3.Irreps, group: Literal['SO3', 'O3']) -> cue.Irreps:
+def as_cue_irreps(irreps: o3.Irreps, group: Literal['SO3', 'O3']):
     """Convert e3nn irreps to given group's cue irreps"""
     if group == 'SO3':
         assert all(irrep.ir.p == 1 for irrep in irreps)
