@@ -1,5 +1,6 @@
 import argparse
 import os
+import os.path as osp
 import subprocess
 
 from sevenn import __version__
@@ -21,6 +22,7 @@ def add_args(parser):
     ag = parser
     ag.add_argument('lammps_dir', help='Path to LAMMPS source', type=str)
     ag.add_argument('--d3', help='Enable D3 support', action='store_true')
+    ag.add_argument('--flashTP', help='Enable flashTP', action='store_true')
     # cxx_standard is detected automatically
 
 
@@ -39,8 +41,46 @@ def run(args):
         d3_support = '0'
         print('  - D3 support disabled')
 
+    so_lammps = ''
+    if args.flashTP:
+        try:
+            import flashTP_e3nn.flashTP as hook
+        except ImportError:
+            raise ImportError('FlashTP import failed.')
+
+        flash_dir = osp.abspath(osp.dirname(hook.__file__))
+
+        so_files = []
+        so_lammps = []
+        for ls in os.listdir(flash_dir):
+            fpath = osp.join(flash_dir, ls)
+            if ls.endswith('.so'):
+                so_files.append(fpath)
+                if 'lammps' in ls:
+                    so_lammps.append(fpath)
+        if len(so_files) == 0:
+            raise ValueError(
+                f'FlashTP .so file not found. The dir searched: {flash_dir}'
+            )
+        if len(so_lammps) == 0:
+            raise ValueError(
+                f'FlashTP lammps .so file not found  The dir searched: {flash_dir}'
+            )
+        elif len(so_lammps) > 1:
+            raise ValueError(f'More than 1 lammps .so files are found: {so_lammps}')
+        so_lammps = so_lammps[0]
+
+        print('  - FlashTP support enabled.')
+    else:
+        flash_dir = None
+
     script = f'{pair_e3gnn_dir}/patch_lammps.sh'
     cmd = f'{script} {lammps_dir} {cxx_standard} {d3_support}'
+
+    if args.flashTP:
+        assert osp.isfile(so_lammps)
+        cmd += f' {so_lammps}'
+
     res = subprocess.run(cmd.split())
     return res.returncode  # is it meaningless?
 

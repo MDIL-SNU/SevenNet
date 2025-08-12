@@ -561,6 +561,7 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
       {"version", ""},
       {"dtype", ""},
       {"time", ""},
+      {"flashTP", "version mismatch"},
       {"comm_size", ""}};
 
   // model loading from input
@@ -658,8 +659,10 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   if (lmp->logfile) {
     fprintf(lmp->logfile, "from sevenn version '%s' ",
             meta_dict["version"].c_str());
-    fprintf(lmp->logfile, "%s precision model, deployed when: %s\n",
+    fprintf(lmp->logfile, "%s precision model, deployed: %s\n",
             meta_dict["dtype"].c_str(), meta_dict["time"].c_str());
+    fprintf(lmp->logfile, "FlashTP: %s\n",
+            meta_dict["flashTP"].c_str());
   }
 }
 
