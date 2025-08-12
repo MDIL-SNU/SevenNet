@@ -1,5 +1,5 @@
-import os
 import copy
+import os
 import warnings
 from collections import OrderedDict
 from typing import Any, Dict, List, Literal, Tuple, Type, Union, overload
@@ -251,7 +251,7 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         return layers
 
     use_scatter_fusion = (
-        os.environ.get('CUEQ_USE_SCATTER_FUSION') or 
+        os.environ.get('CUEQ_USE_SCATTER_FUSION') or
         cue_cfg.pop('use_scatter_fusion', True)
     )
     if isinstance(use_scatter_fusion, str):
@@ -261,7 +261,7 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         os.environ.get('CUEQ_TP_METHOD') or
         cue_cfg.pop('cueq_tp_method', 'uniform_1d')
     )
-    assert tp_method in ("uniform_1d", "naive", "fused_tp", "indexed_linear")
+    assert tp_method in ('uniform_1d', 'naive', 'fused_tp', 'indexed_linear')
 
     group = 'O3' if config[KEY.IS_PARITY] else 'SO3'
     cueq_patch_kwargs = dict(layout='mul_ir')
