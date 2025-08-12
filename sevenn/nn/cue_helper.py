@@ -207,7 +207,7 @@ def patch_convolution(
     use_scatter_fusion: bool = False,
     tp_method: str = 'uniform_id',
     **cue_kwargs,
-) -> IrrepsConvolution | IrrepsScatterGatterFusedConvolution:
+):
     assert not module.layer_instantiated
 
     if use_scatter_fusion:
