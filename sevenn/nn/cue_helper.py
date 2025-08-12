@@ -225,6 +225,7 @@ def patch_convolution(
     assert all([a == b for a, b in zip(inst_orig, inst_sorted)])
 
     if not use_scatter_fusion:
+        conv_kwargs['filter_irreps_out'] = conv_kwargs.pop('irreps_out')
         may_not_compatible_default = dict(
             in1_var=None,
             in2_var=None,
