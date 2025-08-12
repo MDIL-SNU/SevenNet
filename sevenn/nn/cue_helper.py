@@ -4,8 +4,9 @@ from typing import Any, Callable, Dict, Iterator, Literal, Union
 
 import e3nn.o3 as o3
 import numpy as np
+import torch.nn
 
-from .convolution import IrrepsConvolution
+from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
 from .linear import IrrepsLinear
 from .self_connection import SelfConnectionIntro, SelfConnectionLinearIntro
 
@@ -48,6 +49,82 @@ try:
                 yield O3_e3nn(l=l, p=1 * (-1) ** l)
                 yield O3_e3nn(l=l, p=-1 * (-1) ** l)
 
+    class cueq_fused_scatter_channelwise_conv(torch.nn.Module):
+        def __init__(
+            self,
+            irreps_in1: cue.Irreps,  # node feats
+            irreps_in2: cue.Irreps,  # spherical harmonics
+            irreps_out: cue.Irreps,
+            tp_method: str,
+            in_out_irreps_layout: cue.IrrepsLayout = cue.IrrepsLayout.mul_ir,
+            **kwargs_dct,
+        ) -> None:
+            super().__init__()
+
+            irreps_x = irreps_in1
+            irreps_filter = irreps_in2
+
+            assert not kwargs_dct.pop('shared_weights', False)
+            assert not kwargs_dct.pop('internal_weights', False)
+
+            self.t_in = cuet.TransposeIrrepsLayout(
+                irreps_x,
+                source=in_out_irreps_layout,
+                target=cue.IrrepsLayout.ir_mul,
+            )
+
+            self.t_out = cuet.TransposeIrrepsLayout(
+                irreps_out,
+                source=cue.IrrepsLayout.ir_mul,
+                target=in_out_irreps_layout,
+            )
+
+            x_muls = np.array(irreps_x.muls)
+            if np.all(x_muls == x_muls[0]):
+                # all channel same, simple fusion
+                poly = (
+                    cue.descriptors.channelwise_tensor_product(
+                        irreps_x,
+                        irreps_filter,
+                        irreps_out,
+                    )
+                    .flatten_coefficient_modes()
+                    .squeeze_modes()
+                    .polynomial
+                )
+            else:
+                assert in_out_irreps_layout == cue.IrrepsLayout.mul_ir
+                # https://github.com/NVIDIA/cuEquivariance/issues/112
+                n = np.gcd.reduce(x_muls)
+                poly = cue.descriptors.channelwise_tensor_product(
+                    irreps_x, irreps_filter, irreps_out
+                ).polynomial
+                poly = poly.flatten_modes('ijk').squeeze_modes('v')
+                poly = poly.apply_fn(lambda op, d: (op, d.split_mode('u', n)))
+                assert poly.all_same_segment_shape()
+
+            print(f'DEBUG: cueq fused poly: {poly}')
+            print(f'DEBUG: cueq method: {tp_method}')
+            self.f = cuet.SegmentedPolynomial(poly, method=tp_method)
+
+        def forward(
+            self,
+            x: torch.Tensor,
+            filter: torch.Tensor,
+            w: torch.Tensor,
+            edge_src: torch.Tensor,
+            edge_dst: torch.Tensor,
+        ) -> torch.Tensor:
+            xt = self.t_in(x)
+            o = self.f(
+                [w, xt, filter],
+                {1: edge_src.to(torch.int64)},
+                {0: xt},
+                {0: edge_dst.to(torch.int64)},
+            )[0]
+            return self.t_out(o)
+
+
 except ImportError:
     _CUE_AVAILABLE = False
 
@@ -82,7 +159,7 @@ def is_cue_cuda_available_model(config: Dict[str, Any]) -> bool:
 
 
 @cue_needed
-def as_cue_irreps(irreps: o3.Irreps, group: Literal['SO3', 'O3']):
+def as_cue_irreps(irreps: o3.Irreps, group: Literal['SO3', 'O3']) -> cue.Irreps:
     """Convert e3nn irreps to given group's cue irreps"""
     if group == 'SO3':
         assert all(irrep.ir.p == 1 for irrep in irreps)
@@ -126,40 +203,49 @@ def patch_linear(
 def patch_convolution(
     module: IrrepsConvolution,
     group: Literal['SO3', 'O3'],
+    *,
+    use_scatter_fusion: bool = False,
+    tp_method: str = 'uniform_id',
     **cue_kwargs,
-) -> IrrepsConvolution:
+) -> IrrepsConvolution | IrrepsScatterGatterFusedConvolution:
     assert not module.layer_instantiated
 
-    # conv_kwargs will be patched in place
-    conv_kwargs = module.convolution_kwargs
-    conv_kwargs.update(
-        dict(
-            irreps_in1=as_cue_irreps(conv_kwargs.get('irreps_in1'), group),
-            irreps_in2=as_cue_irreps(conv_kwargs.get('irreps_in2'), group),
-            filter_irreps_out=as_cue_irreps(conv_kwargs.pop('irreps_out'), group),
-        )
-    )
+    if use_scatter_fusion:
+        module = IrrepsScatterGatterFusedConvolution.from_irreps_convolution(module)
 
+    # conv_kwargs patched in place
+    conv_kwargs: dict = module.convolution_kwargs  # type: ignore
+
+    for ir_k in ('irreps_in1', 'irreps_in2', 'irreps_out'):
+        conv_kwargs[ir_k] = as_cue_irreps(conv_kwargs[ir_k], group)
+
+    # Validation logic, old instance w/o instruction sort is not compatible
     inst_orig = conv_kwargs.pop('instructions')
     inst_sorted = sorted(inst_orig, key=lambda x: x[2])
     assert all([a == b for a, b in zip(inst_orig, inst_sorted)])
 
-    may_not_compatible_default = dict(
-        in1_var=None,
-        in2_var=None,
-        out_var=None,
-        irrep_normalization=False,
-        path_normalization='element',
-        compile_left_right=True,
-        compile_right=False,
-        _specialized_code=None,
-        _optimize_einsums=None,
-    )
-    # pop may_not_compatible_defaults
-    _check_may_not_compatible(conv_kwargs, may_not_compatible_default)
+    if not use_scatter_fusion:
+        may_not_compatible_default = dict(
+            in1_var=None,
+            in2_var=None,
+            out_var=None,
+            irrep_normalization=False,
+            path_normalization='element',
+            compile_left_right=True,
+            compile_right=False,
+            _specialized_code=None,
+            _optimize_einsums=None,
+        )
+        # pop may_not_compatible_defaults
+        _check_may_not_compatible(conv_kwargs, may_not_compatible_default)
 
-    module.convolution_cls = cuet.ChannelWiseTensorProduct  # type: ignore
-    conv_kwargs.update(**cue_kwargs)
+        module.convolution_cls = cuet.ChannelWiseTensorProduct  # type: ignore
+        conv_kwargs.update(**cue_kwargs)
+    else:
+        conv_kwargs.update(dict(tp_method=tp_method))
+        print(conv_kwargs)
+        module.convolution_cls = cueq_fused_scatter_channelwise_conv
+
     return module
 
 
