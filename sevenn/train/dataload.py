@@ -464,13 +464,13 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
                             atoms = o.build()
                             atoms.info = info_dct_f.copy()
                         stct_lists.append(atoms)
-                    f_stream.close()
                 else:
                     stct_lists += ase.io.read(
                         expanded_filename,
                         index=index_expr,
                         parallel=False,
                     )
+                f_stream.close()
         structures_dict[title] = stct_lists
     return {k: _set_atoms_y(v) for k, v in structures_dict.items()}
 
