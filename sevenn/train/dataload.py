@@ -420,7 +420,7 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
     structure_list_file.close()
 
     structures_dict = {}
-    info_dct = {'data_from': 'user_OUTCAR'}
+    # info_dct = {'data_from': 'user_OUTCAR'}
     for title, file_lines in raw_str_dict.items():
         stct_lists = []
         for file_line in file_lines:
@@ -436,11 +436,11 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
                     # TODO: support
                     # negative index
                     raise ValueError('Negative index is not supported yet')
-
-                info_dct_f = {
-                    **info_dct,
-                    'file': os.path.abspath(expanded_filename),
-                }
+                # info commented out (conflict with else clause)
+                # info_dct_f = {
+                #     **info_dct,
+                #     'file': os.path.abspath(expanded_filename),
+                # }
                 for idx, o in enumerate(it_atoms):
                     try:
                         it_atoms = islice(
@@ -451,18 +451,18 @@ def structure_list_reader(filename: str, format_outputs: Optional[str] = None):
                         # negative index
                         raise ValueError('Negative index is not supported yet')
 
-                    info_dct_f = {
-                        **info_dct,
-                        'file': os.path.abspath(expanded_filename),
-                    }
+                    # info_dct_f = {
+                    #     **info_dct,
+                    #     'file': os.path.abspath(expanded_filename),
+                    # }
                     for idx, o in enumerate(it_atoms):
                         try:
-                            istep = index.start + idx * index.step  # type: ignore
+                            # istep = index.start + idx * index.step  # type: ignore
                             atoms = o.build()
-                            atoms.info = {**info_dct_f, 'ionic_step': istep}.copy()
+                            # atoms.info = {**info_dct_f, 'ionic_step': istep}.copy()
                         except TypeError:  # it is not slice of ionic steps
                             atoms = o.build()
-                            atoms.info = info_dct_f.copy()
+                            # atoms.info = info_dct_f.copy()
                         stct_lists.append(atoms)
                 else:
                     stct_lists += ase.io.read(
