@@ -57,8 +57,10 @@ class SevenNetCalculator(Calculator):
             modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
             it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
             case insensitive
-        enable_cueq: bool, default=False
+        enable_cueq: bool, default=None (use the checkpoint's backend)
             if True, use cuEquivariant to accelerate inference.
+        enable_flash: bool, default=None (use the checkpoint's backend)
+            if True, use FlashTP to accelerate inference.
         sevennet_config: dict | None, default=None
             Not used, but can be used to carry meta information of this calculator
         """
@@ -72,6 +74,13 @@ class SevenNetCalculator(Calculator):
         file_type = file_type.lower()
         if file_type not in allowed_file_types:
             raise ValueError(f'file_type not in {allowed_file_types}')
+
+        enable_cueq = os.getenv("SEVENNET_ENABLE_CUEQ") == "1" or enable_cueq
+        enable_flash = os.getenv("SEVENNET_ENABLE_FLASH") == "1" or enable_flash
+        print("cueq")
+        print(enable_cueq)
+        print("flash")
+        print(enable_flash)
 
         if enable_cueq and file_type in ['model_instance', 'torchscript']:
             warnings.warn(

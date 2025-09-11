@@ -103,8 +103,6 @@ try:
                 poly = poly.apply_fn(lambda op, d: (op, d.split_mode('u', n)))
                 assert poly.all_same_segment_shape()
 
-            print(f'DEBUG: cueq fused poly: {poly}')
-            print(f'DEBUG: cueq method: {tp_method}')
             self.f = cuet.SegmentedPolynomial(poly, method=tp_method)
 
         def forward(
@@ -244,7 +242,6 @@ def patch_convolution(
         conv_kwargs.update(**cue_kwargs)
     else:
         conv_kwargs.update(dict(tp_method=tp_method))
-        print(conv_kwargs)
         module.convolution_cls = cueq_fused_scatter_channelwise_conv
 
     return module
