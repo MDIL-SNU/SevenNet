@@ -75,11 +75,11 @@ class SevenNetCalculator(Calculator):
         if file_type not in allowed_file_types:
             raise ValueError(f'file_type not in {allowed_file_types}')
 
-        enable_cueq = os.getenv("SEVENNET_ENABLE_CUEQ") == "1" or enable_cueq
-        enable_flash = os.getenv("SEVENNET_ENABLE_FLASH") == "1" or enable_flash
-        print("cueq")
+        enable_cueq = os.getenv('SEVENNET_ENABLE_CUEQ') == '1' or enable_cueq
+        enable_flash = os.getenv('SEVENNET_ENABLE_FLASH') == '1' or enable_flash
+        print('cueq')
         print(enable_cueq)
-        print("flash")
+        print('flash')
         print(enable_flash)
 
         if enable_cueq and file_type in ['model_instance', 'torchscript']:
