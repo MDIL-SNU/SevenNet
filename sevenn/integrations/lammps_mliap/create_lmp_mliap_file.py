@@ -31,6 +31,20 @@ def main(args=None):
     )
 
     parser.add_argument(
+        '-m',
+        '--modal',
+        help='Modality of multi-modal model',
+        default="NONE",
+        type=str,
+    )
+
+    parser.add_argument(
+        '--enable_cueq',
+        help='use cueq.',
+        action='store_true',
+    )
+
+    parser.add_argument(
         "--tf32",
         help="whether to use TF32 or not (default: False)",
         action=argparse.BooleanOptionalAction,
@@ -96,6 +110,7 @@ def main(args=None):
     # === create and save ML-IAP module ===
     logger.writeline(f"Creating LAMMPS ML-IAP artefact from {checkpoint_path} on device={device} ...")
     
+    modal = None if args.modal == "NONE" else args.modal 
     mliap_module = SevenNetLAMMPSMLIAPWrapper(
         model_path=str(checkpoint_path),
         tf32=bool(args.tf32),
@@ -107,7 +122,7 @@ def main(args=None):
         # You can pass modal/enable_cueq/calculator_kwargs here if needed
         # modal="mpa",
         # enable_cueq=True,
-        # calculator_kwargs={"some_flag": True},
+        calculator_kwargs={"modal": modal, "enable_cueq": args.enable_cueq},
     )
     torch.save(mliap_module, args.output_path)
     

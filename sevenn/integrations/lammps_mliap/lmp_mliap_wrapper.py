@@ -74,6 +74,11 @@ class SevenNetLAMMPSMLIAPWrapper:
         ck.update(self.calculator_kwargs)
         self._model_spec = model_path
         self.calc = SevenNetCalculator(model=model_path, **ck)
+        self.calc.model.eval_modal_map = False
+        print(ck)
+        if self.calc.modal:
+            self._modal_idx = self.calc.model.modal_map[self.calc.modal]
+            print(f"INIT: {self.calc.modal}, {self._modal_idx}")
 
         # cutoff: if not provided, try to infer from calculator
         cutoff = kwargs.get("cutoff", None)
@@ -206,6 +211,11 @@ class SevenNetLAMMPSMLIAPWrapper:
             ck.update(self.calculator_kwargs)
         # _model_spec must contain the model path/keyword
         self.calc = SevenNetCalculator(model=self._model_spec, **ck)
+        self.calc.model.eval_modal_map = False
+        print(ck)
+        if self.calc.modal:
+            self._modal_idx = self.calc.model.modal_map[self.calc.modal]
+            print(f"INIT: {self.calc.modal}, {self._modal_idx}")
         self._atoms_cache = None
         self._natoms = None
 
@@ -304,6 +314,12 @@ class SevenNetLAMMPSMLIAPWrapper:
             "cell_volume": torch.as_tensor(V, device=dev, dtype=torch.float32),
             "pbc_shift": torch.as_tensor(s, device=dev, dtype=torch.float32),
         }
+        if self.calc.modal:
+            data["modal_type"] = torch.tensor(
+                self._modal_idx,
+                dtype=torch.int64,
+                device=dev,
+            )
         if is_ts:
             data["x"] = torch.as_tensor(x, device=dev, dtype=torch.long)
         else:
