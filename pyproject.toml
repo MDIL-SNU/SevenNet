@@ -44,6 +44,7 @@ sevenn_inference = "sevenn.main.sevenn_inference:main"
 sevenn_patch_lammps = "sevenn.main.sevenn_patch_lammps:main"
 sevenn_preset = "sevenn.main.sevenn_preset:main"
 sevenn_cp = "sevenn.main.sevenn_cp:main"
+sevenn-prepare-lmp-mliap = "sevenn.integrations.lammps_mliap.create_lmp_mliap_file:main"
 
 [project.urls]
 Homepage = "https://github.com/MDIL-SNU/SevenNet"
