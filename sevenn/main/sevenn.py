@@ -46,12 +46,19 @@ def run(args):
     distributed = args.distributed
     distributed_backend = args.distributed_backend
     use_cue = args.enable_cueq
+    use_flash = args.enable_flashTP
 
     if use_cue:
         import sevenn.nn.cue_helper
 
         if not sevenn.nn.cue_helper.is_cue_available():
             raise ImportError('cuEquivariance not installed.')
+
+    if use_flash:
+        import sevenn.nn.flash_helper
+
+        if not sevenn.nn.flash_helper.is_flash_available():
+            raise ImportError('FlashTP not installed or no GPU found.')
 
     if working_dir is None:
         working_dir = os.getcwd()
@@ -108,6 +115,9 @@ def run(args):
             else:
                 model_config[KEY.CUEQUIVARIANCE_CONFIG].update({'use': True})
 
+        if use_flash:
+            model_config[KEY.USE_FLASH_TP] = True
+
         logger.print_config(model_config, data_config, train_config)
         # don't have to distinguish configs inside program
         global_config.update(model_config)
@@ -145,6 +155,12 @@ def cmd_parser_train(parser):
         '-cueq',
         '--enable_cueq',
         help='use cuEq accelerations for training',
+        action='store_true',
+    )
+    ag.add_argument(
+        '-flashTP',
+        '--enable_flashTP',
+        help='use flashTP accelerations for training',
         action='store_true',
     )
     ag.add_argument(
