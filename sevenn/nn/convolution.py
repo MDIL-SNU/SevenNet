@@ -9,6 +9,8 @@ from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
+from sevenn.nn._ghost_exchange import LAMMPSMLIAPGhostExchangeModule
+
 
 from .activation import ShiftedSoftPlus
 from .util import broadcast
@@ -119,7 +121,9 @@ class IrrepsConvolution(nn.Module):
         assert self.convolution is not None, 'Convolution is not instantiated'
         assert self.weight_nn is not None, 'Weight_nn is not instantiated'
         weight = self.weight_nn(data[self.key_weight_input])
+
         x = data[self.key_x]
+
         if self.is_parallel:
             x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
 
@@ -127,9 +131,11 @@ class IrrepsConvolution(nn.Module):
         edge_dst = data[self.key_edge_idx][0]
 
         message = self.convolution(x[edge_src], data[self.key_filter], weight)
+
         x = message_gather(x, edge_dst, message)
 
         x = x.div(self.denominator)
+
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
         data[self.key_x] = x
@@ -156,6 +162,7 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         data_key_weight_input: str = KEY.EDGE_EMBEDDING,
         data_key_edge_idx: str = KEY.EDGE_IDX,
         lazy_layer_instantiate: bool = True,
+        # is_first_layer: bool = False,
         is_parallel: bool = False,
     ) -> None:
         super().__init__()
@@ -166,6 +173,7 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         self.key_filter = data_key_filter
         self.key_weight_input = data_key_weight_input
         self.key_edge_idx = data_key_edge_idx
+        # self.is_first_layer = is_first_layer
         self.is_parallel = is_parallel
 
         instructions = []
@@ -210,6 +218,8 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         self.convolution_cls = None  # must be assigned from outside
         self.weight_nn_cls = FullyConnectedNet
 
+        self.ghost_exchange = LAMMPSMLIAPGhostExchangeModule(field=data_key_x)
+
         if not lazy_layer_instantiate:
             self.instantiate()
 
@@ -222,9 +232,11 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         """
         irreps_x = src.convolution_kwargs['irreps_in1']
         ret = cls(
-            irreps_x, irreps_x, irreps_x, weight_layer_input_to_hidden=[1]
+            irreps_x, irreps_x, irreps_x, weight_layer_input_to_hidden=[1],
         )
+        ghost_exchange_backup = ret.ghost_exchange
         ret.__dict__ = deepcopy(src.__dict__)
+        ret.ghost_exchange = ghost_exchange_backup
         return ret
 
     def instantiate(self) -> None:
@@ -242,24 +254,50 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         assert self.convolution is not None, 'Convolution is not instantiated'
         assert self.weight_nn is not None, 'Weight_nn is not instantiated'
-        weight = self.weight_nn(data[self.key_weight_input])
+
+        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
+        if use_mliap.item():
+            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+        else:
+            nlocal = data[KEY.NODE_FEATURE].size(0)
+        # if not self.is_first_layer:
+
+
         x = data[self.key_x]
-        if self.is_parallel:
-            x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
+        x = torch.narrow(x, 0, 0, nlocal)
+
+        # ghost_exchange
+        if use_mliap.item():
+            data[self.key_x] = x
+            data = self.ghost_exchange(data, ghost_included=False)
+            x = data[self.key_x]
+
+
+        weight_input = data[self.key_weight_input]
+        # Forward: weight_nn
+        weight = self.weight_nn(weight_input)
+
+        # if self.is_parallel:
+        #     x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
 
         edge_src = data[self.key_edge_idx][1]
         edge_dst = data[self.key_edge_idx][0]
+        edge_filter = data[self.key_filter]
 
         x = self.convolution(
             x,
-            data[self.key_filter],
+            edge_filter, # data[self.key_filter],
             weight,
             edge_src.to(torch.int32),  # trivial?
             edge_dst.to(torch.int32),
         )
 
         x = x.div(self.denominator)
-        if self.is_parallel:
-            x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
-        data[self.key_x] = x
+
+        # if self.is_parallel:
+        #     x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
+        if use_mliap.item():
+            x = torch.narrow(x, 0, 0, nlocal)
+            data[self.key_x] = x
+
         return data

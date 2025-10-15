@@ -225,3 +225,9 @@ CUEQUIVARIANCE_CONFIG = 'cuequivariance_config'
 
 _NORMALIZE_SPH = '_normalize_sph'
 OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
+
+# MLIAP_related
+USE_MLIAP = 'use_mliap'
+MLIAP_NUM_LOCAL_GHOST = 'mliap_num_local_ghost'
+MLIAP_NODE_FEATURE_GHOST = 'mliap_node_feature_ghost'
+LAMMPS_DATA = 'lammps_data' # unused
