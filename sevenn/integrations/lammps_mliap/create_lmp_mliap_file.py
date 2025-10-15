@@ -72,17 +72,12 @@ def main(args=None):
         type=str,
         default=None,
     )
+    
     parser.add_argument(
         "--cutoff",
-        help="Neighbor cutoff (Angstrom). Required if it cannot be inferred from the model.",
+        help="Neighbor cutoff (Angstrom). Required if it cannot be inferred from the model. Note: rcutfac will be automatically set to cutoff * 0.5",
         type=float,
         default=None,
-    )
-    parser.add_argument(
-        "--rcutfac",
-        help="Neighbor cutoff multiplier (default: 1.0).",
-        type=float,
-        default=1.0,
     )
 
     args = parser.parse_args(args=args)
@@ -94,7 +89,7 @@ def main(args=None):
         
     checkpoint_path = None
     if os.path.isfile(args.model_path):
-        checkpoint_path = args.model_path
+        checkpoint_path = str(pathlib.Path(args.model_path).resolve())
     else:
         checkpoint_path = pretrained_name_to_path(args.model_path)
         
@@ -111,6 +106,7 @@ def main(args=None):
     logger.writeline(f"Creating LAMMPS ML-IAP artefact from {checkpoint_path} on device={device} ...")
     
     modal = None if args.modal == "NONE" else args.modal 
+    
     mliap_module = SevenNetLAMMPSMLIAPWrapper(
         model_path=str(checkpoint_path),
         tf32=bool(args.tf32),
@@ -118,15 +114,14 @@ def main(args=None):
         element_types=element_types,
         type_to_Z=type_to_Z,
         cutoff=args.cutoff,
-        rcutfac=float(args.rcutfac),
-        # You can pass modal/enable_cueq/calculator_kwargs here if needed
-        # modal="mpa",
-        # enable_cueq=True,
         calculator_kwargs={"modal": modal, "enable_cueq": args.enable_cueq},
     )
+    
     torch.save(mliap_module, args.output_path)
     
     logger.writeline(f"LAMMPS ML-IAP artefact saved to {args.output_path}")
+    if args.cutoff:
+        logger.writeline(f"Cutoff: {args.cutoff} Å, rcutfac: {args.cutoff * 0.5} (automatically set)")
 
 
 if __name__ == "__main__":

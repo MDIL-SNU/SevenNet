@@ -8,6 +8,17 @@ import sevenn._keys as KEY
 from sevenn._const import NUM_UNIV_ELEMENT, AtomGraphDataType
 
 
+# For MLIAP
+def get_nlocal(data: AtomGraphDataType) -> int:
+    """Helper to get number of local atoms."""
+    use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
+    if use_mliap.item():
+        return data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+    else:
+        # Non-MLIAP: all atoms are local
+        return data[KEY.ATOM_TYPE].size(0)
+
+
 def _as_univ(
     ss: List[float], type_map: Dict[int, int], default: float
 ) -> List[float]:
@@ -338,12 +349,14 @@ class ModalWiseRescale(nn.Module):
         )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        nlocal = get_nlocal(data)
+        
         if self._is_batch_data:
             batch = data[KEY.BATCH]
             modal_indices = data[self.key_modal_indices][batch]
         else:
             modal_indices = data[self.key_modal_indices]
-        atom_indices = data[self.key_atom_indices]
+        atom_indices = data[self.key_atom_indices][:nlocal]
         shift = (
             self.shift[modal_indices, atom_indices]
             if self.use_modal_wise_shift
@@ -354,7 +367,7 @@ class ModalWiseRescale(nn.Module):
             if self.use_modal_wise_scale
             else self.scale[atom_indices]
         )
-        data[self.key_output] = data[self.key_input] * scale.view(
+        data[self.key_output] = data[self.key_input][:nlocal] * scale.view(
             -1, 1
         ) + shift.view(-1, 1)
 
