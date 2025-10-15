@@ -52,30 +52,25 @@ class SevenNetLAMMPSMLIAPWrapper:
             type_to_Z: list[int] (LAMMPS type->Z mapping in pair_coeff order)
             calculator_kwargs: dict (forwarded to SevenNetCalculator)
         """
+
         # --- device / dtype ---
         device = kwargs.get("device", None)
         if device is None:
             device = "cuda" if (_HAS_TORCH and torch.cuda.is_available()) else "cpu"
         self.device = device
-        self.dtype = np.float32
-        
-        self._model_spec = model_path
-        calc_kwargs = kwargs.get("calculator_kwargs", None) or {}
-        self.calculator_kwargs = calc_kwargs
-
-        if tf32 and _HAS_TORCH and torch.cuda.is_available():
-            try:
-                torch.set_float32_matmul_precision("high")
-            except Exception:
-                pass
+        # self.dtype = np.float32
         
         # --- SevenNet calculator ---
+        self._model_spec = model_path
+        self._tf32 = tf32
+        self.calculator_kwargs = kwargs.get("calculator_kwargs", None) or {}
+
         ck = dict(device=self.device)
         ck.update(self.calculator_kwargs)
         self._model_spec = model_path
         self.calc = SevenNetCalculator(model=model_path, **ck)
+        self.calc.model.delete_module_by_key('force_output') # to autograd edge forces
         self.calc.model.eval_modal_map = False
-        print(ck)
         if self.calc.modal:
             self._modal_idx = self.calc.model.modal_map[self.calc.modal]
             print(f"INIT: {self.calc.modal}, {self._modal_idx}")
@@ -99,99 +94,95 @@ class SevenNetLAMMPSMLIAPWrapper:
         self._atoms_cache = None
         self._natoms = None
         
-        # --- resolve element_types (universal fallback) ---
-        element_types = kwargs.get("element_types", None)
+        # Store these for later. (any fallback required?)
+        self._init_element_types = kwargs.get("element_types", None)
+        self._init_type_to_Z = kwargs.get("type_to_Z", None)
+        self._init_cutoff = kwargs.get("cutoff", None)
+        self._init_rcutfac = kwargs.get("rcutfac", 1.0) # ignored
 
-        # 0) if user gave type_to_Z only, map it to symbols first
-        if element_types is None:
-            t2z_kw = kwargs.get("type_to_Z", None)
-            if t2z_kw is not None:
-                element_types = [chemical_symbols[int(z)] for z in t2z_kw]
+        # These will be set in _ensure_model_initialized
+        self.element_types = None
+        self.type_to_Z = None
+        self._init_cutoff = kwargs.get("cutoff", None)
 
-        # 1) try to infer from SevenNet calculator config (preferred)
-        if element_types is None:
-            syms = None
-            cfg = getattr(self.calc, "sevennet_config", None)
-            if isinstance(cfg, dict):
-                # e.g. ['Ac','Ag',...,'Zr'] (full species list from training)
-                syms = cfg.get("chemical_species", None)
-                if syms is not None and len(syms) == 0:
-                    syms = None
-            if syms is not None:
-                element_types = list(syms)
+        self.element_types = None
+        self.type_to_Z = None
+        self.cutoff = None
+        self.rcutfac = None
 
-        # 2) fallback: derive from calc.type_map (keys are atomic numbers)
-        if element_types is None and hasattr(self.calc, "type_map"):
-            zs = sorted(int(z) for z in self.calc.type_map.keys())  # ascending Z
-            element_types = [chemical_symbols[z] for z in zs]
+        cfg = getattr(self.calc, "sevennet_config", None)
+        syms = cfg.get("chemical_species", None)
+        self.element_types = list(syms)
+        self.ntypes = len(self.element_types)
+        self.type_to_Z = np.array([chemical_symbols.index(sym) for sym in self.element_types], dtype=np.int64)
+        print(f"[INFO] Pre-initialized element_types: {self.element_types}")
+        print(f"[INFO] Pre-initialized ntypes: {self.ntypes}")
+        print(f"[INFO] Pre-initialized type_to_Z: {self.type_to_Z}")
 
-        if element_types is None:
-            raise ValueError(
-                "Please provide element_types=['H','O',...] (pair_coeff order) "
-                "or type_to_Z=[1,8,...]; could not infer from SevenNet calculator."
-            )
-
-        self.element_types = list(element_types)
-        
-        # --- build LAMMPS type->Z mapping (must match element_types order) ---
-        t2z_kw = kwargs.get("type_to_Z", None)
-        if t2z_kw is None:
-            # build from element_types (pair_coeff order)
-            self.type_to_Z = np.array([chemical_symbols.index(sym) for sym in self.element_types], dtype=np.int64)
-        else:
-            self.type_to_Z = np.array(t2z_kw, dtype=np.int64)
-
-        # sanity: type_to_Z must map back to the same element_types (order-sensitive)
-        syms_back = [chemical_symbols[int(z)] for z in self.type_to_Z.tolist()]
-        if syms_back != self.element_types:
-            raise ValueError(f"type_to_Z {syms_back} does not match element_types {self.element_types}")
+        # Pre-calculate cutoff and rcutfac if provided
+        if self._init_cutoff is not None:
+            self.cutoff = float(self._init_cutoff)
+            self.rcutfac = self.cutoff * 0.5
+            print(f"[INFO] Pre-initialized cutoff: {self.cutoff}, rcutfac: {self.rcutfac}")
 
         # --- unified metadata required by connect() ---
-        self.ndescriptors = int(kwargs.get("ndescriptors", 0))  # NN potential → 0
-        self.nparams      = int(kwargs.get("nparams", 0))       # NN potential → 0
-        self.rmin0        = float(kwargs.get("rmin0", 0.0))
-        self.rfac0        = float(kwargs.get("rfac0", 1.0))
-        self.rcutfac      = float(kwargs.get("rcutfac", 1.0))
-        self.ntypes       = len(self.element_types)             # some builds probe this
+        self.ndescriptors = int(kwargs.get("ndescriptors", 1))  # NN potential → 0
+        self.nparams      = int(kwargs.get("nparams", 1))       # NN potential → 0
 
-    # -------- helpers --------
-    def _maybe_types_to_Z(self, z_like: np.ndarray) -> np.ndarray:
-        """Map LAMMPS types to atomic numbers Z. Handles 1-based and 0-based."""
-        arr = np.asarray(z_like, dtype=np.int64)
-        if self.type_to_Z is None or arr.size == 0:
-            return arr
-        zmap = self.type_to_Z  # shape (ntypes,)
-        minv = int(arr.min())
-        maxv = int(arr.max())
-        # 1-based types: {1..ntypes}
-        if minv >= 1 and maxv <= len(zmap):
-            return zmap[arr - 1]
-        # 0-based types: {0..ntypes-1}
-        if minv >= 0 and maxv < len(zmap):
-            return zmap[arr]
-        # Otherwise assume it's already Z
-        return arr
+        # # HACK
+        # tmp_model = "/gpfs/hansw/jinmuyou/omni_speed/MLIAP_test/svn/omni_small.pth"
+        # tmp_kwargs = {
+        #         'modal': "mpa",
+        #         'enable_cueq': True,
+        #         }
+        # tmp_calc = SevenNetCalculator(model=tmp_model, **tmp_kwargs)
+        # tmp_cfg = getattr(tmp_calc, "sevennet_config", None)
+        # syms = tmp_cfg.get("chemical_species", None)
+        # self.element_types = list(syms)
+        # self.cutoff = 6
 
-    def _ensure_atoms(self, pos: np.ndarray, z_like: np.ndarray,
-                      cell: Optional[np.ndarray], pbc: Union[bool, Tuple[bool,bool,bool]]) -> Atoms:
-        """Build or update an ASE Atoms with SevenNet calculator attached."""
-        n = int(pos.shape[0])
-        pos = np.asarray(pos, dtype=self.dtype)
-        Z = self._maybe_types_to_Z(np.asarray(z_like, dtype=np.int64))
-        pbc_tuple = (pbc, pbc, pbc) if isinstance(pbc, bool) else tuple(bool(x) for x in pbc)
-        cell3 = None if cell is None else np.asarray(cell, dtype=self.dtype).reshape(3, 3)
+    # why required?
+    def _ensure_model_initialized(self):
+        """Lazy initialization of the model (called on first compute_forces)."""
+        if self.calc is not None:
+            return  # Already initialized
+        print("[INFO] Lazy initializing SevenNet model...")
 
-        if self._atoms_cache is None or self._natoms != n:
-            atoms = Atoms(numbers=Z.tolist(), positions=pos, cell=cell3, pbc=pbc_tuple)
-            atoms.calc = self.calc
-            self._atoms_cache, self._natoms = atoms, n
-        else:
-            atoms = self._atoms_cache
-            atoms.positions[:] = pos
-            if cell3 is not None:
-                atoms.cell[:] = cell3
-            atoms.pbc = pbc_tuple
-        return atoms
+        # Apply tf32
+        if self._tf32 and _HAS_TORCH and torch.cuda.is_available():
+            try:
+                torch.set_float32_matmul_precision("high")
+            except Exception:
+                pass
+
+        # SevenNet Calculator
+        ## HACK:
+        # self._model_spec = "/gpfs/hansw/jinmuyou/omni_speed/MLIAP_test/svn/omni_small.pth"
+        # self.calculator_kwargs = {
+        #         'modal': "mpa",
+        #         'enable_cueq': True,
+        #         }
+
+        ck = dict(device=self.device)
+        ck.update(self.calculator_kwargs)
+        self.calc = SevenNetCalculator(model=self._model_spec, **ck)
+        self.calc.model.delete_module_by_key('force_output') # to autograd edge forces
+        self.calc.model.eval_modal_map = False
+        if self.calc.modal:
+            self._modal_idx = self.calc.model.modal_map[self.calc.modal]
+            print(f"MODEL INIT: {self.calc.modal}, {self._modal_idx}")
+
+        # cutoff: if not provided, try to infer from calculator
+        if self.cutoff is None:
+            if hasattr(self.calc, "cutoff"):
+                self.cutoff = float(self.calc.cutoff)
+        if self.cutoff is None or not np.isfinite(self.cutoff) or self.cutoff <= 0:
+            raise ValueError("Please provide cutoff=... (Angstrom); could not infer from SevenNet calculator.")
+        self.cutoff = float(self.cutoff)
+
+        is_ts = isinstance(self.calc.model, torch.jit.ScriptModule)
+        print(f"Model is torchscript: {is_ts}")
+
     
     def __getstate__(self):
         """Drop non-picklable runtime objects; keep only config/state for rebuild."""
@@ -204,38 +195,40 @@ class SevenNetLAMMPSMLIAPWrapper:
     def __setstate__(self, state):
         """Rebuild runtime objects after unpickling."""
         self.__dict__.update(state)
-        # Rebuild SevenNet calculator from stored config
-        ck = dict(device=self.device)
-        # If you passed calculator_kwargs in __init__, keep it somewhere (see below)
-        if hasattr(self, "calculator_kwargs") and self.calculator_kwargs:
-            ck.update(self.calculator_kwargs)
-        # _model_spec must contain the model path/keyword
-        self.calc = SevenNetCalculator(model=self._model_spec, **ck)
-        self.calc.model.eval_modal_map = False
-        print(ck)
-        if self.calc.modal:
-            self._modal_idx = self.calc.model.modal_map[self.calc.modal]
-            print(f"INIT: {self.calc.modal}, {self._modal_idx}")
+        # Model will be lazily initialized on first use
+        self.calc = None
         self._atoms_cache = None
         self._natoms = None
 
-    @staticmethod
-    def _to_host_numpy(x, dtype=None):
-        """Convert CuPy/Torch/Numpy to host NumPy array."""
-        try:
-            import cupy as cp
-            if isinstance(x, cp.ndarray):   # CuPy → NumPy
-                x = cp.asnumpy(x)
-        except Exception:
-            pass
-        try:
-            import torch
-            if isinstance(x, torch.Tensor): # Torch → NumPy (CPU)
-                x = x.detach().cpu().numpy()
-        except Exception:
-            pass
-        a = np.asarray(x)
-        return a.astype(dtype, copy=False) if dtype is not None else a
+        # Ensure all lazy init parameters exist (for backward compatibility)
+        if not hasattr(self, '_tf32'):
+            self._tf32 = False
+        if not hasattr(self, 'calculator_kwargs'):
+            self.calculator_kwargs = {}
+        if not hasattr(self, '_init_element_types'):
+            self._init_element_types = None
+        if not hasattr(self, '_init_type_to_Z'):
+            self._init_type_to_Z = None
+        if not hasattr(self, '_init_cutoff'):
+            self._init_cutoff = None
+        if not hasattr(self, '_init_rcutfac'):
+            self._init_rcutfac = 1.0
+
+        # ck = dict(device=self.device)
+        # # If you passed calculator_kwargs in __init__, keep it somewhere (see below)
+        # if hasattr(self, "calculator_kwargs") and self.calculator_kwargs:
+        #     ck.update(self.calculator_kwargs)
+        # # _model_spec must contain the model path/keyword
+        # # DBG
+        # print(f"[DEBUG] Rebuilding SevenNetCalculator with: {ck}, model={self._model_spec}")
+        # self.calc = SevenNetCalculator(model=self._model_spec, **ck)
+        # self.calc.model.eval_modal_map = False
+        # print(ck)
+        # if self.calc.modal:
+        #     self._modal_idx = self.calc.model.modal_map[self.calc.modal]
+        #     print(f"INIT: {self.calc.modal}, {self._modal_idx}")
+        # self._atoms_cache = None
+        # self._natoms = None
     
     @staticmethod
     def _dbg(name, arr, head=3):
@@ -245,119 +238,100 @@ class SevenNetLAMMPSMLIAPWrapper:
             f"min={float(a.min()):.6g} max={float(a.max()):.6g} "
             f"head={flat[:head]}")
 
+    @staticmethod
+    def debug_lmp_data_simple(lmp_data):
+        print("="*60)
+        print("LAMMPS lmp_data attributes:")
+        print("="*60)
+        
+        # 모든 public 속성
+        attrs = [a for a in dir(lmp_data) if not a.startswith('_')]
+        
+        for attr in sorted(attrs):
+            try:
+                val = getattr(lmp_data, attr)
+                if callable(val):
+                    print(f"  {attr:20s} <method>")
+                else:
+                    # 값의 타입과 shape 정보
+                    if hasattr(val, 'shape'):
+                        print(f"  {attr:20s} {type(val).__name__:15s} shape={val.shape}")
+                    elif hasattr(val, '__len__') and not isinstance(val, str):
+                        print(f"  {attr:20s} {type(val).__name__:15s} len={len(val)}")
+                    else:
+                        print(f"  {attr:20s} {type(val).__name__:15s} = {val}")
+            except Exception as e:
+                print(f"  {attr:20s} <error: {e}>")
+        print("="*60)
+        
     # -------- unified entrypoint --------
     def compute_forces(self, lmp_data):
-        """
-        getters expected on lmp_data:
-            get_positions() -> (N,3) float64
-            get_atomic_numbers() or get_types() -> (N,) int64
-            get_edge_index() -> (2,E) int64
-            get_edge_vectors() optional -> (E,3) float64
-            get_cell() optional -> (3,3)
-            get_pbc() optional -> bool or (3,)
-        Updaters:
-            update_pair_forces(E,3), update_pair_energy(E), update_atom_energy(float)
-        """        
-        # inputs
-        pos = self._to_host_numpy(lmp_data.get_positions(), dtype=self.dtype)
-        types= self._to_host_numpy(lmp_data.get_types(), dtype=np.int64)
+        # Lazy initialization
+        self._ensure_model_initialized()
 
-        # edges (required for pairwise outputs)
-        ei = self._to_host_numpy(lmp_data.get_edge_index(),dtype=np.int64)
-        rij = self._to_host_numpy(lmp_data.get_edge_vectors(), dtype=self.dtype) 
+        if lmp_data.nlocal == 0 or lmp_data.npairs <= 1:
+            return
         
-        # print for debugging
-        self._dbg("pos", pos); self._dbg("types", types); self._dbg("edge_index", ei); self._dbg("rij", rij)
+        import sevenn._keys as KEY
         
-        cell = self._to_host_numpy(lmp_data.get_cell(), dtype=self.dtype)  # (3,3)
-        pbc  = tuple(bool(x) for x in lmp_data.get_pbc())
-        nlocal = int(getattr(lmp_data, "nlocal"))
-        tags   = self._to_host_numpy(lmp_data.get_tags(),  dtype=np.int64)
+        nlocal = lmp_data.nlocal
+        ntotal = lmp_data.ntotal
         
-        pos_loc = pos[:nlocal]
-        s_idx   = types[:nlocal].astype(np.int64, copy=False)
-        
-        is_ts = isinstance(self.calc.model, torch.jit.ScriptModule)
-        if is_ts:
-            x = s_idx
-        else:
-            Z = np.array([chemical_symbols.index(self.element_types[i]) for i in s_idx], dtype=np.int64)
-        
-        i_idx, j_idx = ei[0], ei[1]
-        tag_to_local = {int(tags[i]): i for i in range(nlocal)}    # tag -> 0..nlocal-1
-        
-        valid = np.array([int(tags[j]) in tag_to_local for j in j_idx], dtype=bool)
-        if not valid.all():
-            i_idx = i_idx[valid]
-            j_idx = j_idx[valid]
-            rij   = rij[valid]
+        edge_vectors = torch.as_tensor(lmp_data.rij, dtype=torch.float32, device=self.device) # should be f32 in 7net
+        edge_vectors.requires_grad_(True)
 
-        j_mapped = np.array([tag_to_local[int(tags[j])] for j in j_idx ], dtype=np.int64)
-        edge_index = np.stack([i_idx, j_mapped], axis=0).astype(np.int64)
-        
-        cell64      = cell.astype(np.float64, copy=False)
-        dpos64      = (pos[j_idx] - pos[i_idx]).astype(np.float64, copy=False)
-        shift_vec64 = (rij.astype(np.float64, copy=False) - dpos64)
-        s64 = np.linalg.solve(cell64.T, shift_vec64.T).T
-        
-        s   = np.rint(s64).astype(np.float32, copy=False)
+        edge_index = torch.vstack([
+            torch.as_tensor(lmp_data.pair_i, dtype=torch.int64, device=self.device),
+            torch.as_tensor(lmp_data.pair_j, dtype=torch.int64, device=self.device),
+        ])
+        elems = torch.as_tensor(lmp_data.elems, dtype=torch.int64, device=self.device)
+        Z = elems
+        print(elems)
 
-        # SevenNet
-        dev = self.calc.device
-        V   = float(np.dot(cell[0], np.cross(cell[1], cell[2])))
+        num_atoms = torch.as_tensor(nlocal, dtype=torch.int64, device=self.device)
+
         data = {
-            "pos": torch.as_tensor(pos_loc, device=dev, dtype=torch.float32).requires_grad_(True),
-            "edge_index": torch.as_tensor(edge_index, device=dev, dtype=torch.long),
-            "edge_vec":   torch.as_tensor(rij, device=dev, dtype=torch.float32).requires_grad_(True),
-            "num_atoms": torch.as_tensor([nlocal], device=dev, dtype=torch.long),
-            "cell_lattice_vectors": torch.as_tensor(cell, device=dev, dtype=torch.float32),
-            "cell_volume": torch.as_tensor(V, device=dev, dtype=torch.float32),
-            "pbc_shift": torch.as_tensor(s, device=dev, dtype=torch.float32),
+            KEY.EDGE_IDX  : edge_index,
+            KEY.EDGE_VEC: edge_vectors,
+            KEY.ATOMIC_NUMBERS: Z,
+            KEY.NUM_ATOMS: num_atoms,
+
+            KEY.USE_MLIAP: torch.tensor(True, dtype=torch.bool),
+            KEY.MLIAP_NUM_LOCAL_GHOST: torch.tensor([nlocal, ntotal-nlocal], dtype=torch.int64, device=self.device),
+            KEY.LAMMPS_DATA: lmp_data,
         }
+
         if self.calc.modal:
-            data["modal_type"] = torch.tensor(
+            data[KEY.MODAL_TYPE] = torch.tensor(
                 self._modal_idx,
                 dtype=torch.int64,
-                device=dev,
+                device=self.device,
             )
-        if is_ts:
-            data["x"] = torch.as_tensor(x, device=dev, dtype=torch.long)
-        else:
-            data["atomic_numbers"] = torch.as_tensor(Z, device=dev, dtype=torch.long)
+
+        output = self.calc.model(data)
+        pred_atomic_energies = output[KEY.ATOMIC_ENERGY].view(-1)
+        edge_forces = torch.autograd.grad(
+            torch.sum(pred_atomic_energies),
+            [edge_vectors],
+        )[0]
+
+        if pred_atomic_energies.size(0) != nlocal:
+            pred_atomic_energies = torch.narrow(pred_atomic_energies, 0, 0, nlocal) 
+        pred_total_energy = torch.sum(pred_atomic_energies) 
+
+        lmp_eatoms = torch.as_tensor(lmp_data.eatoms)
+        lmp_eatoms.copy_(pred_atomic_energies)
+        lmp_data.energy = pred_total_energy
+        lmp_data.update_pair_forces_gpu(edge_forces)    
+
+        ## DEBUG
+        self.debug_lmp_data_simple(lmp_data)
+        save_data_in = {k: v for k, v in data.items() if k != KEY.LAMMPS_DATA}
+        torch.save(save_data_in, "/gpfs/hansw/jinmuyou/omni_speed/MLIAP_test/svn_ompa/svn_data_in.pt")
+        torch.save(pred_atomic_energies, "/gpfs/hansw/jinmuyou/omni_speed/MLIAP_test/svn_ompa/atomic_energies.pt")
+        torch.save(edge_forces, "/gpfs/hansw/jinmuyou/omni_speed/MLIAP_test/svn_ompa/edge_forces.pt")
+ 
         
-        out = self.calc.model(data)
-
-        E_total_t = out["inferred_total_energy"]
-        F_t       = out["inferred_force"]
-        S_t       = out["inferred_stress"]
-        e_i_t     = out.get("atomic_energy", None)
-
-        E_total = float(E_total_t.detach().cpu().item())
-        F_loc   = F_t.detach().cpu().numpy()[:nlocal, :].astype(np.float64, copy=False)
-        S_voigt = S_t.detach().cpu().numpy().astype(np.float64, copy=False)
-
-        if e_i_t is not None: # Per-atom energy is available
-            e_i = e_i_t.detach().cpu().numpy().reshape(-1)[:nlocal].astype(np.float64, copy=False)
-            lmp_data.update_atom_energy(e_i)
-        else: # Case of non-per atom energy : Directly use total E
-            lmp_data.set_total_energy(E_total)
-        
-        
-        self._dbg("edge_index_valid", edge_index); 
-        self._dbg("rij_valid", rij)
-        self._dbg("pbc_shift", s)
-        print(f"[DBG:cell] H=\n{cell}\n[DBG:vol] V={V:.9g}")
-
-            
-        print(f"[DBG:E] E_total={E_total:.9g}")
-        self._dbg("F_loc", F_loc)
-        self._dbg("S_voigt(raw)", S_voigt)
-        print(f"[DBG:sumF] ||sum_i F_i||={np.linalg.norm(F_loc.sum(axis=0)):.6g}")
-
-        lmp_data.set_atom_forces(F_loc)
-        lmp_data.add_global_stress(S_voigt)
-        
-    
     def compute_descriptors(self, lmp_data):
         pass
 

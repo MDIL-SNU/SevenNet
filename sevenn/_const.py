@@ -61,7 +61,8 @@ CHECKPOINT_DOWNLOAD_LINKS = {
     SEVENNET_omat: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_omat.pth',
 }
 # to avoid torch script to compile torch_geometry.data
-AtomGraphDataType = Dict[str, torch.Tensor]
+# AtomGraphDataType = Dict[str, torch.Tensor]
+AtomGraphDataType = Dict[str, any]
 
 
 class LossType(Enum):  # only used for train_v1, do not use it afterwards
