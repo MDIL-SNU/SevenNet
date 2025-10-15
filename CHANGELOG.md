@@ -4,6 +4,10 @@ All notable changes to this project will be documented in this file.
 
 ## [0.12.0-dev]
 ### Added
+- LAMMPS-MLIAP integration with GhostExchangeOp
+- Now giving wrong atomic forces, although the edge_forces are correct. (WIP)
+
+### Added
 - Example config for fine-tuning the SevenNet-MF-ompa model
 - FlashTP support (https://github.com/SNU-ARC/flashTP)
 
