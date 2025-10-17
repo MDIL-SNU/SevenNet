@@ -45,6 +45,12 @@ def main(args=None):
     )
 
     parser.add_argument(
+        '--enable_flash',
+        help='use flashTP.',
+        action='store_true',
+    )
+
+    parser.add_argument(
         "--tf32",
         help="whether to use TF32 or not (default: False)",
         action=argparse.BooleanOptionalAction,
@@ -114,7 +120,7 @@ def main(args=None):
         element_types=element_types,
         type_to_Z=type_to_Z,
         cutoff=args.cutoff,
-        calculator_kwargs={"modal": modal, "enable_cueq": args.enable_cueq},
+        calculator_kwargs={"modal": modal, "enable_cueq": args.enable_cueq, "enable_flash": args.enable_flash},
     )
     
     torch.save(mliap_module, args.output_path)
