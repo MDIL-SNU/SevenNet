@@ -30,100 +30,6 @@ class GhostExchangeModule(nn.Module):
         raise NotImplementedError("Subclasses must implement forward method")
 
 
-class NoOpGhostExchangeModule(GhostExchangeModule):
-    """No-op ghost exchange module (for training/non-LAMMPS usage)."""
-
-    def forward(
-        self,
-        data: AtomGraphDataType,
-        ghost_included: bool,
-    ) -> AtomGraphDataType:
-        return data
-
-
-class SimpleGhostExchangeModule(GhostExchangeModule):
-    """
-    Simplified ghost exchange module for SevenNet.
-    Uses only torch tensors for all metadata.
-    """
-
-    def __init__(
-        self,
-        field: str = KEY.NODE_FEATURE,
-    ):
-        super().__init__(field=field)
-
-    def forward(
-        self,
-        data: AtomGraphDataType,
-        ghost_included: bool = False,
-    ) -> AtomGraphDataType:
-        """
-        Perform ghost exchange using tensor metadata.
-        
-        Args:
-            data: AtomGraphDataType with metadata (all torch tensors):
-                - KEY.USE_MLIAP (torch.Tensor[bool]): Whether LAMMPS ML-IAP mode is active
-                - KEY.MLIAP_NUM_LOCAL_GHOST (torch.Tensor[2, int64]): [nlocal, num_ghost]
-            ghost_included: If True, input features already include ghost atoms
-                          If False, input features are local only
-        
-        Returns:
-            data with ghost features appended/updated
-        """
-        # Check if MLIAP mode is active
-        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
-        
-        if not use_mliap.item():
-            return data
-        
-        assert KEY.MLIAP_NUM_LOCAL_GHOST in data, "MLIAP_NUM_LOCAL_GHOST must be in data for ghost exchange"
-        
-        node_features = data[self.field]
-        num_local_ghost = data[KEY.MLIAP_NUM_LOCAL_GHOST]  # [nlocal, num_ghost]
-        nlocal = num_local_ghost[0].item()
-        num_ghost = num_local_ghost[1].item()
-        ntotal = nlocal + num_ghost
-        
-        # Extract local features
-        if ghost_included:
-            # Input already has ghosts, extract only local
-            local_features = node_features[:nlocal]
-        else:
-            # Input is local only
-            local_features = node_features
-        
-        # Prepare ghost features
-        if num_ghost > 0:
-            # Check if ghost features exist in data
-            if KEY.NODE_FEATURE_GHOST in data:
-                # Use existing ghost features (from previous exchange)
-                ghost_features = data[KEY.NODE_FEATURE_GHOST]
-            else:
-                # Initialize ghost features as zeros
-                ghost_features = torch.zeros(
-                    (num_ghost,) + node_features.shape[1:],
-                    dtype=node_features.dtype,
-                    device=node_features.device,
-                )
-            
-            # Concatenate local + ghost
-            full_features = torch.cat([local_features, ghost_features], dim=0)
-        else:
-            # No ghosts needed
-            full_features = local_features
-        
-        
-        # Update data
-        data[self.field] = full_features
-        
-        # Store ghost features separately for next layer
-        if num_ghost > 0:
-            data[KEY.NODE_FEATURE_GHOST] = ghost_features
-        
-        return data
-
-
 class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
     """Custom autograd function for LAMMPS ML-IAP ghost exchange with proper gradient routing."""
     
@@ -135,7 +41,6 @@ class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
 
         # Forward exchange: fill ghost features from neighbor processes
         lmp_data.forward_exchange(node_features_flat, out_flat, out_flat.size(-1))
-
 
         # Save for backward
         ctx.original_shape = original_shape
@@ -230,58 +135,3 @@ class LAMMPSMLIAPGhostExchangeModule(GhostExchangeModule):
         
         return data
 
-
-def replace_ghost_exchange_modules(
-    model: nn.Module,
-    use_lammps_mpi: bool = False,
-    field: str = KEY.NODE_FEATURE,
-) -> nn.Module:
-    """
-    Replace NoOpGhostExchangeModule with active ghost exchange modules.
-    
-    Args:
-        model: The model to modify
-        use_lammps_mpi: If True, use LAMMPSMLIAPGhostExchangeModule (requires LAMMPS object)
-                       If False, use SimpleGhostExchangeModule (metadata only)
-        field: The field name for ghost exchange
-    
-    Returns:
-        Modified model
-    """
-    def _recursive_replace(module):
-        for name, child in list(module.named_children()):
-            if isinstance(child, NoOpGhostExchangeModule):
-                # Choose appropriate exchange module
-                if use_lammps_mpi:
-                    new_module = LAMMPSMLIAPGhostExchangeModule(field=field)
-                else:
-                    new_module = SimpleGhostExchangeModule(field=field)
-                setattr(module, name, new_module)
-            else:
-                # Recursively process children
-                _recursive_replace(child)
-    
-    _recursive_replace(model)
-    return model
-
-
-def prepare_mliap_data(lmp_data, device: torch.device) -> dict:
-    """
-    Helper function to convert LAMMPS data to SevenNet tensor format.
-    
-    Args:
-        lmp_data: LAMMPS ML-IAP data object with nlocal and ntotal attributes
-        device: torch device to place tensors on
-    
-    Returns:
-        Dictionary with SevenNet-compatible tensor metadata
-    """
-    return {
-        KEY.USE_MLIAP: torch.tensor(True, dtype=torch.bool, device=device),
-        KEY.NUM_LOCAL_GHOST: torch.tensor(
-            [lmp_data.nlocal, lmp_data.ntotal - lmp_data.nlocal],
-            dtype=torch.int64,
-            device=device
-        ),
-        KEY.LAMMPS_DATA: lmp_data,  # Keep for MPI exchange if needed
-    }
