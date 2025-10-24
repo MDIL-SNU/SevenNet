@@ -28,13 +28,45 @@ Additionally, `keywords` can be used in other parts of SevenNet, such as `sevenn
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program at Samsung Advanced Institute of Technology, part of Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
 ---
+### **SevenNet-Omni (21Oct2025)**
+> Model keywords: `7net-Omni` | `SevenNet-Omni`
+
+**This is our recommended pretrained model**
+[Download link for fully detailed checkpoint](https://figshare.com/articles/software/SevenNet-Omni_checkpoint/30399814?file=58886557)
+
+This model exploits [cross-domain knowledge transfer strategies](https://arxiv.org/abs/2510.11241) within a [multi-task training framework](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on the 15 open ab initio datasets, covering a wide material space including crystals, molecules, and surfaces.
+
+It is currently our best pretrained model, achieving state-of-the-art accuracy across diverse material domains at the PBE level, while also providing high-fidelity channels such as r²SCAN and ωB97M-V.  For detailed information on the training datasets, knowledge-transfer strategies and comprehensive benchmark results, please refer to the [paper](https://arxiv.org/abs/2510.11241).
+
+#### Representative channels for each fidelity:
+| Fidelity       | Channel Name    |
+|----------------|-----------------|
+| PBE(+_U_)      | `mpa`           |
+| r²SCAN         | `matpes_r2scan` |
+| ωB97M-V        | `omol25_low`    |
+
+```python
+from sevenn.calculator import SevenNetCalculator
+# "mpa" refers to the MPtrj + sAlex modal, used for evaluating Matbench Discovery.
+calc = SevenNetCalculator('7net-Omni', modal='mpa')
+```
+> [!NOTE]
+> Each modal is expected to produce results that are more consistent with the DFT settings in the training datasets. For detailed information on the DFT settings, please refer to the original papers of each dataset.
+
+
+When using the command-line interface of SevenNet, include the channel as `--modal ${channel}` option to select the desired modality.
+
+#### **Matbench Discovery** (to be updated)
+| CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
+|:---:|:---:|:---:|:---:|
+|-|-|-|-|
+
+
 
 ### **SevenNet-MF-ompa (17Mar2025)**
 > Model keywords: `7net-mf-ompa` | `SevenNet-mf-ompa`
 
-**This is our recommended pretrained model**
-
-This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. This model is the best among our pretrained models and achieves a high ranking on the [Matbench Discovery]((https://matbench-discovery.materialsproject.org/)) leaderboard. Our evaluations show that it outperforms other models on most tasks, except for the isolated molecule energy task, where it performs slightly worse than `SevenNet-l3i5`.
+This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. This model achieves a high ranking on the [Matbench Discovery]((https://matbench-discovery.materialsproject.org/)) leaderboard. Our evaluations show that it outperforms other models on most tasks, except for the isolated molecule energy task, where it performs slightly worse than `SevenNet-l3i5`.
 
 ```python
 from sevenn.calculator import SevenNetCalculator
