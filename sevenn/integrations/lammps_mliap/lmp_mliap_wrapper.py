@@ -183,32 +183,6 @@ class SevenNetLAMMPSMLIAPWrapper:
         print(f"[DBG:{name}] shape={a.shape} dtype={a.dtype} "
             f"min={float(a.min()):.6g} max={float(a.max()):.6g} "
             f"head={flat[:head]}")
-
-    @staticmethod
-    def debug_lmp_data_simple(lmp_data):
-        print("="*60)
-        print("LAMMPS lmp_data attributes:")
-        print("="*60)
-        
-        # 모든 public 속성
-        attrs = [a for a in dir(lmp_data) if not a.startswith('_')]
-        
-        for attr in sorted(attrs):
-            try:
-                val = getattr(lmp_data, attr)
-                if callable(val):
-                    print(f"  {attr:20s} <method>")
-                else:
-                    # 값의 타입과 shape 정보
-                    if hasattr(val, 'shape'):
-                        print(f"  {attr:20s} {type(val).__name__:15s} shape={val.shape}")
-                    elif hasattr(val, '__len__') and not isinstance(val, str):
-                        print(f"  {attr:20s} {type(val).__name__:15s} len={len(val)}")
-                    else:
-                        print(f"  {attr:20s} {type(val).__name__:15s} = {val}")
-            except Exception as e:
-                print(f"  {attr:20s} <error: {e}>")
-        print("="*60)
         
     # -------- unified entrypoint --------
     def compute_forces(self, lmp_data):
@@ -267,27 +241,6 @@ class SevenNetLAMMPSMLIAPWrapper:
         # upcasting edge_forces required for update_pair_forces_gpu 
         lmp_data.update_pair_forces_gpu(edge_forces.to(torch.float64))
 
-        # ## DEBUG
-        # DBG_DIR = "./"
-        # atomic_forces = torch.zeros((nlocal, 3), device=self.device)
-        # atomic_forces.index_add_(0, edge_index[0],  edge_forces)  # edge→source atom
-        # atomic_forces.index_add_(0, edge_index[1], -edge_forces) # edge→target atom
-        # # lmp_data.atomic_forces = atomic_forces
-        # torch.save(atomic_forces, f"{DBG_DIR}/atomic_forces.pt")
-
-        # self.debug_lmp_data_simple(lmp_data)
-        # save_data_in = {k: v for k, v in data.items() if k != KEY.LAMMPS_DATA}
-        # torch.save(save_data_in, f"{DBG_DIR}/svn_data_in.pt")
-        # torch.save(pred_atomic_energies, f"{DBG_DIR}/atomic_energies.pt")
-        # torch.save(edge_forces, f"{DBG_DIR}/edge_forces.pt")
-        # atoms_elems_data = {
-        #     'iatoms' : torch.as_tensor(lmp_data.iatoms, dtype=torch.int, device=self.device),
-        #     'ielems' : torch.as_tensor(lmp_data.ielems, dtype=torch.int, device=self.device),
-        #     'jatoms' : torch.as_tensor(lmp_data.jatoms, dtype=torch.int, device=self.device),
-        #     'jelems' : torch.as_tensor(lmp_data.jelems, dtype=torch.int, device=self.device),
-        # }
-        # torch.save(atoms_elems_data, f"{DBG_DIR}/atoms_elems_data.pt")
- 
         
     def compute_descriptors(self, lmp_data):
         pass
