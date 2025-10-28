@@ -41,14 +41,14 @@ It is currently our best pretrained model, achieving state-of-the-art accuracy a
 #### Representative channels for each fidelity:
 | Fidelity       | Channel Name    |
 |----------------|-----------------|
-| PBE(+_U_)      | `mpa`           |
+| PBE(+U)        | `mpa`           |
 | r²SCAN         | `matpes_r2scan` |
 | ωB97M-V        | `omol25_low`    |
 
 ```python
 from sevenn.calculator import SevenNetCalculator
 # "mpa" refers to the MPtrj + sAlex modal, used for evaluating Matbench Discovery.
-calc = SevenNetCalculator('7net-Omni', modal='mpa')
+calc = SevenNetCalculator(model="/path/to/7net-omni", modal='mpa')
 ```
 > [!NOTE]
 > Each modal is expected to produce results that are more consistent with the DFT settings in the training datasets. For detailed information on the DFT settings, please refer to the original papers of each dataset.
@@ -56,13 +56,13 @@ calc = SevenNetCalculator('7net-Omni', modal='mpa')
 
 When using the command-line interface of SevenNet, include the channel as `--modal ${channel}` option to select the desired modality.
 
-#### **Matbench Discovery** (to be updated)
+#### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
-|-|-|-|-|
+|**0.849**|0.889|0.265|0.0639|
 
 
-
+---
 ### **SevenNet-MF-ompa (17Mar2025)**
 > Model keywords: `7net-mf-ompa` | `SevenNet-mf-ompa`
 
