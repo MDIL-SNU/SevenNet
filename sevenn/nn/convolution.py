@@ -255,23 +255,18 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         assert self.convolution is not None, 'Convolution is not instantiated'
         assert self.weight_nn is not None, 'Weight_nn is not instantiated'
 
+        x = data[self.key_x]
         use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
         if use_mliap.item():
+            # ghost_exchange only if use_mliap
             nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
-        else:
-            nlocal = data[KEY.NODE_FEATURE].size(0)
-        # if not self.is_first_layer:
-
-
-        x = data[self.key_x]
-        x = torch.narrow(x, 0, 0, nlocal)
-
-        # ghost_exchange
-        if use_mliap.item():
+            x = torch.narrow(x, 0, 0, nlocal)
             data[self.key_x] = x
             data = self.ghost_exchange(data, ghost_included=False)
             x = data[self.key_x]
 
+        # else:
+        #     nlocal = data[KEY.NODE_FEATURE].size(0)
 
         weight_input = data[self.key_weight_input]
         # Forward: weight_nn
@@ -286,7 +281,7 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
 
         x = self.convolution(
             x,
-            edge_filter, # data[self.key_filter],
+            edge_filter,
             weight,
             edge_src.to(torch.int32),  # trivial?
             edge_dst.to(torch.int32),
@@ -298,6 +293,6 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         #     x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
         if use_mliap.item():
             x = torch.narrow(x, 0, 0, nlocal)
-            data[self.key_x] = x
+        data[self.key_x] = x
 
         return data
