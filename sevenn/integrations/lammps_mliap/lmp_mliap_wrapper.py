@@ -8,189 +8,112 @@ Minimal SevenNet ML-IAP wrapper
 """
 
 from __future__ import annotations
-from typing import Optional, Sequence, Dict, Any, Tuple, Union, List
+
 import os
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+
 import numpy as np
+import torch
 from ase import Atoms
 from ase.data import chemical_symbols
+from lammps.mliap.mliap_unified_abc import MLIAPUnified
 
-try:
-    import torch
-    _HAS_TORCH = True
-except Exception:
-    _HAS_TORCH = False
-
-try:
-    from sevenn.calculator import SevenNetCalculator
-except Exception:
-    from sevenn.sevennet_calculator import SevenNetCalculator  # type: ignore
 import sevenn._keys as KEY
+from sevenn.calculator import SevenNetCalculator
+from sevenn.util import load_checkpoint, pretrained_name_to_path
 
 
-class SevenNetLAMMPSMLIAPWrapper:
-    """LAMMPS-MLIAP interface for SevenNet framework models (minimal form)."""
-
-    # required by some loaders (kept for parity with NequIP wrappers)
-    model_bytes: bytes = b""
-    model_filename: str = ""
+# Referred Nequip-MLIAP impl.
+class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
+    """LAMMPS-MLIAP interface for SevenNet framework models."""
 
     def __init__(
         self,
         model_path: str,
-        tf32: bool = False,
         **kwargs: Any,
     ):
         """
         kwargs:
-            device: 'cuda' | 'cpu' (default: auto)
             element_types: list[str], e.g., ['H','O']  # MUST match pair_coeff order
             cutoff: float (Angstrom)                   # required if not inferable
-            rcutfac: float = 1.0
-            ndescriptors: int = 0
-            nparams: int = 0
-            rmin0: float = 0.0
-            rfac0: float = 1.0
-            type_to_Z: list[int] (LAMMPS type->Z mapping in pair_coeff order)
-            calculator_kwargs: dict (forwarded to SevenNetCalculator)
+            modal: Optional[str] = None
+            enable_cueq: bool = False
+            enable_flash: bool = False
         """
 
-        # --- device / dtype ---
-        device = kwargs.get("device", None)
-        if device is None:
-            device = "cuda" if (_HAS_TORCH and torch.cuda.is_available()) else "cpu"
-        self.device = device
-        # self.dtype = np.float32
-        
-        # --- SevenNet calculator ---
-        self._model_spec = model_path
-        self._tf32 = tf32
-        self.calculator_kwargs = kwargs.get("calculator_kwargs", None) or {}
+        super().__init__()
+        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-        ck = dict(device=self.device)
-        ck.update(self.calculator_kwargs)
-        self._model_spec = model_path
-        self.calc = SevenNetCalculator(model=model_path, **ck)
-        self.calc.model.delete_module_by_key('force_output') # to autograd edge forces
-        self.calc.model.eval_modal_map = False
-        if self.calc.modal:
-            self._modal_idx = self.calc.model.modal_map[self.calc.modal]
-            print(f"INIT: {self.calc.modal}, {self._modal_idx}")
+        # load checkpoint
+        self.model_path = model_path
+        if os.path.isfile(self.model_path):
+            checkpoint_path = self.model_path
+        else:
+            try:
+                checkpoint_path = pretrained_name_to_path(self.model_path)
+            except Exception:
+                raise ValueError(f'{self.model_path} is not a model path and a pretrained model name.')
+        self.cp = load_checkpoint(checkpoint_path)
+        print(f'[INFO] Loaded checkpoint from {checkpoint_path}', flush=True)
+        self.model = None # lazy init
 
-        # optional capability flags
-        self.supports_energy = True
-        self.supports_forces = True
-        self.supports_virial = True
+        # calc_kwargs
+        self.use_cueq  = kwargs.get('enable_cueq', False)
+        self.use_flash = kwargs.get('enable_flash', False)
+        self.modal = kwargs.get('modal', None)
 
-        # tiny cache
-        self._atoms_cache = None
-        self._natoms = None
-        
-        # These will be set in _ensure_model_initialized
-        self.element_types = None
-        self.type_to_Z = None
-        cfg = getattr(self.calc, "sevennet_config", None)
-        syms = cfg.get("chemical_species", None)
-        self.element_types = list(syms)
-        self.ntypes = len(self.element_types)
-        self.type_to_Z = np.array([chemical_symbols.index(sym) for sym in self.element_types], dtype=np.int64)
-        print(f"[INFO] Pre-initialized element_types: {self.element_types}")
-        print(f"[INFO] Pre-initialized ntypes: {self.ntypes}")
-        print(f"[INFO] Pre-initialized type_to_Z: {self.type_to_Z}")
+        # extract configs
+        config = self.cp.config
+        if self.modal is None:
+            assert config.get(KEY.MODAL_MAP, None) is None, \
+                f'Modal not given but model has modal_map: {list(config[KEY.MODAL_MAP].keys())}'
+        else:
+            assert self.modal in config[KEY.MODAL_MAP], \
+                f'Modal {self.modal} not found in model.modal_map: {list(config[KEY.MODAL_MAP].keys())}'
 
-        self.cutoff = None
-        self.rcutfac = None
 
-        # cutoff: if not provided, try to infer from calculator
-        cutoff = kwargs.get("cutoff", None)
-        if cutoff is None:
-            # SevenNetCalculator exposes `.cutoff` for checkpoint/torchscript/model instance
-            if hasattr(self.calc, "cutoff"):
-                cutoff = float(self.calc.cutoff)
-        if cutoff is None or not np.isfinite(cutoff) or cutoff <= 0:
-            raise ValueError("Please provide cutoff=... (Angstrom); could not infer from SevenNet calculator.")
-        self.cutoff = float(cutoff)
-        print(f"[INFO] Pre-initialized cutoff: {self.cutoff}")
+        self.cutoff = float(config[KEY.CUTOFF])
+        self.rcutfac = self.cutoff * 0.5
+        self.element_types = list(config.get(KEY.CHEMICAL_SPECIES, None))
+        print(f'[INFO] Initialized cutoff: {self.cutoff} rcutfac: {self.rcutfac}', flush=True)
+        # dummy
+        self.ndescriptors = int(kwargs.get('ndescriptors', 1))
+        self.nparams = int(kwargs.get('nparams', 1))
 
-        # Pre-calculate rcutfac if cutoff is provided
-        if self.cutoff is not None:
-            self.rcutfac = self.cutoff * 0.5
-            print(f"[INFO] Pre-initialized rcutfac: {self.rcutfac}")
 
-        # --- unified metadata required by connect() ---
-        self.ndescriptors = int(kwargs.get("ndescriptors", 1))  # NN potential → 0
-        self.nparams      = int(kwargs.get("nparams", 1))       # NN potential → 0
-
-    # required?
+    """
+    Lazy initialization of the SevenNet model.
+    Since script models cannot be pickled, we delay building the model
+    until the first compute_forces call.
+    """
     def _ensure_model_initialized(self):
         """Lazy initialization of the model (called on first compute_forces)."""
-        if self.calc is not None:
+
+        if self.model is not None:
             return  # Already initialized
-        print("[INFO] Lazy initializing SevenNet model...")
+        print('[INFO] Lazy initializing SevenNet model...', flush=True)
+        print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}', flush=True)
+        model = self.cp.build_model(
+            enable_cueq=self.use_cueq, enable_flash=self.use_flash
+        )
+        model.set_is_batch_data(False)
 
-        # Apply tf32
-        if self._tf32 and _HAS_TORCH and torch.cuda.is_available():
-            try:
-                torch.set_float32_matmul_precision("high")
-            except Exception:
-                pass
+        if self.modal is not None:
+            model.eval_modal_map = False
+            model.prepare_modal_deploy(self.modal) # set the fidelity of input data
+            print(f'[INFO] channel = {self.modal}', flush=True)
 
-        ck = dict(device=self.device)
-        ck.update(self.calculator_kwargs)
-        self.calc = SevenNetCalculator(model=self._model_spec, **ck)
-        self.calc.model.delete_module_by_key('force_output') # to autograd edge forces
-        self.calc.model.eval_modal_map = False
-        if self.calc.modal:
-            self._modal_idx = self.calc.model.modal_map[self.calc.modal]
-            print(f"MODEL INIT: {self.calc.modal}, {self._modal_idx}")
+        model.delete_module_by_key('force_output') # to autograd edge forces
+        self.model = model
+        self.model.to(self.device)
+        self.model.eval()
 
-        # cutoff: if not provided, try to infer from calculator
-        if self.cutoff is None:
-            if hasattr(self.calc, "cutoff"):
-                self.cutoff = float(self.calc.cutoff)
-        if self.cutoff is None or not np.isfinite(self.cutoff) or self.cutoff <= 0:
-            raise ValueError("Please provide cutoff=... (Angstrom); could not infer from SevenNet calculator.")
-        self.cutoff = float(self.cutoff)
-
-        is_ts = isinstance(self.calc.model, torch.jit.ScriptModule)
-        print(f"Model is torchscript: {is_ts}")
-    
-    def __getstate__(self):
-        """Drop non-picklable runtime objects; keep only config/state for rebuild."""
-        state = self.__dict__.copy()
-        # Do not pickle live calculator or atoms cache
-        state["calc"] = None
-        state["_atoms_cache"] = None
-        return state
-
-    def __setstate__(self, state):
-        """Rebuild runtime objects after unpickling."""
-        self.__dict__.update(state)
-        # Model will be lazily initialized on first use
-        self.calc = None
-        self._atoms_cache = None
-        self._natoms = None
-
-        # Ensure all lazy init parameters exist (for backward compatibility)
-        if not hasattr(self, '_tf32'):
-            self._tf32 = False
-        if not hasattr(self, 'calculator_kwargs'):
-            self.calculator_kwargs = {}
-
-    @staticmethod
-    def _dbg(name, arr, head=3):
-        a = np.asarray(arr)
-        flat = a.reshape(-1)
-        print(f"[DBG:{name}] shape={a.shape} dtype={a.dtype} "
-            f"min={float(a.min()):.6g} max={float(a.max()):.6g} "
-            f"head={flat[:head]}")
-        
     # -------- unified entrypoint --------
     def compute_forces(self, lmp_data):
-        # Lazy initialization (required?)
-        self._ensure_model_initialized()
+        self._ensure_model_initialized() # lazy init
         if lmp_data.nlocal == 0 or lmp_data.npairs <= 1:
             return
-        
+
         nlocal = lmp_data.nlocal
         ntotal = lmp_data.ntotal
 
@@ -215,33 +138,26 @@ class SevenNetLAMMPSMLIAPWrapper:
             KEY.MLIAP_NUM_LOCAL_GHOST: torch.tensor([nlocal, ntotal-nlocal], dtype=torch.int64, device=self.device),
             KEY.LAMMPS_DATA    : lmp_data,
         }
-        if self.calc.modal:
-            data[KEY.MODAL_TYPE] = torch.tensor(
-                self._modal_idx,
-                dtype=torch.int64,
-                device=self.device,
-            )
 
         # infer
-        output = self.calc.model(data)
+        output = self.model(data)
         pred_atomic_energies = output[KEY.ATOMIC_ENERGY].view(-1)
         edge_forces = torch.autograd.grad(
             torch.sum(pred_atomic_energies),
             [edge_vectors],
         )[0]
         if pred_atomic_energies.size(0) != nlocal:
-            pred_atomic_energies = torch.narrow(pred_atomic_energies, 0, 0, nlocal) 
-        pred_total_energy = torch.sum(pred_atomic_energies) 
-
+            pred_atomic_energies = torch.narrow(pred_atomic_energies, 0, 0, nlocal)
+        pred_total_energy = torch.sum(pred_atomic_energies)
 
         # update
         lmp_eatoms = torch.as_tensor(lmp_data.eatoms)
         lmp_eatoms.copy_(pred_atomic_energies)
         lmp_data.energy = pred_total_energy
-        # upcasting edge_forces required for update_pair_forces_gpu 
+        # upcasting edge_forces required for update_pair_forces_gpu
         lmp_data.update_pair_forces_gpu(edge_forces.to(torch.float64))
 
-        
+
     def compute_descriptors(self, lmp_data):
         pass
 
