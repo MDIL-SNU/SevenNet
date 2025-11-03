@@ -10,7 +10,6 @@ from sevenn.util import load_checkpoint, pretrained_name_to_path
 from .lmp_mliap_wrapper import SevenNetLAMMPSMLIAPWrapper
 
 logger = Logger(screen=True)
-DEFAULT_MODEL_NAME = '7net-0'
 
 def main(args=None):
     # === parse inputs ===
