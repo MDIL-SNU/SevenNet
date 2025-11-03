@@ -344,7 +344,7 @@ class ModalWiseRescale(nn.Module):
             nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
         else:
             nlocal = data[KEY.ATOM_TYPE].size(0)
-        
+
         if self._is_batch_data:
             batch = data[KEY.BATCH]
             modal_indices = data[self.key_modal_indices][batch]
