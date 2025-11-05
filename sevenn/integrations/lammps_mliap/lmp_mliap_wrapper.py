@@ -71,8 +71,9 @@ class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
             assert self.modal in config[KEY.MODAL_MAP], \
                 f'Modal {self.modal} not found in model.modal_map: {list(config[KEY.MODAL_MAP].keys())}'
 
-
-        self.cutoff = float(config[KEY.CUTOFF])
+        self.cutoff = kwargs.get('cutoff', None)
+        if self.cutoff is None:
+            self.cutoff = float(config[KEY.CUTOFF])
         self.rcutfac = self.cutoff * 0.5
         self.element_types = list(config.get(KEY.CHEMICAL_SPECIES, None))
         print(f'[INFO] Initialized cutoff: {self.cutoff} rcutfac: {self.rcutfac}', flush=True)

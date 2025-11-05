@@ -68,6 +68,7 @@ def main(args=None):
     if not str(out_path).endswith('.pt'):
         out_path = out_path.with_suffix(out_path.suffix + '.pt')
     modal = args.modal
+    cutoff = args.cutoff
     use_cueq  = args.enable_cueq
     use_flash = args.enable_flash
 
@@ -80,9 +81,10 @@ def main(args=None):
         modal=modal,
         enable_cueq=use_cueq,
         enable_flash=use_flash,
+        cutoff=cutoff,
     )
-    torch.save(mliap_module, args.output_path)
-    logger.writeline(f'LAMMPS ML-IAP artefact saved to {args.output_path}')
+    torch.save(mliap_module, out_path)
+    logger.writeline(f'LAMMPS ML-IAP artefact saved to {out_path}')
 
 if __name__ == '__main__':
     main()
