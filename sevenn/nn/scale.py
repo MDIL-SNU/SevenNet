@@ -153,13 +153,13 @@ class SpeciesWiseRescale(nn.Module):
         return SpeciesWiseRescale(shift, scale, **kwargs)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        
-        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool)) 
-        if use_mliap.item(): 
-            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item() 
-        else: 
+
+        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
+        if use_mliap.item():
+            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+        else:
             nlocal = data[self.key_indices].size(0)
-        
+
         indices = data[self.key_indices][:nlocal]
         data[self.key_output] = data[self.key_input][:nlocal] * self.scale[indices].view(
             -1, 1
@@ -349,7 +349,7 @@ class ModalWiseRescale(nn.Module):
         if use_mliap.item():
             nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
         else:
-            nlocal = data[KEY.ATOM_TYPE].size(0)
+            nlocal = data[self.key_atom_indices].size(0)
 
         if self._is_batch_data:
             batch = data[KEY.BATCH]
