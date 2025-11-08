@@ -48,7 +48,13 @@ It is currently our best pretrained model, achieving state-of-the-art accuracy a
 ```python
 from sevenn.calculator import SevenNetCalculator
 # "mpa" refers to the MPtrj + sAlex modal, used for evaluating Matbench Discovery.
-calc = SevenNetCalculator(model="/path/to/7net-omni", modal='mpa')
+# We supports cuEquivariance and FlashTP for TP acceleration. Turn on those tags when available.
+calc = SevenNetCalculator(
+    model="/path/to/7net-omni",
+    modal='mpa',
+    enable_cueq=False,
+    enable_flash=False
+)
 ```
 > [!NOTE]
 > Each modal is expected to produce results that are more consistent with the DFT settings in the training datasets. For detailed information on the DFT settings, please refer to the original papers of each dataset.
