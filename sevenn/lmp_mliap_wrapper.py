@@ -1,27 +1,26 @@
-# -*- coding: utf-8 -*-
-"""
-Minimal SevenNet ML-IAP wrapper
-
-- __init__(model_path, tf32=False, **kwargs)
-- Exposes only the unified attributes LAMMPS queries during connect():
-- Implements compute_forces(self, lmp_data) with getter names.
-"""
-
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any
 
 import torch
 from ase.data import chemical_symbols
-from lammps.mliap.mliap_unified_abc import MLIAPUnified
+
+try:
+    from lammps.mliap.mliap_unified_abc import MLIAPUnified
+except ModuleNotFoundError:
+    raise ImportError(
+        "LAMMPS package supporting ML-IAP should be installed."
+        " Please refer to the instruction in issue #246."
+        "https://github.com/MDIL-SNU/SevenNet/issues/246#issuecomment-3500546381"
+    )
 
 import sevenn._keys as KEY
 from sevenn.util import load_checkpoint, pretrained_name_to_path
 
 
 # Referred Nequip-MLIAP impl.
-class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
+class SevenNetMLIAPWrapper(MLIAPUnified):
     """LAMMPS-MLIAP interface for SevenNet framework models."""
 
     def __init__(
@@ -32,10 +31,9 @@ class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
         """
         kwargs:
             element_types: list[str], e.g., ['H','O']  # MUST match pair_coeff order
-            cutoff: float (Angstrom)                   # required if not inferable
             modal: Optional[str] = None
-            enable_cueq: bool = False
-            enable_flash: bool = False
+            use_cueq: bool = False
+            use_flash: bool = False
         """
 
         super().__init__()
@@ -58,8 +56,8 @@ class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
         self.model = None  # lazy init
 
         # calc_kwargs
-        self.use_cueq = kwargs.get('enable_cueq', False)
-        self.use_flash = kwargs.get('enable_flash', False)
+        self.use_cueq = kwargs.get('use_cueq', False)
+        self.use_flash = kwargs.get('use_flash', False)
         self.modal = kwargs.get('modal', None)
 
         # extract configs
@@ -75,22 +73,21 @@ class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
                 f'{list(config[KEY.MODAL_MAP].keys())}'
             )
 
-        self.cutoff = kwargs.get('cutoff', None)
-        if self.cutoff is None:
-            self.cutoff = float(config[KEY.CUTOFF])
+        self.cutoff = float(config[KEY.CUTOFF])
         self.rcutfac = self.cutoff * 0.5
+        print(f'[INFO] Cutoff: {self.cutoff}', flush=True)
 
-        # TODO: verify below
-        # self.element_types = list(config.get(KEY.CHEMICAL_SPECIES, None))
         chemical_species = config.get(KEY.CHEMICAL_SPECIES, None)
         syms = chemical_symbols.copy()
         for i, sym in enumerate(syms):
             if sym not in chemical_species:
                 syms[i] = 'X'  # not supported
         self.element_types = syms
+        supported_elems = ' '.join(
+            [elem for elem in self.element_types if elem != 'X']
+        )
+        print(f'[INFO] Element types: {supported_elems}', flush=True)
 
-        print(f'[INFO] Element types: {self.element_types}', flush=True)
-        print(f'[INFO] Initialized cutoff: {self.cutoff}', flush=True)
         # dummy
         self.ndescriptors = int(kwargs.get('ndescriptors', 1))
         self.nparams = int(kwargs.get('nparams', 1))

@@ -42,11 +42,22 @@ def add_args(parser):
         help='use flashTP. LAMMPS must be specially compiled.',
         action='store_true',
     )
+    ag.add_argument(
+        '-cueq',
+        '--enable_cueq',
+        help='use cuEquivariance. Only support ML-IAP interface.',
+        action='store_true',
+    )
+    ag.add_argument(
+        '-mliap',
+        '--use_mliap',
+        help='Use LAMMPS ML-IAP interface.',
+        action='store_true',
+    )
 
 
 def run(args):
     import sevenn.util
-    from sevenn.scripts.deploy import deploy, deploy_parallel
 
     checkpoint = args.checkpoint
     output_prefix = args.output_prefix
@@ -54,9 +65,40 @@ def run(args):
     get_serial = not get_parallel
     modal = args.modal
     use_flash = args.enable_flashTP
+    use_cueq = args.enable_cueq
+    use_mliap = args.use_mliap
 
+    # Check dependencies
+    if use_flash:
+        from sevenn.nn.flash_helper import is_flash_available
+
+        if not is_flash_available():
+            raise ImportError('FlashTP not installed or no GPU found.')
+
+    if use_cueq:
+        from sevenn.nn.cue_helper import is_cue_available
+
+        if not is_cue_available():
+            raise ImportError('cuEquivariance is not installed.')
+
+    if use_mliap:
+        from sevenn import mliap_helper
+
+        if not mliap_helper.is_mliap_available():
+            raise ImportError('ML-IAP-python interface is not installed or no GPU found.')  # noqa: E501
+
+    if use_cueq and not use_mliap:
+        raise ValueError('cuEquivariance is only supported in ML-IAP interface.')
+
+    if use_mliap and get_parallel:
+        raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
+
+    # deploy
     if output_prefix is None:
         output_prefix = 'deployed_parallel' if not get_serial else 'deployed_serial'
+
+    if use_mliap:
+        output_prefix += '_mliap'
 
     checkpoint_path = None
     if os.path.isfile(checkpoint):
@@ -64,16 +106,20 @@ def run(args):
     else:
         checkpoint_path = sevenn.util.pretrained_name_to_path(checkpoint)
 
-    if use_flash:
-        import sevenn.nn.flash_helper
-
-        if not sevenn.nn.flash_helper.is_flash_available():
-            raise ImportError('FlashTP not installed or no GPU found.')
-
-    if get_serial:
-        deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash)
+    if not use_mliap:
+        from sevenn.scripts.deploy import deploy, deploy_parallel
+        if get_serial:
+            deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash)
+        else:
+            deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash)  # noqa: E501
     else:
-        deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash)
+        mliap_helper.deploy_mliap(
+            checkpoint_path,
+            output_prefix,
+            modal,
+            use_flash=use_flash,
+            enable_cueq=use_cueq,
+        )
 
 
 # legacy way
