@@ -47,8 +47,8 @@ class SevenNetCalculator(Calculator):
         Parameters
         ----------
         model: str | Path | AtomGraphSequential, default='7net-0'
-            Name of pretrained models (7net-mf-ompa, 7net-omat, 7net-l3i5, 7net-0) or
-            path to the checkpoint, deployed model or the model itself
+            Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
+            7net-0) or path to the checkpoint, deployed model or the model itself
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'torchscript' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -56,6 +56,9 @@ class SevenNetCalculator(Calculator):
         modal: str | None, default=None
             modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
             it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
+            for 7net-omni, use one of 'mpa', 'omat24', 'matpes_pbe', 'matpes_r2scan',
+            'mp_r2scan', 'oc20', 'oc22', 'odac23', 'omol25_low', 'omol25_high',
+            'spice', 'qcml', 'pet_mad'
             case insensitive
         enable_cueq: bool, default=None (use the checkpoint's backend)
             if True, use cuEquivariant to accelerate inference.
@@ -253,14 +256,17 @@ class SevenNetD3Calculator(SumCalculator):
         Parameters
         ----------
         model: str | Path | AtomGraphSequential
-            Name of pretrained models (7net-mf-ompa, 7net-omat, 7net-l3i5, 7net-0) or
-            path to the checkpoint, deployed model or the model itself
+            Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
+            7net-0) or path to the checkpoint, deployed model or the model itself
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'torchscript' | 'model_instance'
         device: str | torch.device, default='auto'
             if not given, use CUDA if available
         modal: str | None, default=None
             modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
+            for 7net-omni, use one of 'mpa', 'omat24', 'matpes_pbe', 'matpes_r2scan',
+            'mp_r2scan', 'oc20', 'oc22', 'odac23', 'omol25_low', 'omol25_high',
+            'spice', 'qcml', 'pet_mad'
             it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
         enable_cueq: bool, default=False
             if True, use cuEquivariant to accelerate inference.

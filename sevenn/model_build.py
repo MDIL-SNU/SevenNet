@@ -231,12 +231,11 @@ def patch_modality(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
 
 
 def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
-    import sevenn.nn.cue_helper as cue_helper
-
     cue_cfg = copy.deepcopy(config.get(KEY.CUEQUIVARIANCE_CONFIG, {}))
-
     if not cue_cfg.pop('use', False):
         return layers
+
+    import sevenn.nn.cue_helper as cue_helper
 
     if not cue_helper.is_cue_available():
         warnings.warn(
