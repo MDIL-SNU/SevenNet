@@ -259,6 +259,8 @@ def pretrained_name_to_path(name: str) -> str:
         checkpoint_path = _const.SEVENNET_MF_ompa
     elif name in [f'{n}-omat' for n in heads]:
         checkpoint_path = _const.SEVENNET_omat
+    elif name in [f'{n}-omni' for n in heads]:
+        checkpoint_path = _const.SEVENNET_omni
     else:
         raise ValueError('Not a valid pretrained model name')
     url = _const.CHECKPOINT_DOWNLOAD_LINKS.get(checkpoint_path)
@@ -285,7 +287,7 @@ def pretrained_name_to_path(name: str) -> str:
 def load_checkpoint(checkpoint: Union[pathlib.Path, str]) -> 'SevenNetCheckpoint':
     from sevenn.checkpoint import SevenNetCheckpoint
 
-    suggests = ['7net-0, 7net-l3i5, 7net-mf-ompa, 7net-omat']
+    suggests = ['7net-0, 7net-l3i5, 7net-mf-ompa, 7net-omat', '7net-omni']
     if osp.isfile(checkpoint):
         checkpoint_path = checkpoint
     else:
