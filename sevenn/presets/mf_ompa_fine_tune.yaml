@@ -1,0 +1,109 @@
+# Example script for fine-tuning of SevenNet-MF-ompa
+model:
+    # parameters of SevenNet-MF-ompa, should not be changed
+    cutoff: 6.0
+    channel: 128
+    irreps_manual:
+    - 128x0e
+    - 128x0e+64x1o+32x2e+32x3o
+    - 128x0e+64x1o+64x1e+32x2o+32x2e+32x3o+32x3e
+    - 128x0o+128x0e+64x1o+64x1e+32x2o+32x2e+32x3o+32x3e
+    - 128x0e+64x1o+32x2e+32x3o
+    - 128x0e
+    lmax: 3
+    lmax_edge: -1
+    lmax_node: -1
+    is_parity: true
+    num_convolution_layer: 5
+    radial_basis:
+        radial_basis_name: bessel
+        bessel_basis_num: 8
+    cutoff_function:
+        cutoff_function_name: XPLOR
+        cutoff_on: 5.5
+    act_radial: silu
+    weight_nn_hidden_neurons:
+    - 64
+    - 64
+    act_scalar:
+        e: silu
+        o: tanh
+    act_gate:
+        e: silu
+        o: tanh
+    train_denominator: false
+    train_shift_scale: false
+    use_bias_in_linear: false
+    use_modal_node_embedding: false
+    use_modal_self_inter_intro: true
+    use_modal_self_inter_outro: true
+    use_modal_output_block: true
+    readout_as_fcn: false
+    self_connection_type: nequip
+    interaction_type: nequip
+    cuequivariance_config: {}
+    chemical_species: univ
+
+train:
+    random_seed: 777
+    epoch: 2
+    loss: 'Huber'
+    loss_param:
+        delta: 0.01
+    optimizer: adamw
+    optim_param:
+        lr: 0.0002
+        weight_decay: 0.001
+    scheduler: exponentiallr
+    scheduler_param:
+        gamma: 0.99
+    force_loss_weight: 1.0
+    stress_loss_weight: 0.01
+    csv_log: log.csv
+    num_workers: 0
+    is_train_stress: true
+    train_shuffle: true
+    error_record:
+    -   - Energy
+        - MAE
+    -   - Force
+        - MAE
+    -   - Stress
+        - MAE
+    -   - Energy
+        - Loss
+    -   - Force
+        - Loss
+    -   - Stress
+        - Loss
+    -   - TotalLoss
+        - None
+    best_metric: TotalLoss
+    use_weight: false
+    use_modality: true
+    continue:
+        checkpoint: './checkpoint_sevennet_mf_ompa.pth'
+        reset_optimizer: True
+        reset_scheduler: True
+        reset_epoch: True
+
+data:
+    dtype: single
+    data_format_args: {}
+    data_divide_ratio: 0.1
+    batch_size: 8
+    preprocess_num_cores: 1
+    compute_statistics: true
+
+    use_modal_wise_shift: true
+    use_modal_wise_scale: false
+
+    load_trainset_path:
+    -   data_modality: 'mpa'
+        file_list:
+        -   file: '../data/sevenn_data/graph.pt'
+
+    load_mpa_validset_path:
+      - data_modality: 'mpa'
+        file_list:
+          - file: '../data/sevenn_data/graph.pt'

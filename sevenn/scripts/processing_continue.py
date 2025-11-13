@@ -75,6 +75,7 @@ def processing_continue_v2(
         log.writeline(f'Multimodal model found: {modalities}')
         log.writeline('use_modality: True')
         config[KEY.USE_MODALITY] = True
+        config[KEY.MODAL_MAP] = modal_map
 
     from_epoch = checkpoint.epoch or 0
     log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
