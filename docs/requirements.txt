@@ -1,0 +1,4 @@
+sphinx==8.2.3
+sphinx_rtd_theme==3.0.2
+sphinx-notfound-page==1.1.0
+furo==2025.9.25
