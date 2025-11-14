@@ -37,7 +37,8 @@ class SevenNetCalculator(Calculator):
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
         modal: Optional[str] = None,
-        enable_cueq: bool = False,
+        enable_cueq: Optional[bool] = None,
+        enable_flash: Optional[bool] = None,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
     ) -> None:
@@ -46,8 +47,8 @@ class SevenNetCalculator(Calculator):
         Parameters
         ----------
         model: str | Path | AtomGraphSequential, default='7net-0'
-            Name of pretrained models (7net-mf-ompa, 7net-omat, 7net-l3i5, 7net-0) or
-            path to the checkpoint, deployed model or the model itself
+            Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
+            7net-0) or path to the checkpoint, deployed model or the model itself
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'torchscript' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -55,9 +56,14 @@ class SevenNetCalculator(Calculator):
         modal: str | None, default=None
             modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
             it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
+            for 7net-omni, use one of 'mpa', 'omat24', 'matpes_pbe', 'matpes_r2scan',
+            'mp_r2scan', 'oc20', 'oc22', 'odac23', 'omol25_low', 'omol25_high',
+            'spice', 'qcml', 'pet_mad'
             case insensitive
-        enable_cueq: bool, default=False
+        enable_cueq: bool, default=None (use the checkpoint's backend)
             if True, use cuEquivariant to accelerate inference.
+        enable_flash: bool, default=None (use the checkpoint's backend)
+            if True, use FlashTP to accelerate inference.
         sevennet_config: dict | None, default=None
             Not used, but can be used to carry meta information of this calculator
         """
@@ -71,6 +77,13 @@ class SevenNetCalculator(Calculator):
         file_type = file_type.lower()
         if file_type not in allowed_file_types:
             raise ValueError(f'file_type not in {allowed_file_types}')
+
+        enable_cueq = os.getenv('SEVENNET_ENABLE_CUEQ') == '1' or enable_cueq
+        enable_flash = os.getenv('SEVENNET_ENABLE_FLASH') == '1' or enable_flash
+        print('cueq')
+        print(enable_cueq)
+        print('flash')
+        print(enable_flash)
 
         if enable_cueq and file_type in ['model_instance', 'torchscript']:
             warnings.warn(
@@ -91,8 +104,9 @@ class SevenNetCalculator(Calculator):
         if file_type == 'checkpoint' and isinstance(model, str):
             cp = util.load_checkpoint(model)
 
-            backend = 'e3nn' if not enable_cueq else 'cueq'
-            model_loaded = cp.build_model(backend)
+            model_loaded = cp.build_model(
+                enable_cueq=enable_cueq, enable_flash=enable_flash
+            )
             model_loaded.set_is_batch_data(False)
 
             self.type_map = cp.config[KEY.TYPE_MAP]
@@ -242,14 +256,17 @@ class SevenNetD3Calculator(SumCalculator):
         Parameters
         ----------
         model: str | Path | AtomGraphSequential
-            Name of pretrained models (7net-mf-ompa, 7net-omat, 7net-l3i5, 7net-0) or
-            path to the checkpoint, deployed model or the model itself
+            Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
+            7net-0) or path to the checkpoint, deployed model or the model itself
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'torchscript' | 'model_instance'
         device: str | torch.device, default='auto'
             if not given, use CUDA if available
         modal: str | None, default=None
             modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
+            for 7net-omni, use one of 'mpa', 'omat24', 'matpes_pbe', 'matpes_r2scan',
+            'mp_r2scan', 'oc20', 'oc22', 'odac23', 'omol25_low', 'omol25_high',
+            'spice', 'qcml', 'pet_mad'
             it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
         enable_cueq: bool, default=False
             if True, use cuEquivariant to accelerate inference.

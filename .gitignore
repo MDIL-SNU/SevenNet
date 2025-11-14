@@ -13,6 +13,7 @@ uv.lock
 # downloaded models
 sevenn/pretrained_potentials/SevenNet_MF_ompa
 sevenn/pretrained_potentials/SevenNet_omat
+sevenn/pretrained_potentials/SevenNet_omni
 
 # from compile
 sevenn/pair_d3*

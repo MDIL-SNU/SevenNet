@@ -5,7 +5,6 @@ from typing import Optional, Union
 
 import e3nn.util.jit
 import torch
-import torch.nn
 from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
@@ -18,18 +17,19 @@ def deploy(
     checkpoint: Union[pathlib.Path, str],
     fname='deployed_serial.pt',
     modal: Optional[str] = None,
+    use_flash: bool = False,
 ) -> None:
-    """
-    This method is messy to avoid changes in pair_e3gnn.cpp, while
-    refactoring python part.
-    If changes the behavior, and accordingly pair_e3gnn.cpp,
-    we have to recompile LAMMPS (which I always want to procrastinate)
-    """
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
 
     cp = load_checkpoint(checkpoint)
-    model, config = cp.build_model('e3nn'), cp.config
+
+    model, config = (
+        cp.build_model(
+            enable_cueq=False, enable_flash=use_flash, _flash_lammps=use_flash
+        ),
+        cp.config,
+    )
 
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
     grad_module = ForceStressOutput()
@@ -62,6 +62,7 @@ def deploy(
     md_configs.update({'chemical_symbols_to_index': chem_list})
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
+    md_configs.update({'flashTP': 'yes' if use_flash else 'no'})
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )
@@ -79,13 +80,18 @@ def deploy_parallel(
     checkpoint: Union[pathlib.Path, str],
     fname='deployed_parallel',
     modal: Optional[str] = None,
+    use_flash: bool = False,
 ) -> None:
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
     cp = load_checkpoint(checkpoint)
-    model, config = cp.build_model('e3nn'), cp.config
+    model, config = (
+        cp.build_model(enable_cueq=False, enable_flash=use_flash),
+        cp.config,
+    )
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
+    config[KEY.USE_FLASH_TP] = use_flash
     model_state_dct = model.state_dict()
 
     model_list = build_E3_equivariant_model(config, parallel=True)
@@ -107,7 +113,7 @@ def deploy_parallel(
         if hasattr(model_part, 'eval_type_map'):
             setattr(model_part, 'eval_type_map', False)
         # Ensure all values are inserted
-        assert len(missing) == 0, missing
+        assert len(missing) == 0 or use_flash, missing
 
     if modal:
         model_list[0].prepare_modal_deploy(modal)
@@ -136,6 +142,7 @@ def deploy_parallel(
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
     md_configs.update({'comm_size': str(comm_size)})
+    md_configs.update({'flashTP': 'yes' if use_flash else 'no'})
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )

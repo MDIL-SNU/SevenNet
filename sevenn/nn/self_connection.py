@@ -1,3 +1,4 @@
+import torch
 import torch.nn as nn
 from e3nn.o3 import FullyConnectedTensorProduct, Irreps, Linear
 from e3nn.util.jit import compile_mode
@@ -58,9 +59,18 @@ class SelfConnectionIntro(nn.Module):
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         assert self.fc_tensor_product is not None, 'Layer is not instantiated'
-        data[KEY.SELF_CONNECTION_TEMP] = self.fc_tensor_product(
-            data[self.key_x], data[self.key_operand]
-        )
+
+        x = data[self.key_x]
+        operand = data[self.key_operand]
+
+        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
+        if use_mliap.item():
+            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+            x = x[:nlocal]
+            operand = operand[:nlocal]
+
+        data[KEY.SELF_CONNECTION_TEMP] = self.fc_tensor_product(x, operand)
+
         return data
 
 
@@ -104,7 +114,16 @@ class SelfConnectionLinearIntro(nn.Module):
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         assert self.linear is not None, 'Layer is not instantiated'
-        data[KEY.SELF_CONNECTION_TEMP] = self.linear(data[self.key_x])
+
+        x = data[self.key_x]
+
+        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
+        if use_mliap.item():
+            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+            x = x[:nlocal]
+
+        data[KEY.SELF_CONNECTION_TEMP] = self.linear(x)
+
         return data
 
 
@@ -123,6 +142,15 @@ class SelfConnectionOutro(nn.Module):
         self.key_x = data_key_x
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[self.key_x] = data[self.key_x] + data[KEY.SELF_CONNECTION_TEMP]
+
+        x = data[self.key_x]
+        sc_temp = data[KEY.SELF_CONNECTION_TEMP]
+
+        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
+        if use_mliap.item():
+            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+            x = x[:nlocal]
+
+        data[self.key_x] = x + sc_temp
         del data[KEY.SELF_CONNECTION_TEMP]
         return data

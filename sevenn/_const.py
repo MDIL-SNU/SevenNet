@@ -54,14 +54,17 @@ SEVENNET_l3i5 = f'{_prefix}/SevenNet_l3i5/checkpoint_l3i5.pth'
 SEVENNET_MF_0 = f'{_prefix}/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth'
 SEVENNET_MF_ompa = f'{_prefix}/SevenNet_MF_ompa/checkpoint_sevennet_mf_ompa.pth'
 SEVENNET_omat = f'{_prefix}/SevenNet_omat/checkpoint_sevennet_omat.pth'
+SEVENNET_omni = f'{_prefix}/SevenNet_omni/checkpoint_sevennet_omni.pth'
 
 _git_prefix = 'https://github.com/MDIL-SNU/SevenNet/releases/download'
 CHECKPOINT_DOWNLOAD_LINKS = {
     SEVENNET_MF_ompa: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_mf_ompa.pth',
     SEVENNET_omat: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_omat.pth',
+    SEVENNET_omni: f'{_git_prefix}/v0.12.0.cp/checkpoint_sevennet_omni.pth',
 }
 # to avoid torch script to compile torch_geometry.data
-AtomGraphDataType = Dict[str, torch.Tensor]
+# AtomGraphDataType = Dict[str, torch.Tensor]
+AtomGraphDataType = Dict[str, any]
 
 
 class LossType(Enum):  # only used for train_v1, do not use it afterwards
@@ -122,6 +125,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.SELF_CONNECTION_TYPE: 'nequip',
     KEY.INTERACTION_TYPE: 'nequip',
     KEY._NORMALIZE_SPH: True,
+    KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
 }
 
@@ -168,6 +172,7 @@ MODEL_CONFIG_CONDITION = {
     ),
     KEY.INTERACTION_TYPE: lambda x: x in IMPLEMENTED_INTERACTION_TYPE,
     KEY._NORMALIZE_SPH: bool,
+    KEY.USE_FLASH_TP: bool,
     KEY.CUEQUIVARIANCE_CONFIG: dict,
 }
 

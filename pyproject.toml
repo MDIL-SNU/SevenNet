@@ -1,6 +1,6 @@
 [project]
 name = "sevenn"
-version = "0.11.2.post1"
+version = "0.12.0.dev"
 authors = [
     { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
     { name = "Haekwan Jeon", email = "haekwan98@snu.ac.kr" },
@@ -29,12 +29,13 @@ dependencies = [
     "matscipy",
     "pandas",
     "requests",
+    "ninja",
     "setuptools>=61.0"
 ]
 [project.optional-dependencies]
-test = ["pytest", "pytest-cov>=5"]
-cueq12 = ["cuequivariance>=0.4.0; python_version >= '3.10'", "cuequivariance-torch>=0.4.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu12; python_version >= '3.10'"]
-cueq11 = ["cuequivariance>=0.4.0; python_version >= '3.10'", "cuequivariance-torch>=0.4.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu11; python_version >= '3.10'"]
+test = ["pytest", "pytest-cov>=5", "ipython"]
+cueq12 = ["cuequivariance>=0.6.0; python_version >= '3.10'", "cuequivariance-torch>=0.6.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu12; python_version >= '3.10'"]
+flashTP = ["flashTP @ git+https://github.com/SNU-ARC/flashTP@v0.1.0"]
 
 [project.scripts]
 sevenn = "sevenn.main.sevenn:main"
@@ -44,6 +45,7 @@ sevenn_inference = "sevenn.main.sevenn_inference:main"
 sevenn_patch_lammps = "sevenn.main.sevenn_patch_lammps:main"
 sevenn_preset = "sevenn.main.sevenn_preset:main"
 sevenn_cp = "sevenn.main.sevenn_cp:main"
+sevenn-prepare-lmp-mliap = "sevenn.integrations.lammps_mliap.create_lmp_mliap_file:main"
 
 [project.urls]
 Homepage = "https://github.com/MDIL-SNU/SevenNet"
