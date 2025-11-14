@@ -30,7 +30,8 @@ dependencies = [
     "pandas",
     "requests",
     "ninja",
-    "setuptools>=61.0"
+    "setuptools>=61.0",
+    'lammps'
 ]
 [project.optional-dependencies]
 test = ["pytest", "pytest-cov>=5", "ipython"]

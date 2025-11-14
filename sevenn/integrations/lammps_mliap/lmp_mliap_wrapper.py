@@ -10,7 +10,7 @@ Minimal SevenNet ML-IAP wrapper
 from __future__ import annotations
 
 import os
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any
 
 import torch
 from ase.data import chemical_symbols
@@ -50,8 +50,7 @@ class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
                 checkpoint_path = pretrained_name_to_path(self.model_path)
             except Exception:
                 raise ValueError(
-                    f'{self.model_path} is not a model path '
-                    'and a pretrained model name.'
+                    f'{self.model_path} is not a model path and a pretrained model name.'
                 )
         self.cp = load_checkpoint(checkpoint_path)
         print(f'[INFO] Loaded checkpoint from {checkpoint_path}', flush=True)
@@ -66,8 +65,7 @@ class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
         config = self.cp.config
         if self.modal is None:
             assert config.get(KEY.MODAL_MAP, None) is None, (
-                'Modal not given but model has modal_map: '
-                f'{list(config[KEY.MODAL_MAP].keys())}'
+                f'Modal not given but model has modal_map: {list(config[KEY.MODAL_MAP].keys())}'
             )
         else:
             assert self.modal in config[KEY.MODAL_MAP], (
@@ -100,14 +98,13 @@ class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
     Since script models cannot be pickled, we delay building the model
     until the first compute_forces call.
     """
+
     def _ensure_model_initialized(self):
         if self.model is not None:
             return  # Already initialized
         print('[INFO] Lazy initializing SevenNet model...', flush=True)
         print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}', flush=True)
-        model = self.cp.build_model(
-            enable_cueq=self.use_cueq, enable_flash=self.use_flash
-        )
+        model = self.cp.build_model(enable_cueq=self.use_cueq, enable_flash=self.use_flash)
         model.set_is_batch_data(False)
 
         if self.modal is not None:
@@ -130,33 +127,27 @@ class SevenNetLAMMPSMLIAPWrapper(MLIAPUnified):
         ntotal = lmp_data.ntotal
 
         # edge_vectors should be f32 in 7net
-        edge_vectors = torch.as_tensor(
-            lmp_data.rij, dtype=torch.float32, device=self.device
-        )
+        edge_vectors = torch.as_tensor(lmp_data.rij, dtype=torch.float32, device=self.device)
         edge_vectors.requires_grad_(True)
-        edge_index = torch.vstack([
-            torch.as_tensor(lmp_data.pair_i, dtype=torch.int64, device=self.device),
-            torch.as_tensor(lmp_data.pair_j, dtype=torch.int64, device=self.device),
-        ])
-        elems = torch.as_tensor(
-            lmp_data.elems,
-            dtype=torch.int64,
-            device=self.device
+        edge_index = torch.vstack(
+            [
+                torch.as_tensor(lmp_data.pair_i, dtype=torch.int64, device=self.device),
+                torch.as_tensor(lmp_data.pair_j, dtype=torch.int64, device=self.device),
+            ]
         )
+        elems = torch.as_tensor(lmp_data.elems, dtype=torch.int64, device=self.device)
         num_atoms = torch.as_tensor(nlocal, dtype=torch.int64, device=self.device)
         # data prep
         data = {
-            KEY.EDGE_IDX       : edge_index,
-            KEY.EDGE_VEC       : edge_vectors,
-            KEY.ATOMIC_NUMBERS : elems,
-            KEY.NUM_ATOMS      : num_atoms,
-            KEY.USE_MLIAP      : torch.tensor(True, dtype=torch.bool),
+            KEY.EDGE_IDX: edge_index,
+            KEY.EDGE_VEC: edge_vectors,
+            KEY.ATOMIC_NUMBERS: elems,
+            KEY.NUM_ATOMS: num_atoms,
+            KEY.USE_MLIAP: torch.tensor(True, dtype=torch.bool),
             KEY.MLIAP_NUM_LOCAL_GHOST: torch.tensor(
-                [nlocal, ntotal - nlocal],
-                dtype=torch.int64,
-                device=self.device
+                [nlocal, ntotal - nlocal], dtype=torch.int64, device=self.device
             ),
-            KEY.LAMMPS_DATA    : lmp_data,
+            KEY.LAMMPS_DATA: lmp_data,
         }
 
         # infer
