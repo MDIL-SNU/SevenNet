@@ -1,12 +1,11 @@
+> [!NOTE]
+> We will soon release a new version of SevenNet, featuring a **SevenNet-Omni**, which delivers state-of-the-art accuracy across diverse material domains at the PBE level and also provides high-fidelity channels such as r²SCAN and ωB97M-V. This release also includes a CUDA-accelerated version of SevenNet integrating flashTP and cuEquivariance, with support for the LAMMPS ML-IAP module. We are currently merging these features. See **[the develop/omni branch](https://github.com/MDIL-SNU/SevenNet/tree/develop/omni)** for ongoing updates.
 
 <img src="SevenNet_logo.png" alt="Alt text" height="180">
 
 # SevenNet
 
 SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural network (GNN)-based interatomic potential package that supports parallel molecular dynamics simulations using [`LAMMPS`](https://lammps.org). Its core model is based on [`NequIP`](https://github.com/mir-group/nequip).
-
-> [!NOTE]
-> We will soon release a CUDA-accelerated version of SevenNet, which will significantly increase the speed of our pretrained models on [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
 > [!TIP]
 > SevenNet supports NVIDIA's [cuEquivariance](https://github.com/NVIDIA/cuEquivariance) for acceleration. In our benchmarks, we found that the cuEquivariance improves inference speed by a factor of three for the SevenNet-MF-ompa potential. See [Installation](#installation) for details.
