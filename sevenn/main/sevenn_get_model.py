@@ -1,7 +1,7 @@
 import argparse
 import os
 
-from sevenn import __version__
+from sevenn import __version__, mliap_helper
 
 description_get_model = (
     'deploy LAMMPS model from the checkpoint'
@@ -82,8 +82,6 @@ def run(args):
             raise ImportError('cuEquivariance is not installed.')
 
     if use_mliap:
-        from sevenn import mliap_helper
-
         if not mliap_helper.is_mliap_available():
             raise ImportError('ML-IAP-python interface is not installed or no GPU found.')  # noqa: E501
 
@@ -108,17 +106,19 @@ def run(args):
 
     if not use_mliap:
         from sevenn.scripts.deploy import deploy, deploy_parallel
+
         if get_serial:
             deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash)
         else:
             deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash)  # noqa: E501
     else:
+        mliap_helper._DEPLOY_MLIAP = True  # passed to sevenn.nn.convolution
         mliap_helper.deploy_mliap(
             checkpoint_path,
             output_prefix,
             modal,
             use_flash=use_flash,
-            enable_cueq=use_cueq,
+            use_cueq=use_cueq,
         )
 
 

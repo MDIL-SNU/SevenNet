@@ -8,8 +8,12 @@ from e3nn.o3 import Irreps, TensorProduct
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
+from sevenn import mliap_helper
 from sevenn._const import AtomGraphDataType
-from sevenn.nn._ghost_exchange import LAMMPSMLIAPGhostExchangeModule
+from sevenn.nn._ghost_exchange import (
+    DummyGhostExchangeModule,
+    MLIAPGhostExchangeModule,
+)
 
 from .activation import ShiftedSoftPlus
 from .util import broadcast
@@ -101,7 +105,10 @@ class IrrepsConvolution(nn.Module):
         self.convolution_cls = TensorProduct
         self.weight_nn_cls = FullyConnectedNet
 
-        self.ghost_exchange = LAMMPSMLIAPGhostExchangeModule(field=data_key_x)
+        if mliap_helper._DEPLOY_MLIAP:
+            self.ghost_exchange = MLIAPGhostExchangeModule(field=data_key_x)
+        else:
+            self.ghost_exchange = DummyGhostExchangeModule(field=data_key_x)
 
         if not lazy_layer_instantiate:
             self.instantiate()
@@ -124,6 +131,7 @@ class IrrepsConvolution(nn.Module):
         weight = self.weight_nn(data[self.key_weight_input])
 
         x = data[self.key_x]
+        nlocal = x.shape[0]
 
         # TODO: avoid exchange at the first layer
         use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
@@ -149,6 +157,7 @@ class IrrepsConvolution(nn.Module):
 
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
+
         if use_mliap.item():
             x = torch.narrow(x, 0, 0, nlocal)
         data[self.key_x] = x
@@ -229,7 +238,10 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         self.convolution_cls = None  # must be assigned from outside
         self.weight_nn_cls = FullyConnectedNet
 
-        self.ghost_exchange = LAMMPSMLIAPGhostExchangeModule(field=data_key_x)
+        if mliap_helper._DEPLOY_MLIAP:
+            self.ghost_exchange = MLIAPGhostExchangeModule(field=data_key_x)
+        else:
+            self.ghost_exchange = DummyGhostExchangeModule(field=data_key_x)
 
         if not lazy_layer_instantiate:
             self.instantiate()
@@ -267,6 +279,7 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         assert self.weight_nn is not None, 'Weight_nn is not instantiated'
 
         x = data[self.key_x]
+        nlocal = x.shape[0]
 
         # TODO: avoid exchange at the first layer
         use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))

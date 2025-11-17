@@ -10,9 +10,9 @@ try:
     from lammps.mliap.mliap_unified_abc import MLIAPUnified
 except ModuleNotFoundError:
     raise ImportError(
-        "LAMMPS package supporting ML-IAP should be installed."
-        " Please refer to the instruction in issue #246."
-        "https://github.com/MDIL-SNU/SevenNet/issues/246#issuecomment-3500546381"
+        'LAMMPS package supporting ML-IAP should be installed.'
+        ' Please refer to the instruction in issue #246.'
+        'https://github.com/MDIL-SNU/SevenNet/issues/246#issuecomment-3500546381'
     )
 
 import sevenn._keys as KEY
@@ -75,18 +75,13 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
 
         self.cutoff = float(config[KEY.CUTOFF])
         self.rcutfac = self.cutoff * 0.5
-        print(f'[INFO] Cutoff: {self.cutoff}', flush=True)
-
+        
         chemical_species = config.get(KEY.CHEMICAL_SPECIES, None)
         syms = chemical_symbols.copy()
         for i, sym in enumerate(syms):
             if sym not in chemical_species:
                 syms[i] = 'X'  # not supported
         self.element_types = syms
-        supported_elems = ' '.join(
-            [elem for elem in self.element_types if elem != 'X']
-        )
-        print(f'[INFO] Element types: {supported_elems}', flush=True)
 
         # dummy
         self.ndescriptors = int(kwargs.get('ndescriptors', 1))

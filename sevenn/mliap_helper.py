@@ -11,8 +11,11 @@ try:
 except ImportError:
     _MLIAP_AVAILABLE = False
 
+_DEPLOY_MLIAP = False  # passed to sevenn.nn.convolution
+
 
 def is_mliap_available() -> bool:
+    print('_MLIAP_AVAILABLE:', _MLIAP_AVAILABLE)
     return _MLIAP_AVAILABLE and torch.cuda.is_available()
 
 
@@ -23,12 +26,11 @@ def deploy_mliap(
     use_flash: bool = False,
     use_cueq: bool = False,
 ) -> None:
-    from .lmp_mliap_wrapper import SevenNetMLIAPWrapper
+    from sevenn.lmp_mliap_wrapper import SevenNetMLIAPWrapper
 
     if fname.endswith('.pt') is False:
-        fname = fname.with_suffix(fname.suffix + '.pt')
+        fname += '.pt'
 
-    fname.parent.mkdir(parents=True, exist_ok=True)
     mliap_module = SevenNetMLIAPWrapper(
         model_path=checkpoint,
         modal=modal,
