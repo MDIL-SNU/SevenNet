@@ -62,13 +62,6 @@ class SelfConnectionIntro(nn.Module):
 
         x = data[self.key_x]
         operand = data[self.key_operand]
-
-        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
-        if use_mliap.item():
-            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
-            x = x[:nlocal]
-            operand = operand[:nlocal]
-
         data[KEY.SELF_CONNECTION_TEMP] = self.fc_tensor_product(x, operand)
 
         return data
@@ -116,12 +109,6 @@ class SelfConnectionLinearIntro(nn.Module):
         assert self.linear is not None, 'Layer is not instantiated'
 
         x = data[self.key_x]
-
-        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
-        if use_mliap.item():
-            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
-            x = x[:nlocal]
-
         data[KEY.SELF_CONNECTION_TEMP] = self.linear(x)
 
         return data
@@ -145,11 +132,6 @@ class SelfConnectionOutro(nn.Module):
 
         x = data[self.key_x]
         sc_temp = data[KEY.SELF_CONNECTION_TEMP]
-
-        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
-        if use_mliap.item():
-            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
-            x = x[:nlocal]
 
         data[self.key_x] = x + sc_temp
         del data[KEY.SELF_CONNECTION_TEMP]

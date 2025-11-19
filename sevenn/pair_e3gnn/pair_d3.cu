@@ -492,7 +492,7 @@ void PairD3::setfuncpar_bj() {
         {"cam-b3lyp", 36}, {"lc-wpbe", 37}, {"b2gp-plyp", 38}, {"ptpss", 39}, {"pwpb95", 40},
         {"hf/mixed", 41}, {"hf/sv", 42}, {"hf/minis", 43}, {"b3-lyp/6-31gd", 44}, {"hcth120", 45},
         {"pw1pw", 46}, {"pwgga", 47}, {"hsesol", 48}, {"hf3c", 49}, {"hf3cv", 50}, {"pbeh3c", 51},
-        {"pbeh-3c", 52}, {"wb97m", 53}
+        {"pbeh-3c", 52}, {"wb97m", 53}, {"r2scan", 54}
     };
 
     int commandCode = commandMap[functional];
@@ -558,7 +558,8 @@ void PairD3::setfuncpar_bj() {
         // special PBEh - D3 - gCP / def2 - mSVP parametrization;
         case 51: rs6 = 0.4860; s18 = 0.0000; rs18 = 4.5000; break;
         case 52: rs6 = 0.4860; s18 = 0.0000; rs18 = 4.5000; break;
-        case 53: rs6 = 0.5660; s18 = 0.3908; rs18 = 3.1280; break;
+        case 53: rs6 = 0.5660; s18 = 0.3908; rs18 = 3.1280; break;  // J. Chem. Theory Comput. 14, 5725 (2018)
+        case 54: rs6 = 0.4948; s18 = 0.7898; rs18 = 5.7308; break;  // S. Ehlert et al.,  J. Chem. Phys. 154, 061101 (2021)
         default:
             error->all(FLERR, "Functional name unknown");
             break;

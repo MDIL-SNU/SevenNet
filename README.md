@@ -45,9 +45,11 @@ It is currently our best pretrained model, achieving state-of-the-art accuracy a
 | r²SCAN         | `matpes_r2scan` |
 | ωB97M-V        | `omol25_low`    |
 
+Also consider `omat24` or `matpes_pbe` channels for more accurate PBE-level descriptions of high-force configurations. Note that `matpes_pbe` is trained on PBE level of theory, without incorporating the Hubbard U correction.
+
 ```python
 from sevenn.calculator import SevenNetCalculator
-# "mpa" refers to the MPtrj + sAlex modal, used for evaluating Matbench Discovery.
+# "mpa" refers to the MPtrj + sAlex channel, used for evaluating Matbench Discovery.
 # We supports cuEquivariance and FlashTP for TP acceleration. Turn on those tags when available.
 calc = SevenNetCalculator(
     model="/path/to/7net-omni",

@@ -36,6 +36,7 @@ dependencies = [
 test = ["pytest", "pytest-cov>=5", "ipython"]
 cueq12 = ["cuequivariance>=0.6.0; python_version >= '3.10'", "cuequivariance-torch>=0.6.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu12; python_version >= '3.10'"]
 flashTP = ["flashTP @ git+https://github.com/SNU-ARC/flashTP@v0.1.0"]
+mliap = ["cython==3.0.11", "cupy-cuda12x"]
 
 [project.scripts]
 sevenn = "sevenn.main.sevenn:main"
@@ -45,7 +46,6 @@ sevenn_inference = "sevenn.main.sevenn_inference:main"
 sevenn_patch_lammps = "sevenn.main.sevenn_patch_lammps:main"
 sevenn_preset = "sevenn.main.sevenn_preset:main"
 sevenn_cp = "sevenn.main.sevenn_cp:main"
-sevenn-prepare-lmp-mliap = "sevenn.integrations.lammps_mliap.create_lmp_mliap_file:main"
 
 [project.urls]
 Homepage = "https://github.com/MDIL-SNU/SevenNet"
