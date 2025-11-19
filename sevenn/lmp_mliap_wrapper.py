@@ -23,58 +23,51 @@ from sevenn.nn._ghost_exchange import MLIAPGhostExchangeModule
 from sevenn.util import load_checkpoint, pretrained_name_to_path
 
 
-class MLIAPExchange(nn.Module):
-    def __init__(self):
-        super().__init__()
-        self.ghost_exchange = MLIAPGhostExchangeModule(field=KEY.NODE_FEATURE)
-
-    def forward(self, data: AtomGraphDataType, nlocal: int) -> AtomGraphDataType:
-        data[KEY.NODE_FEATURE] = torch.narrow(data[KEY.NODE_FEATURE], 0, 0, nlocal)
-        data = self.ghost_exchange(data)
-        return data
-
-
-class MLIAPNarrow(nn.Module):
-    def __init__(self):
-        super().__init__()
-
-    def forward(self, data: AtomGraphDataType, nlocal: int) -> AtomGraphDataType:
-        data[KEY.NODE_FEATURE] = torch.narrow(data[KEY.NODE_FEATURE], 0, 0, nlocal)
-        data[KEY.NODE_ATTR] = torch.narrow(data[KEY.NODE_ATTR], 0, 0, nlocal)
-        data[KEY.ATOM_TYPE] = torch.narrow(data[KEY.ATOM_TYPE], 0, 0, nlocal)
-        data[KEY.ATOMIC_NUMBERS] = torch.narrow(
-            data[KEY.ATOMIC_NUMBERS], 0, 0, nlocal
-        )  # noqa: E501
-        return data
-
-
-# Wrappers for SevenNet nn.Modules
 class MLIAPWrappedConvolution(nn.Module):
     def __init__(self, conv):
         super().__init__()
+
         self.conv = conv
-        self.narrow = MLIAPNarrow()
-        self.exchange = MLIAPExchange()
+        self.ghost_exchange = MLIAPGhostExchangeModule(field=KEY.NODE_FEATURE)
+        self._keys_to_narrow = (
+            KEY.NODE_FEATURE,
+            KEY.NODE_ATTR,
+            KEY.ATOM_TYPE,
+            KEY.ATOMIC_NUMBERS,
+        )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+        nlocal = int(data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item())
 
-        data = self.exchange(data, nlocal)
+        data[KEY.NODE_FEATURE] = torch.narrow(data[KEY.NODE_FEATURE], 0, 0, nlocal)
+        data = self.ghost_exchange(data)
+
         data = self.conv(data)
-        data = self.narrow(data, nlocal)
+
+        for k in self._keys_to_narrow:
+            data[k] = torch.narrow(data[k], 0, 0, nlocal)
+
         return data
 
 
 class MLIAPWrappedIrrepsLinear(nn.Module):
     def __init__(self, linear):
         super().__init__()
+
         self.linear = linear
-        self.narrow = MLIAPNarrow()
+        self._keys_to_narrow = (
+            KEY.NODE_FEATURE,
+            KEY.NODE_ATTR,
+            KEY.ATOM_TYPE,
+            KEY.ATOMIC_NUMBERS,
+        )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+        nlocal = int(data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item())
 
-        data = self.narrow(data, nlocal)
+        for k in self._keys_to_narrow:
+            data[k] = torch.narrow(data[k], 0, 0, nlocal)
+
         data = self.linear(data)
         return data
 
@@ -136,7 +129,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.cutoff = float(config[KEY.CUTOFF])
         self.rcutfac = self.cutoff * 0.5
 
-        chemical_species = config.get(KEY.CHEMICAL_SPECIES, None)
+        chemical_species = config[KEY.CHEMICAL_SPECIES]  # must present
         syms = chemical_symbols.copy()
         for i, sym in enumerate(syms):
             if sym not in chemical_species:
@@ -162,20 +155,13 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             enable_cueq=self.use_cueq, enable_flash=self.use_flash
         )
 
-        # Patch MLIAP-wrapped modules
-        model._modules['onehot_to_feature_x'] = MLIAPWrappedIrrepsLinear(
-            model._modules['onehot_to_feature_x']
-        )
-        conv_names = [
-            name for name in model._modules.keys() if name.endswith('_convolution')
-        ]
-        for name in conv_names:
-            original_conv = model._modules[name]
-            wrapped_conv = MLIAPWrappedConvolution(original_conv)
-            model._modules[name] = wrapped_conv
+        for k, module in model._modules.items():
+            if k.endswith('_convolution'):
+                model._modules[k] = MLIAPWrappedConvolution(module)
+            elif k == 'onehot_to_feature_x':
+                model._modules[k] = MLIAPWrappedIrrepsLinear(module)
 
         model.set_is_batch_data(False)
-
         if self.modal is not None:
             model.eval_modal_map = False
             model.prepare_modal_deploy(self.modal)  # set the fidelity of input data
@@ -188,42 +174,39 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
     # -------- unified entrypoint --------
     def compute_forces(self, lmp_data):
         self._ensure_model_initialized()  # lazy init
+        assert self.model, 'Model must be initialized'
         if lmp_data.nlocal == 0 or lmp_data.npairs <= 1:
+            # waht about a single atom with 0 pairs?
             return
 
         nlocal = lmp_data.nlocal
         ntotal = lmp_data.ntotal
 
         # edge_vectors should be f32 in 7net
-        edge_vectors = torch.as_tensor(
-            lmp_data.rij, dtype=torch.float32, device=self.device
-        )
+        edge_vectors = torch.as_tensor(lmp_data.rij, torch.float32, self.device)
         edge_vectors.requires_grad_(True)
+
         edge_index = torch.vstack(
             [
-                torch.as_tensor(
-                    lmp_data.pair_i, dtype=torch.int64, device=self.device
-                ),
-                torch.as_tensor(
-                    lmp_data.pair_j, dtype=torch.int64, device=self.device
-                ),
+                torch.as_tensor(lmp_data.pair_i, torch.int64, self.device),
+                torch.as_tensor(lmp_data.pair_j, torch.int64, self.device),
             ]
         )
-        elems = torch.as_tensor(
-            lmp_data.elems, dtype=torch.int64, device=self.device
+        elems = torch.as_tensor(lmp_data.elems, torch.int64, self.device)
+        num_atoms = torch.as_tensor(nlocal, torch.int64, self.device)
+        mliap_num_local_ghost = torch.as_tensor(
+            [nlocal, ntotal - nlocal], torch.int64, self.device
         )
-        num_atoms = torch.as_tensor(nlocal, dtype=torch.int64, device=self.device)
+
         # data prep
         data = {
             KEY.EDGE_IDX: edge_index,
             KEY.EDGE_VEC: edge_vectors,
             KEY.ATOMIC_NUMBERS: elems,
             KEY.NUM_ATOMS: num_atoms,
-            KEY.USE_MLIAP: torch.tensor(True, dtype=torch.bool),
-            KEY.MLIAP_NUM_LOCAL_GHOST: torch.tensor(
-                [nlocal, ntotal - nlocal], dtype=torch.int64, device=self.device
-            ),
+            KEY.MLIAP_NUM_LOCAL_GHOST: mliap_num_local_ghost,
             KEY.LAMMPS_DATA: lmp_data,
+            KEY.USE_MLIAP: torch.as_tensor(True, dtype=torch.bool),
         }
 
         # infer
@@ -233,7 +216,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             torch.sum(pred_atomic_energies),
             [edge_vectors],
         )[0]
-        if pred_atomic_energies.size(0) != nlocal:
+        if pred_atomic_energies.size(0) != nlocal:  # why this check is necessary?
             pred_atomic_energies = torch.narrow(pred_atomic_energies, 0, 0, nlocal)
         pred_total_energy = torch.sum(pred_atomic_energies)
 
