@@ -83,16 +83,6 @@ def run(args):
         if not is_cue_available():
             raise ImportError('cuEquivariance is not installed.')
 
-    if use_mliap:
-        try:
-            from lammps.mliap.mliap_unified_abc import MLIAPUnified
-        except ModuleNotFoundError:
-            raise ImportError(
-                'ML-IAP-python interface is not installed or no GPU found.'
-                'Please refer to the instruction in issue #246.'
-                'https://github.com/MDIL-SNU/SevenNet/issues/246#issuecomment-3500546381'  # noqa: E501
-            )
-
     if use_cueq and not use_mliap:
         raise ValueError('cuEquivariance is only supported in ML-IAP interface.')
 
@@ -120,14 +110,12 @@ def run(args):
         else:
             deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash)  # noqa: E501
     else:
-        from sevenn import lmp_mliap_wrapper
-
-        # lmp_mliap_wrapper._DEPLOY_MLIAP = True  # passed to sevenn.nn.convolution
+        from sevenn import mliap
 
         if output_prefix.endswith('.pt') is False:
             output_prefix += '.pt'
 
-        mliap_module = lmp_mliap_wrapper.SevenNetMLIAPWrapper(
+        mliap_module = mliap.SevenNetMLIAPWrapper(
             model_path=checkpoint,
             modal=modal,
             use_cueq=use_cueq,
