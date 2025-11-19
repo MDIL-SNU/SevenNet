@@ -13,7 +13,7 @@ try:
 except ModuleNotFoundError:
     raise ImportError(
         'LAMMPS package supporting ML-IAP should be installed.'
-        ' Please refer to the instruction in issue #246.'
+        'Please refer to the instruction in issue #246.'
         'https://github.com/MDIL-SNU/SevenNet/issues/246#issuecomment-3500546381'
     )
 

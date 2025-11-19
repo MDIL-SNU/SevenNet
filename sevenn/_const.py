@@ -66,6 +66,7 @@ CHECKPOINT_DOWNLOAD_LINKS = {
 AtomGraphDataType = Dict[str, torch.Tensor]  # But it can contain 'lmp_data'
 # AtomGraphDataType = Dict[str, any]
 
+
 class LossType(Enum):  # only used for train_v1, do not use it afterwards
     ENERGY = 'energy'  # eV or eV/atom
     FORCE = 'force'  # eV/A

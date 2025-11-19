@@ -230,4 +230,4 @@ OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
 USE_MLIAP = 'use_mliap'
 MLIAP_NUM_LOCAL_GHOST = 'mliap_num_local_ghost'
 MLIAP_NODE_FEATURE_GHOST = 'mliap_node_feature_ghost'
-LAMMPS_DATA = 'lammps_data' # unused
+LAMMPS_DATA = 'lammps_data'

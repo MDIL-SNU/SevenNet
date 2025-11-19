@@ -8,7 +8,6 @@ from e3nn.o3 import Irreps, TensorProduct
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
-from sevenn import lmp_mliap_wrapper
 from sevenn._const import AtomGraphDataType
 
 from .activation import ShiftedSoftPlus
@@ -230,9 +229,7 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         ret = cls(
             irreps_x, irreps_x, irreps_x, weight_layer_input_to_hidden=[1],
         )
-        ghost_exchange_backup = ret.ghost_exchange
         ret.__dict__ = deepcopy(src.__dict__)
-        ret.ghost_exchange = ghost_exchange_backup
         return ret
 
     def instantiate(self) -> None:

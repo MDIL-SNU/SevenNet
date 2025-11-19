@@ -37,8 +37,8 @@ class SevenNetCalculator(Calculator):
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
         modal: Optional[str] = None,
-        enable_cueq: Optional[bool] = None,
-        enable_flash: Optional[bool] = None,
+        enable_cueq: Optional[bool] = False,
+        enable_flash: Optional[bool] = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
     ) -> None:
