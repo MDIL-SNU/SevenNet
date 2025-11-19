@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any, Tuple
+from typing import Any
 
 import torch
 import torch.nn as nn
@@ -10,10 +10,7 @@ from ase.data import chemical_symbols
 try:
     from lammps.mliap.mliap_unified_abc import MLIAPUnified
 
-    # _MLIAP_AVAILABLE = True
-
 except ModuleNotFoundError:
-    # _MLIAP_AVAILABLE = False  # redundant
     raise ImportError(
         'LAMMPS package supporting ML-IAP should be installed.'
         ' Please refer to the instruction in issue #246.'
@@ -23,19 +20,7 @@ except ModuleNotFoundError:
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 from sevenn.nn._ghost_exchange import MLIAPGhostExchangeModule
-from sevenn.nn.linear import IrrepsLinear
-from sevenn.nn.self_connection import (
-    SelfConnectionIntro,
-    SelfConnectionLinearIntro,
-    SelfConnectionOutro,
-)
 from sevenn.util import load_checkpoint, pretrained_name_to_path
-
-# # redundant
-# def is_mliap_available() -> bool:
-#     print('_MLIAP_AVAILABLE:', _MLIAP_AVAILABLE)
-#     return _MLIAP_AVAILABLE and torch.cuda.is_available()
-# _DEPLOY_MLIAP = False  # passed to sevenn.nn.convolution
 
 
 class MLIAPExchange(nn.Module):
@@ -70,7 +55,6 @@ class MLIAPWrappedConvolution(nn.Module):
         self.exchange = MLIAPExchange()
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        # print(f'[DBG] MLIAPWrappedConvolution forward called')
         nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
 
         data = self.exchange(data, nlocal)
@@ -86,7 +70,6 @@ class MLIAPWrappedIrrepsLinear(nn.Module):
         self.narrow = MLIAPNarrow()
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        # print(f'[DBG] MLIAPWrappedIrrepsLinear forward called')
         nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
 
         data = self.narrow(data, nlocal)
@@ -252,7 +235,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         # update
         lmp_eatoms = torch.as_tensor(lmp_data.eatoms)
         lmp_eatoms.copy_(pred_atomic_energies)
-        lmp_data.energy = pred_total_energy
+        lmp_data.energy = pred_total_energy.detach()
         # upcasting edge_forces required for update_pair_forces_gpu
         lmp_data.update_pair_forces_gpu(edge_forces.to(torch.float64))
 
