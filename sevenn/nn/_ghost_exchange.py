@@ -1,6 +1,7 @@
 """
 Ghost Exchange modules for SevenNet (ported from NequIP)
 """
+
 import torch
 import torch.nn as nn
 
@@ -36,9 +37,7 @@ class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
 
         # Reverse exchange: send ghost gradients to original atoms
         ctx.lmp_data.reverse_exchange(
-            grad_output_flat,
-            gout_flat,
-            gout_flat.size(-1)
+            grad_output_flat, gout_flat, gout_flat.size(-1)
         )
 
         return gout_flat.view(ctx.original_shape), None

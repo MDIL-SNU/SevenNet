@@ -42,7 +42,9 @@ class MLIAPNarrow(nn.Module):
         data[KEY.NODE_FEATURE] = torch.narrow(data[KEY.NODE_FEATURE], 0, 0, nlocal)
         data[KEY.NODE_ATTR] = torch.narrow(data[KEY.NODE_ATTR], 0, 0, nlocal)
         data[KEY.ATOM_TYPE] = torch.narrow(data[KEY.ATOM_TYPE], 0, 0, nlocal)
-        data[KEY.ATOMIC_NUMBERS] = torch.narrow(data[KEY.ATOMIC_NUMBERS], 0, 0, nlocal)  # noqa: E501
+        data[KEY.ATOMIC_NUMBERS] = torch.narrow(
+            data[KEY.ATOMIC_NUMBERS], 0, 0, nlocal
+        )  # noqa: E501
         return data
 
 
@@ -150,6 +152,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
     Since script models cannot be pickled, we delay building the model
     until the first compute_forces call.
     """
+
     def _ensure_model_initialized(self):
         if self.model is not None:
             return  # Already initialized
@@ -196,29 +199,31 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             lmp_data.rij, dtype=torch.float32, device=self.device
         )
         edge_vectors.requires_grad_(True)
-        edge_index = torch.vstack([
-            torch.as_tensor(lmp_data.pair_i, dtype=torch.int64, device=self.device),
-            torch.as_tensor(lmp_data.pair_j, dtype=torch.int64, device=self.device),
-        ])
+        edge_index = torch.vstack(
+            [
+                torch.as_tensor(
+                    lmp_data.pair_i, dtype=torch.int64, device=self.device
+                ),
+                torch.as_tensor(
+                    lmp_data.pair_j, dtype=torch.int64, device=self.device
+                ),
+            ]
+        )
         elems = torch.as_tensor(
-            lmp_data.elems,
-            dtype=torch.int64,
-            device=self.device
+            lmp_data.elems, dtype=torch.int64, device=self.device
         )
         num_atoms = torch.as_tensor(nlocal, dtype=torch.int64, device=self.device)
         # data prep
         data = {
-            KEY.EDGE_IDX       : edge_index,
-            KEY.EDGE_VEC       : edge_vectors,
-            KEY.ATOMIC_NUMBERS : elems,
-            KEY.NUM_ATOMS      : num_atoms,
-            KEY.USE_MLIAP      : torch.tensor(True, dtype=torch.bool),
+            KEY.EDGE_IDX: edge_index,
+            KEY.EDGE_VEC: edge_vectors,
+            KEY.ATOMIC_NUMBERS: elems,
+            KEY.NUM_ATOMS: num_atoms,
+            KEY.USE_MLIAP: torch.tensor(True, dtype=torch.bool),
             KEY.MLIAP_NUM_LOCAL_GHOST: torch.tensor(
-                [nlocal, ntotal - nlocal],
-                dtype=torch.int64,
-                device=self.device
+                [nlocal, ntotal - nlocal], dtype=torch.int64, device=self.device
             ),
-            KEY.LAMMPS_DATA    : lmp_data,
+            KEY.LAMMPS_DATA: lmp_data,
         }
 
         # infer
