@@ -1,7 +1,9 @@
 import argparse
 import os
 
-from sevenn import __version__, mliap_helper
+import torch
+
+from sevenn import __version__, lmp_mliap_wrapper
 
 description_get_model = (
     'deploy LAMMPS model from the checkpoint'
@@ -82,7 +84,7 @@ def run(args):
             raise ImportError('cuEquivariance is not installed.')
 
     if use_mliap:
-        if not mliap_helper.is_mliap_available():
+        if not lmp_mliap_wrapper.is_mliap_available():
             raise ImportError('ML-IAP-python interface is not installed or no GPU found.')  # noqa: E501
 
     if use_cueq and not use_mliap:
@@ -112,14 +114,18 @@ def run(args):
         else:
             deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash)  # noqa: E501
     else:
-        mliap_helper._DEPLOY_MLIAP = True  # passed to sevenn.nn.convolution
-        mliap_helper.deploy_mliap(
-            checkpoint_path,
-            output_prefix,
-            modal,
-            use_flash=use_flash,
+        # lmp_mliap_wrapper._DEPLOY_MLIAP = True  # passed to sevenn.nn.convolution
+
+        if output_prefix.endswith('.pt') is False:
+            output_prefix += '.pt'
+
+        mliap_module = lmp_mliap_wrapper.SevenNetMLIAPWrapper(
+            model_path=checkpoint,
+            modal=modal,
             use_cueq=use_cueq,
+            use_flash=use_flash,
         )
+        torch.save(mliap_module, output_prefix)
 
 
 # legacy way

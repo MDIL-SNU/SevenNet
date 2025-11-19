@@ -8,12 +8,8 @@ from e3nn.o3 import Irreps, TensorProduct
 from e3nn.util.jit import compile_mode
 
 import sevenn._keys as KEY
-from sevenn import mliap_helper
+from sevenn import lmp_mliap_wrapper
 from sevenn._const import AtomGraphDataType
-from sevenn.nn._ghost_exchange import (
-    DummyGhostExchangeModule,
-    MLIAPGhostExchangeModule,
-)
 
 from .activation import ShiftedSoftPlus
 from .util import broadcast
@@ -105,11 +101,6 @@ class IrrepsConvolution(nn.Module):
         self.convolution_cls = TensorProduct
         self.weight_nn_cls = FullyConnectedNet
 
-        if mliap_helper._DEPLOY_MLIAP:
-            self.ghost_exchange = MLIAPGhostExchangeModule(field=data_key_x)
-        else:
-            self.ghost_exchange = DummyGhostExchangeModule(field=data_key_x)
-
         if not lazy_layer_instantiate:
             self.instantiate()
 
@@ -131,17 +122,6 @@ class IrrepsConvolution(nn.Module):
         weight = self.weight_nn(data[self.key_weight_input])
 
         x = data[self.key_x]
-        nlocal = x.shape[0]
-
-        # TODO: avoid exchange at the first layer
-        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
-        if use_mliap.item():
-            # ghost_exchange only if use_mliap
-            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
-            x = torch.narrow(x, 0, 0, nlocal)
-            data[self.key_x] = x
-            data = self.ghost_exchange(data, ghost_included=False)
-            x = data[self.key_x]
 
         if self.is_parallel:
             x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
@@ -158,8 +138,6 @@ class IrrepsConvolution(nn.Module):
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
 
-        if use_mliap.item():
-            x = torch.narrow(x, 0, 0, nlocal)
         data[self.key_x] = x
         return data
 
@@ -238,11 +216,6 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         self.convolution_cls = None  # must be assigned from outside
         self.weight_nn_cls = FullyConnectedNet
 
-        if mliap_helper._DEPLOY_MLIAP:
-            self.ghost_exchange = MLIAPGhostExchangeModule(field=data_key_x)
-        else:
-            self.ghost_exchange = DummyGhostExchangeModule(field=data_key_x)
-
         if not lazy_layer_instantiate:
             self.instantiate()
 
@@ -279,24 +252,12 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         assert self.weight_nn is not None, 'Weight_nn is not instantiated'
 
         x = data[self.key_x]
-        nlocal = x.shape[0]
-
-        # TODO: avoid exchange at the first layer
-        use_mliap = data.get(KEY.USE_MLIAP, torch.tensor(False, dtype=torch.bool))
-        if use_mliap.item():
-            # ghost_exchange only if use_mliap
-            nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
-            x = torch.narrow(x, 0, 0, nlocal)
-            data[self.key_x] = x
-            data = self.ghost_exchange(data, ghost_included=False)
-            x = data[self.key_x]
-
         weight_input = data[self.key_weight_input]
-        # Forward: weight_nn
+
         weight = self.weight_nn(weight_input)
 
-        # if self.is_parallel:
-        #     x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
+        if self.is_parallel:
+            x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
 
         edge_src = data[self.key_edge_idx][1]
         edge_dst = data[self.key_edge_idx][0]
@@ -312,10 +273,8 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
 
         x = x.div(self.denominator)
 
-        # if self.is_parallel:
-        #     x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
-        if use_mliap.item():
-            x = torch.narrow(x, 0, 0, nlocal)
+        if self.is_parallel:
+            x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
         data[self.key_x] = x
 
         return data

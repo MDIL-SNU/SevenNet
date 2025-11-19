@@ -1,51 +1,11 @@
 """
 Ghost Exchange modules for SevenNet (ported from NequIP)
-Simplified version using tensor metadata only
 """
-import datetime
-from typing import Optional
-
 import torch
-import torch.distributed as dist
 import torch.nn as nn
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
-
-
-class GhostExchangeModule(nn.Module):
-    """Base class for ghost atom exchange modules in SevenNet."""
-
-    def __init__(
-        self,
-        field: str = KEY.NODE_FEATURE,
-    ):
-        super().__init__()
-        self.field = field
-
-    def forward(
-        self,
-        data: AtomGraphDataType,
-        ghost_included: bool,
-    ) -> AtomGraphDataType:
-        raise NotImplementedError('Subclasses must implement forward method')
-
-
-class DummyGhostExchangeModule(GhostExchangeModule):
-    """Dummy ghost exchange module that performs no operation."""
-
-    def __init__(
-        self,
-        field: str = KEY.NODE_FEATURE,
-    ):
-        super().__init__(field=field)
-
-    def forward(
-        self,
-        data: AtomGraphDataType,
-        ghost_included: bool,
-    ) -> AtomGraphDataType:
-        return data
 
 
 class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
@@ -84,7 +44,7 @@ class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
         return gout_flat.view(ctx.original_shape), None
 
 
-class MLIAPGhostExchangeModule(GhostExchangeModule):
+class MLIAPGhostExchangeModule(nn.Module):
     """
     LAMMPS ML-IAP ghost exchange.
     """
@@ -93,12 +53,12 @@ class MLIAPGhostExchangeModule(GhostExchangeModule):
         self,
         field: str = KEY.NODE_FEATURE,
     ):
-        super().__init__(field=field)
+        super().__init__()
+        self.field = field
 
     def forward(
         self,
         data: AtomGraphDataType,
-        ghost_included: bool = False,
     ) -> AtomGraphDataType:
         """
         Perform LAMMPS ghost exchange with MPI communication.
@@ -114,14 +74,10 @@ class MLIAPGhostExchangeModule(GhostExchangeModule):
         lmp_data = data[KEY.LAMMPS_DATA]
         node_features = data[self.field]
         num_local_ghost = data[KEY.MLIAP_NUM_LOCAL_GHOST]
-        nlocal = num_local_ghost[0].item()
         nghost = num_local_ghost[1].item()
 
-        # Extract local features
-        if ghost_included:
-            local_features = node_features[:nlocal]
-        else:
-            local_features = node_features
+        # Assume node_features already exclude ghosts
+        local_features = node_features
 
         # Prepare for LAMMPS exchange
         ghost_zeros = torch.zeros(

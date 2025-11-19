@@ -1,14 +1,19 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, Tuple
 
 import torch
+import torch.nn as nn
 from ase.data import chemical_symbols
 
 try:
     from lammps.mliap.mliap_unified_abc import MLIAPUnified
+
+    # _MLIAP_AVAILABLE = True
+
 except ModuleNotFoundError:
+    # _MLIAP_AVAILABLE = False  # redundant
     raise ImportError(
         'LAMMPS package supporting ML-IAP should be installed.'
         ' Please refer to the instruction in issue #246.'
@@ -16,7 +21,77 @@ except ModuleNotFoundError:
     )
 
 import sevenn._keys as KEY
+from sevenn._const import AtomGraphDataType
+from sevenn.nn._ghost_exchange import MLIAPGhostExchangeModule
+from sevenn.nn.linear import IrrepsLinear
+from sevenn.nn.self_connection import (
+    SelfConnectionIntro,
+    SelfConnectionLinearIntro,
+    SelfConnectionOutro,
+)
 from sevenn.util import load_checkpoint, pretrained_name_to_path
+
+# # redundant
+# def is_mliap_available() -> bool:
+#     print('_MLIAP_AVAILABLE:', _MLIAP_AVAILABLE)
+#     return _MLIAP_AVAILABLE and torch.cuda.is_available()
+# _DEPLOY_MLIAP = False  # passed to sevenn.nn.convolution
+
+
+class MLIAPExchange(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.ghost_exchange = MLIAPGhostExchangeModule(field=KEY.NODE_FEATURE)
+
+    def forward(self, data: AtomGraphDataType, nlocal: int) -> AtomGraphDataType:
+        data[KEY.NODE_FEATURE] = torch.narrow(data[KEY.NODE_FEATURE], 0, 0, nlocal)
+        data = self.ghost_exchange(data)
+        return data
+
+
+class MLIAPNarrow(nn.Module):
+    def __init__(self):
+        super().__init__()
+
+    def forward(self, data: AtomGraphDataType, nlocal: int) -> AtomGraphDataType:
+        data[KEY.NODE_FEATURE] = torch.narrow(data[KEY.NODE_FEATURE], 0, 0, nlocal)
+        data[KEY.NODE_ATTR] = torch.narrow(data[KEY.NODE_ATTR], 0, 0, nlocal)
+        data[KEY.ATOM_TYPE] = torch.narrow(data[KEY.ATOM_TYPE], 0, 0, nlocal)
+        data[KEY.ATOMIC_NUMBERS] = torch.narrow(data[KEY.ATOMIC_NUMBERS], 0, 0, nlocal)  # noqa: E501
+        return data
+
+
+# Wrappers for SevenNet nn.Modules
+class MLIAPWrappedConvolution(nn.Module):
+    def __init__(self, conv):
+        super().__init__()
+        self.conv = conv
+        self.narrow = MLIAPNarrow()
+        self.exchange = MLIAPExchange()
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        # print(f'[DBG] MLIAPWrappedConvolution forward called')
+        nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+
+        data = self.exchange(data, nlocal)
+        data = self.conv(data)
+        data = self.narrow(data, nlocal)
+        return data
+
+
+class MLIAPWrappedIrrepsLinear(nn.Module):
+    def __init__(self, linear):
+        super().__init__()
+        self.linear = linear
+        self.narrow = MLIAPNarrow()
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        # print(f'[DBG] MLIAPWrappedIrrepsLinear forward called')
+        nlocal = data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item()
+
+        data = self.narrow(data, nlocal)
+        data = self.linear(data)
+        return data
 
 
 # Referred Nequip-MLIAP impl.
@@ -75,7 +150,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
 
         self.cutoff = float(config[KEY.CUTOFF])
         self.rcutfac = self.cutoff * 0.5
-        
+
         chemical_species = config.get(KEY.CHEMICAL_SPECIES, None)
         syms = chemical_symbols.copy()
         for i, sym in enumerate(syms):
@@ -100,12 +175,24 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         model = self.cp.build_model(
             enable_cueq=self.use_cueq, enable_flash=self.use_flash
         )
+
+        # Patch MLIAP-wrapped modules
+        model._modules['onehot_to_feature_x'] = MLIAPWrappedIrrepsLinear(
+            model._modules['onehot_to_feature_x']
+        )
+        conv_names = [
+            name for name in model._modules.keys() if name.endswith('_convolution')
+        ]
+        for name in conv_names:
+            original_conv = model._modules[name]
+            wrapped_conv = MLIAPWrappedConvolution(original_conv)
+            model._modules[name] = wrapped_conv
+
         model.set_is_batch_data(False)
 
         if self.modal is not None:
             model.eval_modal_map = False
             model.prepare_modal_deploy(self.modal)  # set the fidelity of input data
-            print(f'[INFO] channel = {self.modal}', flush=True)
 
         model.delete_module_by_key('force_output')  # to autograd edge forces
         self.model = model
