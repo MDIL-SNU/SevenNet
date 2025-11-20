@@ -176,26 +176,34 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self._ensure_model_initialized()  # lazy init
         assert self.model, 'Model must be initialized'
         if lmp_data.nlocal == 0 or lmp_data.npairs <= 1:
-            # waht about a single atom with 0 pairs?
+            # what about a single atom with 0 pairs?
             return
 
         nlocal = lmp_data.nlocal
         ntotal = lmp_data.ntotal
 
         # edge_vectors should be f32 in 7net
-        edge_vectors = torch.as_tensor(lmp_data.rij, torch.float32, self.device)
+        edge_vectors = torch.as_tensor(
+            lmp_data.rij, dtype=torch.float32, device=self.device
+        )
         edge_vectors.requires_grad_(True)
 
         edge_index = torch.vstack(
             [
-                torch.as_tensor(lmp_data.pair_i, torch.int64, self.device),
-                torch.as_tensor(lmp_data.pair_j, torch.int64, self.device),
+                torch.as_tensor(
+                    lmp_data.pair_i, dtype=torch.int64, device=self.device
+                ),
+                torch.as_tensor(
+                    lmp_data.pair_j, dtype=torch.int64, device=self.device
+                ),
             ]
         )
-        elems = torch.as_tensor(lmp_data.elems, torch.int64, self.device)
-        num_atoms = torch.as_tensor(nlocal, torch.int64, self.device)
+        elems = torch.as_tensor(
+            lmp_data.elems, dtype=torch.int64, device=self.device
+        )
+        num_atoms = torch.as_tensor(nlocal, dtype=torch.int64, device=self.device)
         mliap_num_local_ghost = torch.as_tensor(
-            [nlocal, ntotal - nlocal], torch.int64, self.device
+            [nlocal, ntotal - nlocal], dtype=torch.int64, device=self.device
         )
 
         # data prep
