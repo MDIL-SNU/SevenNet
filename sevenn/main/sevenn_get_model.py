@@ -93,8 +93,8 @@ def run(args):
     if output_prefix is None:
         output_prefix = 'deployed_parallel' if not get_serial else 'deployed_serial'
 
-    if use_mliap:
-        output_prefix += '_mliap'
+        if use_mliap:
+            output_prefix += '_mliap'
 
     checkpoint_path = None
     if os.path.isfile(checkpoint):
