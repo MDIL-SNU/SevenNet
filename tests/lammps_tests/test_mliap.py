@@ -46,8 +46,7 @@ def mliap_potential_path(tmp_path_factory):
 
     argv = [
         'sevenn_get_model',
-        cp_7net0_path,
-        '-o', pt_path,
+        cp_7net0_path, '-o', pt_path,
         '--use_mliap'
     ]
     with mock.patch('sys.argv', argv):
@@ -62,8 +61,7 @@ def mliap_modal_potential_path(tmp_path_factory):
 
     argv = [
         'sevenn_get_model',
-        cp_mf_path,
-        '-o', pt_path,
+        cp_mf_path, '-o', pt_path,
         '-m', 'PBE',
         '--use_mliap'
     ]
@@ -79,8 +77,7 @@ def mliap_cueq_potential_path(tmp_path_factory):
 
     argv = [
         'sevenn_get_model',
-        cp_7net0_path,
-        '-o', pt_path,
+        cp_7net0_path, '-o', pt_path,
         '--enable_cueq',
         '--use_mliap'
     ]
@@ -96,8 +93,7 @@ def mliap_flash_potential_path(tmp_path_factory):
 
     argv = [
         'sevenn_get_model',
-        cp_7net0_path,
-        '-o', pt_path,
+        cp_7net0_path, '-o', pt_path,
         '--enable_flashTP',
         '--use_mliap'
     ]
@@ -232,7 +228,7 @@ def _run_mliap(atoms, pair_style, wd, command, test_name):
         f.write(cont)
 
     command = (
-        f'{command} -in {input_script_path}'
+        f'{command} -in {input_script_path} '
         f'-k on g 1 -sf kk -pk kokkos neigh half -log {lammps_log}'
     )
     subprocess_routine(command.split(), test_name)
