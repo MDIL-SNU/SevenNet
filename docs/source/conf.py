@@ -58,6 +58,8 @@ extensions = [
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
     'sphinx.ext.autosectionlabel',
+    'sphinx_copybutton',
+    'myst_parser'
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -74,13 +76,28 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-html_theme = 'furo'
+#html_theme = 'furo'
+html_theme = 'pydata_sphinx_theme'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
-html_logo = '_static/SevenNet_logo.png'
+#html_logo = 'SevenNet'
+
+html_theme_options = {
+    "use_edit_page_button": False,
+    "header_links_before_dropdown": False,
+    "navbar_end": ["navbar-icon-links"],
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/MDIL-SNU/SevenNet",
+            "icon": "fab fa-github",
+            "type": "fontawesome",
+        },
+    ],
+}
 
 # -- Options for intersphinx extension ---------------------------------------
 
@@ -88,6 +105,15 @@ html_logo = '_static/SevenNet_logo.png'
 intersphinx_mapping = {
     "python": ("https://docs.python.org/3", None),
 }
+
+myst_heading_anchors = 4
+myst_enable_extensions = ["dollarmath"]
+
+autosectionlabel_exclude_patterns = [
+    "changelog.md",
+    "CHANGELOG.md",
+]
+
 
 # -- Options for autosectionlabel extension ----------------------------------
 autosectionlabel_prefix_document = True
