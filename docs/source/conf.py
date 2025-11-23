@@ -22,7 +22,10 @@ copyright = '2024, MIT'
 
 # read ../pyproject.toml for version info
 import os
-import tomllib
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
 
 pyproject_path = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '../../', 'pyproject.toml')

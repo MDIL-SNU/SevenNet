@@ -1,4 +1,4 @@
-sphinx==8.2.3
+sphinx==8.1.3
 sphinx_rtd_theme==3.0.2
 sphinx-notfound-page==1.1.0
 furo==2025.9.25
@@ -6,3 +6,5 @@ pydata-sphinx-theme
 sphinx-autobuild
 myst_parser
 sphinx_copybutton
+tomli; python_version < "3.11"
+
