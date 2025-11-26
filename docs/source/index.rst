@@ -23,8 +23,8 @@ SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural networ
    :caption: TOC
 
    pretrained
-   install
-   usage
+   install/index
+   user_guide
    cite
 
 .. toctree::

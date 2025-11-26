@@ -1,8 +1,7 @@
-## ML-IAP
+## LAMMPS (ML-IAP)
 ### Requirements
 - LAMMPS with ML-IAP integration is only available with Kokkos GPU support
-- You must use the latest version of LAMMPS  
-  **(WARNING: previous `stable_2Aug2023_update3` version LAMMPS does not support ML-IAP integration)**
+- You must use a specific version of LAMMPS  
 
 
 ### Build
@@ -12,10 +11,16 @@ pip install cython==3.0.11
 pip install cupy-cuda12x
 ```
 
-Clone the latest version of LAMMPS:
+Get LAMMPS source code:
 ```bash
-git clone https://github.com/lammps/lammps lammps-mliap --depth=1
+git clone https://github.com/lammps/lammps lammps-mliap
+cd lammps-mliap
+git checkout ccca772
 ```
+```{note}
+We found that some of the latest versions of LAMMPS produce inconsistent energies. Therefore, we highly recommend using this specific commit. This restriction will be relaxed once consistency checks are completed.
+```
+
 
 Configure the LAMMPS build with the necessary options:
 ```bash
@@ -41,13 +46,16 @@ cmake --build build -j 8
 cd build
 make install-python
 ```
-
+```{note}
+If the compilation fails, consider specifying the GPU architecture of the node you are building on in KOKKOS.
+For example, add the following flag to your `cmake` command: `-D KOKKOS_ARCH_AMPERE86=ON`.
+```
 
 ### Potential deployment
 An ML-IAP potential checkpoint can be deployed using ``sevenn_get_model`` command with ``--use_mliap`` flag.
 - By default, output file name will be ``deployed_serial_mliap.pt``.  
   (You can customize the output file name using ``--output_prefix`` flag.)
-- You can accelerate the process with ``enable_cueq`` or ``enable_flashTP`` flag:
+- You can accelerate the inference with ``enable_cueq`` or ``enable_flashTP`` flag:
 ```bash
 sevenn_get_model \
     {pretrained_name or checkpoint_path} \

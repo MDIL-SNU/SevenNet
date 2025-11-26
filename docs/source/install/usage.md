@@ -1,4 +1,4 @@
-# Usage
+# Usage [to be merged]
 
 SevenNet supports various interface and acceleartions to use and train model efficiently. 
 

@@ -1,3 +1,10 @@
+import os
+
+try:
+    import tomllib
+except ModuleNotFoundError:
+    import tomli as tomllib
+
 # Configuration file for the Sphinx documentation builder.
 #
 # This file only contains a selection of the most common options. For a full
@@ -16,17 +23,10 @@
 
 
 # -- Project information -----------------------------------------------------
-
 project = 'SevenNet'
 copyright = '2024, MIT'
 
 # read ../pyproject.toml for version info
-import os
-try:
-    import tomllib
-except ModuleNotFoundError:
-    import tomli as tomllib
-
 pyproject_path = os.path.abspath(
     os.path.join(os.path.dirname(__file__), '../../', 'pyproject.toml')
 )
@@ -79,25 +79,25 @@ exclude_patterns = []
 # The theme to use for HTML and HTML Help pages.  See the documentation for
 # a list of builtin themes.
 #
-#html_theme = 'furo'
+# html_theme = 'furo'
 html_theme = 'pydata_sphinx_theme'
 
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
-#html_logo = 'SevenNet'
+# html_logo = 'SevenNet'
 
 html_theme_options = {
-    "use_edit_page_button": False,
-    "header_links_before_dropdown": False,
-    "navbar_end": ["navbar-icon-links"],
-    "icon_links": [
+    'use_edit_page_button': False,
+    'header_links_before_dropdown': False,
+    'navbar_end': ['navbar-icon-links'],
+    'icon_links': [
         {
-            "name": "GitHub",
-            "url": "https://github.com/MDIL-SNU/SevenNet",
-            "icon": "fab fa-github",
-            "type": "fontawesome",
+            'name': 'GitHub',
+            'url': 'https://github.com/MDIL-SNU/SevenNet',
+            'icon': 'fab fa-github',
+            'type': 'fontawesome',
         },
     ],
 }
@@ -106,15 +106,15 @@ html_theme_options = {
 
 # Example configuration for intersphinx: refer to the Python standard library.
 intersphinx_mapping = {
-    "python": ("https://docs.python.org/3", None),
+    'python': ('https://docs.python.org/3', None),
 }
 
 myst_heading_anchors = 4
-myst_enable_extensions = ["dollarmath"]
+myst_enable_extensions = ['dollarmath']
 
 autosectionlabel_exclude_patterns = [
-    "changelog.md",
-    "CHANGELOG.md",
+    'changelog.md',
+    'CHANGELOG.md',
 ]
 
 
