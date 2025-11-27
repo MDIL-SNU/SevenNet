@@ -1,6 +1,6 @@
 import os
-from warnings import warn
 from importlib.metadata import version
+from warnings import warn
 
 from packaging.version import Version
 
