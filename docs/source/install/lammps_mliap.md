@@ -1,7 +1,7 @@
 ## LAMMPS (ML-IAP)
 ### Requirements
 - LAMMPS with ML-IAP integration is only available with Kokkos GPU support
-- You must use a specific version of LAMMPS  
+- You must use a specific version of LAMMPS
 
 
 ### Build
@@ -53,7 +53,7 @@ For example, add the following flag to your `cmake` command: `-D KOKKOS_ARCH_AMP
 
 ### Potential deployment
 An ML-IAP potential checkpoint can be deployed using ``sevenn_get_model`` command with ``--use_mliap`` flag.
-- By default, output file name will be ``deployed_serial_mliap.pt``.  
+- By default, output file name will be ``deployed_serial_mliap.pt``.
   (You can customize the output file name using ``--output_prefix`` flag.)
 - You can accelerate the inference with ``enable_cueq`` or ``enable_flashTP`` flag:
 ```bash

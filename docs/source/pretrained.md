@@ -115,5 +115,3 @@ For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Ju
 
 ---
 You can find our legacy models in [pretrained_potentials](./sevenn/pretrained_potentials).
-
-

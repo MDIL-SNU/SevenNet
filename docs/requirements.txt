@@ -7,4 +7,3 @@ sphinx-autobuild
 myst_parser
 sphinx_copybutton
 tomli; python_version < "3.11"
-

@@ -26,4 +26,3 @@ If you utilize the multi-fidelity feature of this code or the pretrained model S
 	year = {2024},
 	pages = {1042--1054},
 ```
-
