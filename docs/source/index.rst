@@ -5,8 +5,8 @@
 
 :github_url: https://github.com/MDIL-SNU/SevenNet
 
-SevenNet documentation
-====================================
+SevenNet
+========
 
 SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural network (GNN)-based interatomic potential package that supports parallel molecular dynamics simulations using `LAMMPS <https://lammps.org>`_. Its core model is based on `NequIP <https://github.com/mir-group/nequip>`_.
 
@@ -18,17 +18,50 @@ SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural networ
 * Multi-fidelity training for combining multiple databases with different calculation settings
 
 
+Installation
+============
+Ensure that your environment uses **Python >= 3.10** and **PyTorch >= 2.0.0** (see https://pytorch.org/get-started/locally/)
+Then install SevenNet via:
+
+.. code-block:: bash
+
+    pip install sevenn
+
+For acceleration and LAMMPS integration, refer to the the installation guides below. 
+
+
+Contents
+========
+
 .. toctree::
    :maxdepth: 2
-   :caption: TOC
+   :caption: Pretrained
 
    pretrained
-   install/index
-   user_guide
-   cite
+
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Installation
+
+   install/accelerator
+   install/lammps_torch
+   install/lammps_mliap
+
 
 .. toctree::
    :maxdepth: 1
-   :caption: misc
+   :caption: User Guide
 
+   user_guide/ase_calculator
+   user_guide/cli
+   user_guide/d3
+   user_guide/note_book
+
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Reference
+
+   cite
    changelog

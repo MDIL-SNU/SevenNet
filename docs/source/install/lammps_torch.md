@@ -1,25 +1,21 @@
-## LAMMPS (Torch)
-### Requirements
-- PyTorch (it is recommended to use the same version as used during training)
-- LAMMPS version of `stable_2Aug2023_update3`
-- MKL library
-- [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for parallel MD (optional)
-- cmake
+# LAMMPS/Torch
 
-If your cluster supports the Intel MKL module (often included with Intel OneAPI, Intel Compiler, and other Intel-related modules), load that module.
+## Requirements
+- LAMMPS version of `stable_2Aug2023_update3`
+- [`CUDA-aware OpenMPI`](https://www.open-mpi.org/faq/?category=buildcuda) for faster parallel MD (optional)
 
 CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not available, GPUs will communicate via the CPU when running in parallel mode. It is still faster than using only one GPU, but its efficiency is lower.
 
 > [!IMPORTANT]
 > CUDA-aware OpenMPI does not support NVIDIA gaming GPUs. Since the software is closely tied to hardware specifications, please consult your server administrator if CUDA-aware OpenMPI is unavailable.
 
-### Build
+## Build
 
-Ensure the LAMMPS version is `stable_2Aug2023_update3`. You can easily switch the version using Git. After switching the version, run `sevenn_patch_lammps` with the LAMMPS directory path as an argument.
+Ensure the LAMMPS version is `stable_2Aug2023_update3`. You can easily switch the version using Git. After switching the version, run `sevenn patch_lammps` with the LAMMPS directory path as an argument.
 
 ```bash
 git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Aug2023_update3 --depth=1
-sevenn_patch_lammps ./lammps_sevenn {--d3}
+sevenn patch_lammps ./lammps_sevenn {--d3}
 ```
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for details of the patch process.
 
@@ -37,9 +33,9 @@ cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cm
 make -j4
 ```
 
-If the error `MKL_INCLUDE_DIR NOT-FOUND` occurs, you can directly use the mkl.h path.
+If the error `MKL_INCLUDE_DIR NOT-FOUND` occurs, you can use a dummy directory.
 ```bash
--DMKL_INCLUDE_DIR=/path_to_mkl/mkl
+-DMKL_INCLUDE_DIR=/tmp
 ```
 
 “Undefined reference” errors can be caused by missing linked libraries, incorrect link order, ABI mismatches, or missing dependent shared libraries.
@@ -56,9 +52,9 @@ ln -s {absolute_path_to_lammps_directory}/build/lmp $HOME/.local/bin/lmp
 
 This allows you to run the binary using `lmp -in my_lammps_script.lmp`.
 
-### Usage
+## Usage
 
-#### Single-GPU MD
+### Single-GPU MD
 
 For single-GPU MD simulations, the `e3gnn` pair_style should be used. A minimal input script is provided below:
 ```text
@@ -68,7 +64,7 @@ pair_style  e3gnn
 pair_coeff  * * {path to serial model} {space separated chemical species}
 ```
 
-#### Multi-GPU MD
+### Multi-GPU MD
 
 For multi-GPU MD simulations, the `e3gnn/parallel` pair_style should be used. A minimal input script is provided below:
 
@@ -87,7 +83,7 @@ pair_coeff * * 4 ./deployed_parallel Hf O
 ```
 The number of message-passing layers corresponds to the number of `*.pt` files in the `./deployed_parallel` directory.
 
-To deploy LAMMPS models from checkpoints for both serial and parallel execution, use [`sevenn_get_model`](#deployment).
+To deploy LAMMPS models from checkpoints for both serial and parallel execution, use [`sevenn get_model`](#deployment).
 
 It is expected that there is one GPU per MPI process. If the number of available GPUs is less than the number of MPI processes, the simulation may run inefficiently.
 

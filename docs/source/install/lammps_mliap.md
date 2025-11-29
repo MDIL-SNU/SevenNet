@@ -1,10 +1,10 @@
-## LAMMPS (ML-IAP)
-### Requirements
+# LAMMPS/ML-IAP
+## Requirements
 - LAMMPS with ML-IAP integration is only available with Kokkos GPU support
 - You must use a specific version of LAMMPS
 
 
-### Build
+## Build
 First, install the required Python dependencies:
 ```bash
 pip install cython==3.0.11
@@ -51,20 +51,20 @@ If the compilation fails, consider specifying the GPU architecture of the node y
 For example, add the following flag to your `cmake` command: `-D KOKKOS_ARCH_AMPERE86=ON`.
 ```
 
-### Potential deployment
+## Potential deployment
 An ML-IAP potential checkpoint can be deployed using ``sevenn_get_model`` command with ``--use_mliap`` flag.
 - By default, output file name will be ``deployed_serial_mliap.pt``.
   (You can customize the output file name using ``--output_prefix`` flag.)
 - You can accelerate the inference with ``enable_cueq`` or ``enable_flashTP`` flag:
 ```bash
-sevenn_get_model \
+sevenn get_model \
     {pretrained_name or checkpoint_path} \
     --use_mliap \
     --modal {modal_name}                    # Optional (Depends on your model selection)
 ```
 
 
-### LAMMPS ML-IAP Script Example
+## LAMMPS ML-IAP Script Example
 Below is an example snippet of a LAMMPS script for using SevenNet models with ML-IAP:
 ```text
     # ---------- Initialization ----------
