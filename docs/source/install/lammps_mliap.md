@@ -1,25 +1,25 @@
 # LAMMPS/ML-IAP
 ## Requirements
-- LAMMPS with ML-IAP integration is only available with Kokkos GPU support
-- You must use a specific version of LAMMPS
+- cython == 3.0.11
+- cupy-cuda12x
+- flashTP (optional, follow [here](../install/accelerator.md#flashtp))
+- cuEquivariance (optional, follow [here](../install/accelerator.md#cuequivariance))
 
-
-## Build
-First, install the required Python dependencies:
+Install via:
 ```bash
-pip install cython==3.0.11
-pip install cupy-cuda12x
+pip install sevenn[mliap]
 ```
 
+## Build
 Get LAMMPS source code:
 ```bash
 git clone https://github.com/lammps/lammps lammps-mliap
 cd lammps-mliap
 git checkout ccca772
 ```
-```{note}
+:::{note}
 We found that some of the latest versions of LAMMPS produce inconsistent energies. Therefore, we highly recommend using this specific commit. This restriction will be relaxed once consistency checks are completed.
-```
+:::
 
 
 Configure the LAMMPS build with the necessary options:
@@ -46,21 +46,21 @@ cmake --build build -j 8
 cd build
 make install-python
 ```
-```{note}
+:::{note}
 If the compilation fails, consider specifying the GPU architecture of the node you are building on in KOKKOS.
-For example, add the following flag to your `cmake` command: `-D KOKKOS_ARCH_AMPERE86=ON`.
-```
+For example, add the following flag to your `cmake` command: `-D KOKKOS_ARCH_AMPERE86=ON` when you are using GPU with Ampere 86 architecture like RTX A5000.
+:::
 
 ## Potential deployment
 An ML-IAP potential checkpoint can be deployed using ``sevenn_get_model`` command with ``--use_mliap`` flag.
 - By default, output file name will be ``deployed_serial_mliap.pt``.
   (You can customize the output file name using ``--output_prefix`` flag.)
-- You can accelerate the inference with ``enable_cueq`` or ``enable_flashTP`` flag:
+- You can accelerate the inference with ``--enable_cueq`` or ``--enable_flashTP`` flag:
 ```bash
 sevenn get_model \
     {pretrained_name or checkpoint_path} \
     --use_mliap \
-    --modal {modal_name}                    # Optional (Depends on your model selection)
+    --modal {task_name}  # Required when using multi-fidelity model
 ```
 
 

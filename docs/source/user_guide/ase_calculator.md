@@ -24,5 +24,6 @@ Various pretrained SevenNet models can be accessed by setting the model variable
 
 User-trained models can be applied with the ASE calculator. In this case, the `model` parameter should be set to the checkpoint path from training.
 
-> [!TIP]
-> When 'auto' is passed to the `device` parameter (the default setting), SevenNet utilizes GPU acceleration if available.
+:::{tip}
+When 'auto' is passed to the `device` parameter (the default setting), SevenNet utilizes GPU acceleration if available.
+:::

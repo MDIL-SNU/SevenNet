@@ -110,7 +110,7 @@ intersphinx_mapping = {
 }
 
 myst_heading_anchors = 4
-myst_enable_extensions = ['dollarmath']
+myst_enable_extensions = ['dollarmath', 'colon_fence']
 
 autosectionlabel_exclude_patterns = [
     'changelog.md',

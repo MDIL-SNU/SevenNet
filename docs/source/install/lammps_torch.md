@@ -6,8 +6,9 @@
 
 CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not available, GPUs will communicate via the CPU when running in parallel mode. It is still faster than using only one GPU, but its efficiency is lower.
 
-> [!IMPORTANT]
-> CUDA-aware OpenMPI does not support NVIDIA gaming GPUs. Since the software is closely tied to hardware specifications, please consult your server administrator if CUDA-aware OpenMPI is unavailable.
+:::{important}
+CUDA-aware OpenMPI does not support NVIDIA gaming GPUs. Since the software is closely tied to hardware specifications, please consult your server administrator if CUDA-aware OpenMPI is unavailable.
+:::
 
 ## Build
 
@@ -19,11 +20,13 @@ sevenn patch_lammps ./lammps_sevenn {--d3}
 ```
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for details of the patch process.
 
-> [!TIP]
-> Add `--d3` option to install GPU-accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style. For its usage and details, click [here](sevenn/pair_e3gnn).
+:::{tip}
+Add `--d3` option to install GPU-accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style. For its usage and details, see the {doc}`../user_guide/d3`.
+:::
 
-> [!TIP]
-> Add `--flashTP` option to install SevenNet with flashTP for LAMMPS. You must preinstall [flashTP(Optional)](python.md#flashtp-optional) before building LAMMPS with flashTP
+:::{tip}
+Add `--flashTP` option to install SevenNet with flashTP for LAMMPS. You must preinstall [flashTP(Optional)](../install/accelerator.md#flashtp) before building LAMMPS with flashTP.
+:::
 
 ```bash
 cd ./lammps_sevenn
@@ -83,12 +86,14 @@ pair_coeff * * 4 ./deployed_parallel Hf O
 ```
 The number of message-passing layers corresponds to the number of `*.pt` files in the `./deployed_parallel` directory.
 
-To deploy LAMMPS models from checkpoints for both serial and parallel execution, use [`sevenn get_model`](#deployment).
+To deploy LAMMPS models from checkpoints for both serial and parallel execution, use {ref}`sevenn get_model<sevenn-get-model>`.
 
 It is expected that there is one GPU per MPI process. If the number of available GPUs is less than the number of MPI processes, the simulation may run inefficiently.
 
-> [!CAUTION]
-> Currently, the parallel version encounters an error when one of the subdomain cells contains no atoms. This issue can be addressed using the `processors` command and, more effectively, the `fix balance` command in LAMMPS. A patch for this issue will be released in a future update.
+:::{caution}
+Currently, the parallel version encounters an error when one of the subdomain cells contains no atoms. This issue can be addressed using the `processors` command and, more effectively, the `fix balance` command in LAMMPS. A patch for this issue will be released in a future update.
+:::
 
-> [!CAUTION]
-> Currently, our D3 algorithm is not supported by multi-GPU.
+:::{caution}
+Currently, our D3 algorithm is not supported by multi-GPU.
+:::

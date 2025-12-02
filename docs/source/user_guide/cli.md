@@ -2,6 +2,7 @@
 
 SevenNet provides five commands for preprocessing, training, and deployment: `sevenn preset`, `sevenn graph_build`, `sevenn`, `sevenn inference`, and `sevenn get_model`.
 
+(sevenn-preset)=
 ## `sevenn preset`
 
 With the `sevenn preset` command, the input file setting the training parameters is generated automatically.
@@ -13,6 +14,7 @@ Available preset keywords are: `base`, `fine_tune`, `multi_modal`, `sevennet-0`,
 Check comments in the preset YAML files for explanations. For fine-tuning, be aware that most model hyperparameters cannot be modified unless explicitly indicated.
 To reuse a preprocessed training set, you can specify `sevenn_data/${dataset_name}.pt` for the `load_trainset_path:` in the `input.yaml`.
 
+(sevenn-graph-build)=
 ## `sevenn graph_build`
 
 To obtain the preprocessed data, `sevenn_data/graph.pt`, `sevenn graph_build` command can be used.
@@ -27,7 +29,7 @@ These files must be located in the `sevenn_data` directory. If you move the data
 
 See `sevenn graph_build --help` for more information.
 
-
+(sevenn-train)=
 ## `sevenn train`
 
 Given that `input.yaml` and `sevenn_data/graph.pt` are prepared, SevenNet can be trained by the following command:
@@ -50,7 +52,7 @@ sevenn train input.yaml -s --enable_cueq # or --enable_flashTP
 
 Please note that `batch_size` in `input.yaml` refers to the per-GPU batch size.
 
-
+(sevenn-inference)=
 ## `sevenn inference`
 
 Using the checkpoint after training, the properties such as energy, force, and stress can be inferred directly.
@@ -63,6 +65,7 @@ This will create the `inference_results` directory, where CSV files contain pred
 See `sevenn inference --help` for more information.
 
 
+(sevenn-get-model)=
 ## `sevenn get_model`
 
 The command is for LAMMPS integration of SevenNet. It deploys a model into a LAMMPS readable file(s).
@@ -88,7 +91,7 @@ sevenn get_model {checkpoint path} -p
 This will create a directory with several `deployed_parallel_*.pt` files. The directory path itself is an argument for the LAMMPS script. Please do not modify or remove files in the directory.
 These models can be used as LAMMPS potentials to run parallel MD simulations with a GNN potential across multiple GPUs.
 
-
+(sevenn-cp)=
 ## `sevenn cp`
 
 This is an utility command. You can check model's complexity, metadata, and its modalities (or tasks) at glance.
