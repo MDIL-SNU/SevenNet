@@ -123,4 +123,3 @@ cuEquivariance used                              False
 FlashTP used                                     False
 Modality                                   omat24, mpa
 ```
-

@@ -30,11 +30,11 @@ If you utilize the multi-fidelity feature of this code or the pretrained model S
 
 If you utilize the pretrained model SevenNet-Omni or multi-task training strategies including task-specific regularization and domain-bridging dataset, please cite the following paper:
 ```bib
-@article{kim_optimizing_2025, 
-	title = {Optimizing Cross-Domain Transfer for Universal Machine Learning Interatomic Potentials}, 
-	doi = {10.48550/arxiv.2510.11241}, 
-	journal = {arXiv}, 
-	author = {Kim, Jaesun and You, Jinmu and Park, Yutack and Lim, Yunsung and Kang, Yujin and Kim, Jisu and Jeon, Haekwan and Ju, Suyeon and Hong, Deokgi and Lee, Seung Yul and Choi, Saerom and Kim, Yongdeok and Lee, Jae W and Han, Seungwu}, 
-	year = {2025}, 
+@article{kim_optimizing_2025,
+	title = {Optimizing Cross-Domain Transfer for Universal Machine Learning Interatomic Potentials},
+	doi = {10.48550/arxiv.2510.11241},
+	journal = {arXiv},
+	author = {Kim, Jaesun and You, Jinmu and Park, Yutack and Lim, Yunsung and Kang, Yujin and Kim, Jisu and Jeon, Haekwan and Ju, Suyeon and Hong, Deokgi and Lee, Seung Yul and Choi, Saerom and Kim, Yongdeok and Lee, Jae W and Han, Seungwu},
+	year = {2025},
 }
 ```
