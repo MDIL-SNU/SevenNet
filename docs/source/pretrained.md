@@ -9,11 +9,52 @@ Additionally, `keywords` can be used in other parts of SevenNet, such as `sevenn
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program at Samsung Advanced Institute of Technology, part of Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
 
 ```{note}
-Multiple inference channels are available for multi-fidelity architecture models, SevenNet-Omni and SevenNet-MF-ompa. Each channel is designed to produce results that are consistent with the DFT settings used in the corresponding training datasets. For example, `mpa` is trained on the combined [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) and [sAlex](https://huggingface.co/datasets/fairchem/OMAT24) datasets and is used for evaluating Matbench Discovery, while `omat24` is trained on the [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) dataset. For detailed information on the DFT settings, please refer to the original publications of each dataset.
+Multiple inference tasks are available for multi-fidelity architecture models, SevenNet-Omni and SevenNet-MF-ompa. Each task is designed to produce results that are consistent with the DFT settings used in the corresponding training datasets. For example, `mpa` is trained on the combined [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) and [sAlex](https://huggingface.co/datasets/fairchem/OMAT24) datasets and is used for evaluating Matbench Discovery, while `omat24` is trained on the [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) dataset. For detailed information on the DFT settings, please refer to the original publications of each dataset.
 ```
 
 ```{note}
 We supports cuEquivariance and FlashTP kernels for tensor-product acceleration. Pass these options to `SevenNetCalculator` using `enable_cueq=True` or `enable_flash=True` when available.
+```
+
+```{list-table} SevenNet pretrained models overview
+:header-rows: 1
+:widths: 30 15 10 10 35
+
+* - Model name
+  - Trained dataset(s)
+  - Model architecture
+  - Single/multi-task
+  - Supporting tasks
+
+* - [**SevenNet-Omni<br>(Recommended)**](#sevennet-omni)
+  - 15 open ab initio datasets
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
+  - Multi-task
+  - `mpa` (PBE+U) <br> `matpes_r2scan` (r²SCAN) <br> `omol25_low` (ωB97M-V) <br> and 10 more tasks
+
+* - [SevenNet-MF-ompa](#sevennet-mf-ompa)
+  - MPtrj, sAlex, OMat24
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
+  - Multi-task
+  - `mpa` <br> `omat24`
+
+* - [SevenNet-omat](#sevennet-omat)
+  - OMat24
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
+  - Single-task
+  - N/A
+
+* - [SevenNet-l3i5](#sevennet-l3i5)
+  - MPtrj
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
+  - Single-task
+  - N/A
+
+* - [SevenNet-0](#sevennet-0)
+  - MPtrj
+  - $l_{\mathrm{max}}=2$ <br> $N_{\mathrm{layer}}=5$
+  - Single-task
+  - N/A
 ```
 
 ---
@@ -21,22 +62,41 @@ We supports cuEquivariance and FlashTP kernels for tensor-product acceleration. 
 > Model keywords: `7net-Omni` | `SevenNet-Omni`
 
 **This is our recommended pretrained model**
-[Download link for fully detailed checkpoint](https://figshare.com/articles/software/SevenNet-Omni_checkpoint/30399814?file=58886557)
 
 This model exploits [cross-domain knowledge transfer strategies](https://arxiv.org/abs/2510.11241) within a [multi-task training framework](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on the 15 open ab initio datasets, covering a wide material space including crystals, molecules, and surfaces.
 
-It is currently our best pretrained model, achieving state-of-the-art accuracy across diverse material domains at the PBE level, while also providing high-fidelity channels such as r²SCAN and ωB97M-V.  For detailed information on the training datasets, knowledge-transfer strategies and comprehensive benchmark results, please refer to the [paper](https://arxiv.org/abs/2510.11241).
+It is currently our best pretrained model, achieving state-of-the-art accuracy across diverse material domains at the PBE level, while also providing high-fidelity tasks such as r²SCAN and ωB97M-V.  For detailed information on the training datasets, knowledge-transfer strategies and comprehensive benchmark results, please refer to the [paper](https://arxiv.org/abs/2510.11241).
 
-```{table} Representative channels for each fidelity
+```{table} Representative tasks for each fidelity
 :widths: 30 70
-| Fidelity       | Channel name    |
+| Fidelity       |    Task name    |
 |----------------|-----------------|
 | PBE(+U)        | `mpa`           |
 | r²SCAN         | `matpes_r2scan` |
 | ωB97M-V        | `omol25_low`    |
 ```
 
-Also consider `omat24` or `matpes_pbe` channels for more accurate PBE-level descriptions of high-force configurations. Note that `matpes_pbe` is trained on PBE level of theory, without incorporating the Hubbard U correction.
+Also consider `omat24` or `matpes_pbe` tasks for more accurate PBE-level descriptions of high-force configurations. Note that `matpes_pbe` is trained on PBE level of theory, without incorporating the Hubbard U correction. All available tasks and corresponding fidelities are listed below. Tasks may differ even at the same fidelity level due to variations in computational protocols across datasets.
+
+```{table} List of available tasks and corresponding fidelities
+:widths: 30 70
+|    Task name    | Fidelity       |
+|-----------------|----------------|
+| `mpa`           | PBE(+U)        |
+| `omat24`        | PBE(+U)        |
+| `matpes_pbe`    | PBE            |
+| `oc20`          | RPBE           |
+| `oc22`          | PBE(+U)        |
+| `odac23`        | PBE-D3         |
+| `omol25_low`    | ωB97M-V        |
+| `omol25_high`   | ωB97M-V*       |
+| `spice`         | ωB97M          |
+| `qcml`          | PBE0           |
+| `pet_mad`       | PBEsol         |
+| `mp r2scan`     | r²SCAN         |
+| `matpes_r2scan` | r²SCAN         |
+```
+\* For only high-spin configurations
 
 ```python
 from sevenn.calculator import SevenNetCalculator
@@ -47,7 +107,7 @@ calc = SevenNetCalculator(
     enable_flash=False
 )
 ```
-When using the command-line interface of SevenNet, include the channel as `--modal ${channel}` option to select the desired modality. Run `sevenn_cp SevenNet-Omni.pth` to see an overview all the available channels.
+When using the command-line interface of SevenNet, include the task as `--modal ${task}` option to select the desired task. Run `sevenn cp 7net-omni` to see an overview of this model.
 
 ### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
@@ -63,11 +123,11 @@ This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/
 
 ```python
 from sevenn.calculator import SevenNetCalculator
-# "mpa" refers to the MPtrj + sAlex channel, used for evaluating Matbench Discovery.
-calc = SevenNetCalculator('7net-mf-ompa', modal='mpa')  # Use modal='omat24' for OMat24-trained channel weights.
+# "mpa" refers to the MPtrj + sAlex task, used for evaluating Matbench Discovery.
+calc = SevenNetCalculator('7net-mf-ompa', modal='mpa')  # Use modal='omat24' for OMat24-trained task weights.
 ```
 
-When using the command-line interface of SevenNet, include the `--modal mpa` or `--modal omat24` option to select the desired modality.
+When using the command-line interface of SevenNet, include the `--modal mpa` or `--modal omat24` option to select the desired task.
 
 ### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
@@ -101,7 +161,6 @@ This model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) 
 |0.714 |0.760|0.550|0.085|
 
 ---
-
 ## SevenNet-0
 > Model keywords:: `7net-0` | `SevenNet-0` | `7net-0_11Jul2024` | `SevenNet-0_11Jul2024`
 

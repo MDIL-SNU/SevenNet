@@ -16,17 +16,20 @@ Ensure the LAMMPS version is `stable_2Aug2023_update3`. You can easily switch th
 
 ```bash
 git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Aug2023_update3 --depth=1
-sevenn patch_lammps ./lammps_sevenn {--d3}
+sevenn patch_lammps ./lammps_sevenn {--flashTP} {--d3}
 ```
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for details of the patch process.
 
-:::{tip}
-Add `--d3` option to install GPU-accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style. For its usage and details, see the {doc}`../user_guide/d3`.
-:::
 
 :::{tip}
-Add `--flashTP` option to install SevenNet with flashTP for LAMMPS. You must preinstall [flashTP(Optional)](../install/accelerator.md#flashtp) before building LAMMPS with flashTP.
+(Optional) Add `--flashTP` option to accelerate SevenNet for LAMMPS using flashTP. You must preinstall [flashTP](../install/accelerator.md#flashtp) before building LAMMPS with flashTP.
 :::
+
+### (Optional) Build with GPU-D3 pair style
+Add `--d3` option to install GPU-accelerated [Grimme's D3 method](https://doi.org/10.1063/1.3382344) pair style. You can manually select the target capability using the `TORCH_CUDA_ARCH_LIST` environment variable. For example, you can use: `export TORCH_CUDA_ARCH_LIST="6.1;7.0;8.0;8.6;8.9;9.0"`. For additional details, see the {doc}`../user_guide/d3`.
+
+
+Then build the LAMMPS binary:
 
 ```bash
 cd ./lammps_sevenn
@@ -35,6 +38,8 @@ cd build
 cmake ../cmake -DCMAKE_PREFIX_PATH=`python -c 'import torch;print(torch.utils.cmake_prefix_path)'`
 make -j4
 ```
+
+---
 
 If the error `MKL_INCLUDE_DIR NOT-FOUND` occurs, you can use a dummy directory.
 ```bash
@@ -56,6 +61,9 @@ ln -s {absolute_path_to_lammps_directory}/build/lmp $HOME/.local/bin/lmp
 This allows you to run the binary using `lmp -in my_lammps_script.lmp`.
 
 ## Usage
+### Potential deployment
+
+To deploy LAMMPS models from checkpoints for both serial and parallel execution, use {ref}`sevenn get_model<sevenn-get-model>`.
 
 ### Single-GPU MD
 
@@ -66,6 +74,15 @@ atom_style  atomic
 pair_style  e3gnn
 pair_coeff  * * {path to serial model} {space separated chemical species}
 ```
+
+:::{note}
+If the LAMMPS is built with GPU-D3 pair style, you can combine SevenNet with D3 through the `pair/hybrid` command as the example below. For detailed instruction about parameters, supporting functionals and damping types, refer to {doc}`../user_guide/d3`.
+```txt
+pair_style hybrid/overlay e3gnn d3 9000 1600 damp_bj pbe
+pair_coeff      * * e3gnn {path to serial model} {space seperated chemical species}
+pair_coeff      * * d3    {space seperated chemical species}
+```
+:::
 
 ### Multi-GPU MD
 
@@ -85,8 +102,6 @@ pair_style e3gnn/parallel
 pair_coeff * * 4 ./deployed_parallel Hf O
 ```
 The number of message-passing layers corresponds to the number of `*.pt` files in the `./deployed_parallel` directory.
-
-To deploy LAMMPS models from checkpoints for both serial and parallel execution, use {ref}`sevenn get_model<sevenn-get-model>`.
 
 It is expected that there is one GPU per MPI process. If the number of available GPUs is less than the number of MPI processes, the simulation may run inefficiently.
 
