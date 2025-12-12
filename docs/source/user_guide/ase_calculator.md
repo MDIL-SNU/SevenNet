@@ -7,12 +7,14 @@ from sevenn.calculator import SevenNetCalculator
 calc_omni = SevenNetCalculator(model='7net-omni', modal='mpa')
 ```
 SevenNet also supports CUDA-accelerated D3 calculations.
+For more information about D3, follow [here](../user_guide/d3.md))
 ```python
 from sevenn.calculator import SevenNetD3Calculator
 calc = SevenNetD3Calculator(model='7net-0', device='cuda')
 ```
 
-use enable_cueq or enable_flashTP to use cuEquivariance or flashTP for faster inference.
+Use enable_cueq or enable_flashTP to use cuEquivariance or flashTP for faster inference.
+For more information about cuEq and flashTP, follow [here](../install/accelerator.md)
 ```python
 from sevenn.calculator import SevenNetCalculator
 calc = SevenNetCalculator(model='7net-0', enable_cueq=True) # or enable_flashTP=True
