@@ -1,9 +1,14 @@
-# LAMMPS/ML-IAP
+# LAMMPS: ML-IAP
+
+:::{caution}
+Currently the parallel implementation of LAMMPS/ML-IAP is not tested.
+:::
+
 ## Requirements
 - cython == 3.0.11
 - cupy-cuda12x
-- flashTP (optional, follow [here](../install/accelerator.md#flashtp))
-- cuEquivariance (optional, follow [here](../install/accelerator.md#cuequivariance))
+- flashTP (optional, follow [here](accelerator.md#flashtp))
+- cuEquivariance (optional, follow [here](accelerator.md#cuequivariance))
 
 Install via:
 ```bash
@@ -64,7 +69,7 @@ cp {sevenn_src_path}/sevenn/pair_e3gnn/{pair_d3.cu,pair_d3.h,pair_d3_pars.h} {la
 ```
 
 3. Modify `{lammps_src_path}/cmake/CMakeLists.txt`. Lines starting with `-` indicate the original content, and lines starting with `+` indicate the modified or added content.
-```txt
+```
 # Declare CUDA at the header. This part depends to LAMMPS version.
  project(lammps
          DESCRIPTION "The LAMMPS Molecular Dynamics Simulator"
@@ -135,15 +140,15 @@ Below is an example snippet of a LAMMPS script for using SevenNet models with ML
 
     # ----- ML-IAP potential settings ----
     pair_style      mliap unified {your_potential_file_path.pt} 0
-    pair_coeff      * * {space seperated chemical species}
+    pair_coeff      * * {space separated chemical species}
 ```
 
 :::{note}
 If the LAMMPS is built with GPU-D3 pair style, you can combine SevenNet with D3 through the `pair/hybrid` command as the example below. For detailed instruction about parameters, supporting functionals and damping types, refer to {doc}`../user_guide/d3`.
-```txt
+```
 pair_style hybrid/overlay mliap unified {your_potential_file_path.pt} 0 d3 9000 1600 damp_bj pbe
-pair_coeff      * * mliap {space seperated chemical species}
-pair_coeff      * * d3    {space seperated chemical species}
+pair_coeff      * * mliap {space separated chemical species}
+pair_coeff      * * d3    {space separated chemical species}
 ```
 :::
 
@@ -151,7 +156,3 @@ Example command to run a LAMMPS simulation with ML-IAP:
 ```bash
 /path/to/lammps-mliap/build/lmp -in lammps.in -k on g 1 -sf kk -pk kokkos newton on neigh half
 ```
-
-:::{caution}
-Currently the parallel implementation of LAMMPS/ML-IAP is not tested.
-:::

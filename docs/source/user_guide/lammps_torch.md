@@ -1,4 +1,4 @@
-# LAMMPS/Torch
+# LAMMPS: PyTorch
 
 ## Requirements
 - LAMMPS version of `stable_2Aug2023_update3`
@@ -6,7 +6,7 @@
 
 CUDA-aware OpenMPI is optional but recommended for parallel MD. If it is not available, GPUs will communicate via the CPU when running in parallel mode. It is still faster than using only one GPU, but its efficiency is lower.
 
-:::{important}
+:::{note}
 CUDA-aware OpenMPI does not support NVIDIA gaming GPUs. Since the software is closely tied to hardware specifications, please consult your server administrator if CUDA-aware OpenMPI is unavailable.
 :::
 
@@ -22,7 +22,7 @@ You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for details of the patch pr
 
 
 :::{tip}
-(Optional) Add `--flashTP` option to accelerate SevenNet for LAMMPS using flashTP. You must preinstall [flashTP](../install/accelerator.md#flashtp) before building LAMMPS with flashTP.
+(Optional) Add `--flashTP` option to accelerate SevenNet for LAMMPS using flashTP. You must preinstall [flashTP](accelerator.md#flashtp) before building LAMMPS with flashTP.
 :::
 
 ### (Optional) Build with GPU-D3 pair style
@@ -77,10 +77,10 @@ pair_coeff  * * {path to serial model} {space separated chemical species}
 
 :::{note}
 If the LAMMPS is built with GPU-D3 pair style, you can combine SevenNet with D3 through the `pair/hybrid` command as the example below. For detailed instruction about parameters, supporting functionals and damping types, refer to {doc}`../user_guide/d3`.
-```txt
+```
 pair_style hybrid/overlay e3gnn d3 9000 1600 damp_bj pbe
-pair_coeff      * * e3gnn {path to serial model} {space seperated chemical species}
-pair_coeff      * * d3    {space seperated chemical species}
+pair_coeff      * * e3gnn {path to serial model} {space separated chemical species}
+pair_coeff      * * d3    {space separated chemical species}
 ```
 :::
 

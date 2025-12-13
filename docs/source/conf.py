@@ -60,7 +60,7 @@ extensions = [
     'sphinx.ext.doctest',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
-    'sphinx.ext.autosectionlabel',
+    #'sphinx.ext.autosectionlabel',
     'sphinx_copybutton',
     'myst_parser'
 ]
@@ -86,12 +86,20 @@ html_theme = 'pydata_sphinx_theme'
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
-# html_logo = 'SevenNet'
+html_logo = '_static/SevenNet_logo.png'
+html_context = {
+   # ...
+   "default_mode": "light"
+}
 
 html_theme_options = {
     'use_edit_page_button': False,
-    'header_links_before_dropdown': False,
+    'header_links_before_dropdown': 3,
     'navbar_end': ['navbar-icon-links'],
+    "logo": {
+        "text": " Documentation",
+        #"image_light": "_static/SevenNet_logo.png",
+    },
     'icon_links': [
         {
             'name': 'GitHub',
@@ -100,6 +108,8 @@ html_theme_options = {
             'type': 'fontawesome',
         },
     ],
+    "show_nav_level": 4,
+    #"primary_sidebar_end": ["indices.html", "sidebar-ethical-ads.html"]
 }
 
 # -- Options for intersphinx extension ---------------------------------------

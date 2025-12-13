@@ -35,33 +35,13 @@ Contents
 
 .. toctree::
    :maxdepth: 2
-   :caption: Pretrained
 
-   pretrained
-
-
-.. toctree::
-   :maxdepth: 2
-   :caption: Installation
-
-   install/accelerator
-   install/lammps_torch
-   install/lammps_mliap
-
-
-.. toctree::
-   :maxdepth: 1
-   :caption: User Guide
-
-   user_guide/ase_calculator
-   user_guide/cli
-   user_guide/d3
-   user_guide/note_book
-
-
-.. toctree::
-   :maxdepth: 1
-   :caption: Reference
-
+   user_guide/index
    cite
+
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Misc
+
    changelog

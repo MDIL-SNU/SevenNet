@@ -3,7 +3,7 @@
 So far, we have released multiple pretrained SevenNet models. Each model has various hyperparameters and training sets, leading to different levels of accuracy and speed. Please read the descriptions below carefully and choose the model that best suits your purpose.
 We provide the F1 score, and RMSD for the WBM dataset, along with $\kappa_{\mathrm{SRME}}$ from phononDB and CPS (Combined Performance Score). For details on these metrics and performance comparisons with other pretrained models, please visit [Matbench Discovery](https://matbench-discovery.materialsproject.org/).
 
-These models can be used as interatomic potentials in LAMMPS and loaded through the ASE calculator using each model’s keywords. Please refer to the [ASE calculator](#ase_calculator) section for instructions on loading a model via the ASE calculator.
+These models can be used as interatomic potentials in LAMMPS and loaded through the ASE calculator using each model’s keywords. Please refer to the [ASE calculator](ase_calculator.md) section for instructions on loading a model via the ASE calculator.
 Additionally, `keywords` can be used in other parts of SevenNet, such as `sevenn inference`, `sevenn get_model`, and the `checkpoint` section in `input.yaml` for fine-tuning.
 
 **Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program at Samsung Advanced Institute of Technology, part of Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
@@ -27,7 +27,7 @@ We supports cuEquivariance and FlashTP kernels for tensor-product acceleration. 
   - Supporting tasks
 
 * - [**SevenNet-Omni<br>(Recommended)**](#sevennet-omni)
-  - 15 open ab initio datasets
+  - 15 open ${\mathit{ab}}$ ${\mathit{initio}}$ datasets
   - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
   - Multi-task
   - `mpa` (PBE+U) <br> `matpes_r2scan` (r²SCAN) <br> `omol25_low` (ωB97M-V) <br> and 10 more tasks
@@ -119,7 +119,7 @@ When using the command-line interface of SevenNet, include the task as `--modal 
 ## SevenNet-MF-ompa
 > Model keywords: `7net-mf-ompa` | `SevenNet-mf-ompa`
 
-This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. This model achieves a high ranking on the [Matbench Discovery]((https://matbench-discovery.materialsproject.org/)) leaderboard. Our evaluations show that it outperforms other models on most tasks, except for the isolated molecule energy task, where it performs slightly worse than `SevenNet-l3i5`.
+This model leverages [multi-fidelity learning](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842), [sAlex](https://huggingface.co/datasets/fairchem/OMAT24), and [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) datasets. This model achieves a high ranking on the [Matbench Discovery](https://matbench-discovery.materialsproject.org/) leaderboard. Our evaluations show that it outperforms other models on most tasks, except for the isolated molecule energy task, where it performs slightly worse than `SevenNet-l3i5`.
 
 ```python
 from sevenn.calculator import SevenNetCalculator
@@ -165,12 +165,8 @@ This model increases the maximum spherical harmonic degree ($l_{\mathrm{max}}$) 
 > Model keywords:: `7net-0` | `SevenNet-0` | `7net-0_11Jul2024` | `SevenNet-0_11Jul2024`
 
 This model is one of our earliest pretrained models. Although we recommend using newer and more accurate models, it can still be useful in certain cases due to its shortest inference time. The model was trained on the [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) and is loaded as the default pretrained model in the ASE calculator.
-For more information, click [here](sevenn/pretrained_potentials/SevenNet_0__11Jul2024).
 
 ### **Matbench Discovery**
 | F1 | $\kappa_{\mathrm{SRME}}$ |
 |:---:|:---:|
 |0.67|0.767|
-
----
-You can find our legacy models in [pretrained_potentials](./sevenn/pretrained_potentials).

@@ -70,7 +70,7 @@ See `sevenn inference --help` for more information.
 
 The command is for LAMMPS integration of SevenNet. It deploys a model into a LAMMPS readable file(s).
 
-See {doc}`../install/lammps_torch` or {doc}`../install/lammps_mliap` for installation.
+See {doc}`lammps_torch` or {doc}`lammps_mliap` for installation.
 
 ### LAMMPS/Torch
 The checkpoint can be deployed as LAMMPS potentials. The argument is either the path to the checkpoint or the name of a pretrained potential.
