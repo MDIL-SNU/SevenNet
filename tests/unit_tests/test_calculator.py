@@ -6,12 +6,9 @@ from ase.build import bulk, molecule
 
 from sevenn.calculator import D3Calculator, SevenNetCalculator
 from sevenn.nn.cue_helper import is_cue_available
+from sevenn.nn.flash_helper import is_flash_available
 from sevenn.scripts.deploy import deploy
-from sevenn.util import (
-    model_from_checkpoint,
-    model_from_checkpoint_with_backend,
-    pretrained_name_to_path,
-)
+from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 
 @pytest.fixture
@@ -37,7 +34,14 @@ def sevennet_0_cal():
 @pytest.fixture(scope='module')
 def sevennet_0_cueq_cal():
     cpp = pretrained_name_to_path('7net-0_11July2024')
-    model, _ = model_from_checkpoint_with_backend(cpp, 'cueq')
+    model, _ = model_from_checkpoint(cpp, enable_cueq=True)
+    return SevenNetCalculator(model)
+
+
+@pytest.fixture(scope='module')
+def sevennet_0_flash_cal():
+    cpp = pretrained_name_to_path('7net-0_11July2024')
+    model, _ = model_from_checkpoint(cpp, enable_flash=True)
     return SevenNetCalculator(model)
 
 
@@ -159,6 +163,38 @@ def test_sevennet_0_cal_cueq(atoms_pbc, sevennet_0_cueq_cal):
     }
 
     atoms_pbc.calc = sevennet_0_cueq_cal
+
+    assert np.allclose(atoms_pbc.get_potential_energy(), atoms1_ref['energy'])
+    assert np.allclose(
+        atoms_pbc.get_potential_energy(force_consistent=True), atoms1_ref['energy']
+    )
+    assert np.allclose(atoms_pbc.get_forces(), atoms1_ref['force'])
+    assert np.allclose(atoms_pbc.get_stress(), atoms1_ref['stress'])
+    assert np.allclose(atoms_pbc.get_potential_energies(), atoms1_ref['energies'])
+
+
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
+def test_sevennet_0_cal_flash(atoms_pbc, sevennet_0_flash_cal):
+    atoms1_ref = {
+        'energy': -3.779199,
+        'energies': [-1.8493923, -1.9298072],
+        'force': [
+            [12.666697, 0.04726403, 0.04775861],
+            [-12.666697, -0.04726403, -0.04775861],
+        ],
+        'stress': [
+            [
+                -0.6439122,
+                -0.03643947,
+                -0.03643981,
+                0.00599139,
+                0.04544507,
+                0.04543639,
+            ]
+        ],
+    }
+
+    atoms_pbc.calc = sevennet_0_flash_cal
 
     assert np.allclose(atoms_pbc.get_potential_energy(), atoms1_ref['energy'])
     assert np.allclose(

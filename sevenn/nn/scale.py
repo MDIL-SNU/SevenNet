@@ -153,6 +153,7 @@ class SpeciesWiseRescale(nn.Module):
         return SpeciesWiseRescale(shift, scale, **kwargs)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+
         indices = data[self.key_indices]
         data[self.key_output] = data[self.key_input] * self.scale[indices].view(
             -1, 1
@@ -338,6 +339,7 @@ class ModalWiseRescale(nn.Module):
         )
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+
         if self._is_batch_data:
             batch = data[KEY.BATCH]
             modal_indices = data[self.key_modal_indices][batch]
