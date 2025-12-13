@@ -89,15 +89,15 @@ html_static_path = ['_static']
 html_logo = '_static/SevenNet_logo.png'
 html_context = {
    # ...
-   "default_mode": "light"
+   'default_mode': 'light'
 }
 
 html_theme_options = {
     'use_edit_page_button': False,
     'header_links_before_dropdown': 3,
     'navbar_end': ['navbar-icon-links'],
-    "logo": {
-        "text": " Documentation",
+    'logo': {
+        'text': ' Documentation',
         #"image_light": "_static/SevenNet_logo.png",
     },
     'icon_links': [
@@ -108,7 +108,7 @@ html_theme_options = {
             'type': 'fontawesome',
         },
     ],
-    "show_nav_level": 4,
+    'show_nav_level': 4,
     #"primary_sidebar_end": ["indices.html", "sidebar-ethical-ads.html"]
 }
 
