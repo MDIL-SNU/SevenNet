@@ -27,7 +27,7 @@ Then install SevenNet via:
 
     pip install sevenn
 
-For acceleration and LAMMPS integration, refer to the the installation guides below. 
+For acceleration and LAMMPS integration, refer to the the installation guides below.
 
 
 Contents

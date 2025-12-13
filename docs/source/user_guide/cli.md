@@ -72,6 +72,7 @@ The command is for LAMMPS integration of SevenNet. It deploys a model into a LAM
 
 See {doc}`../install/lammps_torch` or {doc}`../install/lammps_mliap` for installation.
 
+### LAMMPS/Torch
 The checkpoint can be deployed as LAMMPS potentials. The argument is either the path to the checkpoint or the name of a pretrained potential.
 
 ```bash
@@ -90,6 +91,14 @@ sevenn get_model {checkpoint path} -p
 
 This will create a directory with several `deployed_parallel_*.pt` files. The directory path itself is an argument for the LAMMPS script. Please do not modify or remove files in the directory.
 These models can be used as LAMMPS potentials to run parallel MD simulations with a GNN potential across multiple GPUs.
+
+### LAMMPS/ML-IAP
+```bash
+sevenn get_model 7net-0 --use_mliap  # For pre-trained models
+sevenn get_model {checkpoint path} --use_mliap  # For user-trained models
+```
+This will create `deployed_serial_mliap.pt`, which can be used as a LAMMPS potential with the `mliap` pair_style in LAMMPS.
+
 
 (sevenn-cp)=
 ## `sevenn cp`
@@ -114,4 +123,3 @@ cuEquivariance used                              False
 FlashTP used                                     False
 Modality                                   omat24, mpa
 ```
-
