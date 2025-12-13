@@ -2,11 +2,13 @@
 All notable changes to this project will be documented in this file.
 
 
-## [0.12.0-dev]
+## [0.12.0]
 ### Added
+- Documentation moved to RTD
 - LAMMPS-MLIAP integration with GhostExchangeOp
 
 ### Added
+- SevenNet-Omni
 - Example config for fine-tuning the SevenNet-MF-ompa model
 - FlashTP support (https://github.com/SNU-ARC/flashTP)
 
