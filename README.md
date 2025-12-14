@@ -7,6 +7,8 @@
 
 SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural network (GNN)-based interatomic potential package that supports parallel molecular dynamics simulations using [`LAMMPS`](https://lammps.org). Its core model is based on [`NequIP`](https://github.com/mir-group/nequip).
 
+Full documentation, including **installation**, **usage**, and **pretrained models**, is available at https://sevennet.readthedocs.io/en/latest/.
+
 ## Features
  - Pretrained GNN interatomic potential and fine-tuning interface
  - [Atomic Simulation Environment (ASE)](https://wiki.fysik.dtu.dk/ase/) calculator (python)
@@ -14,6 +16,12 @@ SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural networ
  - CUDA-accelerated D3 (van der Waals) dispersion
  - Multi-fidelity training for combining multiple databases with different calculation settings
  - [Tensor product accelerators](https://sevennet.readthedocs.io/en/latest/user_guide/accelerator.html)
+
+
+## Pretrained Models
+
+SevenNet provides pretrained models (universal potentials).
+Please refer to the documentation for available checkpoints, and usage examples: [Pretrained models](https://sevennet.readthedocs.io/en/latest/user_guide/pretrained.html)
 
 ## Installation and user guides
 
