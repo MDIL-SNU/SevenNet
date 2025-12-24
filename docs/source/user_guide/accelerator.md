@@ -1,9 +1,10 @@
 # Accelerators
 
+This document describes available accelerator integrations in SevenNet and their installation guide.
+
 :::{caution}
 We do not support CuEquivariance for [LAMMPS: Torch](./lammps_mliap.md). You must use [LAMMPS: ML-IAP](./lammps_torch.md) for CuEquivariance.
 :::
-
 
 [CuEquivariance](https://github.com/NVIDIA/cuEquivariance) and [FlashTP](https://openreview.net/forum?id=wiQe95BPaB) provide acceleration for both SevenNet training and inference. (For speed, check the section 2.7 of [SevenNet-Omni paper](https://arxiv.org/abs/2510.11241))
 
@@ -81,7 +82,6 @@ export MAX_JOBS=1
 :::
 
 For more information, see [FlashTP](https://github.com/SNU-ARC/flashTP).
-
 
 ## Usage
 After the installation, you can leverage the accelerator with appropriate flag (`--enable_cueq`) or options
