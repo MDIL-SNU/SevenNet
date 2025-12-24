@@ -60,9 +60,8 @@ extensions = [
     'sphinx.ext.doctest',
     'sphinx.ext.mathjax',
     'sphinx.ext.viewcode',
-    #'sphinx.ext.autosectionlabel',
     'sphinx_copybutton',
-    'myst_parser'
+    'myst_parser',
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -87,10 +86,7 @@ html_theme = 'pydata_sphinx_theme'
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 html_logo = '_static/SevenNet_logo.png'
-html_context = {
-   # ...
-   'default_mode': 'light'
-}
+html_context = {'default_mode': 'light'}
 
 html_theme_options = {
     'use_edit_page_button': False,
@@ -98,7 +94,6 @@ html_theme_options = {
     'navbar_end': ['navbar-icon-links'],
     'logo': {
         'text': ' Documentation',
-        #"image_light": "_static/SevenNet_logo.png",
     },
     'icon_links': [
         {
@@ -109,7 +104,6 @@ html_theme_options = {
         },
     ],
     'show_nav_level': 4,
-    #"primary_sidebar_end": ["indices.html", "sidebar-ethical-ads.html"]
 }
 
 # -- Options for intersphinx extension ---------------------------------------
