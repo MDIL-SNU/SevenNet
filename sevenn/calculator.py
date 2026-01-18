@@ -323,10 +323,34 @@ def _load(name: str) -> ctypes.CDLL:
         print('Warning: package directory is not writable. Using cache directory.')
         compile_dir = cache_dir
 
-    if 'TORCH_CUDA_ARCH_LIST' not in os.environ:
-        print('Warning: TORCH_CUDA_ARCH_LIST is not set.')
-        print('Warning: Use default CUDA architectures: 61, 70, 75, 80, 86, 89, 90')
-        os.environ['TORCH_CUDA_ARCH_LIST'] = '6.1;7.0;7.5;8.0;8.6;8.9;9.0'
+    # Matching CUDA architectures
+    # If TORCH_CUDA_ARCH_LIST is set, we respect the user setting but warn if
+    # it does not include the detected architecture.
+    # If not set, we set it to a reasonable default including the detected arch.
+    # We do not worry about CPU-only setup (not implemented yet).
+
+    import torch
+    major, minor = torch.cuda.get_device_capability()
+    detected_arch = f'{major}.{minor}'
+
+    if os.environ.get('TORCH_CUDA_ARCH_LIST'):
+        base_archs = os.environ['TORCH_CUDA_ARCH_LIST']
+        if detected_arch not in base_archs:
+            print(
+                f'Warning: TORCH_CUDA_ARCH_LIST={base_archs} does not include '
+                f'detected GPU architecture {detected_arch}. '
+                f'It may lead to compile error or NoKernelImageForDevice error.'
+            )
+    else:
+        base_archs = '6.1;7.0;7.5;8.0;8.6;8.9;9.0'
+        if detected_arch not in base_archs:
+            base_archs += f';{detected_arch}'
+        os.environ['TORCH_CUDA_ARCH_LIST'] = base_archs
+        print(
+            f'Info: TORCH_CUDA_ARCH_LIST is not set. '
+            f'Detected GPU architecture {detected_arch}, '
+            f'setting TORCH_CUDA_ARCH_LIST={base_archs} for compilation.'
+        )
 
     load(
         name=name,
