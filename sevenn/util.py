@@ -261,6 +261,10 @@ def pretrained_name_to_path(name: str) -> str:
         checkpoint_path = _const.SEVENNET_omat
     elif name in [f'{n}-omni' for n in heads]:
         checkpoint_path = _const.SEVENNET_omni
+    elif name in [f'{n}-omni-i8' for n in heads]:
+        checkpoint_path = _const.SEVENNET_omni_i8
+    elif name in [f'{n}-omni-i12' for n in heads]:
+        checkpoint_path = _const.SEVENNET_omni_i12
     else:
         raise ValueError('Not a valid pretrained model name')
     url = _const.CHECKPOINT_DOWNLOAD_LINKS.get(checkpoint_path)
