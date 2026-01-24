@@ -24,9 +24,9 @@ CuEquivariance is an NVIDIA Python library designed to facilitate the constructi
 - cuEquivariance >= 0.6.1
 
 ### Installation
-```bash
-pip install sevenn[cueq12]  # cueq11 for CUDA version 11.*
-```
+After installation of SevenNet, install cuEquivariance following their guideline.
+To use cuEquivariance with SevenNet, you need to install `cuequivariance`, `cuequivariance-torch`, and `cuequivariance-ops-torch-cu{12, 13}` (depending on your CUDA version)
+[cuEquivariance](https://github.com/NVIDIA/cuEquivariance).
 
 :::{note}
 Some GeForce GPUs do not support `pynvml`,
@@ -34,21 +34,11 @@ causing `pynvml.NVMLError_NotSupported: Not Supported`.
 Then try a lower cuEquivariance version, such as 0.6.1.
 :::
 
-
-If `pip install sevenn[cueq12]` fails to install the latest version of SevenNet, try installing the base package instead:
+Check your installation:
+```bash
+python -c 'from sevenn.nn.cue_helper import is_cue_available; print(is_cue_available())'
+True
 ```
-pip install sevenn
-```
-
-If this successfully installs the latest version, the issue is likely related to **cuEquivariance compatibility**.
-You can verify this by installing cuEquivariance manually:
-```
-pip install cuequivariance-ops-torch-cu12
-pip install cuequivariance-torch
-```
-
-For more details, see the [cuEquivariance documentation](https://github.com/NVIDIA/cuEquivariance).
-
 
 ## [FlashTP](https://github.com/SNU-ARC/flashTP)
 
@@ -80,6 +70,12 @@ Try reducing the build parallelism:
 export MAX_JOBS=1
 ```
 :::
+
+Check your installation:
+```bash
+python -c 'from sevenn.nn.flash_helper import is_flash_available; print(is_flash_available())'
+True
+```
 
 For more information, see [FlashTP](https://github.com/SNU-ARC/flashTP).
 

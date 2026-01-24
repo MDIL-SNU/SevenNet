@@ -68,37 +68,47 @@ See `sevenn inference --help` for more information.
 (sevenn-get-model)=
 ## `sevenn get_model`
 
-The command is for LAMMPS integration of SevenNet. It deploys a model into a LAMMPS readable file(s).
+The command is for LAMMPS integration of SevenNet. It deploys a model into LAMMPS-readable file(s).
 
 See {doc}`lammps_torch` or {doc}`lammps_mliap` for installation.
 
-### LAMMPS: PyTorch
-The checkpoint can be deployed as LAMMPS potentials. The argument is either the path to the checkpoint or the name of a pretrained potential.
+See {doc}`accelerator` for installation of accelerators.
 
+### Basic usage
 ```bash
-sevenn get_model 7net-0  # For pre-trained models
-sevenn get_model {checkpoint path}  # For user-trained models
+sevenn get_model \
+    {pretrained_name or checkpoint_path} \
+    {--use_mliap} \  # For LAMMPS ML-IAP use.
+    {--enable_flashTP | --enable_cueq} \  # For accelerators.
+    {--modal {task_name}} \  # Required when using multi-fidelity model
+    {--get_parallel}  # For parallel MD simulations
 ```
 
-This will create `deployed_serial.pt`, which can be used as a LAMMPS potential with the `e3gnn` pair_style in LAMMPS.
+If `--use_mliap` is not set (TorchScript version), it will create `deployed_serial.pt` or a directory containing several `deployed_parallel_*.pt` files for parallel execution.
+They can be used as a LAMMPS potential with the `e3gnn` or `e3gnn/parallel` pair_style in LAMMPS.
+In this case, only `--enable_flashTP` is available.
+Check {doc}`lammps_torch` for installation and lammps script in this use case.
 
-The potential for parallel MD simulation can be obtained similarly.
+If `--use_mliap` is set, it will create `deployed_serial_mliap.pt`.
+The file can be used with the `mliap` pair_style in LAMMPS.
+In this case, both `--enable_cueq` and `--enable_flashTP` are available, but you cannot specify both at the same time.
+Parallel execution is not tested in this case.
+Check {doc}`lammps_mliap` for installation and lammps script in this use case.
 
+### Examples
 ```bash
-sevenn get_model 7net-0 -p
-sevenn get_model {checkpoint path} -p
+# deyploy 7net-0 with flashTP enabled for LAMMPS PyTorch (TorchScript) interface
+sevenn get_model 7net-0 --enable_flashTP
+
+# deyploy 7net-0 with flashTP enabled for LAMMPS ML-IAP interface
+sevenn get_model 7net-0 --use_mliap --enable_flashTP
+
+# deyploy 7net-omni with cuEq enabled for LAMMPS ML-IAP interface, mpa modality
+sevenn get_model 7net-Omni --use_mliap --enable_cueq --modal mpa
+
+# deyploy 7net-mf-ompa with parallel for LAMMPS PyTorch interface omat24 modality
+sevenn get_model 7net-mf-ompa --get_parallel --modal omat24
 ```
-
-This will create a directory with several `deployed_parallel_*.pt` files. The directory path itself is an argument for the LAMMPS script. Please do not modify or remove files in the directory.
-These models can be used as LAMMPS potentials to run parallel MD simulations with a GNN potential across multiple GPUs.
-
-### LAMMPS: ML-IAP
-```bash
-sevenn get_model 7net-0 --use_mliap  # For pre-trained models
-sevenn get_model {checkpoint path} --use_mliap  # For user-trained models
-```
-This will create `deployed_serial_mliap.pt`, which can be used as a LAMMPS potential with the `mliap` pair_style in LAMMPS.
-
 
 (sevenn-cp)=
 ## `sevenn cp`

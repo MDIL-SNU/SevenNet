@@ -114,6 +114,8 @@ cmake \
 
 ## Usage
 ### Potential deployment
+Please check [sevenn graph_build](./cli.md#sevenn-graph-build) for detail.
+
 An ML-IAP potential checkpoint can be deployed using ``sevenn get_model`` command with ``--use_mliap`` flag.
 - By default, output file name will be ``deployed_serial_mliap.pt``.
   (You can customize the output file name using ``--output_prefix`` flag.)

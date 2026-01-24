@@ -62,6 +62,7 @@ This allows you to run the binary using `lmp -in my_lammps_script.lmp`.
 
 ## Usage
 ### Potential deployment
+Please check [sevenn graph_build](./cli.md#sevenn-graph-build) for detail.
 
 To deploy LAMMPS models from checkpoints for both serial and parallel execution, use {ref}`sevenn get_model<sevenn-get-model>`.
 
