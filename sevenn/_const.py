@@ -55,12 +55,16 @@ SEVENNET_MF_0 = f'{_prefix}/SevenNet_MF_0/checkpoint_sevennet_mf_0.pth'
 SEVENNET_MF_ompa = f'{_prefix}/SevenNet_MF_ompa/checkpoint_sevennet_mf_ompa.pth'
 SEVENNET_omat = f'{_prefix}/SevenNet_omat/checkpoint_sevennet_omat.pth'
 SEVENNET_omni = f'{_prefix}/SevenNet_omni/checkpoint_sevennet_omni.pth'
+SEVENNET_omni_i8 = f'{_prefix}/SevenNet_omni_i8/checkpoint_sevennet_omni_i8.pth'
+SEVENNET_omni_i12 = f'{_prefix}/SevenNet_omni_i12/checkpoint_sevennet_omni_i12.pth'
 
 _git_prefix = 'https://github.com/MDIL-SNU/SevenNet/releases/download'
 CHECKPOINT_DOWNLOAD_LINKS = {
     SEVENNET_MF_ompa: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_mf_ompa.pth',
     SEVENNET_omat: f'{_git_prefix}/v0.11.0.cp/checkpoint_sevennet_omat.pth',
     SEVENNET_omni: f'{_git_prefix}/v0.12.0.cp/checkpoint_sevennet_omni.pth',
+    SEVENNET_omni_i8: f'{_git_prefix}/v0.12.1.cp/checkpoint_sevennet_omni_i8.pth',
+    SEVENNET_omni_i12: f'{_git_prefix}/v0.12.1.cp/checkpoint_sevennet_omni_i12.pth',
 }
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]  # But it can contain 'lmp_data'

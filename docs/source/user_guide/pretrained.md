@@ -18,7 +18,7 @@ We supports cuEquivariance and FlashTP kernels for tensor-product acceleration. 
 
 ```{list-table} SevenNet pretrained models overview
 :header-rows: 1
-:widths: 30 15 10 10 35
+:widths: 20 25 15 10 30
 
 * - Model name
   - Trained dataset(s)
@@ -28,38 +28,50 @@ We supports cuEquivariance and FlashTP kernels for tensor-product acceleration. 
 
 * - [**SevenNet-Omni<br>(Recommended)**](#sevennet-omni)
   - 15 open ${\mathit{ab}}$ ${\mathit{initio}}$ datasets
-  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$ <br> parity=full
+  - Multi-task
+  - `mpa` (PBE+U) <br> `matpes_r2scan` (r²SCAN) <br> `omol25_low` (ωB97M-V) <br> and 10 more tasks
+
+* - [SevenNet-Omni-i8](#sevennet-omni-i8)
+  - 15 open ${\mathit{ab}}$ ${\mathit{initio}}$ datasets
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=8$ <br> parity=full
+  - Multi-task
+  - `mpa` (PBE+U) <br> `matpes_r2scan` (r²SCAN) <br> `omol25_low` (ωB97M-V) <br> and 10 more tasks
+
+* - [SevenNet-Omni-i12](#sevennet-omni-i12)
+  - 15 open ${\mathit{ab}}$ ${\mathit{initio}}$ datasets
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=12$ <br> parity=partial
   - Multi-task
   - `mpa` (PBE+U) <br> `matpes_r2scan` (r²SCAN) <br> `omol25_low` (ωB97M-V) <br> and 10 more tasks
 
 * - [SevenNet-MF-ompa](#sevennet-mf-ompa)
   - MPtrj, sAlex, OMat24
-  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$ <br> parity=full
   - Multi-task
   - `mpa` <br> `omat24`
 
 * - [SevenNet-omat](#sevennet-omat)
   - OMat24
-  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$ <br> parity=partial
   - Single-task
   - N/A
 
 * - [SevenNet-l3i5](#sevennet-l3i5)
   - MPtrj
-  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$
+  - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$ <br> parity=partial
   - Single-task
   - N/A
 
 * - [SevenNet-0](#sevennet-0)
   - MPtrj
-  - $l_{\mathrm{max}}=2$ <br> $N_{\mathrm{layer}}=5$
+  - $l_{\mathrm{max}}=2$ <br> $N_{\mathrm{layer}}=5$ <br> parity=partial
   - Single-task
   - N/A
 ```
 
 ---
 ## SevenNet-Omni
-> Model keywords: `7net-Omni` | `SevenNet-Omni`
+> Model keywords: `7net-omni` | `SevenNet-Omni`
 
 **This is our recommended pretrained model**
 
@@ -112,8 +124,29 @@ When using the command-line interface of SevenNet, include the task as `--modal 
 ### **Matbench Discovery**
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
-|**0.849**|0.889|0.265|0.0639|
+|0.849|0.889|0.265|0.0639|
 
+---
+## SevenNet-Omni-i8
+> Model keywords: `7net-omni-i8` | `SevenNet-Omni-i8`
+
+SevenNet-Omni-i8 follows the same training strategy as [SevenNet-Omni](#sevennet-omni), with an increased model capacity.
+
+### **Matbench Discovery**
+| CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
+|:---:|:---:|:---:|:---:|
+|0.859|0.903|0.257|0.0622|
+
+---
+## SevenNet-Omni-i12
+> Model keywords: `7net-omni-i12` | `SevenNet-Omni-i12`
+
+SevenNet-Omni-i12 follows the same training strategy as [SevenNet-Omni](#sevennet-omni), with an increased model capacity.
+
+### **Matbench Discovery**
+| CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
+|:---:|:---:|:---:|:---:|
+|**0.873**|0.906|0.192|0.0617|
 
 ---
 ## SevenNet-MF-ompa
