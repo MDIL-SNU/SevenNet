@@ -86,12 +86,16 @@ def deploy_parallel(
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
     cp = load_checkpoint(checkpoint)
+
     model, config = (
-        cp.build_model(enable_cueq=False, enable_flash=use_flash),
+        cp.build_model(
+            enable_cueq=False, enable_flash=use_flash, _flash_lammps=use_flash
+        ),
         cp.config,
     )
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
     config[KEY.USE_FLASH_TP] = use_flash
+    config['_flash_lammps'] = use_flash
     model_state_dct = model.state_dict()
 
     model_list = build_E3_equivariant_model(config, parallel=True)
@@ -150,7 +154,7 @@ def deploy_parallel(
     md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
-    os.makedirs(fname)
+    os.makedirs(fname, exist_ok=True)
     for idx, model in enumerate(model_list):
         fname_full = f'{fname}/deployed_parallel_{idx}.pt'
         model.set_is_batch_data(False)

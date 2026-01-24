@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.12.1]
+### Fixed
+- FlashTP with LAMMPS parallel in torch
+
 
 ## [0.12.0]
 ### Added
