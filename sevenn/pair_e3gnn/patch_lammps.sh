@@ -41,7 +41,8 @@ if [ "$flashTP_so" != "NONE" ] && [ -f "$flashTP_so" ]; then
     echo "Using flashTP_so: $flashTP_so"
 else
     echo "Invalid or missing flashTP_so given"
-    exit 1
+    echo "[FlashTP] Skipped (not provided)"
+    flashTP_so="NONE"
 fi
 
 # Check if the patch is already applied
