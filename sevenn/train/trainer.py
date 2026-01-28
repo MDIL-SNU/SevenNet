@@ -42,6 +42,7 @@ class Trainer:
         optimizer_args: Optional[Dict[str, Any]] = None,
         scheduler_cls=None,
         scheduler_args: Optional[Dict[str, Any]] = None,
+        grad_clip_norm_th: Optional[float] = None,
         device: Union[torch.device, str] = 'auto',
         distributed: bool = False,
         distributed_backend: str = 'nccl',
@@ -80,6 +81,7 @@ class Trainer:
         else:
             self.scheduler = None
         self.loss_functions = loss_functions
+        self.grad_clip_norm_th = grad_clip_norm_th
 
     @staticmethod
     def from_config(model: torch.nn.Module, config: Dict[str, Any]) -> 'Trainer':
@@ -92,6 +94,7 @@ class Trainer:
                 config.get(KEY.SCHEDULER, 'exponentiallr').lower()
             ],
             scheduler_args=config.get(KEY.SCHEDULER_PARAM, {}),
+            grad_clip_norm_th=config.get(KEY.GRAD_CLIP, None),
             device=config.get(KEY.DEVICE, 'auto'),
             distributed=config.get(KEY.IS_DDP, False),
             distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
@@ -142,7 +145,7 @@ class Trainer:
         """
         Run single epoch with given dataloader
         Args:
-            loader: iterable yieds AtomGraphData
+            loader: iterable yields AtomGraphData
             is_train: if true, do backward() and optimizer step
             error_recorder: ErrorRecorder instance to compute errors (RMSEm MAE, ..)
             wrap_tqdm: wrap given dataloader with tqdm for progress bar
@@ -169,10 +172,69 @@ class Trainer:
                     if indv_loss is not None:
                         total_loss += (indv_loss * w)
                 total_loss.backward()
-                self.optimizer.step()
+                if self.grad_clip_norm_th is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        max_norm=self.grad_clip_norm_th,
+                    )
+                self.optimizer.step()  # DDP syncs weight here
 
         if self.distributed and error_recorder is not None:
             self.recorder_all_reduce(error_recorder)
+
+    def train_one_batch(
+        self,
+        batch,
+        error_recorder: Optional[ErrorRecorder] = None,
+    ) -> None:
+        """
+        Train on a single batch. Used for batch-level training loop.
+
+        Args:
+            batch: AtomGraphData batch
+            error_recorder: ErrorRecorder instance to compute errors
+        """
+        self.model.train()
+        self.optimizer.zero_grad()
+        batch = batch.to(self.device, non_blocking=True)
+        output = self.model(batch)
+        _model = self.model if not self.distributed else self.model.module
+
+        if error_recorder is not None:
+            error_recorder.update(output)
+
+        total_loss = torch.tensor([0.0], device=self.device)
+        for loss_def, w in self.loss_functions:
+            total_loss += loss_def.get_loss(output, _model) * w
+
+        total_loss.backward()
+
+        # TODO: NaN sanitizer - replace NaN/Inf gradients with zero
+        # for name, p in self.model.named_parameters():
+        #     if p.grad is None:
+        #         continue
+        #     if not torch.isfinite(p.grad).all():
+        #         if self.rank == 0:
+        #             print(
+        #                 f'[nan2zero] NaN/Inf gradient detected in {p.shape}, '
+        #                 'resetting to 0',
+        #                 flush=True,
+        #             )
+        #         p.grad = torch.nan_to_num(p.grad, nan=0.0, posinf=0.0, neginf=0.0)
+
+        # Grad clipping
+        if self.grad_clip_norm_th is not None:
+            norm = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(),
+                max_norm=self.grad_clip_norm_th,
+            )
+            if norm > self.grad_clip_norm_th and self.rank == 0:
+                print(
+                    f'[Clipping] Grad norm {norm:.2f} into '
+                    f'{self.grad_clip_norm_th}',
+                    flush=True,
+                )
+        self.optimizer.step()
 
     def scheduler_step(self, metric: Optional[float] = None) -> None:
         if self.scheduler is None:
@@ -196,6 +258,7 @@ class Trainer:
             model_state_dct = self.model.module.state_dict()
         else:
             model_state_dct = self.model.state_dict()
+
         return {
             'model_state_dict': model_state_dct,
             'optimizer_state_dict': self.optimizer.state_dict(),

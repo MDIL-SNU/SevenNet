@@ -13,15 +13,19 @@ from sevenn.scripts.convert_model_modality import (
 )
 
 
-def processing_continue_v2(
-    config: Dict[str, Any],
-) -> Tuple[List[Dict[str, torch.Tensor]], int]:  # simpler
+# TODO: check backward compatibility
+def processing_continue_v2(config: Dict[str, Any]):
     """
     Replacement of processing_continue,
     Skips model compatibility
+
+    Returns:
+        For epoch training: (state_dicts, epoch)
+        For batch training: (state_dicts, epoch, data_progress)
     """
     log = Logger()
     continue_dct = config[KEY.CONTINUE]
+    train_by_batch = config.get(KEY.TRAIN_BY_BATCH, False)
     log.write('\nContinue found, loading checkpoint\n')
 
     checkpoint = util.load_checkpoint(continue_dct[KEY.CHECKPOINT])
@@ -79,16 +83,38 @@ def processing_continue_v2(
 
     from_epoch = checkpoint.epoch or 0
     log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
-    epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
-    log.writeline(f'epoch start from {epoch}')
 
-    log.writeline('checkpoint loading successful')
+    # For batch training, don't increment epoch yet (handled by processing_by_batch)
+    if train_by_batch:
+        epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch
+    else:
+        epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
+    log.writeline(f'epoch start from {epoch}')
 
     state_dicts = [
         model_state_dict_cp,
         optimizer_state_dict_cp,
         scheduler_state_dict_cp,
     ]
+
+    # Handle data progress for batch training
+    if train_by_batch:
+        data_progress = {
+            KEY.TOTAL_DATA_NUM: -1,
+            KEY.CURRENT_DATA_IDX: 0,
+            KEY.NUMPY_RNG_STATE: None,
+        }
+        if hasattr(checkpoint, 'data_progress') and checkpoint.data_progress:
+            if not continue_dct[KEY.RESET_DATA_PROGRESS]:
+                data_progress.update(checkpoint.data_progress)
+            log.writeline(f'epoch start from {epoch}')
+            log.writeline(f'data index start from {data_progress[KEY.CURRENT_DATA_IDX]}')
+            #log.writeline(f'Checkpoint previous epoch was: {from_epoch}')  # duplicated?
+
+        log.writeline('checkpoint loading successful')
+        return state_dicts, epoch, data_progress
+
+    log.writeline('checkpoint loading successful')
     return state_dicts, epoch
 
 
