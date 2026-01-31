@@ -1,0 +1,306 @@
+"""TorchSim wrapper for SevenNet models."""
+
+from __future__ import annotations
+
+import warnings
+from pathlib import Path
+from typing import TYPE_CHECKING
+
+import torch
+from torch_geometric.loader.dataloader import Collater
+
+import sevenn._keys as key
+from sevenn.atom_graph_data import AtomGraphData
+from sevenn.calculator import torch_script_type
+from sevenn.util import load_checkpoint
+
+try:
+    import torch_sim as ts
+    from torch_sim.elastic import voigt_6_to_full_3x3_stress
+    from torch_sim.models.interface import ModelInterface
+    from torch_sim.neighbors import torchsim_nl
+except ImportError as exc:
+    warnings.warn(
+        'torch_sim not installed. Install torch-sim-atomistic separately if '
+        + 'needed for SevenNetModel.',
+        stacklevel=2,
+    )
+    msg = (
+        'torch_sim is required for SevenNetModel. '
+        'Install torch-sim-atomistic separately if needed.'
+    )
+    raise ImportError(
+        msg,
+    ) from exc
+
+
+if TYPE_CHECKING:
+    from collections.abc import Callable
+
+    from torch_sim.typing import StateDict
+
+    from sevenn.nn.sequential import AtomGraphSequential
+
+
+def _validate(model: AtomGraphSequential, modal: str) -> None:
+    if not model.type_map:
+        msg = 'type_map is missing'
+        raise ValueError(msg)
+
+    if model.cutoff == 0.0:
+        msg = 'Model cutoff seems not initialized'
+        raise ValueError(msg)
+
+    modal_map = model.modal_map
+    if modal_map:
+        modal_ava = list(modal_map)
+        if not modal:
+            msg = f"modal argument missing (avail: {modal_ava})"
+            raise ValueError(msg)
+        if modal not in modal_ava:
+            msg = f"unknown modal {modal} (not in {modal_ava})"
+            raise ValueError(msg)
+    elif not model.modal_map and modal:
+        warnings.warn(
+            f"modal={modal} is ignored as model has no modal_map",
+            stacklevel=2,
+        )
+
+
+class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
+    """Computes atomistic energies, forces and stresses using an SevenNet model.
+
+    This class wraps an SevenNet model to compute energies, forces, and stresses for
+    atomistic systems. It handles model initialization, configuration, and
+    provides a forward pass that accepts a SimState object and returns model
+    predictions.
+
+    Examples:
+        >>> model = SevenNetModel(model=loaded_sevenn_model)
+        >>> results = model(state)
+
+    """
+
+    def __init__(
+        self,
+        model: AtomGraphSequential | str | Path,
+        *,  # force remaining arguments to be keyword-only
+        modal: str | None = None,
+        neighbor_list_fn: Callable | None = None,
+        device: torch.device | str | None = None,
+        dtype: torch.dtype = torch.float32,
+    ) -> None:
+        """Initialize the SevenNetModel with specified configuration.
+
+        Loads an SevenNet model from either a model object or a model path.
+        Sets up the model parameters for subsequent use in energy and force
+        calculations.
+
+        Args:
+            model (str | Path | AtomGraphSequential): The SevenNet model to wrap.
+                Accepts either 1) a path to a checkpoint file, 2) a model instance,
+                or 3) a pretrained model name.
+            modal (str | None): modal (fidelity) if given model is multi-modal model.
+                for 7net-mf-ompa, it should be one of 'mpa' (MPtrj + sAlex) or
+                'omat24' (OMat24).
+            neighbor_list_fn (Callable): Neighbor list function to use.
+                Default is torch_nl_linked_cell.
+            device (torch.device | str | None): Device to run the model on
+            dtype (torch.dtype): Data type for computation
+
+        Raises:
+            ImportError: if torch_sim is not installed
+            ValueError: the model doesn't have a cutoff
+            ValueError: the model has a modal_map but modal is not given
+            ValueError: the modal given is not in the modal_map
+            ValueError: the model doesn't have a type_map
+
+        """
+        if neighbor_list_fn is None:
+            neighbor_list_fn = torchsim_nl
+
+        super().__init__()
+
+        self._device = device or torch.device(
+            'cuda' if torch.cuda.is_available() else 'cpu',
+        )
+        if isinstance(self._device, str):
+            self._device = torch.device(self._device)
+
+        if dtype is not torch.float32:
+            raise ValueError(
+                f"SevenNetModel currently only supports {torch.float32}, but "
+                + f"received different dtype: {dtype}"
+            )
+
+        if isinstance(model, (str, Path)):
+            cp = load_checkpoint(model)
+            model = cp.build_model()
+
+        _validate(model, modal)
+
+        model.eval_type_map = torch.tensor(data=True)
+
+        self._dtype = dtype
+        self._memory_scales_with = 'n_atoms_x_density'
+        self._compute_stress = True
+        self._compute_forces = True
+
+        model.set_is_batch_data(True)
+        model_loaded = model
+        self.cutoff = torch.tensor(model.cutoff)
+        self.neighbor_list_fn = neighbor_list_fn
+
+        self.model = model_loaded
+        self.modal = modal
+        self.type_map = model.type_map
+
+        self.model = model.to(self._device)
+        self.model = self.model.eval()
+
+        if self._dtype is not None:
+            self.model = self.model.to(dtype=self._dtype)
+
+        self.implemented_properties = ['energy', 'forces', 'stress']
+
+    @property
+    def device(self) -> torch.device:
+        """Device the model is running on."""
+        return self._device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Data type for computation."""
+        return self._dtype
+
+    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+        """Perform forward pass to compute energies, forces, and other properties.
+
+        Takes a simulation state and computes the properties implemented by
+        the model, such as energy, forces, and stresses.
+
+        Args:
+            state (SimState | StateDict): State object containing positions, cells,
+                atomic numbers, and other system information. If a dictionary
+                is provided, it will be converted to a SimState.
+
+        Returns:
+            dict: Model predictions, which may include:
+                - energy (torch.Tensor): Energy with shape [batch_size]
+                - forces (torch.Tensor): Forces with shape [n_atoms, 3]
+                - stress (torch.Tensor): Stress tensor with shape [batch_size, 3, 3],
+                    if compute_stress is True
+
+        Notes:
+            The state is automatically transferred to the model's device if needed.
+            All output tensors are detached from the computation graph.
+
+        """
+        sim_state = (
+            state
+            if isinstance(state, ts.SimState)
+            else ts.SimState(**state, masses=torch.ones_like(state['positions']))
+        )
+
+        if sim_state.device != self._device:
+            sim_state = sim_state.to(self._device)
+
+        # TODO: is this clone necessary?
+        sim_state = sim_state.clone()
+
+        # Batched neighbor list using linked-cell algorithm with row-vector cell
+        n_systems = sim_state.system_idx.max().item() + 1
+        edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
+            sim_state.positions,
+            sim_state.row_vector_cell,
+            sim_state.pbc,
+            self.cutoff,
+            sim_state.system_idx,
+        )
+
+        # Build per-system SevenNet AtomGraphData by slicing the global NL
+        n_atoms_per_system = sim_state.system_idx.bincount()
+        stride = torch.cat(
+            (
+                torch.tensor([0], device=self._device, dtype=torch.long),
+                n_atoms_per_system.cumsum(0),
+            ),
+        )
+
+        data_list = []
+        for sys_idx in range(n_systems):
+            sys_start = stride[sys_idx].item()
+            sys_end = stride[sys_idx + 1].item()
+
+            pos = sim_state.positions[sys_start:sys_end]
+            row_vector_cell = sim_state.row_vector_cell[sys_idx]
+            atomic_nums = sim_state.atomic_numbers[sys_start:sys_end]
+
+            mask = mapping_system == sys_idx
+            edge_idx_sys_global = edge_index[:, mask]
+            unit_shifts_sys = unit_shifts[mask]
+
+            # Convert global indices to local indices
+            edge_idx = edge_idx_sys_global - sys_start
+            shifts = torch.mm(unit_shifts_sys, row_vector_cell)
+            edge_vec = pos[edge_idx[1]] - pos[edge_idx[0]] + shifts
+            vol = torch.det(row_vector_cell)
+
+            data = {
+                key.NODE_FEATURE: atomic_nums,
+                key.ATOMIC_NUMBERS: atomic_nums.to(
+                    dtype=torch.int64,
+                    device=self._device,
+                ),
+                key.POS: pos,
+                key.EDGE_IDX: edge_idx,
+                key.EDGE_VEC: edge_vec,
+                key.CELL: row_vector_cell,
+                key.CELL_SHIFT: unit_shifts_sys,
+                key.CELL_VOLUME: vol,
+                key.NUM_ATOMS: torch.tensor(len(atomic_nums), device=self._device),
+                key.DATA_MODALITY: self.modal,
+            }
+            data[key.INFO] = {}
+
+            data = AtomGraphData(**data)
+            data_list.append(data)
+
+        batched_data = Collater([], follow_batch=None, exclude_keys=None)(data_list)
+        batched_data.to(self._device)
+
+        if isinstance(self.model, torch_script_type):
+            batched_data[key.NODE_FEATURE] = torch.tensor(
+                [self.type_map[z.item()] for z in batched_data[key.ATOMIC_NUMBERS]],
+                dtype=torch.int64,
+                device=self._device,
+            )
+            batched_data[key.POS].requires_grad_(
+                requires_grad=True,
+            )  # backward compatibility
+            batched_data[key.EDGE_VEC].requires_grad_(requires_grad=True)
+            batched_data = batched_data.to_dict()
+            del batched_data['data_info']
+
+        output = self.model(batched_data)
+
+        results: dict[str, torch.Tensor] = {}
+        energy = output[key.PRED_TOTAL_ENERGY]
+        if energy is not None:
+            results['energy'] = energy.detach()
+        else:
+            results['energy'] = torch.zeros(
+                sim_state.system_idx.max().item() + 1, device=self._device,
+            )
+
+        forces = output[key.PRED_FORCE]
+        if forces is not None:
+            results['forces'] = forces.detach()
+
+        stress = output[key.PRED_STRESS]
+        if stress is not None:
+            results['stress'] = -voigt_6_to_full_3x3_stress(
+                stress.detach()[..., [0, 1, 2, 4, 5, 3]],
+            )
+
+        return results
