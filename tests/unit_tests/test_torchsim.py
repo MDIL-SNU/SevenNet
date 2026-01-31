@@ -7,23 +7,34 @@ It uses the factory function pattern from torchsim's test infrastructure.
 import pytest
 import torch
 
-import sevenn.util
-from sevenn.calculator import SevenNetCalculator
-from sevenn.nn.sequential import AtomGraphSequential
-from sevenn.torchsim import SevenNetModel
-
 try:
     from torch_sim.models.interface import validate_model_outputs
     from torch_sim.testing import (
         SIMSTATE_BULK_GENERATORS,
         assert_model_calculator_consistency,
     )
+
+    TORCH_SIM_AVAILABLE = True
 except ImportError:
+    TORCH_SIM_AVAILABLE = False  # pyright: ignore[reportConstantRedefinition]
+    SIMSTATE_BULK_GENERATORS = {}  # pyright: ignore[reportConstantRedefinition]
+
+    def validate_model_outputs(*args, **kwargs):
+        return None
+
+    def assert_model_calculator_consistency(*args, **kwargs):
+        return None
+
+if not TORCH_SIM_AVAILABLE:
     pytest.skip(
         'torch_sim not installed. Install torch-sim-atomistic separately if needed.',
         allow_module_level=True,
     )
 
+import sevenn.util
+from sevenn.calculator import SevenNetCalculator
+from sevenn.nn.sequential import AtomGraphSequential
+from sevenn.torchsim import SevenNetModel
 
 # Test configuration
 model_name = 'sevennet-mf-ompa'
@@ -37,7 +48,7 @@ def pretrained_sevenn_model() -> AtomGraphSequential:
     """Load a pretrained SevenNet model for testing."""
     cp = sevenn.util.load_checkpoint(model_name)
     model_loaded = cp.build_model()
-    model_loaded.set_is_batch_data(True)
+    model_loaded.set_is_batch_data(True)  # pyright: ignore[reportCallIssue]
     return model_loaded.to(DEVICE)
 
 

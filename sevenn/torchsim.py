@@ -20,18 +20,7 @@ try:
     from torch_sim.models.interface import ModelInterface
     from torch_sim.neighbors import torchsim_nl
 except ImportError as exc:
-    warnings.warn(
-        'torch_sim not installed. Install torch-sim-atomistic separately if '
-        + 'needed for SevenNetModel.',
-        stacklevel=2,
-    )
-    msg = (
-        'torch_sim is required for SevenNetModel. '
-        'Install torch-sim-atomistic separately if needed.'
-    )
-    raise ImportError(
-        msg,
-    ) from exc
+    raise ImportError('torch_sim required: pip install torch-sim-atomistic') from exc
 
 
 if TYPE_CHECKING:
