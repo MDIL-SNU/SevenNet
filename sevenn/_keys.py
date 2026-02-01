@@ -234,6 +234,9 @@ TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 USE_FLASH_TP = 'use_flash_tp'
 CUEQUIVARIANCE_CONFIG = 'cuequivariance_config'
 
+REG_PARAM = 'regularization_param'
+REG_WEIGHT = 'regularization_weight'
+
 _NORMALIZE_SPH = '_normalize_sph'
 OPTIMIZE_BY_REDUCE = 'optimize_by_reduce'
 

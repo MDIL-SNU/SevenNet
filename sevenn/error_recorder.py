@@ -60,6 +60,18 @@ _ERROR_TYPES = {
         'coeff': 160.21766208,
         'vdim': 6,
     },
+    'L2_modal': {
+        'name': 'L2_modal',
+        'ref_key': None,
+        'pred_key': None,
+        'unit': None,
+    },
+    'Modal_cos': {
+        'name': 'Modal_cos',
+        'ref_key': None,
+        'pred_key': None,
+        'unit': None,
+    },
     'TotalLoss': {
         'name': 'TotalLoss',
         'unit': None,
@@ -83,9 +95,15 @@ class AverageNumber:
         self._sum = 0.0
         self._count = 0
 
-    def update(self, values: torch.Tensor) -> None:
-        self._sum += values.sum().item()
-        self._count += values.numel()
+    def update(self, values: Union[torch.Tensor, float]) -> None:
+        if isinstance(values, torch.Tensor):
+            self._sum += values.sum().item()
+            self._count += values.numel()
+        elif isinstance(values, float):
+            self._sum += values
+            self._count += 1
+        else:
+            raise ValueError(f'Unsupported type: {type(values)}')
 
     def _ddp_reduce(self, device):
         _sum = torch.tensor(self._sum, device=device)
@@ -127,7 +145,9 @@ class ErrorMetric:
         self.ignore_unlabeled = ignore_unlabeled
         self.value = AverageNumber()
 
-    def update(self, output: 'AtomGraphData') -> None:
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
         raise NotImplementedError
 
     def _retrieve(
@@ -180,7 +200,9 @@ class RMSError(ErrorMetric):
     ) -> torch.Tensor:
         return self._se(y_ref.view(-1, vdim), y_pred.view(-1, vdim)).sum(dim=1)
 
-    def update(self, output: 'AtomGraphData') -> None:
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
         y_ref, y_pred = self._retrieve(output)
         se = self._square_error(y_ref, y_pred, self.vdim)
         self.value.update(se)
@@ -204,7 +226,9 @@ class ComponentRMSError(ErrorMetric):
     ) -> torch.Tensor:
         return self._se(y_ref, y_pred)
 
-    def update(self, output: 'AtomGraphData') -> None:
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
         y_ref, y_pred = self._retrieve(output)
         y_ref = y_ref.view(-1)
         y_pred = y_pred.view(-1)
@@ -228,7 +252,9 @@ class MAError(ErrorMetric):
     ) -> torch.Tensor:
         return torch.abs(y_ref - y_pred)
 
-    def update(self, output: 'AtomGraphData') -> None:
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
         y_ref, y_pred = self._retrieve(output)
         y_ref = y_ref.reshape((-1,))
         y_pred = y_pred.reshape((-1,))
@@ -248,7 +274,9 @@ class CustomError(ErrorMetric):
         super().__init__(**kwargs)
         self.func = func
 
-    def update(self, output: 'AtomGraphData') -> None:
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
         y_ref, y_pred = self._retrieve(output)
         se = self.func(y_ref, y_pred) if len(y_ref) > 0 else torch.tensor([])
         self.value.update(se)
@@ -272,9 +300,37 @@ class LossError(ErrorMetric):
         )
         self.loss_def = loss_def
 
-    def update(self, output: 'AtomGraphData') -> None:
-        loss = self.loss_def.get_loss(output)  # type: ignore
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
+        loss = self.loss_def.get_loss(output, model)  # type: ignore
         self.value.update(loss)  # type: ignore
+
+
+class ModalWeightCosine(ErrorMetric):
+    """
+    Cosine similarity between modal weight views.
+    This is an indicator, not a loss.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        loss_def: LossDefinition,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            name,
+            ignore_unlabeled=loss_def.ignore_unlabeled,
+            **kwargs,
+        )
+        self.loss_def = loss_def
+
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
+        cosine = self.loss_def.get_cosine(output, model)  # type: ignore
+        self.value.update(cosine)  # type: ignore
 
 
 class CombinedError(ErrorMetric):
@@ -288,9 +344,11 @@ class CombinedError(ErrorMetric):
         self.metrics = metrics
         assert kwargs['unit'] is None
 
-    def update(self, output: 'AtomGraphData') -> None:
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
         for metric, _ in self.metrics:
-            metric.update(output)
+            metric.update(output, model)
 
     def reset(self) -> None:
         for metric, _ in self.metrics:
@@ -323,16 +381,16 @@ class ErrorRecorder:
         self.history = []
         self.metrics = metrics
 
-    def _update(self, output: 'AtomGraphData') -> None:
+    def _update(self, output: 'AtomGraphData', model=None) -> None:
         for metric in self.metrics:
-            metric.update(output)
+            metric.update(output, model)
 
-    def update(self, output: 'AtomGraphData', no_grad=True) -> None:
+    def update(self, output: 'AtomGraphData', no_grad=True, model=None) -> None:
         if no_grad:
             with torch.no_grad():
-                self._update(output)
+                self._update(output, model)
         else:
-            self._update(output)
+            self._update(output, model)
 
     def get_metric_dict(self, with_unit=True) -> Dict[str, float]:
         return {metric.key_str(with_unit): metric.get() for metric in self.metrics}
@@ -408,10 +466,20 @@ class ErrorRecorder:
     def from_config(
         config: Dict[str, Any],
         loss_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
+        reg_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
     ) -> 'ErrorRecorder':
         loss_cls = loss_dict[config.get(KEY.LOSS, 'mse').lower()]
         loss_param = config.get(KEY.LOSS_PARAM, {})
         criteria = loss_cls(**loss_param) if loss_functions is None else None
+
+        if loss_functions is not None:
+            all_loss_functions = (
+                loss_functions + reg_functions
+                if isinstance(reg_functions, list)
+                else loss_functions
+            )
+        else:
+            all_loss_functions = None
 
         err_config = config.get(KEY.ERROR_RECORD, False)
         if not err_config:
@@ -432,17 +500,25 @@ class ErrorRecorder:
             if err_type == 'TotalLoss':  # special case
                 err_metrics.append(
                     ErrorRecorder.init_total_loss_metric(
-                        config, criteria, loss_functions
+                        config, criteria, all_loss_functions
                     )
                 )
+                continue
+            elif err_type == 'Modal_cos':  # special case
+                metric_cls = ModalWeightCosine
+                metric_kwargs['loss_def'], _ = _get_loss_function_from_name(
+                    all_loss_functions, 'L2_modal'
+                )
+                metric_kwargs.pop('unit', None)
+                err_metrics.append(metric_cls(**metric_kwargs))
                 continue
             metric_cls = ErrorRecorder.METRIC_DICT[metric_name]
             assert isinstance(metric_kwargs['name'], str)
             if metric_name == 'Loss':
-                if loss_functions is not None:
+                if all_loss_functions is not None:
                     metric_cls = LossError
                     metric_kwargs['loss_def'], _ = _get_loss_function_from_name(
-                        loss_functions, metric_kwargs['name']
+                        all_loss_functions, metric_kwargs['name']
                     )
                 else:
                     metric_cls = CustomError

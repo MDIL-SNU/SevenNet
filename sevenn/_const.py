@@ -15,6 +15,13 @@ IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
 IMPLEMENTED_INTERACTION_TYPE = ['nequip']
 
+IMPLEMENTED_MODAL_MODULE_DICT = {
+    KEY.USE_MODAL_NODE_EMBEDDING: 'onehot_to_feature_x',
+    KEY.USE_MODAL_SELF_INTER_INTRO: 'self_interaction_1',
+    KEY.USE_MODAL_SELF_INTER_OUTRO: 'self_interaction_2',
+    KEY.USE_MODAL_OUTPUT_BLOCK: 'reduce_input_to_hidden',
+}
+
 IMPLEMENTED_SHIFT = ['per_atom_energy_mean', 'elemwise_reference_energies']
 IMPLEMENTED_SCALE = ['force_rms', 'per_atom_energy_std', 'elemwise_force_rms']
 
@@ -26,6 +33,8 @@ SUPPORTING_ERROR_TYPES = [
     'Stress',
     'Stress_GPa',
     'TotalLoss',
+    'L2_modal',
+    'Modal_cos',
 ]
 
 IMPLEMENTED_MODEL = ['E3_equivariant_model']
@@ -262,6 +271,7 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.FORCE_WEIGHT: 0.1,
     KEY.STRESS_WEIGHT: 1e-6,  # SIMPLE-NN default
     KEY.GRAD_CLIP: None,
+    KEY.REG_PARAM: {},
     KEY.PER_EPOCH: 5,
     KEY.TRAIN_BY_BATCH: False,
     # KEY.USE_TESTSET: False,
@@ -298,6 +308,7 @@ TRAINING_CONFIG_CONDITION = {
     KEY.FORCE_WEIGHT: float,
     KEY.STRESS_WEIGHT: float,
     KEY.GRAD_CLIP: lambda x: x is None or (type(x) in [float, int] and x > 0),
+    KEY.REG_PARAM: dict,
     KEY.USE_TESTSET: None,  # Not used
     KEY.NUM_WORKERS: int,
     KEY.PER_EPOCH: lambda x: type(x) in [float, int],

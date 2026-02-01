@@ -59,7 +59,7 @@ def processing_by_batch(
     per_epoch = per_epoch or config.get(KEY.PER_EPOCH, 0.1)
     best_metric = best_metric or config.get(KEY.BEST_METRIC, 'TotalLoss')
     recorder = error_recorder or ErrorRecorder.from_config(
-        config, trainer.loss_functions
+        config, trainer.loss_functions, trainer.reg_functions
     )
     recorders = {k: deepcopy(recorder) for k in loaders}
 

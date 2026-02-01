@@ -2,6 +2,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 
+import sevenn._const as CONST
 import sevenn._keys as KEY
 
 
@@ -199,6 +200,101 @@ class StressLoss(LossDefinition):
             w_tensor = torch.repeat_interleave(weight, 6)
 
         return pred, ref, w_tensor
+
+
+class L2Regularization(LossDefinition):
+    """
+    L2 regularization for task-specific (modal) parameters.
+    Regularizes the last weight view of modal-specific IrrepsLinear layers,
+    which corresponds to the modal input dimension.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        module_keys: List[str],
+        reg_modal_only: bool = True,
+    ):
+        super().__init__(
+            name=name,
+            unit=None,
+            criterion=None,
+            ref_key=None,
+            pred_key=None,
+        )
+        self.module_keys = module_keys
+        self.reg_modal_only = reg_modal_only
+
+    def get_loss(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ):
+        device = batch_data['x'].device
+        ret = torch.tensor([0.0], device=device)
+        for module_key in self.module_keys:
+            module = model._modules[module_key]  # type: ignore
+            reg_params = list(module._modules['linear'].weight_views())[-1]
+            reg_loss = torch.sum(torch.pow(reg_params, 2))
+            ret = ret + reg_loss
+        return ret
+
+    def get_cosine(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ):
+        cosine_list = []
+        for module_key in self.module_keys:
+            module = model._modules[module_key]  # type: ignore
+            reg_params = list(module._modules['linear'].weight_views())[-1]
+            dot = torch.dot(reg_params[0], reg_params[1])
+            norm = torch.norm(reg_params[0]) * torch.norm(reg_params[1])
+            cosine_list.append(dot / norm)
+        ret = torch.tensor(
+            [sum(cosine_list) / len(cosine_list)],
+            device=batch_data['x'].device,
+        )
+        return ret
+
+
+def _get_modal_module_keys_for_reg(
+    config: Dict[str, Any], all_module_keys: List[str]
+) -> List[str]:
+    module_keys_to_reg = []
+    for module_key in all_module_keys:
+        for (
+            use_modal_module_key,
+            modal_module_name,
+        ) in CONST.IMPLEMENTED_MODAL_MODULE_DICT.items():
+            if (
+                not config[use_modal_module_key]
+                or modal_module_name not in module_key
+            ):
+                continue
+            elif modal_module_name == 'reduce_input_to_hidden':
+                continue
+            module_keys_to_reg.append(module_key)
+    return module_keys_to_reg
+
+
+def get_regularization_from_config(
+    config: Dict[str, Any], all_module_keys: List[str]
+) -> List[Tuple[LossDefinition, float]]:
+    reg_params = config.get(KEY.REG_PARAM, {})
+    reg_functions: List[Tuple[LossDefinition, float]] = []
+
+    modal_param = reg_params.get('modal', {})
+    if not modal_param:
+        return reg_functions
+
+    reg_weight = float(modal_param.get(KEY.REG_WEIGHT, 1e-5))
+    module_keys_to_reg = _get_modal_module_keys_for_reg(
+        config, all_module_keys
+    )
+
+    reg_functions.append((
+        L2Regularization('L2_modal', module_keys_to_reg, reg_modal_only=True),
+        reg_weight,
+    ))
+
+    return reg_functions
 
 
 def get_loss_functions_from_config(
