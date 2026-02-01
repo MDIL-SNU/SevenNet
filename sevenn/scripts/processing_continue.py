@@ -151,7 +151,12 @@ def check_config_compatible(config: Dict[str, Any], config_cp: Dict[str, Any]):
     except KeyError:
         return
 
-    TRAINABLE_CONFIGS = [KEY.TRAIN_DENOMINTAOR, KEY.TRAIN_SHIFT_SCALE]
+    TRAINABLE_CONFIGS = [
+        KEY.TRAIN_DENOMINTAOR,
+        KEY.TRAIN_SHIFT_SCALE,
+        KEY.TRAIN_SHIFT,
+        KEY.TRAIN_SCALE,
+    ]
     if (
         any((not cntdct[KEY.RESET_SCHEDULER], not cntdct[KEY.RESET_OPTIMIZER]))
         and all(config[k] == config_cp[k] for k in TRAINABLE_CONFIGS) is False

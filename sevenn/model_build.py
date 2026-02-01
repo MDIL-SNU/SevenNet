@@ -144,7 +144,15 @@ def init_shift_scale(
 ) -> Union[Rescale, SpeciesWiseRescale, ModalWiseRescale]:
     # for mm, ex, shift: modal_idx -> shifts
     shift_scale = []
-    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
+    train_shift = config.get(KEY.TRAIN_SHIFT, False)
+    train_scale = config.get(KEY.TRAIN_SCALE, False)
+
+    # Legacy: train_shift_scale overrides both
+    # TODO: log this as legacy warning
+    train_shift_scale = config.get(KEY.TRAIN_SHIFT_SCALE, False)
+    if train_shift_scale:
+        train_shift = True
+        train_scale = True
     type_map = config[KEY.TYPE_MAP]
 
     # in case of modal, shift or scale has more dims [][]
@@ -159,6 +167,7 @@ def init_shift_scale(
         shift_scale.append(s)
     shift, scale = shift_scale
 
+    ss_kwargs = {'train_shift': train_shift, 'train_scale': train_scale}
     rescale_module = None
     if config.get(KEY.USE_MODALITY, False):
         rescale_module = ModalWiseRescale.from_mappers(  # type: ignore
@@ -168,13 +177,13 @@ def init_shift_scale(
             config[KEY.USE_MODAL_WISE_SCALE],
             type_map=type_map,
             modal_map=config[KEY.MODAL_MAP],
-            train_shift_scale=train_shift_scale,
+            **ss_kwargs,
         )
     elif all([isinstance(s, float) for s in shift_scale]):
-        rescale_module = Rescale(shift, scale, train_shift_scale=train_shift_scale)
+        rescale_module = Rescale(shift, scale, **ss_kwargs)
     elif any([isinstance(s, list) for s in shift_scale]):
         rescale_module = SpeciesWiseRescale.from_mappers(  # type: ignore
-            shift, scale, type_map=type_map, train_shift_scale=train_shift_scale
+            shift, scale, type_map=type_map, **ss_kwargs
         )
     else:
         raise ValueError('shift, scale should be list of float or float')

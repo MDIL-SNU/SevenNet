@@ -225,6 +225,8 @@ USE_MODAL_WISE_SHIFT = 'use_modal_wise_shift'
 USE_MODAL_WISE_SCALE = 'use_modal_wise_scale'
 
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
+TRAIN_SHIFT = 'train_shift'
+TRAIN_SCALE = 'train_scale'
 TRAIN_DENOMINTAOR = 'train_denominator'
 INTERACTION_TYPE = 'interaction_type'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated

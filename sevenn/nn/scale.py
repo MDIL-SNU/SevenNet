@@ -30,16 +30,21 @@ class Rescale(nn.Module):
         scale: float,
         data_key_in: str = KEY.SCALED_ATOMIC_ENERGY,
         data_key_out: str = KEY.ATOMIC_ENERGY,
+        train_shift: bool = False,
+        train_scale: bool = False,
         train_shift_scale: bool = False,
         **kwargs,
     ) -> None:
         assert isinstance(shift, float) and isinstance(scale, float)
         super().__init__()
+        if train_shift_scale:
+            train_shift = True
+            train_scale = True
         self.shift = nn.Parameter(
-            torch.FloatTensor([shift]), requires_grad=train_shift_scale
+            torch.FloatTensor([shift]), requires_grad=train_shift
         )
         self.scale = nn.Parameter(
-            torch.FloatTensor([scale]), requires_grad=train_shift_scale
+            torch.FloatTensor([scale]), requires_grad=train_scale
         )
         self.key_input = data_key_in
         self.key_output = data_key_out
@@ -71,9 +76,14 @@ class SpeciesWiseRescale(nn.Module):
         data_key_in: str = KEY.SCALED_ATOMIC_ENERGY,
         data_key_out: str = KEY.ATOMIC_ENERGY,
         data_key_indices: str = KEY.ATOM_TYPE,
+        train_shift: bool = False,
+        train_scale: bool = False,
         train_shift_scale: bool = False,
     ) -> None:
         super().__init__()
+        if train_shift_scale:
+            train_shift = True
+            train_scale = True
         assert isinstance(shift, float) or isinstance(shift, list)
         assert isinstance(scale, float) or isinstance(scale, list)
 
@@ -95,10 +105,10 @@ class SpeciesWiseRescale(nn.Module):
         scale = [scale] * num_species if isinstance(scale, float) else scale
 
         self.shift = nn.Parameter(
-            torch.FloatTensor(shift), requires_grad=train_shift_scale
+            torch.FloatTensor(shift), requires_grad=train_shift
         )
         self.scale = nn.Parameter(
-            torch.FloatTensor(scale), requires_grad=train_shift_scale
+            torch.FloatTensor(scale), requires_grad=train_scale
         )
         self.key_input = data_key_in
         self.key_output = data_key_out
@@ -180,14 +190,19 @@ class ModalWiseRescale(nn.Module):
         data_key_atom_indices: str = KEY.ATOM_TYPE,
         use_modal_wise_shift: bool = False,
         use_modal_wise_scale: bool = False,
+        train_shift: bool = False,
+        train_scale: bool = False,
         train_shift_scale: bool = False,
     ) -> None:
         super().__init__()
+        if train_shift_scale:
+            train_shift = True
+            train_scale = True
         self.shift = nn.Parameter(
-            torch.FloatTensor(shift), requires_grad=train_shift_scale
+            torch.FloatTensor(shift), requires_grad=train_shift
         )
         self.scale = nn.Parameter(
-            torch.FloatTensor(scale), requires_grad=train_shift_scale
+            torch.FloatTensor(scale), requires_grad=train_scale
         )
         self.key_input = data_key_in
         self.key_output = data_key_out
