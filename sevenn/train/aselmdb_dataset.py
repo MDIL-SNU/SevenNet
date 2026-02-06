@@ -1,23 +1,22 @@
 from __future__ import annotations
 
+import bisect
 import os
 import os.path as osp
-from glob import glob
 import time
-import warnings
-from collections import Counter
-from pathlib import Path
-import bisect
-import zlib
 import typing
+import warnings
+import zlib
+from collections import Counter
+from glob import glob
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Union
 
-import numpy as np
-import torch.distributed as dist
-import lmdb
-import orjson
-
 import ase
+import lmdb
+import numpy as np
+import orjson
+import torch.distributed as dist
 from ase.data import chemical_symbols
 from ase.db.core import Database, now, ops
 from ase.db.row import AtomsRow
@@ -29,7 +28,6 @@ from sevenn._const import NUM_UNIV_ELEMENT
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.train.atoms_dataset import SevenNetAtomsDataset
 from sevenn.train.dataload import _set_atoms_y
-
 
 
 class LMDBDatabase(Database):
@@ -129,46 +127,46 @@ class LMDBDatabase(Database):
         else:
             row = AtomsRow(atoms)
             row.ctime = mtime
-            row.user = os.getenv("USER")
+            row.user = os.getenv('USER')
 
         dct = {}
         for key in row.__dict__:
-            if key[0] == "_" or key in row._keys or key == "id":
+            if key[0] == '_' or key in row._keys or key == 'id':
                 continue
             dct[key] = row[key]
 
-        dct["mtime"] = mtime
+        dct['mtime'] = mtime
 
         if key_value_pairs:
-            dct["key_value_pairs"] = key_value_pairs
+            dct['key_value_pairs'] = key_value_pairs
 
         if data:
-            dct["data"] = data
+            dct['data'] = data
 
-        constraints = row.get("constraints")
+        constraints = row.get('constraints')
         if constraints:
-            dct["constraints"] = [constraint.todict() for constraint in constraints]
+            dct['constraints'] = [constraint.todict() for constraint in constraints]
 
         # json doesn't like Cell objects, so make it an array
-        dct["cell"] = np.asarray(dct["cell"])
+        dct['cell'] = np.asarray(dct['cell'])
 
         if idx is None:
             idx = self._nextid
             nextid = idx + 1
         else:
-            data = self.txn.get(f"{idx}".encode("ascii"))
+            data = self.txn.get(f"{idx}".encode('ascii'))
             assert data is not None
 
         # Add the new entry
         self.txn.put(
-            f"{idx}".encode("ascii"),
+            f"{idx}".encode('ascii'),
             zlib.compress(orjson.dumps(dct, option=orjson.OPT_SERIALIZE_NUMPY)),
         )
         # only append if idx is not in ids
         if idx not in self.ids:
             self.ids.append(idx)
             self.txn.put(
-                "nextid".encode("ascii"),
+                'nextid'.encode('ascii'),
                 zlib.compress(orjson.dumps(nextid, option=orjson.OPT_SERIALIZE_NUMPY)),
             )
         # check if id is in removed ids and remove accordingly
@@ -191,7 +189,7 @@ class LMDBDatabase(Database):
 
     def _write_deleted_ids(self):
         self.txn.put(
-            "deleted_ids".encode("ascii"),
+            'deleted_ids'.encode('ascii'),
             zlib.compress(
                 orjson.dumps(self.deleted_ids, option=orjson.OPT_SERIALIZE_NUMPY)
             ),
@@ -199,7 +197,7 @@ class LMDBDatabase(Database):
 
     def delete(self, ids: list[int]) -> None:
         for idx in ids:
-            self.txn.delete(f"{idx}".encode("ascii"))
+            self.txn.delete(f"{idx}".encode('ascii'))
             self.ids.remove(idx)
 
         self.deleted_ids += ids
@@ -209,7 +207,7 @@ class LMDBDatabase(Database):
         if idx is None:
             assert len(self.ids) == 1
             idx = self.ids[0]
-        data = self.txn.get(f"{idx}".encode("ascii"))
+        data = self.txn.get(f"{idx}".encode('ascii'))
 
         if data is not None:
             dct = orjson.loads(zlib.decompress(data))
@@ -217,14 +215,14 @@ class LMDBDatabase(Database):
             raise KeyError(f"Id {idx} missing from the database!")
 
         if not include_data:
-            dct.pop("data", None)
+            dct.pop('data', None)
 
-        dct["id"] = idx
+        dct['id'] = idx
         return AtomsRow(dct)
 
     def _get_row_by_index(self, index: int, include_data: bool = True):
         """Auxiliary function to get the ith entry, rather than a specific id"""
-        data = self.txn.get(f"{self.ids[index]}".encode("ascii"))
+        data = self.txn.get(f"{self.ids[index]}".encode('ascii'))
 
         if data is not None:
             dct = orjson.loads(zlib.decompress(data))
@@ -232,9 +230,9 @@ class LMDBDatabase(Database):
             raise KeyError(f"Id {id} missing from the database!")
 
         if not include_data:
-            dct.pop("data", None)
+            dct.pop('data', None)
 
-        dct["id"] = id
+        dct['id'] = id
         return AtomsRow(dct)
 
     def _select(
@@ -247,14 +245,14 @@ class LMDBDatabase(Database):
         offset: int = 0,
         sort: str | None = None,
         include_data: bool = True,
-        columns: str = "all",
+        columns: str = 'all',
     ):
         if explain:
-            yield {"explain": (0, 0, 0, "scan table")}
+            yield {'explain': (0, 0, 0, 'scan table')}
             return
 
         if sort is not None:
-            if sort[0] == "-":
+            if sort[0] == '-':
                 reverse = True
                 sort = sort[1:]
             else:
@@ -297,9 +295,9 @@ class LMDBDatabase(Database):
                         value = np.equal(row.numbers, key).sum()
                     else:
                         value = row.get(key)
-                        if key == "pbc":
-                            assert op in [ops["="], ops["!="]]
-                            value = "".join("FT"[x] for x in value)
+                        if key == 'pbc':
+                            assert op in [ops['='], ops['!=']]
+                            value = ''.join('FT'[x] for x in value)
                     if value is None or not op(value, val):
                         break
                 else:
@@ -311,7 +309,7 @@ class LMDBDatabase(Database):
     def metadata(self):
         """Load the metadata from the DB if present"""
         if self._metadata is None:
-            metadata = self.txn.get("metadata".encode("ascii"))
+            metadata = self.txn.get('metadata'.encode('ascii'))
             if metadata is None:
                 self._metadata = {}
             else:
@@ -325,7 +323,7 @@ class LMDBDatabase(Database):
 
         # Put the updated metadata dictionary
         self.txn.put(
-            "metadata".encode("ascii"),
+            'metadata'.encode('ascii'),
             zlib.compress(orjson.dumps(dct, option=orjson.OPT_SERIALIZE_NUMPY)),
         )
 
@@ -333,7 +331,7 @@ class LMDBDatabase(Database):
     def _nextid(self):
         """Get the id of the next row to be written"""
         # Get the nextid
-        nextid_data = self.txn.get("nextid".encode("ascii"))
+        nextid_data = self.txn.get('nextid'.encode('ascii'))
         return orjson.loads(zlib.decompress(nextid_data)) if nextid_data else 1
 
     def count(self, selection=None, **kwargs) -> int:
@@ -361,7 +359,7 @@ class LMDBDatabase(Database):
         """
 
         # Load the deleted ids
-        deleted_ids_data = self.txn.get("deleted_ids".encode("ascii"))
+        deleted_ids_data = self.txn.get('deleted_ids'.encode('ascii'))
         if deleted_ids_data is not None:
             self.deleted_ids = orjson.loads(zlib.decompress(deleted_ids_data))
 
@@ -409,7 +407,7 @@ class AseDBDataset:
         # a lot of time!
         self.db_ids = []
         for db in self.dbs:
-            if hasattr(db, "ids"):
+            if hasattr(db, 'ids'):
                 self.db_ids.append(db.ids)
             else:
                 # this is the slow alternative

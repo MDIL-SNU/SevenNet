@@ -3,7 +3,6 @@ from typing import Iterator, List, Optional
 
 import numpy as np
 import torch.utils.data.sampler
-
 from torch_geometric.data import Dataset
 
 
