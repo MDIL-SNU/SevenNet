@@ -14,7 +14,7 @@ import torch
 import torch.distributed as dist
 
 import sevenn._keys as KEY
-from sevenn.train.loss import LossDefinition
+from sevenn.train.loss import LossDefinition, make_loss_info_dict_from_config
 
 from .train.optim import loss_dict
 
