@@ -297,30 +297,67 @@ def get_regularization_from_config(
     return reg_functions
 
 
+def make_loss_info_dict_from_config(config: Dict[str, Any]):
+    # this is for backward compatibility
+    loss_info_dict = {}
+    loss_type = config.get(KEY.LOSS, 'mse').lower()
+    loss_param = config.get(KEY.LOSS_PARAM, {})
+    for key in ['energy', 'force', 'stress']:
+        loss_info_dict[key] = {}
+        # loss_weight not initialized here.
+        loss_info_dict[key].update(
+            {KEY.LOSS_TYPE: loss_type, KEY.LOSS_PARAM: loss_param}
+        )
+
+    return loss_info_dict
+
+
 def get_loss_functions_from_config(
-    config: Dict[str, Any],
+    config: Dict[str, Any]
 ) -> List[Tuple[LossDefinition, float]]:
     from sevenn.train.optim import loss_dict
 
     loss_functions = []  # list of tuples (loss_definition, weight)
 
-    loss = loss_dict[config[KEY.LOSS].lower()]
-    loss_param = config.get(KEY.LOSS_PARAM, {})
+    loss_info_dict = config.get(KEY.LOSS, 'mse')
+    if isinstance(loss_info_dict, str):
+        loss_info_dict = make_loss_info_dict_from_config(config)
+
+    loss_function_cls_dict = {
+        'energy': PerAtomEnergyLoss,
+        'force': ForceLoss,
+        'stress': StressLoss,
+    }
+    loss_weights = {
+        'energy': config.get(KEY.ENERGY_WEIGHT, 1.0),
+        'force': config[KEY.FORCE_WEIGHT],
+        'stress': config[KEY.STRESS_WEIGHT],
+    }
 
     use_weight = config.get(KEY.USE_WEIGHT, False)
-    if use_weight:
-        loss_param['reduction'] = 'none'
-    criterion = loss(**loss_param)
-
     commons = {'use_weight': use_weight}
 
-    loss_functions.append((PerAtomEnergyLoss(**commons), 1.0))
-    loss_functions.append((ForceLoss(**commons), config[KEY.FORCE_WEIGHT]))
+    keys = ['energy', 'force']
     if config[KEY.IS_TRAIN_STRESS]:
-        loss_functions.append((StressLoss(**commons), config[KEY.STRESS_WEIGHT]))
+        keys += ['stress']
 
-    for loss_function, _ in loss_functions:  # why do these?
-        if loss_function.criterion is None:
-            loss_function.assign_criteria(criterion)
+    for key in keys:
+        loss_info = loss_info_dict.get(key, {})
+        loss_param = loss_info.get(KEY.LOSS_PARAM, {})
+        loss_weight = loss_info.get(KEY.LOSS_WEIGHT, loss_weights[key])
+        if (loss_type := loss_info.get(KEY.LOSS_TYPE, 'mse').lower()) == 'l2mae':
+            if key == 'energy':
+                raise NotImplementedError('L2MAE not implemented for energy.')
+            else:
+                loss_param.update({'prop': key})
+
+        loss_cls = loss_dict[loss_type]
+        if use_weight:
+            loss_param['reduction'] = 'none'
+        criterion = loss_cls(**loss_param)
+        loss_function_cls = loss_function_cls_dict[key]
+        loss_function = loss_function_cls(criterion=criterion, **commons)
+        loss_functions.append((loss_function, loss_weight))
 
     return loss_functions
+

@@ -191,6 +191,11 @@ class SevenNetCheckpoint:
         self._checkpoint_path = os.path.abspath(checkpoint_path)
         self._config = None
         self._epoch = None
+        self._data_progress = None
+        reset_optimizer: False
+        reset_scheduler: False
+        reset_data_progress: False
+        reset_epoch: False
         self._model_state_dict = None
         self._optimizer_state_dict = None
         self._scheduler_state_dict = None
@@ -270,6 +275,12 @@ class SevenNetCheckpoint:
         return self._epoch
 
     @property
+    def data_progress(self) -> Optional[Dict[str, int]]:
+        if not self._loaded:
+            self._load()
+        return self._data_progress
+
+    @property
     def time(self) -> str:
         if not self._loaded:
             self._load()
@@ -293,6 +304,7 @@ class SevenNetCheckpoint:
         self._optimizer_state_dict = cp.get('optimizer_state_dict', {})
         self._scheduler_state_dict = cp.get('scheduler_state_dict', {})
         self._epoch = cp.get('epoch', None)
+        self._data_progress = cp.get('data_progress', None)
         self._time = cp.get('time', 'Not found')
         self._hash = cp.get('hash', 'Not found')
 

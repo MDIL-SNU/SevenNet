@@ -62,7 +62,7 @@ def processing_epoch_v2(
             f.write(','.join(head) + '\n')
 
     if start_epoch == 1:
-        path = f'{prefix}/checkpoint_0.pth'  # save first epoch
+        path = f'{prefix}/checkpoint_initial.pth'  # save first epoch
         trainer.write_checkpoint(path, config=config, epoch=0)
 
     for epoch in range(start_epoch, total_epoch + 1):  # one indexing

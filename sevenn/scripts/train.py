@@ -45,6 +45,9 @@ def loader_from_config(
     if KEY.NUM_WORKERS in config and config[KEY.NUM_WORKERS] > 0:
         loader_args.update({'num_workers': config[KEY.NUM_WORKERS]})
 
+    if (loader_kwargs := config.get(KEY.LOADER_KWARGS, None)) is not None:
+        loader_args.update(**loader_kwargs)
+
     if config[KEY.IS_DDP]:
         dist.barrier()
         world_size = dist.get_world_size()
@@ -131,6 +134,25 @@ def update_config_for_batch_training(
         )
 
 
+def datasets_from_py(config, script):
+    import importlib.util
+    from pathlib import Path
+
+    if isinstance(script, list):
+        assert len(script) == 1, 'Need single python script'
+    script = script[0]
+
+    file_path = Path(script).resolve()
+    print(f'Init dataset from {file_path}', flush=True)
+    spec = importlib.util.spec_from_file_location('dataset', file_path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+
+    ret = module.dataset(config)
+    assert isinstance(ret, dict) and 'trainset' in ret
+    return ret
+
+
 # TODO: check backward compatibility this part (batch vs. epoch)
 def train_v2(config: Dict[str, Any], working_dir: str) -> None:
     """
@@ -181,12 +203,19 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
 
     # Load datasets based on type
     dataset_type = config[KEY.DATASET_TYPE]
-    if config.get(KEY.USE_MODALITY, False):
+    if (
+        config.get(KEY.USE_MODALITY, False)
+        and not config[KEY.DATASET_TYPE] == 'custom'
+    ):
         datasets = modal_dataset.from_config(config, working_dir)
     elif dataset_type == 'graph':
         datasets = graph_dataset.from_config(config, working_dir)
     elif dataset_type == 'atoms':
         datasets = atoms_dataset.from_config(config, working_dir)
+    elif dataset_type == 'aselmdb':
+        datasets = aselmdb_dataset.from_config(config, working_dir)
+    elif dataset_type == 'custom':
+        datasets = datasets_from_py(config, config.get('load_trainset_path'))
     else:
         raise ValueError(f'Unknown dataset type: {dataset_type}')
 

@@ -468,9 +468,16 @@ class ErrorRecorder:
         loss_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
         reg_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
     ) -> 'ErrorRecorder':
-        loss_cls = loss_dict[config.get(KEY.LOSS, 'mse').lower()]
-        loss_param = config.get(KEY.LOSS_PARAM, {})
-        criteria = loss_cls(**loss_param) if loss_functions is None else None
+        loss_info_dict = config[KEY.LOSS]
+        if isinstance(loss_info_dict, str):
+            loss_info_dict = make_loss_info_dict_from_config(config)
+
+        criteria_dict = {}
+        for err_type in ['Energy' ,'Force', 'Stress']:
+            loss_cls = loss_dict[loss_info_dict.get(KEY.LOSS_TYPE, 'mse').lower()]
+            loss_param = loss_info_dict.get(KEY.LOSS_PARAM, {})
+            criteria = loss_cls(**loss_param) if loss_functions is None else None
+            criteria_dict[err_type] = criteria
 
         if loss_functions is not None:
             all_loss_functions = (
@@ -497,6 +504,7 @@ class ErrorRecorder:
         err_metrics = []
         for err_type, metric_name in err_config:
             metric_kwargs = get_err_type(err_type)
+            criteria = criteria_dict.get(err_type, None)
             if err_type == 'TotalLoss':  # special case
                 err_metrics.append(
                     ErrorRecorder.init_total_loss_metric(
