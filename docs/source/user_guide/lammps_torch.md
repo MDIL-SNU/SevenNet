@@ -16,13 +16,13 @@ Ensure the LAMMPS version is `stable_2Aug2023_update3`. You can easily switch th
 
 ```bash
 git clone https://github.com/lammps/lammps.git lammps_sevenn --branch stable_2Aug2023_update3 --depth=1
-sevenn patch_lammps ./lammps_sevenn {--flashTP} {--d3}
+sevenn patch_lammps ./lammps_sevenn {--enable_flash} {--d3}
 ```
 You can refer to `sevenn/pair_e3gnn/patch_lammps.sh` for details of the patch process.
 
 
 :::{tip}
-(Optional) Add `--flashTP` option to accelerate SevenNet for LAMMPS using flashTP. You must preinstall [flashTP](accelerator.md#flashtp) before building LAMMPS with flashTP.
+(Optional) Add `--enable_flash` option to accelerate SevenNet for LAMMPS using flashTP. You must preinstall [flashTP](accelerator.md#flashtp) before building LAMMPS with flashTP.
 :::
 
 ### (Optional) Build with GPU-D3 pair style
