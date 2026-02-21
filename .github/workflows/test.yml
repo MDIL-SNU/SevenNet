@@ -28,7 +28,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv pip install torch --index-url https://download.pytorch.org/whl/cpu --system
+          uv pip install torch==2.4.0 --index-url https://download.pytorch.org/whl/cpu --system
           if [ "${{ matrix.python-version }}" = "3.13" ]; then
             uv pip install -e ".[test,torch-sim-atomistic]" "numpy>=2" --system
           else
