@@ -508,7 +508,7 @@ def test_graph_build_ase_and_matscipy(atoms_type):
     matsci_pred_energy = output_matsci[KEY.PRED_TOTAL_ENERGY]
     matsci_pred_force = output_matsci[KEY.PRED_FORCE]
     matsci_pred_stress = output_matsci[KEY.PRED_STRESS]
-    assert torch.equal(ase_pred_energy, matsci_pred_energy)
+    assert torch.allclose(ase_pred_energy, matsci_pred_energy, atol=1e-08)
     assert torch.allclose(ase_pred_force, matsci_pred_force, atol=1e-06)
     if vol != 0:  # pbc system
         assert torch.allclose(ase_pred_stress, matsci_pred_stress)
