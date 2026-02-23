@@ -53,7 +53,7 @@ make install-python
 ```
 :::{note}
 If the compilation fails, consider specifying the GPU architecture of the node you are building on in KOKKOS.
-For example, add the following flag to your `cmake` command: `-D KOKKOS_ARCH_AMPERE86=ON` when you are using GPU with Ampere 86 architecture like RTX A5000.
+For example, add the following flag to your `cmake` command: `-D Kokkos_ARCH_AMPERE86=ON` when you are using GPU with Ampere 86 architecture like RTX A5000.
 :::
 
 ### (Optional) Build with GPU-D3 pair style
