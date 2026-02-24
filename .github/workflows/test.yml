@@ -1,0 +1,39 @@
+name: python unit tests
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pytest:
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.8', '3.13']
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v6
+
+      - name: Install dependencies
+        run: |
+          uv pip install torch --index-url https://download.pytorch.org/whl/cpu --system
+          if [ "${{ matrix.python-version }}" = "3.13" ]; then
+            uv pip install -e ".[test,torch-sim-atomistic]" "numpy>=2" --system
+          else
+            uv pip install -e ".[test]" --system
+          fi
+
+      - name: Run unit tests
+        run: pytest tests/unit_tests
