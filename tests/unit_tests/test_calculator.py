@@ -54,21 +54,22 @@ def d3_cal():
 
 
 def test_sevennet_0_cal_pbc(atoms_pbc, sevennet_0_cal):
+    atoms_pbc.rattle(stdev=0.01, seed=42)
     atoms1_ref = {
-        'energy': -3.779199,
-        'energies': [-1.8493923, -1.9298072],
+        'energy': -3.647711753845215,
+        'energies': [-1.7780534029006958, -1.8696582317352295],
         'force': [
-            [12.666697, 0.04726403, 0.04775861],
-            [-12.666697, -0.04726403, -0.04775861],
+            [13.095220565795898, 0.05549357831478119, 0.10542003065347672],
+            [-13.095221519470215, -0.055493563413619995, -0.1054200679063797]
         ],
         'stress': [
             [
-                -0.6439122,
-                -0.03643947,
-                -0.03643981,
-                0.00599139,
-                0.04544507,
-                0.04543639,
+                -0.6614749431610107,
+                -0.03719595819711685,
+                -0.03681188449263573,
+                0.005672863684594631,
+                0.04221367835998535,
+                0.04504658654332161
             ]
         ],
     }
@@ -84,13 +85,14 @@ def test_sevennet_0_cal_pbc(atoms_pbc, sevennet_0_cal):
 
 
 def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
+    atoms_mol.rattle(stdev=0.01, seed=42)
     atoms2_ref = {
-        'energy': -12.782808303833008,
-        'energies': [-6.2493525, -3.141562, -3.3918958],
+        'energy': -12.870156288146973,
+        'energies': [-6.2914958000183105, -3.1829171180725098, -3.3957436084747314],
         'force': [
-            [0.0, -1.3619621e01, 7.5937047e00],
-            [0.0, 9.3918495e00, -1.0172190e01],
-            [0.0, 4.2277718e00, 2.5784855e00],
+            [-0.11430990695953369, -12.89616584777832, 6.915047645568848],
+            [0.16116246581077576, 8.810967445373535, -9.560930252075195],
+            [-0.04685257002711296, 4.085198402404785, 2.6458816528320312]
         ],
     }
     atoms_mol.calc = sevennet_0_cal
@@ -103,6 +105,7 @@ def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
 
 
 def test_sevennet_0_cal_deployed_consistency(tmp_path, atoms_pbc):
+    atoms_pbc.rattle(stdev=0.01, seed=42)
     fname = str(tmp_path / '7net_0.pt')
     deploy(pretrained_name_to_path('7net-0_11July2024'), fname)
 
@@ -122,6 +125,7 @@ def test_sevennet_0_cal_deployed_consistency(tmp_path, atoms_pbc):
 
 
 def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
+    atoms_pbc.rattle(stdev=0.01, seed=42)
     model, _ = model_from_checkpoint(
         pretrained_name_to_path('7net-0_11July2024')
     )
@@ -143,21 +147,22 @@ def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
 
 @pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_sevennet_0_cal_cueq(atoms_pbc, sevennet_0_cueq_cal):
+    atoms_pbc.rattle(stdev=0.01, seed=42)
     atoms1_ref = {
-        'energy': -3.779199,
-        'energies': [-1.8493923, -1.9298072],
+        'energy': -3.647711753845215,
+        'energies': [-1.7780534029006958, -1.8696582317352295],
         'force': [
-            [12.666697, 0.04726403, 0.04775861],
-            [-12.666697, -0.04726403, -0.04775861],
+            [13.095220565795898, 0.05549357831478119, 0.10542003065347672],
+            [-13.095221519470215, -0.055493563413619995, -0.1054200679063797]
         ],
         'stress': [
             [
-                -0.6439122,
-                -0.03643947,
-                -0.03643981,
-                0.00599139,
-                0.04544507,
-                0.04543639,
+                -0.6614749431610107,
+                -0.03719595819711685,
+                -0.03681188449263573,
+                0.005672863684594631,
+                0.04221367835998535,
+                0.04504658654332161
             ]
         ],
     }
@@ -175,21 +180,22 @@ def test_sevennet_0_cal_cueq(atoms_pbc, sevennet_0_cueq_cal):
 
 @pytest.mark.skipif(not is_flash_available(), reason='flash not available')
 def test_sevennet_0_cal_flash(atoms_pbc, sevennet_0_flash_cal):
+    atoms_pbc.rattle(stdev=0.01, seed=42)
     atoms1_ref = {
-        'energy': -3.779199,
-        'energies': [-1.8493923, -1.9298072],
+        'energy': -3.6190476417541504,
+        'energies': [-1.7582424879074097, -1.8608051538467407],
         'force': [
-            [12.666697, 0.04726403, 0.04775861],
-            [-12.666697, -0.04726403, -0.04775861],
+            [13.842790603637695, 0.5057790875434875, -2.483259916305542],
+            [-13.842790603637695, -0.5057790875434875, 2.483259916305542]
         ],
         'stress': [
             [
-                -0.6439122,
-                -0.03643947,
-                -0.03643981,
-                0.00599139,
-                0.04544507,
-                0.04543639,
+                -0.7816041111946106,
+                -0.17721869051456451,
+                0.40778642892837524,
+                0.38072046637535095,
+                0.3344607949256897,
+                0.05267779901623726
             ]
         ],
     }
