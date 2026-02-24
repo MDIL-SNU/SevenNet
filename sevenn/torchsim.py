@@ -44,14 +44,14 @@ def _validate(model: AtomGraphSequential, modal: str) -> None:
     if modal_map:
         modal_ava = list(modal_map)
         if not modal:
-            msg = f"modal argument missing (avail: {modal_ava})"
+            msg = f'modal argument missing (avail: {modal_ava})'
             raise ValueError(msg)
         if modal not in modal_ava:
-            msg = f"unknown modal {modal} (not in {modal_ava})"
+            msg = f'unknown modal {modal} (not in {modal_ava})'
             raise ValueError(msg)
     elif not model.modal_map and modal:
         warnings.warn(
-            f"modal={modal} is ignored as model has no modal_map",
+            f'modal={modal} is ignored as model has no modal_map',
             stacklevel=2,
         )
 
@@ -65,7 +65,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
     predictions.
 
     Examples:
-        >>> model = SevenNetModel(model=loaded_sevenn_model)
+        >>> model = SevenNetModel(model='7net-omni', modal='mpa')
         >>> results = model(state)
 
     """
@@ -76,7 +76,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
         neighbor_list_fn: Callable | None = None,
-        device: torch.device | str | None = None,
+        device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
     ) -> None:
         """Initialize the SevenNetModel with specified configuration.
@@ -94,7 +94,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
                 'omat24' (OMat24).
             neighbor_list_fn (Callable): Neighbor list function to use.
                 Default is torch_nl_linked_cell.
-            device (torch.device | str | None): Device to run the model on
+            device (torch.device | str): Device to run the model on
             dtype (torch.dtype): Data type for computation
 
         Raises:
@@ -110,16 +110,20 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
 
         super().__init__()
 
-        self._device = device or torch.device(
-            'cuda' if torch.cuda.is_available() else 'cpu',
-        )
-        if isinstance(self._device, str):
-            self._device = torch.device(self._device)
+        if isinstance(device, str):
+            if device == 'auto':
+                self._device = torch.device(
+                    'cuda' if torch.cuda.is_available() else 'cpu'
+                )
+            else:
+                self._device = torch.device(device)
+        else:
+            self._device = device
 
         if dtype is not torch.float32:
             raise ValueError(
-                f"SevenNetModel currently only supports {torch.float32}, but "
-                + f"received different dtype: {dtype}"
+                f'SevenNet currently only supports {torch.float32}, but '
+                + f'received different dtype: {dtype}'
             )
 
         if isinstance(model, (str, Path)):
@@ -162,7 +166,9 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         """Data type for computation."""
         return self._dtype
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(
+        self, state: ts.SimState | StateDict, **kwargs
+    ) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by
@@ -279,7 +285,8 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             results['energy'] = energy.detach()
         else:
             results['energy'] = torch.zeros(
-                sim_state.system_idx.max().item() + 1, device=self._device,
+                sim_state.system_idx.max().item() + 1,
+                device=self._device,
             )
 
         forces = output[key.PRED_FORCE]
