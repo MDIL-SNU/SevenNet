@@ -42,38 +42,16 @@ repos:
       - id: seed-isort-config
 
   - repo: https://github.com/PyCQA/isort
-    rev: 6.1.0
+    rev: 7.0.0
     hooks:
       - id: isort
-        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.h'
-        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.h'
-        exclude: 'sevenn/pair_e3gnn/comm_brick.h'
-        exclude: 'sevenn/pair_e3gnn/comm_brick.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_d3_for_ase.cu'
-        exclude: 'sevenn/pair_e3gnn/pair_d3_for_ase.h'
-        exclude: 'sevenn/pair_e3gnn/pair_d3.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_d3.cu'
-        exclude: 'sevenn/pair_e3gnn/pair_d3.h'
-        exclude: 'sevenn/pair_e3gnn/pair_d3_pars.h'
+        exclude: ^sevenn/pair_e3gnn/
 
   - repo: https://github.com/pycqa/flake8
     rev: 7.3.0
     hooks:
       - id: flake8
-        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_e3gnn.h'
-        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_e3gnn_parallel.h'
-        exclude: 'sevenn/pair_e3gnn/comm_brick.h'
-        exclude: 'sevenn/pair_e3gnn/comm_brick.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_d3_for_ase.cu'
-        exclude: 'sevenn/pair_e3gnn/pair_d3_for_ase.h'
-        exclude: 'sevenn/pair_e3gnn/pair_d3.cpp'
-        exclude: 'sevenn/pair_e3gnn/pair_d3.cu'
-        exclude: 'sevenn/pair_e3gnn/pair_d3.h'
-        exclude: 'sevenn/pair_e3gnn/pair_d3_pars.h'
+        exclude: ^sevenn/pair_e3gnn/
         require_serial: true
 
   - repo: https://github.com/codespell-project/codespell

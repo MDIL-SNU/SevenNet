@@ -24,6 +24,7 @@ SevenNet offers various pretrained models, MD engines (ASE, LAMMPS), and user in
    :caption: Features
 
    ase_calculator
+   torchsim
    cli
    d3
    note_book
