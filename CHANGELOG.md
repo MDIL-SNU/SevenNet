@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - FlashTP with LAMMPS parallel in torch
 - Single-atom inference failure with ASE+flashTP and LAMMPS ML-IAP
+- CI/CD bugs
+
+### Added
+- TorchSim interface
 
 ## [0.12.0]
 ### Added
