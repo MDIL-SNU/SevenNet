@@ -80,7 +80,7 @@ True
 For more information, see [FlashTP](https://github.com/SNU-ARC/flashTP).
 
 ## Usage
-After the installation, you can leverage the accelerator with appropriate flag (`--enable_cueq`) or options
+After the installation, you can leverage the accelerator with appropriate flag (`--enable_cueq`) or (`--enable_flash`) options
 
 - [Training](./cli.md#sevenn-train)
 - [ASE Calculator](./ase_calculator.md)

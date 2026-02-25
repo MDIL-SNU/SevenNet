@@ -46,7 +46,7 @@ def run(args):
     distributed = args.distributed
     distributed_backend = args.distributed_backend
     use_cue = args.enable_cueq
-    use_flash = args.enable_flashTP
+    use_flash = args.enable_flash
 
     if use_cue:
         import sevenn.nn.cue_helper
@@ -160,6 +160,8 @@ def cmd_parser_train(parser):
     ag.add_argument(
         '-flashTP',
         '--enable_flashTP',
+        '--enable_flash',
+        dest='enable_flash',
         help='use flashTP accelerations for training',
         action='store_true',
     )

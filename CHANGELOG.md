@@ -5,6 +5,11 @@ All notable changes to this project will be documented in this file.
 ### Fixed
 - FlashTP with LAMMPS parallel in torch
 - CI/CD bugs
+- inconsistent argument namings of flashTP
+
+### Changed
+- ninja dependency added
+- all CLI argument name of enabling flashTP is now 'enable_flash', not 'enable_flashTP'
 
 ### Added
 - TorchSim interface
