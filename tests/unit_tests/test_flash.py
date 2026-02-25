@@ -83,10 +83,7 @@ def get_model(config_overwrite=None, use_flash=False):
     return model
 
 
-@pytest.mark.skipif(
-    not is_flash_available() or not torch.cuda.is_available(),
-    reason='flashTP or gpu is not available',
-)
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
 @pytest.mark.parametrize(
     'cf',
     [
@@ -129,10 +126,7 @@ def test_model_output(cf):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(
-    not is_flash_available() or not torch.cuda.is_available(),
-    reason='flash or gpu is not available',
-)
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
 @pytest.mark.parametrize(
     'start_from_flash',
     [
@@ -178,10 +172,7 @@ def test_checkpoint_convert(tmp_path, start_from_flash):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(
-    not is_flash_available() or not torch.cuda.is_available(),
-    reason='flash or gpu is not available',
-)
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
 @pytest.mark.parametrize(
     'start_from_flash',
     [
@@ -244,10 +235,7 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(
-    not is_flash_available() or not torch.cuda.is_available(),
-    reason='flash or gpu is not available',
-)
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
 def test_calculator(tmp_path):
     flash = True
     model = get_model(use_flash=flash)

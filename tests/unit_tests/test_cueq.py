@@ -84,10 +84,7 @@ def get_model(config_overwrite=None, use_cueq=False, cueq_config=None):
     return model
 
 
-@pytest.mark.skipif(
-    not is_cue_available() or not torch.cuda.is_available(),
-    reason='cueq or gpu is not available',
-)
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 @pytest.mark.parametrize(
     'cf',
     [
@@ -133,10 +130,7 @@ def test_model_output(cf):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(
-    not is_cue_available() or not torch.cuda.is_available(),
-    reason='cueq or gpu is not available',
-)
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 @pytest.mark.parametrize(
     'start_from_cueq',
     [
@@ -182,10 +176,7 @@ def test_checkpoint_convert(tmp_path, start_from_cueq):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(
-    not is_cue_available() or not torch.cuda.is_available(),
-    reason='cueq or gpu is not available',
-)
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 @pytest.mark.parametrize(
     'start_from_cueq',
     [
@@ -248,10 +239,7 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
 
 
 @pytest.mark.filterwarnings('ignore:.*is not found from.*')
-@pytest.mark.skipif(
-    not is_cue_available() or not torch.cuda.is_available(),
-    reason='cueq or gpu is not available',
-)
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
 def test_calculator(tmp_path):
     cueq = True
     model = get_model(use_cueq=cueq)

@@ -9,6 +9,7 @@ import ase.io.lammpsdata
 import numpy as np
 import pytest
 import torch
+from ase import Atoms
 from ase.build import bulk, surface
 from ase.calculators.singlepoint import SinglePointCalculator
 
@@ -336,10 +337,7 @@ def test_mliap_cueq(
     assert_atoms(atoms, atoms_lmp, atol=1e-5)
 
 
-@pytest.mark.skipif(
-    not is_flash_available() or not torch.cuda.is_available(),
-    reason='flashTP or gpu is not available',
-)
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
 @pytest.mark.parametrize('system', ['bulk', 'surface'])
 def test_mliap_flash(
     system,
@@ -355,6 +353,93 @@ def test_mliap_flash(
         wd=tmp_path,
         test_name='mliap flash',
         lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lmp, atol=1e-5)
+
+
+def _get_disconnected_system(name):
+    """Build Atoms object for a disconnected test structure."""
+    if name.startswith('single_o'):
+        positions = [[10, 10, 10]]
+        symbols = 'O'
+    elif name.startswith('two_o'):
+        positions = [[5, 10, 10], [15, 10, 10]]
+        symbols = 'OO'
+    elif name.startswith('three_o'):
+        positions = [[10, 10, 10], [12, 10, 10], [10, 10, 20]]
+        symbols = 'OOO'
+    else:
+        raise ValueError(f'Unknown disconnected structure: {name}')
+
+    return Atoms(symbols, positions=positions, cell=[20, 20, 20], pbc=True)
+
+
+_disconnected_systems = [
+    'single_o',
+    'two_o_disconnected',
+    'three_o_partial',
+]
+
+
+@pytest.mark.parametrize('system', _disconnected_systems)
+def test_mliap_disconnected(
+    system,
+    mliap_potential_path,
+    ref_7net0_calculator,
+    lammps_cmd,
+    tmp_path,
+):
+    atoms = _get_disconnected_system(system)
+    atoms_lmp = mliap_lammps_run(
+        atoms=atoms,
+        pt_path=mliap_potential_path,
+        wd=tmp_path,
+        test_name=f'mliap disconnected {system}',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lmp, atol=1e-5)
+
+
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
+@pytest.mark.parametrize('system', _disconnected_systems)
+def test_mliap_flash_disconnected(
+    system,
+    mliap_flash_potential_path,
+    ref_7net0_calculator,
+    lammps_cmd,
+    tmp_path,
+):
+    atoms = _get_disconnected_system(system)
+    atoms_lmp = mliap_lammps_run(
+        atoms=atoms,
+        pt_path=mliap_flash_potential_path,
+        wd=tmp_path,
+        test_name=f'mliap flash disconnected {system}',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lmp, atol=1e-5)
+
+
+@pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
+@pytest.mark.parametrize('system', _disconnected_systems)
+def test_mliap_cueq_disconnected(
+    system,
+    mliap_cueq_potential_path,
+    ref_7net0_calculator,
+    lammps_cmd,
+    tmp_path,
+):
+    atoms = _get_disconnected_system(system)
+    atoms_lmp = mliap_lammps_run(
+        atoms=atoms,
+        pt_path=mliap_cueq_potential_path,
+        wd=tmp_path,
+        test_name=f'mliap cueq disconnected {system}',
+        lammps_cmd=lammps_cmd,
+        timeout=120,
     )
     atoms.calc = ref_7net0_calculator
     assert_atoms(atoms, atoms_lmp, atol=1e-5)

@@ -4,6 +4,7 @@ from typing import Any, Callable, Dict, Iterator, Literal, Union
 
 import e3nn.o3 as o3
 import numpy as np
+import torch.cuda
 import torch.nn
 
 from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
@@ -128,7 +129,7 @@ except ImportError:
 
 
 def is_cue_available() -> bool:
-    return _CUE_AVAILABLE
+    return _CUE_AVAILABLE and torch.cuda.is_available()
 
 
 def cue_needed(func: Callable) -> Callable:

@@ -219,6 +219,7 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
             self.instantiate()
 
         self._comm_size = irreps_x.dim  # used in parallel
+        self._out_dim: int = irreps_mid.dim
 
     @classmethod
     def from_irreps_convolution(cls, src: IrrepsConvolution):
@@ -230,6 +231,7 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
             irreps_x, irreps_x, irreps_x, weight_layer_input_to_hidden=[1],
         )
         ret.__dict__ = deepcopy(src.__dict__)
+        ret._out_dim = src.convolution_kwargs['irreps_out'].dim
         return ret
 
     def instantiate(self) -> None:
@@ -260,13 +262,18 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         edge_dst = data[self.key_edge_idx][0]
         edge_filter = data[self.key_filter]
 
-        x = self.convolution(
-            x,
-            edge_filter,
-            weight,
-            edge_src.to(torch.int32),  # trivial?
-            edge_dst.to(torch.int32),
-        )
+        # No edges (e.g., single isolated atom): skip the uvu_TP CUDA kernel
+        if edge_src.numel() == 0:
+            x = x.new_zeros(x.shape[0], self._out_dim)
+            x = x + (edge_filter.sum() + weight.sum()) * 0  # keep in autograd graph
+        else:
+            x = self.convolution(
+                x,
+                edge_filter,
+                weight,
+                edge_src.to(torch.int32),
+                edge_dst.to(torch.int32),
+            )
 
         x = x.div(self.denominator)
 
