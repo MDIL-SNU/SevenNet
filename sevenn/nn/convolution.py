@@ -265,7 +265,7 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         # No edges (e.g., single isolated atom): skip the uvu_TP CUDA kernel
         if edge_src.numel() == 0:
             x = x.new_zeros(x.shape[0], self._out_dim)
-            x = x + (edge_filter.sum() + weight.sum()) * 0
+            x = x + (edge_filter.sum() + weight.sum()) * 0  # keep in autograd graph
         else:
             x = self.convolution(
                 x,
