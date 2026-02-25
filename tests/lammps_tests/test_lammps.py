@@ -8,6 +8,7 @@ import ase.io.lammpsdata
 import numpy as np
 import pytest
 import torch
+from ase import Atoms
 from ase.build import bulk, surface
 from ase.calculators.singlepoint import SinglePointCalculator
 
@@ -38,6 +39,14 @@ def serial_potential_path(tmp_path_factory):
     tmp = tmp_path_factory.mktemp('serial_potential')
     pot_path = str(tmp / 'deployed_serial.pt')
     deploy(cp_0_path, pot_path)
+    return pot_path
+
+
+@pytest.fixture(scope='module')
+def serial_potential_path_7net0(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp('serial_potential_7net0')
+    pot_path = str(tmp / 'deployed_serial.pt')
+    deploy(cp_7net0_path, pot_path)
     return pot_path
 
 
@@ -312,10 +321,7 @@ def test_serial(system, serial_potential_path, ref_calculator, lammps_cmd, tmp_p
     assert_atoms(atoms, atoms_lammps)
 
 
-@pytest.mark.skipif(
-    not is_flash_available() or not torch.cuda.is_available(),
-    reason='flashTP or gpu is not available',
-)
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
 @pytest.mark.parametrize(
     'system',
     ['bulk', 'surface'],
@@ -503,3 +509,68 @@ def test_cueq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
     )
     atoms.calc = ref_calc
     assert_atoms(atoms, atoms_lammps)
+
+
+def _get_disconnected_system(name):
+    """Build Atoms object for a disconnected test structure."""
+    if name.startswith('single_o'):
+        positions = [[10, 10, 10]]
+        symbols = 'O'
+    elif name.startswith('two_o'):
+        positions = [[5, 10, 10], [15, 10, 10]]
+        symbols = 'OO'
+    elif name.startswith('three_o'):
+        positions = [[10, 10, 10], [12, 10, 10], [10, 10, 20]]
+        symbols = 'OOO'
+    else:
+        raise ValueError(f'Unknown disconnected structure: {name}')
+
+    return Atoms(symbols, positions=positions, cell=[20, 20, 20], pbc=True)
+
+
+_disconnected_systems = [
+    'single_o',
+    'two_o_disconnected',
+    'three_o_partial',
+]
+
+
+@pytest.mark.parametrize('system', _disconnected_systems)
+def test_disconnected_serial(
+    system,
+    serial_potential_path_7net0,
+    ref_7net0_calculator,
+    lammps_cmd,
+    tmp_path,
+):
+    atoms = _get_disconnected_system(system)
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=serial_potential_path_7net0,
+        wd=tmp_path,
+        test_name=f'disconnected serial {system}',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lammps)
+
+
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
+@pytest.mark.parametrize('system', _disconnected_systems)
+def test_disconnected_serial_flash(
+    system,
+    serial_potential_path_flash,
+    ref_7net0_calculator,
+    lammps_cmd,
+    tmp_path,
+):
+    atoms = _get_disconnected_system(system)
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=serial_potential_path_flash,
+        wd=tmp_path,
+        test_name=f'disconnected serial flash {system}',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lammps, atol=1e-5)

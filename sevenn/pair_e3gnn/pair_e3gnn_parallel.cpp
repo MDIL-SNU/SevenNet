@@ -504,7 +504,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
   if (eflag_atom) {
     torch::Tensor atomic_energy_tensor =
-        output.at("atomic_energy").toTensor().cpu().squeeze();
+        output.at("atomic_energy").toTensor().cpu().view({nlocal});
     auto atomic_energy = atomic_energy_tensor.accessor<float, 1>();
     for (int graph_idx = 0; graph_idx < nlocal; graph_idx++) {
       int i = graph_index_to_i[graph_idx];

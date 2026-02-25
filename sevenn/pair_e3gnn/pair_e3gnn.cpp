@@ -256,7 +256,7 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   if (eflag_atom) {
     torch::Tensor atomic_energy_tensor =
-        output.at("atomic_energy").toTensor().cpu().squeeze();
+        output.at("atomic_energy").toTensor().cpu().view({nlocal});
     auto atomic_energy = atomic_energy_tensor.accessor<float, 1>();
     for (int itag = 0; itag < nlocal; itag++) {
       int i = tag2i[itag];
