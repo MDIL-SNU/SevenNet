@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 - FlashTP with LAMMPS parallel in torch
 - Single-atom inference failure with ASE+flashTP, LAMMPS-Torch and LAMMPS ML-IAP
 - CI/CD bugs
+- inconsistent argument namings of flashTP
+
+### Changed
+- ninja dependency added
+- all CLI argument name of enabling flashTP is now 'enable_flash', not 'enable_flashTP'
 
 ### Added
 - TorchSim interface
