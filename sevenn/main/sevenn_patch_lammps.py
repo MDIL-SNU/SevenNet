@@ -83,7 +83,7 @@ def run(args):
     script = f'{pair_e3gnn_dir}/patch_lammps.sh'
     cmd = f'{script} {lammps_dir} {cxx_standard} {d3_support}'
 
-    if args.flashTP:
+    if args.enable_flash:
         assert osp.isfile(so_lammps)
         cmd += f' {so_lammps}'
 
