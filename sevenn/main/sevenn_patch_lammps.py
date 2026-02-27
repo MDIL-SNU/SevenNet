@@ -22,7 +22,13 @@ def add_args(parser):
     ag = parser
     ag.add_argument('lammps_dir', help='Path to LAMMPS source', type=str)
     ag.add_argument('--d3', help='Enable D3 support', action='store_true')
-    ag.add_argument('--flashTP', help='Enable flashTP', action='store_true')
+    ag.add_argument(
+        '--flashTP',
+        '--enable_flash',
+        dest='enable_flash',
+        help='Enable flashTP',
+        action='store_true',
+    )
     # cxx_standard is detected automatically
 
 
@@ -42,7 +48,7 @@ def run(args):
         print('  - D3 support disabled')
 
     so_lammps = ''
-    if args.flashTP:
+    if args.enable_flash:
         try:
             import flashTP_e3nn.flashTP as hook
         except ImportError:
@@ -77,7 +83,7 @@ def run(args):
     script = f'{pair_e3gnn_dir}/patch_lammps.sh'
     cmd = f'{script} {lammps_dir} {cxx_standard} {d3_support}'
 
-    if args.flashTP:
+    if args.enable_flash:
         assert osp.isfile(so_lammps)
         cmd += f' {so_lammps}'
 

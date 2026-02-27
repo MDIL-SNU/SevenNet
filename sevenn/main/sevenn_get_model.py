@@ -40,7 +40,9 @@ def add_args(parser):
     )
     ag.add_argument(
         '-flashTP',
+        '--enable_flash',
         '--enable_flashTP',
+        dest='enable_flash',
         help='use flashTP. LAMMPS must be specially compiled.',
         action='store_true',
     )
@@ -66,7 +68,7 @@ def run(args):
     get_parallel = args.get_parallel
     get_serial = not get_parallel
     modal = args.modal
-    use_flash = args.enable_flashTP
+    use_flash = args.enable_flash
     use_cueq = args.enable_cueq
     use_mliap = args.use_mliap
 

@@ -175,29 +175,36 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
     def compute_forces(self, lmp_data):
         self._ensure_model_initialized()  # lazy init
         assert self.model, 'Model must be initialized'
-        if lmp_data.nlocal == 0 or lmp_data.npairs <= 1:
-            # what about a single atom with 0 pairs?
+        if lmp_data.nlocal == 0:
             return
 
         nlocal = lmp_data.nlocal
         ntotal = lmp_data.ntotal
+        no_pairs = lmp_data.npairs <= 1
 
         # edge_vectors should be f32 in 7net
-        edge_vectors = torch.as_tensor(
-            lmp_data.rij, dtype=torch.float32, device=self.device
-        )
+        if no_pairs:
+            edge_vectors = torch.zeros(
+                (0, 3), dtype=torch.float32, device=self.device
+            )
+            edge_index = torch.zeros(
+                (2, 0), dtype=torch.int64, device=self.device
+            )
+        else:
+            edge_vectors = torch.as_tensor(
+                lmp_data.rij, dtype=torch.float32, device=self.device
+            )
+            edge_index = torch.vstack(
+                [
+                    torch.as_tensor(
+                        lmp_data.pair_i, dtype=torch.int64, device=self.device
+                    ),
+                    torch.as_tensor(
+                        lmp_data.pair_j, dtype=torch.int64, device=self.device
+                    ),
+                ]
+            )
         edge_vectors.requires_grad_(True)
-
-        edge_index = torch.vstack(
-            [
-                torch.as_tensor(
-                    lmp_data.pair_i, dtype=torch.int64, device=self.device
-                ),
-                torch.as_tensor(
-                    lmp_data.pair_j, dtype=torch.int64, device=self.device
-                ),
-            ]
-        )
         elems = torch.as_tensor(
             lmp_data.elems, dtype=torch.int64, device=self.device
         )
@@ -223,7 +230,10 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         edge_forces = torch.autograd.grad(
             torch.sum(pred_atomic_energies),
             [edge_vectors],
+            allow_unused=True,
         )[0]
+        if edge_forces is None:
+            edge_forces = torch.zeros_like(edge_vectors)
         if pred_atomic_energies.size(0) != nlocal:  # why this check is necessary?
             pred_atomic_energies = torch.narrow(pred_atomic_energies, 0, 0, nlocal)
         pred_total_energy = torch.sum(pred_atomic_energies)

@@ -53,7 +53,7 @@ make install-python
 ```
 :::{note}
 If the compilation fails, consider specifying the GPU architecture of the node you are building on in KOKKOS.
-For example, add the following flag to your `cmake` command: `-D KOKKOS_ARCH_AMPERE86=ON` when you are using GPU with Ampere 86 architecture like RTX A5000.
+For example, add the following flag to your `cmake` command: `-D Kokkos_ARCH_AMPERE86=ON` when you are using GPU with Ampere 86 architecture like RTX A5000.
 :::
 
 ### (Optional) Build with GPU-D3 pair style
@@ -119,7 +119,7 @@ Please check [sevenn graph_build](./cli.md#sevenn-graph-build) for detail.
 An ML-IAP potential checkpoint can be deployed using ``sevenn get_model`` command with ``--use_mliap`` flag.
 - By default, output file name will be ``deployed_serial_mliap.pt``.
   (You can customize the output file name using ``--output_prefix`` flag.)
-- You can accelerate the inference with ``--enable_cueq`` or ``--enable_flashTP`` flag:
+- You can accelerate the inference with ``--enable_cueq`` or ``--enable_flash`` flag:
 ```bash
 sevenn get_model \
     {pretrained_name or checkpoint_path} \
