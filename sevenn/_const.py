@@ -239,7 +239,7 @@ DATA_CONFIG_CONDITION = {
     KEY.RATIO: float,
     KEY.BATCH_SIZE: int,
     KEY.PREPROCESS_NUM_CORES: int,
-    KEY.DATASET_TYPE: lambda x: x in ['graph', 'atoms', 'custom'],
+    KEY.DATASET_TYPE: lambda x: x in ['graph', 'atoms', 'custom', 'aselmdb'],
     # KEY.USE_SPECIES_WISE_SHIFT_SCALE: bool,
     KEY.SHIFT: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SHIFT,
     KEY.SCALE: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SCALE,

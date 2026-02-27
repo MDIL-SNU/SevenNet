@@ -72,16 +72,16 @@ def loader_from_config(
         sampler = OrderedSampler(dataset, sequence, shuffle, seed, world_size, rank)
         loader_args.update({'sampler': sampler})
         loader_args.pop(
-                'shuffle', None
+            'shuffle', None
         )  # sampler is mutually exclusive with shuffle
 
     return DataLoader(**loader_args)
 
 
 def update_config_for_batch_training(
-        config: Dict[str, Any],
-        train_loader
-    ) -> None:
+    config: Dict[str, Any],
+    train_loader
+) -> None:
     """
     Update scheduler parameters for batch-level training.
 
@@ -162,6 +162,7 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
     - Epoch-level training (default)
     - Batch-level training (train_by_batch: true)
     """
+    import sevenn.train.aselmdb_dataset as aselmdb_dataset
     import sevenn.train.atoms_dataset as atoms_dataset
     import sevenn.train.graph_dataset as graph_dataset
     import sevenn.train.modal_dataset as modal_dataset
