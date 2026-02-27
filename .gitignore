@@ -14,6 +14,8 @@ uv.lock
 sevenn/pretrained_potentials/SevenNet_MF_ompa
 sevenn/pretrained_potentials/SevenNet_omat
 sevenn/pretrained_potentials/SevenNet_omni
+sevenn/pretrained_potentials/SevenNet_omni_i8
+sevenn/pretrained_potentials/SevenNet_omni_i12
 
 # from compile
 sevenn/pair_d3*
