@@ -36,6 +36,7 @@ dependencies = [
 test = ["pytest", "pytest-cov>=5", "ipython"]
 torchsim = ["torch-sim-atomistic>=0.5.2; python_version >= '3.12'"]
 cueq12 = ["cuequivariance>=0.6.0; python_version >= '3.10'", "cuequivariance-torch>=0.6.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu12; python_version >= '3.10'"]
+oeq = ["openequivariance"]
 mliap = ["cython==3.0.11", "cupy-cuda12x"]
 
 [project.scripts]

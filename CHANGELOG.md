@@ -14,6 +14,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - TorchSim interface
+- Support OpenEquivariance
 
 ## [0.12.0]
 ### Added
