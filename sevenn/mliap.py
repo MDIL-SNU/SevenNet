@@ -151,9 +151,9 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         if self.model is not None:
             return  # Already initialized
         print('[INFO] Lazy initializing SevenNet model...', flush=True)
-        print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}, oeq={self.use_oeq}', flush=True)
+        print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}, oeq={self.use_oeq}', flush=True)  # noqa: E501
         model = self.cp.build_model(
-            enable_cueq=self.use_cueq, enable_flash=self.use_flash, enable_oeq=self.use_oeq
+            enable_cueq=self.use_cueq, enable_flash=self.use_flash, enable_oeq=self.use_oeq  # noqa: E501
         )
 
         for k, module in model._modules.items():

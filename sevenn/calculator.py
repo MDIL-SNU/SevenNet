@@ -112,7 +112,7 @@ class SevenNetCalculator(Calculator):
             cp = util.load_checkpoint(model)
 
             model_loaded = cp.build_model(
-                enable_cueq=enable_cueq, enable_flash=enable_flash, enable_oeq=enable_oeq
+                enable_cueq=enable_cueq, enable_flash=enable_flash, enable_oeq=enable_oeq  # noqa: E501
             )
             model_loaded.set_is_batch_data(False)
 
