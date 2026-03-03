@@ -4,7 +4,10 @@ All notable changes to this project will be documented in this file.
 ## [0.12.1]
 ### Fixed
 - FlashTP with LAMMPS parallel in torch
+- CI/CD bugs
 
+### Added
+- TorchSim interface
 
 ## [0.12.0]
 ### Added

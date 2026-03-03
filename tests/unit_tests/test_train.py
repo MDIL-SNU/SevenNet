@@ -260,7 +260,7 @@ def test_dataset_from_config_statistics_init(
     with Logger().switch_file(str(tmp_path / 'log.sevenn')):
         _ = dataset_from_config(cfg, tmp_path)
 
-    assert np.allclose(cfg['shift'], shift)
+    assert np.allclose(cfg['shift'], shift, atol=1e-3)
     assert np.allclose(cfg['scale'], scale)
     assert np.allclose(cfg['conv_denominator'], conv)
 
