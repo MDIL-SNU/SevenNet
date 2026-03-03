@@ -9,11 +9,11 @@ All notable changes to this project will be documented in this file.
 - inconsistent argument namings of flashTP
 
 ### Changed
-- ninja dependency added
+- ninja dependency added for FlashTP compile
 - all CLI argument name of enabling flashTP is now 'enable_flash', not 'enable_flashTP'
 
 ### Added
-- TorchSim interface
+- TorchSim interface adnd docs
 
 ## [0.12.0]
 ### Added
