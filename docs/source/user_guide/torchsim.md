@@ -48,19 +48,8 @@ final_state = ts.integrate(
 
 ```python
 relaxed_state = ts.optimize(
-    system=atoms,
+    system=[atoms] * 10,
     model=model,
     optimizer=ts.Optimizer.fire,
 )
 ```
-
-### Multi-modal models
-
-For multi-fidelity models such as `7net-mf-ompa`, pass the `modal` argument:
-```python
-model = SevenNetModel(model="7net-mf-ompa", modal="omat24")
-```
-
-Available modals for `7net-mf-ompa` are `'mpa'` and `'omat24'`.
-
-For further TorchSim features (trajectory reporting, autobatching, cell filters, etc.), refer to the [TorchSim tutorials](https://torchsim.github.io/torch-sim/user/overview.html).
