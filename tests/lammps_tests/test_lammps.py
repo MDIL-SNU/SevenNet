@@ -17,6 +17,7 @@ from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.flash_helper import is_flash_available
+from sevenn.nn.oeq_helper import is_oeq_available
 from sevenn.scripts.deploy import deploy, deploy_parallel
 from sevenn.util import chemical_species_preprocess, pretrained_name_to_path
 
@@ -55,6 +56,14 @@ def serial_potential_path_flash(tmp_path_factory):
     tmp = tmp_path_factory.mktemp('serial_potential_flash')
     pot_path = str(tmp / 'deployed_serial.pt')
     deploy(cp_7net0_path, pot_path, use_flash=True)
+    return pot_path
+
+
+@pytest.fixture(scope='module')
+def serial_potential_path_oeq(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp('serial_potential_oeq')
+    pot_path = str(tmp / 'deployed_serial.pt')
+    deploy(cp_7net0_path, pot_path, use_oeq=True)
     return pot_path
 
 
@@ -321,6 +330,26 @@ def test_serial(system, serial_potential_path, ref_calculator, lammps_cmd, tmp_p
     assert_atoms(atoms, atoms_lammps)
 
 
+@pytest.mark.skipif(not is_oeq_available(), reason='oeq not available')
+@pytest.mark.parametrize(
+    'system',
+    ['bulk', 'surface'],
+)
+def test_serial_oeq(
+    system, serial_potential_path_oeq, ref_7net0_calculator, lammps_cmd, tmp_path
+):
+    atoms = get_system(system)
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=serial_potential_path_oeq,
+        wd=tmp_path,
+        test_name='serial oeq lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lammps, atol=1e-5)
+
+
 @pytest.mark.skipif(not is_flash_available(), reason='flash not available')
 @pytest.mark.parametrize(
     'system',
@@ -511,6 +540,70 @@ def test_cueq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
     assert_atoms(atoms, atoms_lammps)
 
 
+@pytest.mark.filterwarnings('ignore:.*is not found from.*')
+@pytest.mark.skipif(not is_oeq_available(), reason='oeq not available')
+def test_oeq_serial(lammps_cmd, tmp_path):
+    oeq = True
+    model = get_model()
+    ref_calc = SevenNetCalculator(model, file_type='model_instance')
+    atoms = get_system('bulk')
+
+    cfg = get_model_config()
+    cfg.update({'version': sevenn.__version__})
+
+    cp_path = str(tmp_path / 'cp.pth')
+    torch.save(
+        {'model_state_dict': model.state_dict(), 'config': cfg},
+        cp_path,
+    )
+
+    pot_path = str(tmp_path / 'deployed_oeq_serial.pt')
+    deploy(cp_path, pot_path, use_oeq=oeq)
+
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=pot_path,
+        wd=tmp_path,
+        test_name='oeq checkpoint serial lmp run test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_calc
+    assert_atoms(atoms, atoms_lammps)
+
+
+@pytest.mark.filterwarnings('ignore:.*is not found from.*')
+@pytest.mark.skipif(not is_oeq_available(), reason='oeq not available')
+def test_oeq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
+    oeq = True
+    model = get_model()
+    ref_calc = SevenNetCalculator(model, file_type='model_instance')
+    atoms = get_system('surface', replicate=(4, 4, 1))
+
+    cfg = get_model_config()
+    cfg.update({'version': sevenn.__version__})
+
+    cp_path = str(tmp_path / 'cp.pth')
+    torch.save(
+        {'model_state_dict': model.state_dict(), 'config': cfg},
+        cp_path,
+    )
+
+    pot_path = str(tmp_path / 'deployed_oeq_parallel')
+    deploy_parallel(cp_path, pot_path, use_oeq=oeq)
+
+    atoms_lammps = parallel_lammps_run(
+        atoms=atoms,
+        potential=' '.join([str(cfg['num_convolution_layer']), pot_path]),
+        wd=tmp_path,
+        test_name='oeq checkpoint parallel lmp run test',
+        lammps_cmd=lammps_cmd,
+        mpirun_cmd=mpirun_cmd,
+        ncores=2,
+    )
+    atoms.calc = ref_calc
+    assert_atoms(atoms, atoms_lammps)
+
+
 def _get_disconnected_system(name):
     """Build Atoms object for a disconnected test structure."""
     if name.startswith('single_o'):
@@ -570,6 +663,27 @@ def test_disconnected_serial_flash(
         potential=serial_potential_path_flash,
         wd=tmp_path,
         test_name=f'disconnected serial flash {system}',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lammps, atol=1e-5)
+
+
+@pytest.mark.skipif(not is_oeq_available(), reason='oeq not available')
+@pytest.mark.parametrize('system', _disconnected_systems)
+def test_disconnected_serial_oeq(
+    system,
+    serial_potential_path_oeq,
+    ref_7net0_calculator,
+    lammps_cmd,
+    tmp_path,
+):
+    atoms = _get_disconnected_system(system)
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=serial_potential_path_oeq,
+        wd=tmp_path,
+        test_name=f'disconnected serial oeq {system}',
         lammps_cmd=lammps_cmd,
     )
     atoms.calc = ref_7net0_calculator

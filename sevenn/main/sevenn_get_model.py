@@ -55,7 +55,7 @@ def add_args(parser):
     ag.add_argument(
         '-oeq',
         '--enable_oeq',
-        help='use OpenEquivariance. Only support ML-IAP interface.',
+        help='use OpenEquivariance. LAMMPS must be specially compiled.',
         action='store_true',
     )
     ag.add_argument(
@@ -101,9 +101,6 @@ def run(args):
     if use_cueq and not use_mliap:
         raise ValueError('cuEquivariance is only supported in ML-IAP interface.')
 
-    if use_oeq and not use_mliap:
-        raise ValueError('OpenEquivariance is only supported in ML-IAP interface.')
-
     if use_mliap and get_parallel:
         raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
 
@@ -124,9 +121,9 @@ def run(args):
         from sevenn.scripts.deploy import deploy, deploy_parallel
 
         if get_serial:
-            deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash)
+            deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
         else:
-            deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash)  # noqa: E501
+            deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
     else:
         from sevenn import mliap
 
