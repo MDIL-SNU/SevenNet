@@ -164,7 +164,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         """Data type for computation."""
         return self._dtype
 
-    def forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState, **kwargs) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by
