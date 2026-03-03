@@ -26,8 +26,6 @@ except ImportError as exc:
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from torch_sim.typing import StateDict
-
     from sevenn.nn.sequential import AtomGraphSequential
 
 
@@ -162,16 +160,15 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         """Data type for computation."""
         return self._dtype
 
-    def forward(self, state: ts.SimState | StateDict) -> dict[str, torch.Tensor]:
+    def forward(self, state: ts.SimState) -> dict[str, torch.Tensor]:
         """Perform forward pass to compute energies, forces, and other properties.
 
         Takes a simulation state and computes the properties implemented by
         the model, such as energy, forces, and stresses.
 
         Args:
-            state (SimState | StateDict): State object containing positions, cells,
-                atomic numbers, and other system information. If a dictionary
-                is provided, it will be converted to a SimState.
+            state (SimState): State object containing positions, cells,
+                atomic numbers, and other system information.
 
         Returns:
             dict: Model predictions, which may include:
@@ -185,30 +182,21 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             All output tensors are detached from the computation graph.
 
         """
-        sim_state = (
-            state
-            if isinstance(state, ts.SimState)
-            else ts.SimState(**state, masses=torch.ones_like(state['positions']))
-        )
-
-        if sim_state.device != self._device:
-            sim_state = sim_state.to(self._device)
-
-        # TODO: is this clone necessary?
-        sim_state = sim_state.clone()
+        if state.device != self._device:
+            state = state.to(self._device)
 
         # Batched neighbor list using linked-cell algorithm with row-vector cell
-        n_systems = sim_state.system_idx.max().item() + 1
+        n_systems = int(state.system_idx.max().item() + 1)
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
-            sim_state.positions,
-            sim_state.row_vector_cell,
-            sim_state.pbc,
+            state.positions,
+            state.row_vector_cell,
+            state.pbc,
             self.cutoff,
-            sim_state.system_idx,
+            state.system_idx,
         )
 
         # Build per-system SevenNet AtomGraphData by slicing the global NL
-        n_atoms_per_system = sim_state.system_idx.bincount()
+        n_atoms_per_system = state.system_idx.bincount()
         stride = torch.cat(
             (
                 torch.tensor([0], device=self._device, dtype=torch.long),
@@ -221,9 +209,9 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             sys_start = stride[sys_idx].item()
             sys_end = stride[sys_idx + 1].item()
 
-            pos = sim_state.positions[sys_start:sys_end]
-            row_vector_cell = sim_state.row_vector_cell[sys_idx]
-            atomic_nums = sim_state.atomic_numbers[sys_start:sys_end]
+            pos = state.positions[sys_start:sys_end]
+            row_vector_cell = state.row_vector_cell[sys_idx]
+            atomic_nums = state.atomic_numbers[sys_start:sys_end]
 
             mask = mapping_system == sys_idx
             edge_idx_sys_global = edge_index[:, mask]
@@ -276,20 +264,22 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         results: dict[str, torch.Tensor] = {}
         energy = output[key.PRED_TOTAL_ENERGY]
         if energy is not None:
-            results['energy'] = energy.detach()
+            results['energy'] = energy
         else:
             results['energy'] = torch.zeros(
-                sim_state.system_idx.max().item() + 1, device=self._device,
+                state.system_idx.max().item() + 1, device=self._device,
             )
 
         forces = output[key.PRED_FORCE]
         if forces is not None:
-            results['forces'] = forces.detach()
+            results['forces'] = forces
 
         stress = output[key.PRED_STRESS]
         if stress is not None:
             results['stress'] = -voigt_6_to_full_3x3_stress(
-                stress.detach()[..., [0, 1, 2, 4, 5, 3]],
+                stress[..., [0, 1, 2, 4, 5, 3]],
             )
+
+        results = {k: v.detach() for k, v in results.items()}
 
         return results
