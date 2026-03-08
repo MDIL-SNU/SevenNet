@@ -74,8 +74,8 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
         neighbor_list_fn: Callable | None = None,
-        enable_flash: Optional[bool] = None,
-        enable_cueq: Optional[bool] = None,
+        enable_flash: Optional[bool] = False,
+        enable_cueq: Optional[bool] = False,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
     ) -> None:
