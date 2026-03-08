@@ -74,6 +74,8 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
         neighbor_list_fn: Callable | None = None,
+        enable_flash: Optional[bool] = None,
+        enable_cueq: Optional[bool] = None,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
     ) -> None:
@@ -126,7 +128,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
 
         if isinstance(model, (str, Path)):
             cp = load_checkpoint(model)
-            model = cp.build_model()
+            model = cp.build_model(enable_cueq=enable_cueq, enable_flash=enable_flash)
 
         _validate(model, modal)
 
