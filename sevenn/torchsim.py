@@ -74,8 +74,8 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         *,  # force remaining arguments to be keyword-only
         modal: str | None = None,
         neighbor_list_fn: Callable | None = None,
-        enable_flash: Optional[bool] = False,
-        enable_cueq: Optional[bool] = False,
+        enable_flash: bool = False,
+        enable_cueq: bool = False,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
     ) -> None:
@@ -92,6 +92,8 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             modal (str | None): modal (fidelity) if given model is multi-modal model.
                 for 7net-mf-ompa, it should be one of 'mpa' (MPtrj + sAlex) or
                 'omat24' (OMat24).
+            enable_cueq (bool): Enable cuEquivariance backend.
+            enable_flash (bool): Enable flashTP backend.
             neighbor_list_fn (Callable): Neighbor list function to use.
                 Default is torch_nl_linked_cell.
             device (torch.device | str): Device to run the model on
@@ -128,7 +130,10 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
 
         if isinstance(model, (str, Path)):
             cp = load_checkpoint(model)
-            model = cp.build_model(enable_cueq=enable_cueq, enable_flash=enable_flash)
+            model = cp.build_model(
+                enable_flash=enable_flash,
+                enable_cueq=enable_cueq,
+            )
 
         _validate(model, modal)
 
