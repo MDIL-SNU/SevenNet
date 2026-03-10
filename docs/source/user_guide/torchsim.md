@@ -24,6 +24,12 @@ from sevenn.torchsim import SevenNetModel
 model = SevenNetModel(model="7net-omni", modal="mpa")
 ```
 
+You can enable accelerators (cuEquivariance, flashTP, or OpenEquivariance) via the corresponding flags. For more information about accelerators, follow [here](./accelerator.md).
+```python
+model = SevenNetModel(model="7net-omni", modal="mpa", enable_oeq=True)
+# or enable_cueq=True or enable_flash=True
+```
+
 The `device` parameter defaults to `'auto'` (CUDA if available, otherwise CPU).
 
 ### Batched MD

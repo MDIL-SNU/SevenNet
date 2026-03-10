@@ -1,6 +1,10 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.12.2.dev]
+### Added
+- Support OpenEquivariance
+
 ## [0.12.1]
 ### Fixed
 - FlashTP with LAMMPS parallel in torch
@@ -13,7 +17,7 @@ All notable changes to this project will be documented in this file.
 - all CLI argument name of enabling flashTP is now 'enable_flash', not 'enable_flashTP'
 
 ### Added
-- TorchSim interface adnd docs
+- TorchSim interface and docs
 
 ## [0.12.0]
 ### Added

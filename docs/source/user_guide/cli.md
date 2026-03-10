@@ -44,10 +44,10 @@ We support multi-GPU training using PyTorch DDP (distributed data parallel) with
 torchrun --standalone --nnodes {number of nodes} --nproc_per_node {number of GPUs} --no_python sevenn input.yaml -d
 ```
 
-Enable cuEquivariance or flashTP while training by adding the --enable_cueq or --enable_flash.
+Enable cuEquivariance, flashTP, or OpenEquivariance while training by adding the --enable_cueq, --enable_flash, or --enable_oeq.
 
 ```bash
-sevenn train input.yaml -s --enable_cueq # or --enable_flash
+sevenn train input.yaml -s --enable_cueq # or --enable_flash or --enable_oeq
 ```
 
 Please note that `batch_size` in `input.yaml` refers to the per-GPU batch size.
@@ -79,19 +79,19 @@ See {doc}`accelerator` for installation of accelerators.
 sevenn get_model \
     {pretrained_name or checkpoint_path} \
     {--use_mliap} \  # For LAMMPS ML-IAP use.
-    {--enable_flash | --enable_cueq} \  # For accelerators.
+    {--enable_flash | --enable_cueq | --enable_oeq} \  # For accelerators.
     {--modal {task_name}} \  # Required when using multi-fidelity model
     {--get_parallel}  # For parallel MD simulations
 ```
 
 If `--use_mliap` is not set (TorchScript version), it will create `deployed_serial.pt` or a directory containing several `deployed_parallel_*.pt` files for parallel execution.
 They can be used as a LAMMPS potential with the `e3gnn` or `e3gnn/parallel` pair_style in LAMMPS.
-In this case, only `--enable_flash` is available.
+In this case, `--enable_flash` and `--enable_oeq` are available.
 Check {doc}`lammps_torch` for installation and lammps script in this use case.
 
 If `--use_mliap` is set, it will create `deployed_serial_mliap.pt`.
 The file can be used with the `mliap` pair_style in LAMMPS.
-In this case, both `--enable_cueq` and `--enable_flash` are available, but you cannot specify both at the same time.
+In this case, `--enable_cueq`, `--enable_flash`, and `--enable_oeq` are available, but you cannot specify multiple at the same time.
 Parallel execution is not tested in this case.
 Check {doc}`lammps_mliap` for installation and lammps script in this use case.
 

@@ -14,11 +14,11 @@ from sevenn.calculator import SevenNetD3Calculator
 calc = SevenNetD3Calculator(model='7net-0', device='cuda')
 ```
 
-Use enable_cueq or enable_flash to use cuEquivariance or flashTP for faster inference.
-For more information about cuEq and flashTP, follow [here](./accelerator.md)
+Use enable_cueq, enable_flash, or enable_oeq to use cuEquivariance, flashTP, or OpenEquivariance for faster inference.
+For more information about accelerators, follow [here](./accelerator.md)
 ```python
 from sevenn.calculator import SevenNetCalculator
-calc = SevenNetCalculator(model='7net-0', enable_cueq=True) # or enable_flash=True
+calc = SevenNetCalculator(model='7net-0', enable_cueq=True) # or enable_flash=True or enable_oeq=True
 ```
 
 If you encounter the error `CUDA is not installed or nvcc is not available`, please ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.

@@ -6,13 +6,15 @@ Currently the parallel implementation of LAMMPS/ML-IAP is not tested.
 
 ## Requirements
 - cython == 3.0.11
-- cupy-cuda12x
+- cupy-cuda12x or cupy-cuda13x
 - flashTP (optional, follow [here](accelerator.md#flashtp))
 - cuEquivariance (optional, follow [here](accelerator.md#cuequivariance))
+- OpenEquivariance (optional, follow [here](accelerator.md#openequivariance))
 
 Install via:
 ```bash
-pip install sevenn[mliap]
+pip install sevenn[mliap12]  # For CUDA 12.x
+pip install sevenn[mliap13]  # For CUDA 13.x
 ```
 
 ## Build
@@ -119,7 +121,7 @@ Please check [sevenn graph_build](./cli.md#sevenn-graph-build) for detail.
 An ML-IAP potential checkpoint can be deployed using ``sevenn get_model`` command with ``--use_mliap`` flag.
 - By default, output file name will be ``deployed_serial_mliap.pt``.
   (You can customize the output file name using ``--output_prefix`` flag.)
-- You can accelerate the inference with ``--enable_cueq`` or ``--enable_flash`` flag:
+- You can accelerate the inference with ``--enable_cueq``, ``--enable_flash``, or ``--enable_oeq`` flag:
 ```bash
 sevenn get_model \
     {pretrained_name or checkpoint_path} \
