@@ -332,6 +332,9 @@ class SevenNetCheckpoint:
         cp_using_oeq = self.config.get(KEY.USE_OEQ, False)
         enable_oeq = cp_using_oeq if enable_oeq is None else enable_oeq
 
+        if sum([enable_cueq, enable_flash, enable_oeq]) > 1:
+            raise ValueError('Only one TP accelerator can be enabled.')
+
         assert not _flash_lammps or enable_flash
         cfg_new = self.config
         cfg_new['_flash_lammps'] = _flash_lammps

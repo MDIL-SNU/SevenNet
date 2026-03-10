@@ -251,12 +251,16 @@ class SevenNetD3Calculator(SumCalculator):
         model: Union[str, pathlib.PurePath, AtomGraphSequential] = '7net-0',
         file_type: str = 'checkpoint',
         device: Union[torch.device, str] = 'auto',
-        sevennet_config: Optional[Any] = None,  # hold meta information
+        modal: Optional[str] = None,
+        enable_cueq: Optional[bool] = False,
+        enable_flash: Optional[bool] = False,
+        enable_oeq: Optional[bool] = False,
+        sevennet_config: Optional[Any] = None,
         damping_type: str = 'damp_bj',
         functional_name: str = 'pbe',
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
-        **kwargs,
+        **kwargs,  # pass extra kwargs to both calculators
     ) -> None:
         """Initialize SevenNetD3Calculator. CUDA required.
 
@@ -270,21 +274,27 @@ class SevenNetD3Calculator(SumCalculator):
         device: str | torch.device, default='auto'
             if not given, use CUDA if available
         modal: str | None, default=None
-            modal (fidelity) if given model is multi-modal model. for 7net-mf-ompa,
-            for 7net-omni, use one of 'mpa', 'omat24', 'matpes_pbe', 'matpes_r2scan',
-            'mp_r2scan', 'oc20', 'oc22', 'odac23', 'omol25_low', 'omol25_high',
-            'spice', 'qcml', 'pet_mad'
-            it should be one of 'mpa' (MPtrj + sAlex) or 'omat24' (OMat24)
+            modal (fidelity) if given model is multi-modal model.
+            for 7net-mf-ompa, it should be one of 'mpa' or 'omat24'.
+            for 7net-omni, use one of 'mpa', 'omat24', 'matpes_pbe',
+            'matpes_r2scan', 'mp_r2scan', 'oc20', 'oc22', 'odac23',
+            'omol25_low', 'omol25_high', 'spice', 'qcml', 'pet_mad'
         enable_cueq: bool, default=False
-            if True, use cuEquivariant to accelerate inference.
+            if True, use cuEquivariance backend.
+        enable_flash: bool, default=False
+            if True, use flashTP backend.
+        enable_oeq: bool, default=False
+            if True, use OpenEquivariance backend.
+        sevennet_config: dict | None, default=None
+            hold meta information
         damping_type: str, default='damp_bj'
             Damping type of D3, one of 'damp_bj' | 'damp_zero'
         functional_name: str, default='pbe'
             Target functional name of D3 parameters.
         vdw_cutoff: float, default=9000
-            vdw cutoff of D3 calculator in au
+            vdw cutoff of D3 calculator in au^2
         cn_cutoff: float, default=1600
-            cn cutoff of D3 calculator in au
+            cn cutoff of D3 calculator in au^2
         """
         d3_calc = D3Calculator(
             damping_type=damping_type,
@@ -298,6 +308,10 @@ class SevenNetD3Calculator(SumCalculator):
             model=model,
             file_type=file_type,
             device=device,
+            modal=modal,
+            enable_cueq=enable_cueq,
+            enable_flash=enable_flash,
+            enable_oeq=enable_oeq,
             sevennet_config=sevennet_config,
             **kwargs,
         )
