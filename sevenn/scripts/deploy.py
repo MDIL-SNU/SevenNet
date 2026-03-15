@@ -18,6 +18,7 @@ def deploy(
     fname='deployed_serial.pt',
     modal: Optional[str] = None,
     use_flash: bool = False,
+    use_oeq: bool = False,
 ) -> None:
     from sevenn.nn.edge_embedding import EdgePreprocess
     from sevenn.nn.force_output import ForceStressOutput
@@ -26,7 +27,10 @@ def deploy(
 
     model, config = (
         cp.build_model(
-            enable_cueq=False, enable_flash=use_flash, _flash_lammps=use_flash
+            enable_cueq=False,
+            enable_flash=use_flash,
+            enable_oeq=use_oeq,
+            _flash_lammps=use_flash,
         ),
         cp.config,
     )
@@ -63,6 +67,7 @@ def deploy(
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
     md_configs.update({'flashTP': 'yes' if use_flash else 'no'})
+    md_configs.update({'oeq': 'yes' if use_oeq else 'no'})
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )
@@ -81,6 +86,7 @@ def deploy_parallel(
     fname='deployed_parallel',
     modal: Optional[str] = None,
     use_flash: bool = False,
+    use_oeq: bool = False,
 ) -> None:
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
@@ -89,12 +95,16 @@ def deploy_parallel(
 
     model, config = (
         cp.build_model(
-            enable_cueq=False, enable_flash=use_flash, _flash_lammps=use_flash
+            enable_cueq=False,
+            enable_flash=use_flash,
+            enable_oeq=use_oeq,
+            _flash_lammps=use_flash,
         ),
         cp.config,
     )
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
     config[KEY.USE_FLASH_TP] = use_flash
+    config[KEY.USE_OEQ] = use_oeq
     config['_flash_lammps'] = use_flash
     model_state_dct = model.state_dict()
 
@@ -117,7 +127,7 @@ def deploy_parallel(
         if hasattr(model_part, 'eval_type_map'):
             setattr(model_part, 'eval_type_map', False)
         # Ensure all values are inserted
-        assert len(missing) == 0 or use_flash, missing
+        assert len(missing) == 0 or use_flash or use_oeq, missing
 
     if modal:
         model_list[0].prepare_modal_deploy(modal)
@@ -147,6 +157,7 @@ def deploy_parallel(
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
     md_configs.update({'comm_size': str(comm_size)})
     md_configs.update({'flashTP': 'yes' if use_flash else 'no'})
+    md_configs.update({'oeq': 'yes' if use_oeq else 'no'})
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )

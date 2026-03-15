@@ -4,15 +4,18 @@ lammps_root=$1
 cxx_standard=$2 # 14, 17
 d3_support=$3 # 1, 0
 flashTP_so="${4:-NONE}"
+oeq_so="${5:-NONE}"
 SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
+enable_flashTP=0
+enable_oeq=0
 
 ###########################################
 # Check if the given arguments are valid  #
 ###########################################
 
 # Check the number of arguments
-if [ "$#" -lt 3 ] || [ "$#" -gt 4 ]; then
-    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support} {flashTP_so}"
+if [ "$#" -lt 3 ] || [ "$#" -gt 5 ]; then
+    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support} {flashTP_so} {oeq_so}"
     echo "  {lammps_root}: Root directory of LAMMPS source"
     echo "  {cxx_standard}: C++ standard (14, 17)"
     echo "  {d3_support}: Support for pair_d3 (1, 0)"
@@ -37,12 +40,24 @@ if [ ! -f "${SCRIPT_DIR}/pair_e3gnn.cpp" ]; then
     exit 1
 fi
 
-if [ "$flashTP_so" != "NONE" ] && [ -f "$flashTP_so" ]; then
+if [ -f "$flashTP_so" ]; then
     echo "Using flashTP_so: $flashTP_so"
+    enable_flashTP=1
+elif [ "$flashTP_so" = "NONE" ]; then
+    echo "[FlashTP] Skipped: not provided"
 else
-    echo "Invalid or missing flashTP_so given"
-    echo "[FlashTP] Skipped (not provided)"
+    echo "[FlashTP] Skipped: Invalid or missing flashTP_so given"
     flashTP_so="NONE"
+fi
+
+if [ -f "$oeq_so" ]; then
+    echo "Using oeq_so: $oeq_so"
+    enable_oeq=1
+elif [ "$oeq_so" = "NONE" ]; then
+    echo "[OEQ] Skipped: not provided"
+else
+    echo "[OEQ] Skipped: nvalid or missing oeq_so given"
+    oeq_so="NONE"
 fi
 
 # Check if the patch is already applied
@@ -106,6 +121,8 @@ cp $lammps_root/cmake/CMakeLists.txt $backup_dir/CMakeLists.txt
 # 1. Copy pair_e3gnn files to LAMMPS source
 cp $SCRIPT_DIR/{pair_e3gnn,pair_e3gnn_parallel,comm_brick}.cpp $lammps_root/src/
 cp $SCRIPT_DIR/{pair_e3gnn,pair_e3gnn_parallel,comm_brick}.h $lammps_root/src/
+# Always copy the oEq autograd bridge (pair_e3gnn.cpp has an extern reference to it)
+cp $SCRIPT_DIR/pair_e3gnn_oeq_autograd.cpp $lammps_root/src/  # TODO: set this as oeq-specific
 
 # 2. Patch cmake/CMakeLists.txt
 sed -i "s/set(CMAKE_CXX_STANDARD 11)/set(CMAKE_CXX_STANDARD $cxx_standard)/" $lammps_root/cmake/CMakeLists.txt
@@ -116,24 +133,37 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
 EOF
 
-if [ "$flashTP_so" != "NONE" ]; then
+optional_libs=()
+optional_rpaths=()
 
-cat >> $lammps_root/cmake/CMakeLists.txt << "EOF"
+if [ "$enable_flashTP" -eq 1 ]; then
+    optional_libs+=("    \${CMAKE_CURRENT_LIST_DIR}/flashTP/libflashtp_large_kernel_lammps.so")
+    optional_rpaths+=("\${CMAKE_CURRENT_LIST_DIR}/flashTP")
+    mkdir -p $lammps_root/cmake/flashTP && cp $flashTP_so $lammps_root/cmake/flashTP/libflashtp_large_kernel_lammps.so && echo "[FlashTP] flashTP so file copied"
+fi
 
-find_package(Python3 REQUIRED COMPONENTS Development)
-target_link_libraries(lammps PUBLIC -Wl,--no-as-needed
-    ${CMAKE_CURRENT_LIST_DIR}/flashTP/libflashtp_large_kernel_lammps.so
-    Python3::Python
-)
-set_target_properties(lammps PROPERTIES
-    BUILD_RPATH "${CMAKE_CURRENT_LIST_DIR}/flashTP"
-)
-EOF
+if [ "$enable_oeq" -eq 1 ]; then
+    optional_libs+=("    \${CMAKE_CURRENT_LIST_DIR}/oeq/liboeq_stable_cuda_aoti.so")
+    optional_rpaths+=("\${CMAKE_CURRENT_LIST_DIR}/oeq")
+    mkdir -p $lammps_root/cmake/oeq && cp $oeq_so $lammps_root/cmake/oeq/liboeq_stable_cuda_aoti.so && echo "[OEQ] oeq so file copied"
+fi
 
-echo "[FlashTP] CMakeLists.txt is patched"
-
-mkdir -p $lammps_root/cmake/flashTP && cp $flashTP_so $lammps_root/cmake/flashTP/libflashtp_large_kernel_lammps.so && echo "[FlashTP] flashTP so file copied"
-
+if [ ${#optional_libs[@]} -gt 0 ]; then
+    rpath_joined=$(IFS=';'; echo "${optional_rpaths[*]}")
+    {
+        echo ""
+        echo "find_package(Python3 REQUIRED COMPONENTS Development)"
+        echo "target_link_libraries(lammps PUBLIC -Wl,--no-as-needed"
+        for lib in "${optional_libs[@]}"; do
+            echo "$lib"
+        done
+        echo "    Python3::Python"
+        echo ")"
+        echo "set_property(TARGET lammps APPEND PROPERTY"
+        echo "    BUILD_RPATH \"$rpath_joined\""
+        echo ")"
+    } >> $lammps_root/cmake/CMakeLists.txt
+    echo "[Optional] CMakeLists.txt is patched"
 fi
 
 
@@ -170,11 +200,23 @@ echo "Changes made:"
 echo "  - Original LAMMPS files (src/comm_brick.*, cmake/CMakeList.txt) are in {lammps_root}/_backups"
 echo "  - Copied contents of pair_e3gnn to $lammps_root/src/"
 echo "  - Patched CMakeLists.txt: include LibTorch, CXX_STANDARD $cxx_standard"
+echo
+if [ "$enable_flashTP" -eq 1 ]; then
+    echo "  - Copied flashTP .so to $lammps_root/cmake/flashTP/"
+    echo "  - Patched CMakeLists.txt: link libflashtp_large_kernel_lammps.so"
+    echo
+fi
+if [ "$enable_oeq" -eq 1 ]; then
+    echo "  - Copied oeq .so to $lammps_root/cmake/oeq/"
+    echo "  - Copied pair_e3gnn_oeq_autograd.cpp to $lammps_root/src/"
+    echo "  - Patched CMakeLists.txt: link liboeq_stable_cuda_aoti.so"
+    echo
+fi
 if [ "$d3_support" -ne 0 ]; then
     echo "  - Copied contents of pair_d3 to $lammps_root/src/"
     echo "  - Patched CMakeLists.txt: include CUDA"
+    echo
 fi
-
 # Provide example cmake command to the user
 echo "Example build commands, under LAMMPS root"
 echo "  mkdir build; cd build"

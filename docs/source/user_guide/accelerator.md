@@ -3,14 +3,14 @@
 This document describes available accelerator integrations in SevenNet and their installation guide.
 
 :::{caution}
-We do not support CuEquivariance for [LAMMPS: Torch](./lammps_mliap.md). You must use [LAMMPS: ML-IAP](./lammps_torch.md) for CuEquivariance.
+We do not support CuEquivariance for [LAMMPS: Torch](./lammps_torch.md). You must use [LAMMPS: ML-IAP](./lammps_mliap.md) for CuEquivariance.
 :::
 
-[CuEquivariance](https://github.com/NVIDIA/cuEquivariance) and [FlashTP](https://openreview.net/forum?id=wiQe95BPaB) provide acceleration for both SevenNet training and inference. (For speed, check the section 2.7 of [SevenNet-Omni paper](https://arxiv.org/abs/2510.11241))
+[FlashTP](https://openreview.net/forum?id=wiQe95BPaB), [CuEquivariance](https://github.com/NVIDIA/cuEquivariance), and [OpenEquivariance](https://github.com/PASSIONLab/OpenEquivariance) provide acceleration for both SevenNet training and inference.
 
 :::{tip}
-For small systems, FlashTP with [LAMMPS: Torch](./lammps_mliap.md) shows performance advantage over cuEquivariance with [LAMMPS: ML-IAP](./lammps_torch.md).
-A performance crossover occurs at around 10³ atoms, beyond which cuEquivariance becomes more efficient.
+For small systems, FlashTP with [LAMMPS: Torch](./lammps_torch.md) shows performance advantage over cuEquivariance with [LAMMPS: ML-IAP](./lammps_mliap.md).
+A performance crossover occurs at around 10³ atoms, beyond which cuEquivariance becomes more efficient.  (For more informattion, check the section 2.7 of [SevenNet-Omni paper](https://arxiv.org/abs/2510.11241))
 
 FlashTP with [LAMMPS: Torch](./lammps_mliap.md) is generally faster than FlashTP with [LAMMPS: ML-IAP](./lammps_mliap.md).
 :::
@@ -24,9 +24,16 @@ CuEquivariance is an NVIDIA Python library designed to facilitate the constructi
 - cuEquivariance >= 0.6.1
 
 ### Installation
-After installation of SevenNet, install cuEquivariance following their guideline.
-To use cuEquivariance with SevenNet, you need to install `cuequivariance`, `cuequivariance-torch`, and `cuequivariance-ops-torch-cu{12, 13}` (depending on your CUDA version)
-[cuEquivariance](https://github.com/NVIDIA/cuEquivariance).
+After installation of SevenNet, install cuEquivariance via the pip extras:
+
+```bash
+pip install sevenn[cueq12]  # For CUDA 12.x
+pip install sevenn[cueq13]  # For CUDA 13.x
+```
+
+This will install `cuequivariance`, `cuequivariance-torch`, and the corresponding `cuequivariance-ops-torch-cu{12,13}`.
+
+Alternatively, you can install cuEquivariance manually following [their guideline](https://github.com/NVIDIA/cuEquivariance).
 
 :::{note}
 Some GeForce GPUs do not support `pynvml`,
@@ -79,8 +86,33 @@ True
 
 For more information, see [FlashTP](https://github.com/SNU-ARC/flashTP).
 
+## [OpenEquivariance (experimental)](https://github.com/PASSIONLab/OpenEquivariance)
+
+:::{caution}
+OpenEquivariance support in SevenNet is currently experimental.
+:::
+
+OpenEquivariance (oEq) is a library for acceleration of equivariant tensor products. Unlike cuEquivariance, its kernels are compiled once per irreps configuration, eliminating runtime recompilation overhead during training on diverse datasets.
+
+### Requirements
+- Python >= 3.10
+- openequivariance
+
+### Installation
+```bash
+pip install sevenn[oeq]
+```
+
+Check your installation:
+```bash
+python -c 'from sevenn.nn.oeq_helper import is_oeq_available; print(is_oeq_available())'
+True
+```
+
+For more information, see [OpenEquivariance](https://github.com/PASSIONLab/OpenEquivariance).
+
 ## Usage
-After the installation, you can leverage the accelerator with appropriate flag (`--enable_cueq`) or (`--enable_flash`) options
+After the installation, you can leverage the accelerator with appropriate flag (`--enable_cueq`), (`--enable_flash`), or (`--enable_oeq`) options
 
 - [Training](./cli.md#sevenn-train)
 - [ASE Calculator](./ase_calculator.md)
