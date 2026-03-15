@@ -5,6 +5,10 @@ All notable changes to this project will be documented in this file.
 ### Added
 - Support OpenEquivariance
 
+### Changed
+- **[Breaking]** Rename optional dependency group `mliap` into `mliap12` (reflecting its CUDA 12.x dependency).
+- Add `cueq13` and `mliap13` optional dependency groups for CUDA 13.x.
+
 ## [0.12.1]
 ### Fixed
 - FlashTP with LAMMPS parallel in torch
