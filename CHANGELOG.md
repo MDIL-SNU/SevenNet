@@ -4,17 +4,14 @@ All notable changes to this project will be documented in this file.
 ## [0.12.2.dev]
 ### Added
 - Support OpenEquivariance
+- L2MAE loss
+- OrderedSampler, batch training
 
 ### Changed
 - **[Breaking]** Rename optional dependency group `mliap` into `mliap12` (reflecting its CUDA 12.x dependency).
 - Add `cueq13` and `mliap13` optional dependency groups for CUDA 13.x.
 
 ## [0.12.1]
-### Added
-- SevenNet-Omni-i8, SevenNet-Omni-i12
-- L2MAE loss
-- OrderedSampler, batch training
-
 ### Fixed
 - FlashTP with LAMMPS parallel in torch
 - Single-atom inference failure with ASE+flashTP, LAMMPS-Torch and LAMMPS ML-IAP
@@ -27,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 ### Added
 - TorchSim interface and docs
+- SevenNet-Omni-i8, SevenNet-Omni-i12
 
 ## [0.12.0]
 ### Added
