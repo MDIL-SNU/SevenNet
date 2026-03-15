@@ -1,6 +1,6 @@
 [project]
 name = "sevenn"
-version = "0.12.1.dev"
+version = "0.12.2.dev"
 authors = [
     { name = "Yutack Park", email = "parkyutack@snu.ac.kr" },
     { name = "Haekwan Jeon", email = "haekwan98@snu.ac.kr" },
@@ -38,7 +38,10 @@ dependencies = [
 test = ["pytest", "pytest-cov>=5", "ipython"]
 torchsim = ["torch-sim-atomistic>=0.5.2; python_version >= '3.12'"]
 cueq12 = ["cuequivariance>=0.6.0; python_version >= '3.10'", "cuequivariance-torch>=0.6.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu12; python_version >= '3.10'"]
-mliap = ["cython==3.0.11", "cupy-cuda12x"]
+cueq13 = ["cuequivariance>=0.7.0; python_version >= '3.10'", "cuequivariance-torch>=0.7.0; python_version >= '3.10'", "cuequivariance-ops-torch-cu13; python_version >= '3.10'"]
+oeq = ["openequivariance"]
+mliap12 = ["cython==3.0.11", "cupy-cuda12x"]
+mliap13 = ["cython==3.0.11", "cupy-cuda13x"]
 
 [project.scripts]
 sevenn = "sevenn.main.sevenn:main"

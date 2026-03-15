@@ -67,6 +67,25 @@ def add_args(parser):
         help='modality for multi-modal inference',
     )
     ag.add_argument(
+        '-cueq',
+        '--enable_cueq',
+        help='use cuEquivariance to accelerate inference',
+        action='store_true',
+    )
+    ag.add_argument(
+        '-flashTP',
+        '--enable_flash',
+        dest='enable_flash',
+        help='use FlashTP to accelerate inference',
+        action='store_true',
+    )
+    ag.add_argument(
+        '-oeq',
+        '--enable_oeq',
+        help='use OpenEquivariance to accelerate inference',
+        action='store_true',
+    )
+    ag.add_argument(
         '--kwargs',
         nargs=argparse.REMAINDER,
         help='will be passed to reader, or can be used to specify EFS key',
@@ -109,6 +128,21 @@ def run(args):
     if args.save_graph and args.allow_unlabeled:
         raise ValueError('save_graph and allow_unlabeled are mutually exclusive')
 
+    if args.enable_cueq:
+        from sevenn.nn.cue_helper import is_cue_available
+        if not is_cue_available():
+            raise ImportError('cuEquivariance not installed or no GPU found.')
+
+    if args.enable_flash:
+        from sevenn.nn.flash_helper import is_flash_available
+        if not is_flash_available():
+            raise ImportError('FlashTP not installed or no GPU found.')
+
+    if args.enable_oeq:
+        from sevenn.nn.oeq_helper import is_oeq_available
+        if not is_oeq_available():
+            raise ImportError('OpenEquivariance not installed or no GPU found.')
+
     inference(
         cp,
         targets,
@@ -119,6 +153,9 @@ def run(args):
         args.save_graph,
         args.allow_unlabeled,
         args.modal,
+        enable_cueq=args.enable_cueq,
+        enable_flash=args.enable_flash,
+        enable_oeq=args.enable_oeq,
         **fmt_kwargs,
     )
 

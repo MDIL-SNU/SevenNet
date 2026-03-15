@@ -125,6 +125,9 @@ def inference(
     save_graph: bool = False,
     allow_unlabeled: bool = False,
     modal: Optional[str] = None,
+    enable_cueq: bool = False,
+    enable_flash: bool = False,
+    enable_oeq: bool = False,
     **data_kwargs,
 ) -> None:
     """
@@ -151,7 +154,13 @@ def inference(
             at once, it will not work smoothly with data_kwargs
 
     """
-    model, _ = util.model_from_checkpoint(checkpoint)
+    # TODO: False as default, priority?
+    model, _ = util.model_from_checkpoint(
+        checkpoint,
+        enable_cueq=enable_cueq or None,
+        enable_flash=enable_flash or None,
+        enable_oeq=enable_oeq or None,
+    )
     cutoff = model.cutoff
 
     if modal:

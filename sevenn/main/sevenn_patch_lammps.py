@@ -29,6 +29,13 @@ def add_args(parser):
         help='Enable flashTP',
         action='store_true',
     )
+    ag.add_argument(
+        '--oeq',
+        '--enable_oeq',
+        dest='enable_oeq',
+        help='Enable OpenEquivariance',
+        action='store_true',
+    )
     # cxx_standard is detected automatically
 
 
@@ -46,6 +53,18 @@ def run(args):
     else:
         d3_support = '0'
         print('  - D3 support disabled')
+
+    so_oeq = ''
+    if args.enable_oeq:
+        try:
+            from openequivariance._torch.extlib import torch_ext_so_path
+        except ImportError:
+            raise ImportError('OpenEquivariance import failed.')
+
+        so_oeq = torch_ext_so_path()
+        if not osp.isfile(so_oeq):
+            raise ValueError(f'OEQ .so file not found: {so_oeq}')
+        print(f'  - OEQ support enabled: {so_oeq}')
 
     so_lammps = ''
     if args.enable_flash:
@@ -86,6 +105,12 @@ def run(args):
     if args.enable_flash:
         assert osp.isfile(so_lammps)
         cmd += f' {so_lammps}'
+    else:
+        cmd += ' NONE'
+
+    if args.enable_oeq:
+        assert osp.isfile(so_oeq)
+        cmd += f' {so_oeq}'
 
     res = subprocess.run(cmd.split())
     return res.returncode  # is it meaningless?

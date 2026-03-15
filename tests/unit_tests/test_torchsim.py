@@ -77,7 +77,7 @@ def test_sevenn_model_dtype_validation(
     """Test that SevenNetModel raises an error if dtype is not float32."""
     with pytest.raises(
         ValueError,
-        match='SevenNetModel currently only supports torch.float32, but received '
+        match='SevenNet currently only supports torch.float32, but received '
         + 'different dtype: torch.float64',
     ):
         _ = SevenNetModel(

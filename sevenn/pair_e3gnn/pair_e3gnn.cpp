@@ -36,6 +36,9 @@
 
 using namespace LAMMPS_NS;
 
+// Undefined reference; body in pair_e3gnn_oeq_autograd.cpp to be linked
+extern void pair_e3gnn_oeq_register_autograd();
+
 #define INTEGER_TYPE torch::TensorOptions().dtype(torch::kInt64)
 #define FLOAT_TYPE torch::TensorOptions().dtype(torch::kFloat)
 
@@ -311,6 +314,7 @@ void PairE3GNN::coeff(int narg, char **arg) {
       {"version", ""},
       {"dtype", ""},
       {"flashTP", "version mismatch"},
+      {"oeq", "version mismatch"},
       {"time", ""}};
 
   // model loading from input
@@ -330,6 +334,11 @@ void PairE3GNN::coeff(int narg, char **arg) {
 
   cutoff = std::stod(meta_dict["cutoff"]);
   cutoff_square = cutoff * cutoff;
+
+  // to make torch::autograd::grad() works
+  if (meta_dict["oeq"] == "yes") {
+    pair_e3gnn_oeq_register_autograd();
+  }
 
   if (meta_dict["model_type"].compare("E3_equivariant_model") != 0) {
     error->all(FLERR, "given model type is not E3_equivariant_model");
@@ -384,6 +393,8 @@ void PairE3GNN::coeff(int narg, char **arg) {
             meta_dict["dtype"].c_str(), meta_dict["time"].c_str());
     fprintf(lmp->logfile, "FlashTP: %s\n",
             meta_dict["flashTP"].c_str());
+    fprintf(lmp->logfile, "OEQ: %s\n",
+            meta_dict["oeq"].c_str());
   }
 }
 
