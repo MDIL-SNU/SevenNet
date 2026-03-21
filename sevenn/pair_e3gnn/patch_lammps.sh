@@ -5,6 +5,7 @@ cxx_standard=$2 # 14, 17
 d3_support=$3 # 1, 0
 flashTP_so="${4:-NONE}"
 oeq_so="${5:-NONE}"
+atomic_stress="${6:-0}" # 1, 0
 SCRIPT_DIR=$(dirname "${BASH_SOURCE[0]}")
 enable_flashTP=0
 enable_oeq=0
@@ -14,8 +15,8 @@ enable_oeq=0
 ###########################################
 
 # Check the number of arguments
-if [ "$#" -lt 3 ] || [ "$#" -gt 5 ]; then
-    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support} {flashTP_so} {oeq_so}"
+if [ "$#" -lt 3 ] || [ "$#" -gt 6 ]; then
+    echo "Usage: sh patch_lammps.sh {lammps_root} {cxx_standard} {d3_support} {flashTP_so} {oeq_so} {atomic_stress}"
     echo "  {lammps_root}: Root directory of LAMMPS source"
     echo "  {cxx_standard}: C++ standard (14, 17)"
     echo "  {d3_support}: Support for pair_d3 (1, 0)"
@@ -119,7 +120,13 @@ cp $lammps_root/cmake/CMakeLists.txt $backup_dir/CMakeLists.txt
 ###########################################
 
 # 1. Copy pair_e3gnn files to LAMMPS source
+if [ "$atomic_stress" -eq 1 ]; then
+cp $SCRIPT_DIR/pair_e3gnn_atomic_stress.cpp $lammps_root/src/pair_e3gnn.cpp
+cp $SCRIPT_DIR/pair_e3gnn_parallel_atomic_stress.cpp $lammps_root/src/pair_e3gnn_parallel.cpp
+cp $SCRIPT_DIR/comm_brick.cpp $lammps_root/src/
+else
 cp $SCRIPT_DIR/{pair_e3gnn,pair_e3gnn_parallel,comm_brick}.cpp $lammps_root/src/
+fi
 cp $SCRIPT_DIR/{pair_e3gnn,pair_e3gnn_parallel,comm_brick}.h $lammps_root/src/
 # Always copy the oEq autograd bridge (pair_e3gnn.cpp has an extern reference to it)
 cp $SCRIPT_DIR/pair_e3gnn_oeq_autograd.cpp $lammps_root/src/  # TODO: set this as oeq-specific
@@ -199,6 +206,9 @@ fi
 echo "Changes made:"
 echo "  - Original LAMMPS files (src/comm_brick.*, cmake/CMakeList.txt) are in {lammps_root}/_backups"
 echo "  - Copied contents of pair_e3gnn to $lammps_root/src/"
+if [ "$atomic_stress" -eq 1 ]; then
+    echo "  - Atomic stress patch mode enabled: using pair_e3gnn*_atomic_stress.cpp"
+fi
 echo "  - Patched CMakeLists.txt: include LibTorch, CXX_STANDARD $cxx_standard"
 echo
 if [ "$enable_flashTP" -eq 1 ]; then

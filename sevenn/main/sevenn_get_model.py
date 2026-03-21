@@ -64,6 +64,14 @@ def add_args(parser):
         help='Use LAMMPS ML-IAP interface.',
         action='store_true',
     )
+    ag.add_argument(
+        '--atomic_virial',
+        help=(
+            'Serial deploy only: append per-atom virial output '
+            '(inferred_atomic_virial) to TorchScript.'
+        ),
+        action='store_true',
+    )
 
 
 def run(args):
@@ -78,6 +86,7 @@ def run(args):
     use_cueq = args.enable_cueq
     use_oeq = args.enable_oeq
     use_mliap = args.use_mliap
+    atomic_virial = args.atomic_virial
 
     # Check dependencies
     if use_flash:
@@ -104,6 +113,9 @@ def run(args):
     if use_mliap and get_parallel:
         raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
 
+    if atomic_virial and not get_serial:
+        raise ValueError('--atomic_virial is only supported for serial deploy.')
+
     # deploy
     if output_prefix is None:
         output_prefix = 'deployed_parallel' if not get_serial else 'deployed_serial'
@@ -121,7 +133,14 @@ def run(args):
         from sevenn.scripts.deploy import deploy, deploy_parallel
 
         if get_serial:
-            deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
+            deploy(
+                checkpoint_path,
+                output_prefix,
+                modal,
+                use_flash=use_flash,
+                use_oeq=use_oeq,
+                atomic_virial=atomic_virial,
+            )
         else:
             deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
     else:

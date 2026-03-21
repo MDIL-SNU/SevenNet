@@ -64,6 +64,7 @@ class ForceStressOutput(nn.Module):
         data_key_force: str = KEY.PRED_FORCE,
         data_key_stress: str = KEY.PRED_STRESS,
         data_key_cell_volume: str = KEY.CELL_VOLUME,
+        retain_graph_for_second_grad: bool = False,
     ) -> None:
 
         super().__init__()
@@ -73,6 +74,7 @@ class ForceStressOutput(nn.Module):
         self.key_stress = data_key_stress
         self.key_cell_volume = data_key_cell_volume
         self._is_batch_data = True
+        self._retain_graph_for_second_grad = retain_graph_for_second_grad
 
     def get_grad_key(self) -> str:
         return self.key_pos
@@ -89,6 +91,7 @@ class ForceStressOutput(nn.Module):
         grad = torch.autograd.grad(
             energy,
             [pos_tensor, data['_strain']],
+            retain_graph=self._retain_graph_for_second_grad,
             create_graph=self.training,
             allow_unused=True,
             # materialize_grads=True,
@@ -221,4 +224,56 @@ class ForceStressOutputFromEdge(nn.Module):
             data[self.key_stress] =\
                 torch.neg(sout) / data[self.key_cell_volume].unsqueeze(-1)
 
+        return data
+
+
+@compile_mode('script')
+class AtomicVirialOutput(nn.Module):
+    """Per-atom virial from edge forces (post-processing)."""
+
+    def __init__(
+        self,
+        data_key_edge: str = KEY.EDGE_VEC,
+        data_key_edge_idx: str = KEY.EDGE_IDX,
+        data_key_energy: str = KEY.PRED_TOTAL_ENERGY,
+        data_key_virial: str = KEY.PRED_ATOMIC_VIRIAL,
+    ) -> None:
+        super().__init__()
+        self.key_edge = data_key_edge
+        self.key_edge_idx = data_key_edge_idx
+        self.key_energy = data_key_energy
+        self.key_virial = data_key_virial
+
+    def get_grad_key(self) -> str:
+        return self.key_edge
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        rij = data[self.key_edge]
+        energy = [(data[self.key_energy]).sum()]
+
+        grad_list = torch.autograd.grad(
+            energy,
+            [rij],
+            retain_graph=True,
+            create_graph=self.training,
+            allow_unused=True,
+        )
+        fij_opt = grad_list[0]
+        assert fij_opt is not None, 'No gradient for edge vectors'
+        fij = fij_opt
+
+        diag = rij * fij
+        s12 = (rij[..., 0] * fij[..., 1]).unsqueeze(-1)
+        s23 = (rij[..., 1] * fij[..., 2]).unsqueeze(-1)
+        s31 = (rij[..., 2] * fij[..., 0]).unsqueeze(-1)
+        edge_virial = torch.cat([diag, s12, s23, s31], dim=-1)
+
+        tot_num = data[KEY.NODE_FEATURE].shape[0]
+        atom_virial = torch.zeros(
+            tot_num, 6, dtype=edge_virial.dtype, device=edge_virial.device
+        )
+        dst = broadcast(data[self.key_edge_idx][1], edge_virial, 0)
+        atom_virial.scatter_reduce_(0, dst, edge_virial, reduce='sum')
+
+        data[self.key_virial] = -atom_virial
         return data

@@ -206,8 +206,7 @@ class SevenNetCalculator(Calculator):
             .cpu()
             .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
         )
-        # Store results
-        return {
+        results: Dict[str, Any] = {
             'free_energy': energy,
             'energy': energy,
             'energies': atomic_energies,
@@ -215,6 +214,12 @@ class SevenNetCalculator(Calculator):
             'stress': stress,
             'num_edges': output[KEY.EDGE_IDX].shape[1],
         }
+        if KEY.PRED_ATOMIC_VIRIAL in output:
+            virial = (
+                output[KEY.PRED_ATOMIC_VIRIAL].detach().cpu().numpy()[:num_atoms, :]
+            )
+            results[KEY.PRED_ATOMIC_VIRIAL] = virial
+        return results
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         is_ts_type = isinstance(self.model, torch_script_type)
