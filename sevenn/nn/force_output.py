@@ -228,4 +228,3 @@ class ForceStressOutputFromEdge(nn.Module):
                 torch.neg(sout) / data[self.key_cell_volume].unsqueeze(-1)
 
         return data
-

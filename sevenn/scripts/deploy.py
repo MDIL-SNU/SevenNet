@@ -22,7 +22,10 @@ def deploy(
     atomic_virial: bool = False,
 ) -> None:
     from sevenn.nn.edge_embedding import EdgePreprocess
-    from sevenn.nn.force_output import ForceStressOutput, ForceStressOutputFromEdge
+    from sevenn.nn.force_output import (
+        ForceStressOutput,
+        ForceStressOutputFromEdge,
+    )
 
     cp = load_checkpoint(checkpoint)
 

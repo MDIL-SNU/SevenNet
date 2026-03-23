@@ -2,29 +2,29 @@ import numpy as np
 from ase.build import bulk
 
 import sevenn._keys as KEY
-from sevenn.scripts.deploy import deploy
 from sevenn.calculator import SevenNetCalculator
+from sevenn.scripts.deploy import deploy
 from sevenn.util import pretrained_name_to_path
 
 
 def _get_atoms_pbc():
-    atoms = bulk("NaCl", "rocksalt", a=5.63)
+    atoms = bulk('NaCl', 'rocksalt', a=5.63)
     atoms.set_cell([[1.0, 2.815, 2.815], [2.815, 0.0, 2.815], [2.815, 2.815, 0.0]])
     atoms.set_positions([[0.0, 0.0, 0.0], [2.815, 0.0, 0.0]])
     return atoms
 
 
 def test_atomic_virial_is_exposed_in_python_torchscript_path(tmp_path):
-    model_path = str(tmp_path / "7net_0_atomic_virial.pt")
-    deploy(pretrained_name_to_path("7net-0_11July2024"), model_path, atomic_virial=True)
+    model_path = str(tmp_path / '7net_0_atomic_virial.pt')
+    deploy(pretrained_name_to_path('7net-0_11July2024'), model_path, atomic_virial=True)
 
-    calc = SevenNetCalculator(model_path, file_type="torchscript")
+    calc = SevenNetCalculator(model_path, file_type='torchscript')
     atoms = _get_atoms_pbc()
     atoms.calc = calc
     _ = atoms.get_potential_energy()
 
-    assert "stresses" in calc.results
-    atomic_virial = np.asarray(calc.results["stresses"])
+    assert 'stresses' in calc.results
+    atomic_virial = np.asarray(calc.results['stresses'])
 
     assert atomic_virial.shape == (len(atoms), 6)
     assert np.isfinite(atomic_virial).all()
@@ -58,4 +58,4 @@ def test_atomic_virial_is_exposed_in_python_torchscript_path(tmp_path):
     stress_internal_from_virial = virial_sum / atoms.get_volume()
     stress_ase_from_virial = -stress_internal_from_virial[[0, 1, 2, 4, 5, 3]]
 
-    assert np.allclose(calc.results["stress"], stress_ase_from_virial, atol=1e-5)
+    assert np.allclose(calc.results['stress'], stress_ase_from_virial, atol=1e-5)
