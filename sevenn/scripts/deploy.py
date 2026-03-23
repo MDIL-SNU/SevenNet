@@ -22,7 +22,7 @@ def deploy(
     atomic_virial: bool = False,
 ) -> None:
     from sevenn.nn.edge_embedding import EdgePreprocess
-    from sevenn.nn.force_output import AtomicVirialOutput, ForceStressOutput
+    from sevenn.nn.force_output import ForceStressOutput, ForceStressOutputFromEdge
 
     cp = load_checkpoint(checkpoint)
 
@@ -37,9 +37,10 @@ def deploy(
     )
 
     model.prepand_module('edge_preprocess', EdgePreprocess(True))
-    grad_module = ForceStressOutput(
-        retain_graph_for_second_grad=atomic_virial,
-    )
+    if atomic_virial:
+        grad_module = ForceStressOutputFromEdge(use_atomic_virial=True)
+    else:
+        grad_module = ForceStressOutput()
     model.replace_module('force_output', grad_module)
     new_grad_key = grad_module.get_grad_key()
     model.key_grad = new_grad_key
@@ -55,9 +56,6 @@ def deploy(
 
     model.set_is_batch_data(False)
     model.eval()
-
-    if atomic_virial:
-        model.add_module('atomic_virial', AtomicVirialOutput())
 
     model = e3nn.util.jit.script(model)
     model = torch.jit.freeze(model)

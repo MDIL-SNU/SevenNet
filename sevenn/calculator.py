@@ -40,6 +40,7 @@ class SevenNetCalculator(Calculator):
         enable_cueq: Optional[bool] = False,
         enable_flash: Optional[bool] = False,
         enable_oeq: Optional[bool] = False,
+        atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
     ) -> None:
@@ -69,9 +70,13 @@ class SevenNetCalculator(Calculator):
             if True, use OpenEquivariance to accelerate inference.
         sevennet_config: dict | None, default=None
             Not used, but can be used to carry meta information of this calculator
+        atomic_virial: bool, default=False
+            If True, request per-atom virial output (`stresses`) at runtime.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
+        self.atomic_virial_requested = atomic_virial
+        self.atomic_virial_from_deploy = False
 
         if isinstance(model, pathlib.PurePath):
             model = str(model)
@@ -131,6 +136,7 @@ class SevenNetCalculator(Calculator):
                 'version': b'',
                 'dtype': b'',
                 'time': b'',
+                'atomic_virial': b'',
             }
             model_loaded = torch.jit.load(
                 model, _extra_files=extra_dict, map_location=self.device
@@ -141,6 +147,9 @@ class SevenNetCalculator(Calculator):
                 sym_to_num[sym]: i for i, sym in enumerate(chem_symbols.split())
             }
             self.cutoff = float(extra_dict['cutoff'].decode('utf-8'))
+            self.atomic_virial_from_deploy = (
+                extra_dict['atomic_virial'].decode('utf-8') == 'yes'
+            )
 
         elif isinstance(model, AtomGraphSequential):
             if model.type_map is None:
@@ -161,6 +170,12 @@ class SevenNetCalculator(Calculator):
             self.sevennet_config = sevennet_config
 
         self.model = model_loaded
+        if isinstance(self.model, AtomGraphSequential):
+            force_output = self.model._modules.get('force_output')
+            if force_output is not None:
+                self.atomic_virial_from_deploy = self.atomic_virial_from_deploy or bool(
+                    getattr(force_output, 'use_atomic_virial', False)
+                )
 
         self.modal = None
         if isinstance(self.model, AtomGraphSequential):
@@ -182,6 +197,7 @@ class SevenNetCalculator(Calculator):
             'energy',
             'forces',
             'stress',
+            'stresses',
             'energies',
         ]
 
@@ -218,7 +234,7 @@ class SevenNetCalculator(Calculator):
             virial = (
                 output[KEY.PRED_ATOMIC_VIRIAL].detach().cpu().numpy()[:num_atoms, :]
             )
-            results[KEY.PRED_ATOMIC_VIRIAL] = virial
+            results['stresses'] = virial
         return results
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
@@ -246,8 +262,13 @@ class SevenNetCalculator(Calculator):
             data[KEY.EDGE_VEC].requires_grad_(True)  # backward compatibility
             data = data.to_dict()
             del data['data_info']
+        elif self.atomic_virial_requested:
+            force_output = self.model._modules.get('force_output')
+            if force_output is not None and hasattr(force_output, 'use_atomic_virial'):
+                setattr(force_output, 'use_atomic_virial', True)
 
-        self.results = self.output_to_results(self.model(data))
+        output = self.model(data)
+        self.results = self.output_to_results(output)
 
 
 class SevenNetD3Calculator(SumCalculator):

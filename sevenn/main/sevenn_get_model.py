@@ -68,7 +68,8 @@ def add_args(parser):
         '--atomic_virial',
         help=(
             'Serial deploy only: append per-atom virial output '
-            '(inferred_atomic_virial) to TorchScript.'
+            '(inferred_atomic_virial) to TorchScript. This marks model-side '
+            'atomic virial capability for downstream calculator usage.'
         ),
         action='store_true',
     )
