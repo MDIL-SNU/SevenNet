@@ -6,6 +6,7 @@ import warnings
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+import numpy as np
 import torch
 from torch_geometric.loader.dataloader import Collater
 
@@ -199,10 +200,20 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         if state.device != self._device:
             state = state.to(self._device)
 
+        # Some neighbor_list_fn (e.g. torch_nl_linked_cell) assumes wrapped positions
+        # Use new variable not to mutate state.positions
+        positions = (
+            ts.transforms.pbc_wrap_batched(
+                state.positions, state.cell, state.system_idx, state.pbc
+            )
+            if state.pbc.any()
+            else state.positions
+        )
+
         # Batched neighbor list using linked-cell algorithm with row-vector cell
         n_systems = int(state.system_idx.max().item() + 1)
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
-            state.positions,
+            positions,
             state.row_vector_cell,
             state.pbc,
             self.cutoff,
@@ -223,7 +234,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             sys_start = stride[sys_idx].item()
             sys_end = stride[sys_idx + 1].item()
 
-            pos = state.positions[sys_start:sys_end]
+            pos = positions[sys_start:sys_end]
             row_vector_cell = state.row_vector_cell[sys_idx]
             atomic_nums = state.atomic_numbers[sys_start:sys_end]
 
@@ -295,5 +306,120 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             )
 
         results = {k: v.detach() for k, v in results.items()}
+
+        return results
+
+
+# TODO: replace this with torchsim_d3.SevenNetD3Model
+class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
+    """SevenNet + D3 dispersion composite model for TorchSim.
+
+    Wraps SevenNetModel and D3Calculator, sums their E/F/S outputs.
+    Interface-compatible with SevenNetModel (same forward signature).
+
+    Args match SevenNetModel plus D3 parameters. Mirrors
+    SevenNetD3Calculator's arguments for consistency.
+    """
+
+    def __init__(
+        self,
+        model: AtomGraphSequential | str | Path,
+        *,
+        modal: str | None = None,
+        enable_cueq: bool = False,
+        enable_flash: bool = False,
+        enable_oeq: bool = False,
+        neighbor_list_fn: Callable | None = None,
+        device: torch.device | str = 'auto',
+        dtype: torch.dtype = torch.float32,
+        damping_type: str = 'damp_bj',
+        functional_name: str = 'pbe',
+        vdw_cutoff: float = 9000,
+        cn_cutoff: float = 1600,
+    ) -> None:
+        super().__init__()
+
+        # Check if the D3Calculator is available
+        from sevenn.calculator import D3Calculator
+
+        self.sevennet = SevenNetModel(
+            model,
+            modal=modal,
+            enable_cueq=enable_cueq,
+            enable_flash=enable_flash,
+            enable_oeq=enable_oeq,
+            neighbor_list_fn=neighbor_list_fn,
+            device=device,
+            dtype=dtype,
+        )
+        self.d3 = D3Calculator(
+            damping_type=damping_type,
+            functional_name=functional_name,
+            vdw_cutoff=vdw_cutoff,
+            cn_cutoff=cn_cutoff,
+        )
+
+        # Proxy ModelInterface attributes from inner SevenNetModel
+        self._device = self.sevennet._device
+        self._dtype = self.sevennet._dtype
+        self._compute_stress = True
+        self._compute_forces = True
+        self._memory_scales_with = 'n_atoms_x_density'
+        self.cutoff = self.sevennet.cutoff
+        self.neighbor_list_fn = self.sevennet.neighbor_list_fn
+        self.implemented_properties = ['energy', 'forces', 'stress']
+
+    @property
+    def device(self) -> torch.device:
+        """Device the model is running on."""
+        return self._device
+
+    @property
+    def dtype(self) -> torch.dtype:
+        """Data type for computation."""
+        return self._dtype
+
+    def forward(self, state: ts.SimState, **kwargs) -> dict[str, torch.Tensor]:
+        """Forward pass: SevenNet (batched GPU) + D3 (per-system CUDA ctypes).
+
+        Returns combined {"energy", "forces", "stress"} dict.
+        """
+        results = self.sevennet(state, **kwargs)
+
+        # Make tensors writable (sevennet detaches but they may share storage)
+        results = {k: v.clone() for k, v in results.items()}
+
+        # D3 uses a separate CUDA kernel via ctypes; sync to avoid conflicts
+        if self._device.type == 'cuda':
+            torch.cuda.synchronize(self._device)
+
+        # D3 wraps positions internally (load_atom_info applies floor()
+        # in fractional coords), so no need to wrap here.
+
+        n_per = state.n_atoms_per_system.tolist()
+        offsets = [0]
+        for n in n_per:
+            offsets.append(offsets[-1] + n)
+
+        for i, single in enumerate(state.split()):
+            atoms = single.to_atoms()[0]
+            self.d3.calculate(atoms)
+            d3r = self.d3.results
+
+            results['energy'][i] += d3r['energy']
+
+            si, ei = offsets[i], offsets[i + 1]
+            results['forces'][si:ei] += torch.from_numpy(
+                np.ascontiguousarray(d3r['forces']),
+            ).to(device=self._device, dtype=self._dtype)
+
+            # D3 stress: Voigt-6 [xx,yy,zz,yz,xz,xy] in eV/A^3 (ASE sign)
+            # SevenNet stress is also intensive (eV/A^3), so add directly
+            d3_stress_3x3 = voigt_6_to_full_3x3_stress(
+                torch.tensor(
+                    d3r['stress'], device=self._device, dtype=self._dtype,
+                ),
+            )
+            results['stress'][i] += d3_stress_3x3
 
         return results
