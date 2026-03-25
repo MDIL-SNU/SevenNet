@@ -3,7 +3,7 @@ from ase.build import bulk
 
 import sevenn._keys as KEY
 from sevenn.calculator import SevenNetCalculator
-from sevenn.scripts.deploy import deploy
+from sevenn.scripts.deploy import deploy_ts
 from sevenn.util import pretrained_name_to_path
 
 
@@ -16,7 +16,7 @@ def _get_atoms_pbc():
 
 def test_atomic_virial_is_exposed_in_python_torchscript_path(tmp_path):
     model_path = str(tmp_path / '7net_0_atomic_virial.pt')
-    deploy(pretrained_name_to_path('7net-0_11July2024'), model_path, atomic_virial=True)
+    deploy_ts(pretrained_name_to_path('7net-0_11July2024'), model_path, atomic_virial=True)
 
     calc = SevenNetCalculator(model_path, file_type='torchscript')
     atoms = _get_atoms_pbc()
