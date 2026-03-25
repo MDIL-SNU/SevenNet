@@ -114,12 +114,14 @@ def run(args):
     if use_mliap and get_parallel:
         raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
 
-    if atomic_virial and not get_serial:
-        raise ValueError('--atomic_virial is only supported for serial deploy.')
+    if atomic_virial and (use_mliap or get_parallel):
+        raise ValueError('--atomic_virial is only supported for serial deployment.')
 
     # deploy
     if output_prefix is None:
         output_prefix = 'deployed_parallel' if not get_serial else 'deployed_serial'
+        if atomic_virial:
+            output_prefix = 'deployed_model'
 
         if use_mliap:
             output_prefix += '_mliap'
@@ -131,10 +133,10 @@ def run(args):
         checkpoint_path = sevenn.util.pretrained_name_to_path(checkpoint)
 
     if not use_mliap:
-        from sevenn.scripts.deploy import deploy, deploy_parallel
+        from sevenn.scripts.deploy import deploy, deploy_parallel, deploy_ts
 
-        if get_serial:
-            deploy(
+        if atomic_virial:
+            deploy_ts(
                 checkpoint_path,
                 output_prefix,
                 modal,
@@ -142,6 +144,13 @@ def run(args):
                 use_oeq=use_oeq,
                 atomic_virial=atomic_virial,
             )
+        elif get_serial:
+            deploy(
+                checkpoint_path,
+                output_prefix,
+                modal,
+                use_flash=use_flash,
+                use_oeq=use_oeq)
         else:
             deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
     else:

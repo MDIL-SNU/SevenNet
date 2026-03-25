@@ -8,7 +8,7 @@ from ase.build import bulk, molecule
 from sevenn.calculator import D3Calculator, SevenNetCalculator
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.flash_helper import is_flash_available
-from sevenn.scripts.deploy import deploy
+from sevenn.scripts.deploy import deploy_ts
 from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 
@@ -108,7 +108,7 @@ def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
 def test_sevennet_0_cal_deployed_consistency(tmp_path, atoms_pbc):
     atoms_pbc.rattle(stdev=0.01, seed=42)
     fname = str(tmp_path / '7net_0.pt')
-    deploy(pretrained_name_to_path('7net-0_11July2024'), fname)
+    deploy_ts(pretrained_name_to_path('7net-0_11July2024'), fname)
 
     calc_script = SevenNetCalculator(fname, file_type='torchscript')
     calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
