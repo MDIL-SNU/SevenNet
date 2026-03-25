@@ -4,6 +4,7 @@ All notable changes to this project will be documented in this file.
 ## [0.12.2.dev]
 ### Added
 - Support OpenEquivariance
+- Add Batch D3 and SevenNetD3Model in Torch-Sim interface
 
 ### Changed
 - **[Breaking]** Rename optional dependency group `mliap` into `mliap12` (reflecting its CUDA 12.x dependency).
