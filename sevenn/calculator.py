@@ -52,7 +52,7 @@ class SevenNetCalculator(Calculator):
             Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
             7net-0) or path to the checkpoint, deployed model or the model itself
         file_type: str, default='checkpoint'
-            one of 'checkpoint' | 'torchscript' | 'model_instance'
+            one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
             if not given, use CUDA if available
         modal: str | None, default=None
@@ -81,7 +81,7 @@ class SevenNetCalculator(Calculator):
         if isinstance(model, pathlib.PurePath):
             model = str(model)
 
-        allowed_file_types = ['checkpoint', 'torchscript', 'model_instance']
+        allowed_file_types = ['checkpoint', 'model_instance']
         file_type = file_type.lower()
         if file_type not in allowed_file_types:
             raise ValueError(f'file_type not in {allowed_file_types}')
