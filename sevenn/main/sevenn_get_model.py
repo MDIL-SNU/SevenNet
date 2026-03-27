@@ -78,7 +78,6 @@ def run(args):
     use_cueq = args.enable_cueq
     use_oeq = args.enable_oeq
     use_mliap = args.use_mliap
-    atomic_virial = args.atomic_virial
 
     # Check dependencies
     if use_flash:
