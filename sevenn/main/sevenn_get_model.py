@@ -121,7 +121,7 @@ def run(args):
         from sevenn.scripts.deploy import deploy, deploy_parallel
 
         if get_serial:
-            deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)
+            deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
         else:
             deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
     else:

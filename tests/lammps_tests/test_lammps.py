@@ -467,7 +467,11 @@ def test_serial_stress(
     ['bulk', 'surface'],
 )
 def test_serial_stress_oeq(
-    system, serial_potential_path_oeq, ref_7net0_stress_calculator, lammps_cmd, tmp_path
+    system,
+    serial_potential_path_oeq,
+    ref_7net0_stress_calculator,
+    lammps_cmd,
+    tmp_path
 ):
     atoms = get_system(system)
     atoms_lammps = serial_stress_lammps_run(
@@ -487,7 +491,11 @@ def test_serial_stress_oeq(
     ['bulk', 'surface'],
 )
 def test_serial_stress_flash(
-    system, serial_potential_path_flash, ref_7net0_stress_calculator, lammps_cmd, tmp_path
+    system,
+    serial_potential_path_flash,
+    ref_7net0_stress_calculator,
+    lammps_cmd,
+    tmp_path
 ):
     atoms = get_system(system)
     atoms_lammps = serial_stress_lammps_run(
@@ -506,7 +514,10 @@ def test_serial_stress_flash(
     ['bulk', 'surface'],
 )
 def test_modal_serial_stress(
-    system, serial_modal_potential_path, ref_modal_stress_calculator, lammps_cmd, tmp_path
+    system,
+    serial_modal_potential_path,
+    ref_modal_stress_calculator,
+    lammps_cmd, tmp_path
 ):
     atoms = get_system(system)
     atoms_lammps = serial_stress_lammps_run(

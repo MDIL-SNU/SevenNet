@@ -173,8 +173,9 @@ class SevenNetCalculator(Calculator):
         if isinstance(self.model, AtomGraphSequential):
             force_output = self.model._modules.get('force_output')
             if force_output is not None:
-                self.atomic_virial_from_deploy = self.atomic_virial_from_deploy or bool(
-                    getattr(force_output, 'use_atomic_virial', False)
+                self.atomic_virial_from_deploy = (
+                    self.atomic_virial_from_deploy
+                    or bool(getattr(force_output, 'use_atomic_virial', False))
                 )
 
         self.modal = None
@@ -264,7 +265,10 @@ class SevenNetCalculator(Calculator):
             del data['data_info']
         elif self.atomic_virial_requested:
             force_output = self.model._modules.get('force_output')
-            if force_output is not None and hasattr(force_output, 'use_atomic_virial'):
+            if (
+                force_output is not None
+                and hasattr(force_output, 'use_atomic_virial')
+            ):
                 setattr(force_output, 'use_atomic_virial', True)
 
         output = self.model(data)
