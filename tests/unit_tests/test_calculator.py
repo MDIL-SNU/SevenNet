@@ -8,7 +8,6 @@ from ase.build import bulk, molecule
 from sevenn.calculator import D3Calculator, SevenNetCalculator
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.flash_helper import is_flash_available
-from sevenn.scripts.deploy import deploy_ts
 from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 
@@ -103,26 +102,6 @@ def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
     )
     assert np.allclose(atoms_mol.get_forces(), atoms2_ref['force'])
     assert np.allclose(atoms_mol.get_potential_energies(), atoms2_ref['energies'])
-
-
-def test_sevennet_0_cal_deployed_consistency(tmp_path, atoms_pbc):
-    atoms_pbc.rattle(stdev=0.01, seed=42)
-    fname = str(tmp_path / '7net_0.pt')
-    deploy_ts(pretrained_name_to_path('7net-0_11July2024'), fname)
-
-    calc_script = SevenNetCalculator(fname, file_type='torchscript')
-    calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
-
-    atoms_pbc.calc = calc_cp
-    atoms_pbc.get_potential_energy()
-    res_cp = copy.copy(atoms_pbc.calc.results)
-
-    atoms_pbc.calc = calc_script
-    atoms_pbc.get_potential_energy()
-    res_script = copy.copy(atoms_pbc.calc.results)
-
-    for k in res_cp:
-        assert np.allclose(res_cp[k], res_script[k], rtol=1e-4, atol=1e-4)
 
 
 def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):

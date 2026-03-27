@@ -36,11 +36,6 @@ def add_args(parser):
         help='Enable OpenEquivariance',
         action='store_true',
     )
-    ag.add_argument(
-        '--atomic_stress',
-        help='Patch pair_e3gnn with atomic-stress enabled source files.',
-        action='store_true',
-    )
     # cxx_standard is detected automatically
 
 
@@ -58,12 +53,6 @@ def run(args):
     else:
         d3_support = '0'
         print('  - D3 support disabled')
-
-    atomic_stress = '1' if args.atomic_stress else '0'
-    if args.atomic_stress:
-        print('  - Atomic stress patch enabled')
-    else:
-        print('  - Atomic stress patch disabled')
 
     so_oeq = ''
     if args.enable_oeq:
@@ -122,10 +111,6 @@ def run(args):
     if args.enable_oeq:
         assert osp.isfile(so_oeq)
         cmd += f' {so_oeq}'
-    else:
-        cmd += ' NONE'
-
-    cmd += f' {atomic_stress}'
 
     res = subprocess.run(cmd.split())
     return res.returncode  # is it meaningless?

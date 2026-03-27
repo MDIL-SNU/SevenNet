@@ -18,7 +18,7 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.flash_helper import is_flash_available
 from sevenn.nn.oeq_helper import is_oeq_available
-from sevenn.scripts.deploy import deploy, deploy_parallel, deploy_ts
+from sevenn.scripts.deploy import deploy, deploy_parallel
 from sevenn.util import chemical_species_preprocess, pretrained_name_to_path
 
 logger = logging.getLogger('test_lammps')
@@ -110,19 +110,18 @@ def ref_modal_calculator():
 
 
 @pytest.fixture(scope='module')
-def ref_stress_calculator(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp('serial_potential_atomic_virial')
-    pot_path = str(tmp / 'deployed_atomic_virial.pt')
-    deploy_ts(cp_0_path, pot_path, atomic_virial=True)
-    return SevenNetCalculator(pot_path, file_type='torchscript')
+def ref_stress_calculator():
+    return SevenNetCalculator(cp_0_path, atomic_virial=True)
 
 
 @pytest.fixture(scope='module')
-def ref_7net0_stress_calculator(tmp_path_factory):
-    tmp = tmp_path_factory.mktemp('serial_potential_atomic_virial')
-    pot_path = str(tmp / 'deployed_atomic_virial.pt')
-    deploy_ts(cp_7net0_path, pot_path, atomic_virial=True)
-    return SevenNetCalculator(pot_path, file_type='torchscript')
+def ref_7net0_stress_calculator():
+    return SevenNetCalculator(cp_7net0_path, atomic_virial=True)
+
+
+@pytest.fixture(scope='module')
+def ref_modal_stress_calculator():
+    return SevenNetCalculator(cp_mf_path, modal='PBE', atomic_virial=True)
 
 
 def get_model_config():
@@ -500,6 +499,25 @@ def test_serial_stress_flash(
     )
     atoms.calc = ref_7net0_stress_calculator
     assert_atoms(atoms, atoms_lammps, atol=1e-5, check_atomic_stress=True)
+
+
+@pytest.mark.parametrize(
+    'system',
+    ['bulk', 'surface'],
+)
+def test_modal_serial_stress(
+    system, serial_modal_potential_path, ref_modal_stress_calculator, lammps_cmd, tmp_path
+):
+    atoms = get_system(system)
+    atoms_lammps = serial_stress_lammps_run(
+        atoms=atoms,
+        potential=serial_modal_potential_path,
+        wd=tmp_path,
+        test_name='modal serial lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_modal_stress_calculator
+    assert_atoms(atoms, atoms_lammps)
 
 
 @pytest.mark.parametrize(

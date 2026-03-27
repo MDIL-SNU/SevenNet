@@ -19,7 +19,6 @@ def deploy(
     modal: Optional[str] = None,
     use_flash: bool = False,
     use_oeq: bool = False,
-    atomic_virial: bool = False,
 ) -> None:
     cp = load_checkpoint(checkpoint)
     model, config = (
@@ -68,7 +67,6 @@ def deploy(
     md_configs.update({'version': __version__})
     md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
-    md_configs.update({'atomic_virial': 'yes' if atomic_virial else 'no'})
 
     if fname.endswith('.pt') is False:
         fname += '.pt'
@@ -170,79 +168,3 @@ def deploy_parallel(
         model = torch.jit.freeze(model)
 
         torch.jit.save(model, fname_full, _extra_files=md_configs)
-
-
-def deploy_ts(
-    checkpoint: Union[pathlib.Path, str],
-    fname='deployed_model.pt',
-    modal: Optional[str] = None,
-    use_flash: bool = False,
-    use_oeq: bool = False,
-    atomic_virial: bool = False,
-) -> None:
-    '''
-    only for SevenNetCalculator with torchscript input (not for e3gnn)
-    '''
-    from sevenn.nn.edge_embedding import EdgePreprocess
-    from sevenn.nn.force_output import (
-        ForceStressOutput,
-        ForceStressOutputFromEdge,
-    )
-
-    cp = load_checkpoint(checkpoint)
-
-    model, config = (
-        cp.build_model(
-            enable_cueq=False,
-            enable_flash=use_flash,
-            enable_oeq=use_oeq,
-            _flash_lammps=use_flash,
-        ),
-        cp.config,
-    )
-
-    model.prepand_module('edge_preprocess', EdgePreprocess(True))
-    grad_module = ForceStressOutputFromEdge(use_atomic_virial=True)
-    model.replace_module('force_output', grad_module)
-    new_grad_key = grad_module.get_grad_key()
-    model.key_grad = new_grad_key
-
-    if hasattr(model, 'eval_type_map'):
-        setattr(model, 'eval_type_map', False)
-
-    if modal:
-        model.prepare_modal_deploy(modal)
-    elif model.modal_map is not None and len(model.modal_map) >= 1:
-        raise ValueError(
-            f'Modal is not given. It has: {list(model.modal_map.keys())}'
-        )
-
-    model.set_is_batch_data(False)
-    model.eval()
-
-    model = e3nn.util.jit.script(model)
-    model = torch.jit.freeze(model)
-
-    # make some config need for md
-    md_configs = {}
-    type_map = config[KEY.TYPE_MAP]
-    chem_list = ''
-    for Z in type_map.keys():
-        chem_list += chemical_symbols[Z] + ' '
-    chem_list.strip()
-    md_configs.update({'chemical_symbols_to_index': chem_list})
-    md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
-    md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
-    md_configs.update({'flashTP': 'yes' if use_flash else 'no'})
-    md_configs.update({'oeq': 'yes' if use_oeq else 'no'})
-    md_configs.update(
-        {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
-    )
-    md_configs.update({'version': __version__})
-    md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
-    md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
-    md_configs.update({'atomic_virial': 'yes' if atomic_virial else 'no'})
-
-    if fname.endswith('.pt') is False:
-        fname += '.pt'
-    torch.jit.save(model, fname, _extra_files=md_configs)

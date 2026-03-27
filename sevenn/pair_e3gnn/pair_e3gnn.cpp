@@ -81,9 +81,6 @@ void PairE3GNN::compute(int eflag, int vflag) {
     ev_setup(eflag, vflag);
   else
     evflag = vflag_fdotr = 0;
-  // if (vflag_atom) {
-  //   error->all(FLERR, "atomic stress is not supported\n");
-  // }
 
   if (atom->tag_consecutive() == 0) {
     error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
