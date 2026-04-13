@@ -65,6 +65,7 @@ PRED_FORCE: Final[str] = 'inferred_force'
 SCALED_FORCE: Final[str] = 'scaled_force'
 
 PRED_STRESS: Final[str] = 'inferred_stress'
+PRED_ATOMIC_VIRIAL: Final[str] = 'inferred_atomic_virial'
 SCALED_STRESS: Final[str] = 'scaled_stress'
 
 # very general data property for AtomGraphData

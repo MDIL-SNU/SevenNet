@@ -43,6 +43,12 @@ def to_atom_graph_list(atom_graph_batch) -> List[_const.AtomGraphDataType]:
     if is_stress:
         inferred_stress_list = torch.unbind(atom_graph_batch[KEY.PRED_STRESS])
 
+    inferred_virial_list = None
+    if KEY.PRED_ATOMIC_VIRIAL in atom_graph_batch:
+        inferred_virial_list = torch.split(
+            atom_graph_batch[KEY.PRED_ATOMIC_VIRIAL], indices
+        )
+
     for i, data in enumerate(data_list):
         data[KEY.ATOMIC_ENERGY] = atomic_energy_list[i]
         data[KEY.PRED_TOTAL_ENERGY] = inferred_total_energy_list[i]
@@ -50,6 +56,8 @@ def to_atom_graph_list(atom_graph_batch) -> List[_const.AtomGraphDataType]:
         # To fit with KEY.STRESS (ref) format
         if is_stress and inferred_stress_list is not None:
             data[KEY.PRED_STRESS] = torch.unsqueeze(inferred_stress_list[i], 0)
+        if inferred_virial_list is not None:
+            data[KEY.PRED_ATOMIC_VIRIAL] = inferred_virial_list[i]
     return data_list
 
 
