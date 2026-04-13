@@ -111,17 +111,17 @@ def ref_modal_calculator():
 
 @pytest.fixture(scope='module')
 def ref_stress_calculator():
-    return SevenNetCalculator(cp_0_path, atomic_virial=True)
+    return SevenNetCalculator(cp_0_path, compute_atomic_virial=True)
 
 
 @pytest.fixture(scope='module')
 def ref_7net0_stress_calculator():
-    return SevenNetCalculator(cp_7net0_path, atomic_virial=True)
+    return SevenNetCalculator(cp_7net0_path, compute_atomic_virial=True)
 
 
 @pytest.fixture(scope='module')
 def ref_modal_stress_calculator():
-    return SevenNetCalculator(cp_mf_path, modal='PBE', atomic_virial=True)
+    return SevenNetCalculator(cp_mf_path, modal='PBE', compute_atomic_virial=True)
 
 
 def get_model_config():

@@ -35,7 +35,7 @@ class SevenNetCalculator(Calculator):
         enable_cueq: Optional[bool] = False,
         enable_flash: Optional[bool] = False,
         enable_oeq: Optional[bool] = False,
-        atomic_virial: bool = False,
+        compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
     ) -> None:
@@ -65,12 +65,12 @@ class SevenNetCalculator(Calculator):
             if True, use OpenEquivariance to accelerate inference.
         sevennet_config: dict | None, default=None
             Not used, but can be used to carry meta information of this calculator
-        atomic_virial: bool, default=False
+        compute_atomic_virial: bool, default=False
             If True, request per-atom virial output (`stresses`) at runtime.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
-        self.compute_atomic_virial = atomic_virial
+        self.compute_atomic_virial = compute_atomic_virial
 
         if isinstance(model, pathlib.PurePath):
             model = str(model)
@@ -148,7 +148,7 @@ class SevenNetCalculator(Calculator):
                 force_output, 'use_atomic_virial'
             ):
                 raise ValueError(
-                    'atomic_virial=True requested but model does not have '
+                    'compute_atomic_virial=True but model does not have '
                     'a force_output module with use_atomic_virial support.'
                 )
             force_output.use_atomic_virial = True
@@ -281,6 +281,13 @@ class SevenNetD3Calculator(SumCalculator):
         cn_cutoff: float, default=1600
             cn cutoff of D3 calculator in au^2
         """
+        if kwargs.get('compute_atomic_virial', False):
+            warnings.warn(
+                'D3Calculator does not support per-atom stress. '
+                'Atomic stress from SevenNetD3Calculator will not '
+                'include D3 contributions.'
+            )
+
         d3_calc = D3Calculator(
             damping_type=damping_type,
             functional_name=functional_name,
