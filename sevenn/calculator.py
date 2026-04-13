@@ -71,7 +71,6 @@ class SevenNetCalculator(Calculator):
         super().__init__(**kwargs)
         self.sevennet_config = None
         self.compute_atomic_virial = atomic_virial
-        self.atomic_virial_from_deploy = False
 
         if isinstance(model, pathlib.PurePath):
             model = str(model)
@@ -143,13 +142,16 @@ class SevenNetCalculator(Calculator):
             self.sevennet_config = sevennet_config
 
         self.model = model_loaded
-        if isinstance(self.model, AtomGraphSequential):
+        if self.compute_atomic_virial:
             force_output = self.model._modules.get('force_output')
-            if force_output is not None:
-                self.atomic_virial_from_deploy = (
-                    self.atomic_virial_from_deploy
-                    or bool(getattr(force_output, 'use_atomic_virial', False))
+            if force_output is None or not hasattr(
+                force_output, 'use_atomic_virial'
+            ):
+                raise ValueError(
+                    'atomic_virial=True requested but model does not have '
+                    'a force_output module with use_atomic_virial support.'
                 )
+            force_output.use_atomic_virial = True
 
         self.modal = None
         if isinstance(self.model, AtomGraphSequential):
@@ -223,14 +225,6 @@ class SevenNetCalculator(Calculator):
             data[KEY.DATA_MODALITY] = self.modal
 
         data.to(self.device)  # type: ignore
-
-        if self.compute_atomic_virial:
-            force_output = self.model._modules.get('force_output')
-            if (
-                force_output is not None
-                and hasattr(force_output, 'use_atomic_virial')
-            ):
-                force_output.use_atomic_virial = True
 
         output = self.model(data)
         self.results = self.output_to_results(output)
