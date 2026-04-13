@@ -6,20 +6,15 @@ from typing import Any, Dict, Optional, Union
 
 import numpy as np
 import torch
-import torch.jit
-import torch.jit._script
 from ase.atoms import Atoms
 from ase.calculators.calculator import Calculator, all_changes
 from ase.calculators.mixing import SumCalculator
-from ase.data import chemical_symbols
 
 import sevenn._keys as KEY
 import sevenn.util as util
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.train.dataload import unlabeled_atoms_to_graph
-
-torch_script_type = torch.jit._script.RecursiveScriptModule
 
 
 class SevenNetCalculator(Calculator):
@@ -75,7 +70,7 @@ class SevenNetCalculator(Calculator):
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
-        self.atomic_virial_requested = atomic_virial
+        self.compute_atomic_virial = atomic_virial
         self.atomic_virial_from_deploy = False
 
         if isinstance(model, pathlib.PurePath):
@@ -84,20 +79,24 @@ class SevenNetCalculator(Calculator):
         allowed_file_types = ['checkpoint', 'model_instance']
         file_type = file_type.lower()
         if file_type not in allowed_file_types:
+            if file_type == 'torchscript':
+                raise ValueError(
+                    'torchscript file_type is no longer supported. '
+                    'Use checkpoint or model_instance instead.'
+                )
             raise ValueError(f'file_type not in {allowed_file_types}')
 
         enable_cueq = os.getenv('SEVENNET_ENABLE_CUEQ') == '1' or enable_cueq
         enable_flash = os.getenv('SEVENNET_ENABLE_FLASH') == '1' or enable_flash
         enable_oeq = os.getenv('SEVENNET_ENABLE_OEQ') == '1' or enable_oeq
 
-        if enable_cueq and file_type in ['model_instance', 'torchscript']:
+        if enable_cueq and file_type == 'model_instance':
             warnings.warn(
                 'file_type should be checkpoint to enable cueq. cueq set to False'
             )
             enable_cueq = False
 
-        # TODO: not verified this line
-        if enable_oeq and file_type in ['model_instance', 'torchscript']:
+        if enable_oeq and file_type == 'model_instance':
             warnings.warn(
                 'file_type should be checkpoint to enable oeq. oeq set to False'
             )
@@ -124,32 +123,6 @@ class SevenNetCalculator(Calculator):
             self.type_map = cp.config[KEY.TYPE_MAP]
             self.cutoff = cp.config[KEY.CUTOFF]
             self.sevennet_config = cp.config
-
-        elif file_type == 'torchscript' and isinstance(model, str):
-            if modal:
-                raise NotImplementedError()
-            extra_dict = {
-                'chemical_symbols_to_index': b'',
-                'cutoff': b'',
-                'num_species': b'',
-                'model_type': b'',
-                'version': b'',
-                'dtype': b'',
-                'time': b'',
-                'atomic_virial': b'',
-            }
-            model_loaded = torch.jit.load(
-                model, _extra_files=extra_dict, map_location=self.device
-            )
-            chem_symbols = extra_dict['chemical_symbols_to_index'].decode('utf-8')
-            sym_to_num = {sym: n for n, sym in enumerate(chemical_symbols)}
-            self.type_map = {
-                sym_to_num[sym]: i for i, sym in enumerate(chem_symbols.split())
-            }
-            self.cutoff = float(extra_dict['cutoff'].decode('utf-8'))
-            self.atomic_virial_from_deploy = (
-                extra_dict['atomic_virial'].decode('utf-8') == 'yes'
-            )
 
         elif isinstance(model, AtomGraphSequential):
             if model.type_map is None:
@@ -239,37 +212,25 @@ class SevenNetCalculator(Calculator):
         return results
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
-        is_ts_type = isinstance(self.model, torch_script_type)
-
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
         if atoms is None:
             raise ValueError('No atoms to evaluate')
         data = AtomGraphData.from_numpy_dict(
-            unlabeled_atoms_to_graph(atoms, self.cutoff, with_shift=is_ts_type)
+            unlabeled_atoms_to_graph(atoms, self.cutoff, with_shift=False)
         )
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
 
         data.to(self.device)  # type: ignore
 
-        if is_ts_type:
-            data[KEY.NODE_FEATURE] = torch.tensor(
-                [self.type_map[z.item()] for z in data[KEY.NODE_FEATURE]],
-                dtype=torch.int64,
-                device=self.device,
-            )
-            data[KEY.POS].requires_grad_(True)  # backward compatibility
-            data[KEY.EDGE_VEC].requires_grad_(True)  # backward compatibility
-            data = data.to_dict()
-            del data['data_info']
-        elif self.atomic_virial_requested:
+        if self.compute_atomic_virial:
             force_output = self.model._modules.get('force_output')
             if (
                 force_output is not None
                 and hasattr(force_output, 'use_atomic_virial')
             ):
-                setattr(force_output, 'use_atomic_virial', True)
+                force_output.use_atomic_virial = True
 
         output = self.model(data)
         self.results = self.output_to_results(output)
@@ -300,7 +261,7 @@ class SevenNetD3Calculator(SumCalculator):
             Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
             7net-0) or path to the checkpoint, deployed model or the model itself
         file_type: str, default='checkpoint'
-            one of 'checkpoint' | 'torchscript' | 'model_instance'
+            one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
             if not given, use CUDA if available
         modal: str | None, default=None
