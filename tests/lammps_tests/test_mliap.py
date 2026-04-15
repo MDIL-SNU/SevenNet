@@ -197,7 +197,7 @@ def _lammps_results_to_atoms(lammps_log, force_dump):
         'lmp_dump': force_dump,
     }
     # atomic energy read
-    latoms.calc.results['energies'] = latoms.arrays['c_pa'][:, 0]
+    latoms.calc.results['energies'] = np.ravel(latoms.arrays['c_pa'])
     stress = np.array(
         [
             [lmp_log['Pxx'], lmp_log['Pxy'], lmp_log['Pxz']],
