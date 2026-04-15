@@ -1489,7 +1489,8 @@ void BatchPairD3::compute_async(int B,
                 a[i] = lat_inv[i][0] * h_x_flat[(a_off + iat) * 3 + 0] / AU_TO_ANG +
                        lat_inv[i][1] * h_x_flat[(a_off + iat) * 3 + 1] / AU_TO_ANG +
                        lat_inv[i][2] * h_x_flat[(a_off + iat) * 3 + 2] / AU_TO_ANG;
-                a[i] -= floor(a[i]);
+                if (h_pbc[s * 3 + i])
+                    a[i] -= floor(a[i]);
             }
             for (int i = 0; i < 3; i++) {
                 d_x[(a_off + iat) * 3 + i] = static_cast<float>(
