@@ -200,17 +200,8 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         if state.device != self._device:
             state = state.to(self._device)
 
-        # Some neighbor_list_fn (e.g. torch_nl_linked_cell) assumes wrapped positions
-        # Use new variable not to mutate state.positions
-        positions = (
-            ts.transforms.pbc_wrap_batched(
-                state.positions, state.cell, state.system_idx, state.pbc
-            )
-            if state.pbc.any()
-            else state.positions
-        )
-
         # Batched neighbor list using linked-cell algorithm with row-vector cell
+        positions = state.positions
         n_systems = int(state.system_idx.max().item() + 1)
         edge_index, mapping_system, unit_shifts = self.neighbor_list_fn(
             positions,
@@ -423,3 +414,39 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
             results['stress'][i] += d3_stress_3x3
 
         return results
+
+
+class Float64Wrapper(ModelInterface):  # type: ignore[misc,valid-type]
+    """Wraps a float32 model so torch-sim runs in float64 precision.
+
+    Casts state tensors to float32 before calling the wrapped model, then
+    casts outputs back to float64.  Reports ``dtype=float64`` to torch-sim
+    so all optimizer / integrator arithmetic is done in double precision.
+
+    This is needed because ``SumModel`` requires all children to share the
+    same dtype, and ``D3DispersionModel`` defaults to float64.
+    """
+
+    def __init__(self, model: ModelInterface) -> None:
+        super().__init__()
+        self._model = model
+        self._device = model.device
+        self._dtype = torch.float64
+        self._compute_stress = model.compute_stress
+        self._compute_forces = model.compute_forces
+        self._memory_scales_with = getattr(
+            model, '_memory_scales_with', 'n_atoms_x_density',
+        )
+        # Expose cutoff / neighbor_list_fn if present
+        if hasattr(model, 'cutoff'):
+            self.cutoff = model.cutoff
+        if hasattr(model, 'neighbor_list_fn'):
+            self.neighbor_list_fn = model.neighbor_list_fn
+
+    def forward(self, state: ts.SimState, **kwargs) -> dict[str, torch.Tensor]:
+        state_f32 = state.to(dtype=torch.float32)
+        output = self._model(state_f32, **kwargs)
+        return {
+            k: v.to(dtype=torch.float64) if isinstance(v, torch.Tensor) else v
+            for k, v in output.items()
+        }
