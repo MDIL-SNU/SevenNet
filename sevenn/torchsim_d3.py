@@ -368,11 +368,11 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
 
         # Prepare batch data from SimState
         B = int(state.system_idx.max().item() + 1)
-        natoms_each = state.n_atoms_per_system.cpu().numpy().astype(np.int32)
-        atomic_numbers = state.atomic_numbers.cpu().numpy().astype(np.int64)
-        positions = state.positions.cpu().to(torch.float64).numpy()
-        cells = state.row_vector_cell.cpu().to(torch.float64).numpy()
-        pbc_raw = state.pbc.cpu().numpy().astype(np.int32)
+        natoms_each = state.n_atoms_per_system.detach().cpu().numpy().astype(np.int32)  # noqa: E501
+        atomic_numbers = state.atomic_numbers.detach().cpu().numpy().astype(np.int64)
+        positions = state.positions.detach().cpu().to(torch.float64).numpy()
+        cells = state.row_vector_cell.detach().cpu().to(torch.float64).numpy()
+        pbc_raw = state.pbc.detach().cpu().numpy().astype(np.int32)
         # state.pbc can be [3] (shared) or [B, 3] (per-system); CUDA kernel needs [B, 3]  # noqa: E501
         if pbc_raw.ndim == 1:
             pbc = np.tile(pbc_raw, (B, 1))
@@ -394,7 +394,7 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
 
         # D3 stress from batch kernel is extensive virial [B, 3, 3] in eV
         # ASE/TorchSim convention: stress = -virial / volume (eV/A^3)
-        volumes = torch.det(state.row_vector_cell).abs().cpu().numpy()
+        volumes = torch.det(state.row_vector_cell.detach()).abs().cpu().numpy()
         d3_stress_intensive = -d3_stress / volumes[:, None, None]
         results['stress'] += torch.from_numpy(
             np.ascontiguousarray(d3_stress_intensive),
