@@ -12,7 +12,6 @@ from torch_geometric.loader.dataloader import Collater
 
 import sevenn._keys as key
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.calculator import torch_script_type
 from sevenn.util import load_checkpoint
 
 try:
@@ -78,6 +77,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         enable_cueq: bool = False,
         enable_flash: bool = False,
         enable_oeq: bool = False,
+        compute_atomic_virial: bool = False,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
     ) -> None:
@@ -110,6 +110,12 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             ValueError: the model doesn't have a type_map
 
         """
+        if compute_atomic_virial:
+            raise NotImplementedError(
+                'compute_atomic_virial is not supported for'
+                ' SevenNet TorchSim interface.'
+            )
+
         if neighbor_list_fn is None:
             neighbor_list_fn = torchsim_nl
 
@@ -261,19 +267,6 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
 
         batched_data = Collater([], follow_batch=None, exclude_keys=None)(data_list)
         batched_data.to(self._device)
-
-        if isinstance(self.model, torch_script_type):
-            batched_data[key.NODE_FEATURE] = torch.tensor(
-                [self.type_map[z.item()] for z in batched_data[key.ATOMIC_NUMBERS]],
-                dtype=torch.int64,
-                device=self._device,
-            )
-            batched_data[key.POS].requires_grad_(
-                requires_grad=True,
-            )  # backward compatibility
-            batched_data[key.EDGE_VEC].requires_grad_(requires_grad=True)
-            batched_data = batched_data.to_dict()
-            del batched_data['data_info']
 
         output = self.model(batched_data)
 

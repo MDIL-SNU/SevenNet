@@ -4,11 +4,16 @@ All notable changes to this project will be documented in this file.
 ## [0.12.2.dev]
 ### Added
 - Support OpenEquivariance
+- Per-atom stress (atomic virial) support in LAMMPS pair_e3gnn and ASE calculator
+- `compute_atomic_virial` option in `SevenNetCalculator`
 - Add Batch D3 and SevenNetD3Model in Torch-Sim interface
 
 ### Changed
 - **[Breaking]** Rename optional dependency group `mliap` into `mliap12` (reflecting its CUDA 12.x dependency).
 - Add `cueq13` and `mliap13` optional dependency groups for CUDA 13.x.
+- **[Breaking]** `torchscript` file_type is no longer supported in `SevenNetCalculator`.
+- LAMMPS pair_e3gnn refactored to use pair-wise force (dE/dr) instead of position-based gradient.
+- Deploy no longer replaces force_output with ForceStressOutput; force/stress computed in LAMMPS C++ side.
 
 ## [0.12.1]
 ### Fixed

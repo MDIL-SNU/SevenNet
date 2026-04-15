@@ -20,11 +20,7 @@ def deploy(
     use_flash: bool = False,
     use_oeq: bool = False,
 ) -> None:
-    from sevenn.nn.edge_embedding import EdgePreprocess
-    from sevenn.nn.force_output import ForceStressOutput
-
     cp = load_checkpoint(checkpoint)
-
     model, config = (
         cp.build_model(
             enable_cueq=False,
@@ -35,11 +31,8 @@ def deploy(
         cp.config,
     )
 
-    model.prepand_module('edge_preprocess', EdgePreprocess(True))
-    grad_module = ForceStressOutput()
-    model.replace_module('force_output', grad_module)
-    new_grad_key = grad_module.get_grad_key()
-    model.key_grad = new_grad_key
+    if 'force_output' in model._modules:
+        model.delete_module_by_key('force_output')
     if hasattr(model, 'eval_type_map'):
         setattr(model, 'eval_type_map', False)
 

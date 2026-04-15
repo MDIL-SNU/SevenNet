@@ -149,7 +149,9 @@ class ForceStressOutputFromEdge(nn.Module):
         data_key_energy: str = KEY.PRED_TOTAL_ENERGY,
         data_key_force: str = KEY.PRED_FORCE,
         data_key_stress: str = KEY.PRED_STRESS,
+        data_key_atomic_virial: str = KEY.PRED_ATOMIC_VIRIAL,
         data_key_cell_volume: str = KEY.CELL_VOLUME,
+        use_atomic_virial: bool = False,
     ) -> None:
 
         super().__init__()
@@ -158,7 +160,9 @@ class ForceStressOutputFromEdge(nn.Module):
         self.key_energy = data_key_energy
         self.key_force = data_key_force
         self.key_stress = data_key_stress
+        self.key_atomic_virial = data_key_atomic_virial
         self.key_cell_volume = data_key_cell_volume
+        self.use_atomic_virial = use_atomic_virial
         self._is_batch_data = True
 
     def get_grad_key(self) -> str:
@@ -206,6 +210,8 @@ class ForceStressOutputFromEdge(nn.Module):
             _s = torch.zeros(tot_num, 6, dtype=fij.dtype, device=fij.device)
             _edge_dst6 = broadcast(edge_idx[1], _virial, 0)
             _s.scatter_reduce_(0, _edge_dst6, _virial, reduce='sum')
+            if self.use_atomic_virial:
+                data[self.key_atomic_virial] = torch.neg(_s)
 
             if self._is_batch_data:
                 batch = data[KEY.BATCH]  # for deploy, must be defined first

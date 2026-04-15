@@ -67,7 +67,7 @@ PairE3GNN::~PairE3GNN() {
     memory->destroy(setflag);
     memory->destroy(cutsq);
     memory->destroy(map);
-    memory->destroy(elements);
+    // memory->destroy(elements);
   }
 }
 
@@ -77,42 +77,29 @@ void PairE3GNN::compute(int eflag, int vflag) {
      This compute function is ispired/modified from stress branch of pair-nequip
      https://github.com/mir-group/pair_nequip
   */
-
   if (eflag || vflag)
     ev_setup(eflag, vflag);
   else
     evflag = vflag_fdotr = 0;
-  if (vflag_atom) {
-    error->all(FLERR, "atomic stress is not supported\n");
-  }
-
-  int nlocal = list->inum; // same as nlocal
-  int *ilist = list->ilist;
-  tagint *tag = atom->tag;
-  std::unordered_map<int, int> tag_map;
 
   if (atom->tag_consecutive() == 0) {
-    for (int ii = 0; ii < nlocal; ii++) {
-      const int i = ilist[ii];
-      int itag = tag[i];
-      tag_map[itag] = ii+1;
-      // printf("MODIFY setting %i => %i \n",itag, tag_map[itag] );
-    }
-  } else {
-    //Ordered which mappling required
-    for (int ii = 0; ii < nlocal; ii++) {
-        const int itag = ilist[ii]+1;
-        tag_map[itag] = ii+1;
-        // printf("normal setting %i => %i \n",itag, tag_map[itag] );
-    }
+    error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
   }
 
   double **x = atom->x;
   double **f = atom->f;
   int *type = atom->type;
-  long num_atoms[1] = {nlocal};
+  int nlocal = list->inum; // same as nlocal, Why? is it different from atom->nlocal?
+  int *ilist = list->ilist;
+  int inum = list->inum;
 
-  int tag2i[nlocal];
+  // tag ignore PBC
+  tagint *tag = atom->tag;
+
+  std::unordered_map<tagint, int> tag_map;
+  std::vector<int> graph_index_to_i(nlocal);
+
+  long num_atoms[1] = {nlocal};
 
   int *numneigh = list->numneigh;      // j loop cond
   int **firstneigh = list->firstneigh; // j list
@@ -125,77 +112,63 @@ void PairE3GNN::compute(int eflag, int vflag) {
   }
   const int nedges_upper_bound = bound;
 
-  float cell[3][3];
-  cell[0][0] = domain->boxhi[0] - domain->boxlo[0];
-  cell[0][1] = 0.0;
-  cell[0][2] = 0.0;
+  std::vector<long> node_type;
 
-  cell[1][0] = domain->xy;
-  cell[1][1] = domain->boxhi[1] - domain->boxlo[1];
-  cell[1][2] = 0.0;
-
-  cell[2][0] = domain->xz;
-  cell[2][1] = domain->yz;
-  cell[2][2] = domain->boxhi[2] - domain->boxlo[2];
-
-  torch::Tensor inp_cell = torch::from_blob(cell, {3, 3}, FLOAT_TYPE);
-  torch::Tensor inp_num_atoms = torch::from_blob(num_atoms, {1}, INTEGER_TYPE);
-
-  torch::Tensor inp_node_type = torch::zeros({nlocal}, INTEGER_TYPE);
-  torch::Tensor inp_pos = torch::zeros({nlocal, 3});
-
-  torch::Tensor inp_cell_volume =
-      torch::dot(inp_cell[0], torch::cross(inp_cell[1], inp_cell[2], 0));
-
-  float pbc_shift_tmp[nedges_upper_bound][3];
-
-  auto node_type = inp_node_type.accessor<long, 1>();
-  auto pos = inp_pos.accessor<float, 2>();
-
+  float edge_vec[nedges_upper_bound][3];
   long edge_idx_src[nedges_upper_bound];
   long edge_idx_dst[nedges_upper_bound];
 
-  int nedges = 0;
-
-  for (int ii = 0; ii < nlocal; ii++) {
+  for (int ii = 0; ii < inum; ii++) {
+    // populate tag_map of local atoms
     const int i = ilist[ii];
-    int itag = tag_map[tag[i]];
-    tag2i[itag - 1] = i;
+    const int itag = tag[i];
     const int itype = type[i];
-    node_type[itag - 1] = map[itype];
-    pos[itag - 1][0] = x[i][0];
-    pos[itag - 1][1] = x[i][1];
-    pos[itag - 1][2] = x[i][2];
+    tag_map[itag] = ii;
+    graph_index_to_i[ii] = i;
+    node_type.push_back(map[itype]);
   }
 
-  for (int ii = 0; ii < nlocal; ii++) {
+  int nedges = 0;
+  // loop over neighbors, build graph
+  for (int ii = 0; ii < inum; ii++) {
     const int i = ilist[ii];
-    int itag = tag_map[tag[i]];
+    const int i_graph_idx = ii;
     const int *jlist = firstneigh[i];
     const int jnum = numneigh[i];
 
     for (int jj = 0; jj < jnum; jj++) {
-      int j = jlist[jj]; // atom over pbc is different atom
-      int jtag = tag_map[tag[j]]; // atom over pbs is same atom (it starts from 1)
+      int j = jlist[jj];
+      const int jtag = tag[j];
       j &= NEIGHMASK;
-      const int jtype = type[j];
 
+      const auto found = tag_map.find(jtag);
+      if (found == tag_map.end()) continue;
+      const int j_graph_idx = found->second;
+
+      // we have to calculate Rij to check cutoff in lammps side
       const double delij[3] = {x[j][0] - x[i][0], x[j][1] - x[i][1],
                                x[j][2] - x[i][2]};
       const double Rij =
           delij[0] * delij[0] + delij[1] * delij[1] + delij[2] * delij[2];
+
       if (Rij < cutoff_square) {
-        edge_idx_src[nedges] = itag - 1;
-        edge_idx_dst[nedges] = jtag - 1;
-
-        pbc_shift_tmp[nedges][0] = x[j][0] - pos[jtag - 1][0];
-        pbc_shift_tmp[nedges][1] = x[j][1] - pos[jtag - 1][1];
-        pbc_shift_tmp[nedges][2] = x[j][2] - pos[jtag - 1][2];
-
+        // if given j is not inside cutoff
+        if (nedges >= nedges_upper_bound) {
+          error->all(FLERR, "nedges exceeded nedges_upper_bound");
+        }
+        edge_idx_src[nedges] = i_graph_idx;
+        edge_idx_dst[nedges] = j_graph_idx;
+        edge_vec[nedges][0] = delij[0];
+        edge_vec[nedges][1] = delij[1];
+        edge_vec[nedges][2] = delij[2];
         nedges++;
       }
     } // j loop end
   }   // i loop end
+
+  // convert data to Tensor
+  auto inp_node_type = torch::from_blob(node_type.data(), nlocal, INTEGER_TYPE);
+  auto inp_num_atoms = torch::from_blob(num_atoms, {1}, INTEGER_TYPE);
 
   auto edge_idx_src_tensor =
       torch::from_blob(edge_idx_src, {nedges}, INTEGER_TYPE);
@@ -204,66 +177,102 @@ void PairE3GNN::compute(int eflag, int vflag) {
   auto inp_edge_index =
       torch::stack({edge_idx_src_tensor, edge_idx_dst_tensor});
 
-  // r' = r + {shift_tensor(integer vector of len 3)} @ cell_tensor
-  // shift_tensor = (cell_tensor)^-1^T @ (r' - r)
-  torch::Tensor cell_inv_tensor =
-      inp_cell.inverse().transpose(0, 1).unsqueeze(0).to(device);
-  torch::Tensor pbc_shift_tmp_tensor =
-      torch::from_blob(pbc_shift_tmp, {nedges, 3}, FLOAT_TYPE)
-          .view({nedges, 3, 1})
-          .to(device);
-  torch::Tensor inp_cell_shift =
-      torch::bmm(cell_inv_tensor.expand({nedges, 3, 3}), pbc_shift_tmp_tensor)
-          .view({nedges, 3});
+  auto inp_edge_vec = torch::from_blob(edge_vec, {nedges, 3}, FLOAT_TYPE);
+  if (print_info) {
+    std::cout << " Nlocal: " << nlocal << std::endl;
+    std::cout << " Nedges: " << nedges << "\n" << std::endl;
+  }
 
-  inp_pos.set_requires_grad(true);
+  auto edge_vec_device = inp_edge_vec.to(device);
+  edge_vec_device.set_requires_grad(true);
 
-  c10::Dict<std::string, torch::Tensor> input_dict;
+  torch::Dict<std::string, torch::Tensor> input_dict;
   input_dict.insert("x", inp_node_type.to(device));
-  input_dict.insert("pos", inp_pos.to(device));
   input_dict.insert("edge_index", inp_edge_index.to(device));
+  input_dict.insert("edge_vec", edge_vec_device);
   input_dict.insert("num_atoms", inp_num_atoms.to(device));
-  input_dict.insert("cell_lattice_vectors", inp_cell.to(device));
-  input_dict.insert("cell_volume", inp_cell_volume.to(device));
-  input_dict.insert("pbc_shift", inp_cell_shift);
+  input_dict.insert("nlocal", inp_num_atoms.to(torch::kCPU));
 
   std::vector<torch::IValue> input(1, input_dict);
   auto output = model.forward(input).toGenericDict();
 
-  torch::Tensor total_energy_tensor =
-      output.at("inferred_total_energy").toTensor().cpu();
-  torch::Tensor force_tensor = output.at("inferred_force").toTensor().cpu();
-  auto forces = force_tensor.accessor<float, 2>();
-  eng_vdwl += total_energy_tensor.item<float>();
+  torch::Tensor energy_tensor =
+      output.at("inferred_total_energy").toTensor().squeeze();
 
-  for (int itag = 0; itag < nlocal; itag++) {
-    int i = tag2i[itag];
-    f[i][0] += forces[itag][0];
-    f[i][1] += forces[itag][1];
-    f[i][2] += forces[itag][2];
+  // dE_dr
+  auto grads = torch::autograd::grad({energy_tensor}, {edge_vec_device});
+  torch::Tensor dE_dr = grads[0].to(torch::kCPU);
+
+  eng_vdwl += energy_tensor.detach().to(torch::kCPU).item<float>();
+  torch::Tensor force_tensor = torch::zeros({nlocal, 3});
+
+  auto _edge_idx_src_tensor =
+      edge_idx_src_tensor.repeat_interleave(3).view({nedges, 3});
+  auto _edge_idx_dst_tensor =
+      edge_idx_dst_tensor.repeat_interleave(3).view({nedges, 3});
+
+  force_tensor.scatter_reduce_(0, _edge_idx_src_tensor, dE_dr, "sum");
+  force_tensor.scatter_reduce_(0, _edge_idx_dst_tensor, torch::neg(dE_dr),
+                               "sum");
+
+  auto forces = force_tensor.accessor<float, 2>();
+
+  for (int graph_idx = 0; graph_idx < nlocal; graph_idx++) {
+    int i = graph_index_to_i[graph_idx];
+    f[i][0] += forces[graph_idx][0];
+    f[i][1] += forces[graph_idx][1];
+    f[i][2] += forces[graph_idx][2];
   }
 
+  // Virial stress from edge contributions
   if (vflag) {
-    // more accurately, it is virial part of stress
-    torch::Tensor stress_tensor = output.at("inferred_stress").toTensor().cpu();
-    auto virial_stress_tensor = stress_tensor * inp_cell_volume;
-    // xy yz zx order in vasp (voigt is xx yy zz yz xz xy)
+    auto diag = inp_edge_vec * dE_dr;
+    auto s12 = inp_edge_vec.select(1, 0) * dE_dr.select(1, 1);
+    auto s23 = inp_edge_vec.select(1, 1) * dE_dr.select(1, 2);
+    auto s31 = inp_edge_vec.select(1, 2) * dE_dr.select(1, 0);
+    std::vector<torch::Tensor> voigt_list = {
+        diag, s12.unsqueeze(-1), s23.unsqueeze(-1), s31.unsqueeze(-1)};
+    auto voigt = torch::cat(voigt_list, 1);
+
+    torch::Tensor per_atom_stress_tensor = torch::zeros({nlocal, 6});
+    auto _edge_idx_dst6_tensor =
+        edge_idx_dst_tensor.repeat_interleave(6).view({nedges, 6});
+    per_atom_stress_tensor.scatter_reduce_(0, _edge_idx_dst6_tensor, voigt,
+                                           "sum");
+
+    auto virial_stress_tensor =
+        torch::neg(torch::sum(per_atom_stress_tensor, 0));
     auto virial_stress = virial_stress_tensor.accessor<float, 1>();
+
     virial[0] += virial_stress[0];
     virial[1] += virial_stress[1];
     virial[2] += virial_stress[2];
     virial[3] += virial_stress[3];
     virial[4] += virial_stress[5];
     virial[5] += virial_stress[4];
+
+    if (vflag_atom) {
+      auto per_atom_stress = per_atom_stress_tensor.accessor<float, 2>();
+
+      for (int gi = 0; gi < nlocal; gi++) {
+        const int i = graph_index_to_i[gi];
+        vatom[i][0] += -per_atom_stress[gi][0];
+        vatom[i][1] += -per_atom_stress[gi][1];
+        vatom[i][2] += -per_atom_stress[gi][2];
+        vatom[i][3] += -per_atom_stress[gi][3];
+        vatom[i][4] += -per_atom_stress[gi][5];
+        vatom[i][5] += -per_atom_stress[gi][4];
+      }
+    }
   }
 
   if (eflag_atom) {
     torch::Tensor atomic_energy_tensor =
-        output.at("atomic_energy").toTensor().cpu().view({nlocal});
+        output.at("atomic_energy").toTensor().to(torch::kCPU).view({nlocal});
     auto atomic_energy = atomic_energy_tensor.accessor<float, 1>();
-    for (int itag = 0; itag < nlocal; itag++) {
-      int i = tag2i[itag];
-      eatom[i] += atomic_energy[itag];
+    for (int gi = 0; gi < nlocal; gi++) {
+      const int i = graph_index_to_i[gi];
+      eatom[i] += atomic_energy[gi];
     }
   }
 
