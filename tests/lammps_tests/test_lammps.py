@@ -862,7 +862,9 @@ def _run_static_lammps_input(script_name, data_name, potential, wd, lammps_cmd):
     shutil.copy(non_consecutive_assets_dir / script_name, wd / script_name)
     shutil.copy(non_consecutive_assets_dir / data_name, wd / data_name)
     script_path = wd / script_name
-    script_path.write_text(script_path.read_text().replace('__POTENTIALS__', potential))
+    script_path.write_text(
+        script_path.read_text().replace('__POTENTIALS__', potential)
+    )
     log_path = wd / 'log.lammps'
     res = subprocess.run(
         [lammps_cmd, '-in', script_name, '-log', log_path.name],
@@ -885,7 +887,9 @@ def _run_static_lammps_input(script_name, data_name, potential, wd, lammps_cmd):
 def test_serial_delete_atom(
     serial_potential_path_7net0, lammps_cmd, tmp_path
 ):
-    ref_atoms = ase.io.read(non_consecutive_assets_dir / 'delete_third_atom_reference.extxyz')
+    ref_atoms = ase.io.read(
+        non_consecutive_assets_dir / 'delete_third_atom_reference.extxyz'
+    )
     atoms_lammps = _run_static_lammps_input(
         'delete_third_atom.lmp',
         'delete_third_atom_initial.data',
