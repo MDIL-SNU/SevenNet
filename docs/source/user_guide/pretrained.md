@@ -6,14 +6,12 @@ We provide the F1 score, and RMSD for the WBM dataset, along with $\kappa_{\math
 These models can be used as interatomic potentials in LAMMPS and loaded through the ASE calculator using each model’s keywords. Please refer to the [ASE calculator](ase_calculator.md) section for instructions on loading a model via the ASE calculator.
 Additionally, `keywords` can be used in other parts of SevenNet, such as `sevenn inference`, `sevenn get_model`, and the `checkpoint` section in `input.yaml` for fine-tuning.
 
-**Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program at Samsung Advanced Institute of Technology, part of Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.
-
 ```{note}
 Multiple inference tasks are available for multi-fidelity architecture models, SevenNet-Omni and SevenNet-MF-ompa. Each task is designed to produce results that are consistent with the DFT settings used in the corresponding training datasets. For example, `mpa` is trained on the combined [MPtrj](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) and [sAlex](https://huggingface.co/datasets/fairchem/OMAT24) datasets and is used for evaluating Matbench Discovery, while `omat24` is trained on the [OMat24](https://huggingface.co/datasets/fairchem/OMAT24) dataset. For detailed information on the DFT settings, please refer to the original publications of each dataset.
 ```
 
 ```{note}
-We supports cuEquivariance and FlashTP kernels for tensor-product acceleration. Pass these options to `SevenNetCalculator` using `enable_cueq=True` or `enable_flash=True` when available.
+**For SevenNet-Omni, the `mpa` task is the recommended default for most PBE(+U)-level applications.** Enabled by selective regularization and a domain-bridging strategy, this task is generally applicable to inorganic crystals, molecules, organic crystals, surfaces, interfaces, MOFs, molecular liquids, and more complex multi-domain systems. Select another task only when consistency with a specific functional, dataset, or benchmark protocol is required.
 ```
 
 ```{list-table} SevenNet pretrained models overview
@@ -75,9 +73,9 @@ We supports cuEquivariance and FlashTP kernels for tensor-product acceleration. 
 
 **This is our recommended pretrained model**
 
-This model exploits [cross-domain knowledge transfer strategies](https://arxiv.org/abs/2510.11241) within a [multi-task training framework](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on the 15 open ab initio datasets, covering a wide material space including crystals, molecules, and surfaces.
+This model exploits [cross-domain knowledge transfer strategies](https://doi.org/10.1038/s41467-026-70195-8) within a [multi-task training framework](https://pubs.acs.org/doi/10.1021/jacs.4c14455) to train simultaneously on 15 open ab initio datasets, covering a wide material space including crystals, molecules, surfaces, and metal-organic frameworks.
 
-It is currently our best pretrained model, achieving state-of-the-art accuracy across diverse material domains at the PBE level, while also providing high-fidelity tasks such as r²SCAN and ωB97M-V.  For detailed information on the training datasets, knowledge-transfer strategies and comprehensive benchmark results, please refer to the [paper](https://arxiv.org/abs/2510.11241).
+It is currently our best pretrained model, achieving state-of-the-art accuracy across diverse material domains at the PBE level, while also providing high-fidelity tasks such as r²SCAN and ωB97M-V.  For detailed information on the training datasets, knowledge-transfer strategies and comprehensive benchmark results, please refer to the [paper](https://doi.org/10.1038/s41467-026-70195-8).
 
 ```{table} Representative tasks for each fidelity
 :widths: 30 70
@@ -88,7 +86,7 @@ It is currently our best pretrained model, achieving state-of-the-art accuracy a
 | ωB97M-V        | `omol25_low`    |
 ```
 
-Also consider `omat24` or `matpes_pbe` tasks for more accurate PBE-level descriptions of high-force configurations. Note that `matpes_pbe` is trained on PBE level of theory, without incorporating the Hubbard U correction. All available tasks and corresponding fidelities are listed below. Tasks may differ even at the same fidelity level due to variations in computational protocols across datasets.
+**Use `modal='mpa'` as the default PBE-level task for most systems.** Also consider `omat24` or `matpes_pbe` tasks for more accurate PBE-level descriptions of high-force configurations. Note that `matpes_pbe` is trained on PBE level of theory, without incorporating the Hubbard U correction. All available tasks and corresponding fidelities are listed below. Tasks may differ even at the same fidelity level due to variations in computational protocols across datasets.
 
 ```{table} List of available tasks and corresponding fidelities
 :widths: 30 70
@@ -203,3 +201,5 @@ This model is one of our earliest pretrained models. Although we recommend using
 | F1 | $\kappa_{\mathrm{SRME}}$ |
 |:---:|:---:|
 |0.67|0.767|
+
+**Acknowledgments**: The models trained on [`MPtrj`](https://figshare.com/articles/dataset/Materials_Project_Trjectory_MPtrj_Dataset/23713842) were supported by the Neural Processing Research Center program at Samsung Advanced Institute of Technology, part of Samsung Electronics Co., Ltd. The computations for training models were carried out using the Samsung SSC-21 cluster.

@@ -89,6 +89,16 @@ class SevenNetCalculator(Calculator):
         enable_flash = os.getenv('SEVENNET_ENABLE_FLASH') == '1' or enable_flash
         enable_oeq = os.getenv('SEVENNET_ENABLE_OEQ') == '1' or enable_oeq
 
+        if not (enable_cueq or enable_flash or enable_oeq):
+            print(
+                '[WARNING] No tensor product accelerator is enabled for '
+                'SevenNetCalculator. SevenNet may run much slower without a '
+                'TP accelerator. We strongly recommend enabling one of the '
+                'available accelerators: flashTP, cuEquivariance, or '
+                'OpenEquivariance.',
+                flush=True,
+            )
+
         if enable_cueq and file_type == 'model_instance':
             warnings.warn(
                 'file_type should be checkpoint to enable cueq. cueq set to False'

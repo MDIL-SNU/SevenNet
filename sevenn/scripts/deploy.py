@@ -20,6 +20,15 @@ def deploy(
     use_flash: bool = False,
     use_oeq: bool = False,
 ) -> None:
+    if not (use_flash or use_oeq):
+        print(
+            '[WARNING] No tensor product accelerator is enabled for LAMMPS '
+            'TorchScript deployment. SevenNet may run much slower without a '
+            'TP accelerator. We strongly recommend enabling flashTP or '
+            'OpenEquivariance when available.',
+            flush=True,
+        )
+
     cp = load_checkpoint(checkpoint)
     model, config = (
         cp.build_model(
@@ -81,6 +90,15 @@ def deploy_parallel(
     use_flash: bool = False,
     use_oeq: bool = False,
 ) -> None:
+    if not (use_flash or use_oeq):
+        print(
+            '[WARNING] No tensor product accelerator is enabled for LAMMPS '
+            'parallel TorchScript deployment. SevenNet may run much slower '
+            'without a TP accelerator. We strongly recommend enabling flashTP '
+            'or OpenEquivariance when available.',
+            flush=True,
+        )
+
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
