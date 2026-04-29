@@ -113,6 +113,15 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.use_flash = kwargs.get('use_flash', False)
         self.use_oeq = kwargs.get('use_oeq', False)
         self.modal = kwargs.get('modal', None)
+        if not (self.use_cueq or self.use_flash or self.use_oeq):
+            print(
+                '[WARNING] No tensor product accelerator is enabled for '
+                'LAMMPS ML-IAP deployment. SevenNet may run much slower '
+                'without a TP accelerator. We strongly recommend enabling one '
+                'of the available accelerators: flashTP, cuEquivariance, or '
+                'OpenEquivariance.',
+                flush=True,
+            )
 
         # extract configs
         config = self.cp.config
