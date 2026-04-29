@@ -10,7 +10,7 @@ We do not support CuEquivariance for [LAMMPS: Torch](./lammps_torch.md). You mus
 
 :::{tip}
 For small systems, FlashTP with [LAMMPS: Torch](./lammps_torch.md) shows performance advantage over cuEquivariance with [LAMMPS: ML-IAP](./lammps_mliap.md).
-A performance crossover occurs at around 10³ atoms, beyond which cuEquivariance becomes more efficient.  (For more informattion, check the section 2.7 of [SevenNet-Omni paper](https://arxiv.org/abs/2510.11241))
+A performance crossover occurs at around 10³ atoms, beyond which cuEquivariance becomes more efficient.  (For more information, check section 2.7 of the [SevenNet-Omni paper](https://doi.org/10.1038/s41467-026-70195-8))
 
 FlashTP with [LAMMPS: Torch](./lammps_mliap.md) is generally faster than FlashTP with [LAMMPS: ML-IAP](./lammps_mliap.md).
 :::
