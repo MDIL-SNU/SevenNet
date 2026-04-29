@@ -1,6 +1,7 @@
 import copy
 import logging
 import pathlib
+import shutil
 import subprocess
 
 import ase.calculators.lammps
@@ -31,6 +32,9 @@ lmp_script_path = str(
 lmp_stress_script_path = str(
     (pathlib.Path(__file__).parent / 'scripts' / 'stress_skel.lmp').resolve()
 )
+non_consecutive_assets_dir = (
+    pathlib.Path(__file__).parent / 'assets-non-consecutive'
+).resolve()
 
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
 cp_0_path = str(data_root / 'checkpoints' / 'cp_0.pth')  # knows Hf, O
@@ -216,23 +220,25 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6, check_atomic_stress=False
     # assert acl(atoms1.get_potential_energies(), atoms2.get_potential_energies())
 
 
-def _lammps_results_to_atoms(lammps_log, force_dump):
+def _lammps_results_to_atoms(lammps_log, force_dump, result_index=0):
     with open(lammps_log, 'r') as f:
         lines = f.readlines()
-    lmp_log = None
+
+    thermo_entries = []
     for i, line in enumerate(lines):
         if not line.startswith('Per MPI rank memory allocation'):
             continue
-        lmp_log = {
-            k: eval(v) for k, v in zip(lines[i + 1].split(), lines[i + 2].split())
-        }
-        break
+        thermo_entries.append(
+            {k: eval(v) for k, v in zip(lines[i + 1].split(), lines[i + 2].split())}
+        )
 
-    assert lmp_log is not None and 'PotEng' in lmp_log
+    assert thermo_entries
+    lmp_log = thermo_entries[result_index]
+    assert 'PotEng' in lmp_log
 
     latoms_list = ase.io.read(force_dump, format='lammps-dump-text', index=':')
     assert isinstance(latoms_list, list)
-    latoms = latoms_list[0]
+    latoms = latoms_list[result_index]
     assert latoms.calc is not None
     latoms.calc.results['energy'] = lmp_log['PotEng']
     latoms.calc.results['free_energy'] = lmp_log['PotEng']
@@ -849,3 +855,48 @@ def test_disconnected_serial_oeq(
     )
     atoms.calc = ref_7net0_calculator
     assert_atoms(atoms, atoms_lammps, atol=1e-5)
+
+
+def _run_static_lammps_input(script_name, data_name, potential, wd, lammps_cmd):
+    wd = wd.resolve()
+    shutil.copy(non_consecutive_assets_dir / script_name, wd / script_name)
+    shutil.copy(non_consecutive_assets_dir / data_name, wd / data_name)
+    script_path = wd / script_name
+    script_path.write_text(
+        script_path.read_text().replace('__POTENTIALS__', potential)
+    )
+    log_path = wd / 'log.lammps'
+    res = subprocess.run(
+        [lammps_cmd, '-in', script_name, '-log', log_path.name],
+        capture_output=True,
+        timeout=120,
+        cwd=wd,
+    )
+    if res.returncode != 0:
+        if res.stdout:
+            logger.error(res.stdout.decode('utf-8'))
+        logger.error(res.stderr.decode('utf-8'))
+        if log_path.exists():
+            logger.error(log_path.read_text())
+        raise RuntimeError(f'{script_name} failed')
+    return _lammps_results_to_atoms(
+        str(log_path), str(wd / 'force.dump'), result_index=-1
+    )
+
+
+def test_serial_delete_atom(
+    serial_potential_path_7net0, lammps_cmd, tmp_path
+):
+    ref_atoms = ase.io.read(
+        non_consecutive_assets_dir / 'delete_third_atom_reference.extxyz'
+    )
+    atoms_lammps = _run_static_lammps_input(
+        'delete_third_atom.lmp',
+        'delete_third_atom_initial.data',
+        serial_potential_path_7net0,
+        tmp_path,
+        lammps_cmd,
+    )
+    assert ref_atoms.get_chemical_symbols() == atoms_lammps.get_chemical_symbols()
+    assert np.allclose(ref_atoms.get_positions(), atoms_lammps.get_positions())
+    assert_atoms(ref_atoms, atoms_lammps, atol=1e-5)
