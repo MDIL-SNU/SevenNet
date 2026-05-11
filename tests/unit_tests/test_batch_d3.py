@@ -52,24 +52,13 @@ def make_h2o():
     return atoms
 
 
-def atoms_to_batch(atoms_list, vdw_cutoff=9000, cn_cutoff=1600):
+def atoms_to_batch(atoms_list):
     B = len(atoms_list)
     natoms_each = np.array([len(a) for a in atoms_list], dtype=np.int32)
     atomic_numbers = np.concatenate([a.get_atomic_numbers() for a in atoms_list])
     positions = np.concatenate([a.get_positions() for a in atoms_list])
     pbc = np.array([a.get_pbc().astype(int) for a in atoms_list], dtype=np.int32)
-
-    cells = []
-    for a in atoms_list:
-        if a.get_cell().sum() == 0:
-            pos = a.get_positions()
-            max_cutoff = np.sqrt(max(vdw_cutoff, cn_cutoff)) * 0.52917726
-            lengths = pos.max(axis=0) - pos.min(axis=0) + max_cutoff + 1.0
-            cells.append(np.diag(lengths))
-        else:
-            cells.append(a.get_cell().array)
-    cells = np.array(cells)
-
+    cells = np.array([a.get_cell().array for a in atoms_list])
     return B, natoms_each, atomic_numbers, positions, cells, pbc
 
 

@@ -208,6 +208,20 @@ class BatchD3:
     ) -> None:
         """Prepare contiguous C arrays and store for later sync."""
         self._ensure_coeff(atomic_numbers)
+
+        # Fake box for zero-cell systems (molecules without a cell).
+        cells = cells.copy()
+        max_cutoff = np.sqrt(max(self.rthr, self.cnthr)) * 0.52917726
+        offsets = np.zeros(B + 1, dtype=np.int64)
+        np.cumsum(natoms_each, out=offsets[1:])
+        for s in range(B):
+            if cells[s].sum() == 0.0:
+                pos_s = positions[offsets[s]:offsets[s + 1]]
+                lengths = (
+                    pos_s.max(axis=0) - pos_s.min(axis=0) + max_cutoff + 1.0
+                )
+                cells[s] = np.diag(lengths)
+
         self._async_B = B
         self._async_N = int(natoms_each.sum())
         self._async_natoms = np.ascontiguousarray(natoms_each, dtype=np.int32)
@@ -394,8 +408,16 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
 
         # D3 stress from batch kernel is extensive virial [B, 3, 3] in eV
         # ASE/TorchSim convention: stress = -virial / volume (eV/A^3)
+        # For non-periodic systems (zero cell → zero volume), stress is
+        # physically undefined, so we zero it out.
         volumes = torch.det(state.row_vector_cell.detach()).abs().cpu().numpy()
-        d3_stress_intensive = -d3_stress / volumes[:, None, None]
+        has_volume = volumes > 0
+        safe_volumes = np.where(has_volume, volumes, 1.0)
+        d3_stress_intensive = np.where(
+            has_volume[:, None, None],
+            -d3_stress / safe_volumes[:, None, None],
+            0.0,
+        )
         results['stress'] += torch.from_numpy(
             np.ascontiguousarray(d3_stress_intensive),
         ).to(device=self._device, dtype=self._dtype)
