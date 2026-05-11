@@ -82,9 +82,12 @@ void PairE3GNN::compute(int eflag, int vflag) {
   else
     evflag = vflag_fdotr = 0;
 
-  if (atom->tag_consecutive() == 0) {
-    error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
-  }
+  // remove consecutive guard, addressed by
+  // tag_map: LAMMPS tag -> graph node index
+  // graph_index_to_i: graph node index -> LAMMPS local index
+  // if (atom->tag_consecutive() == 0) {
+  //   error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
+  // }
 
   double **x = atom->x;
   double **f = atom->f;
