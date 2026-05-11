@@ -530,6 +530,8 @@ class D3Calculator(Calculator):
         if atoms is None:
             raise ValueError('No atoms to evaluate')
 
+        has_pbc = atoms.get_pbc().any()
+
         if atoms.get_cell().sum() == 0:
             print(
                 'Warning: D3Calculator requires a cell.\n'
@@ -599,10 +601,15 @@ class D3Calculator(Calculator):
 
         result_S = lib.pair_get_stress(self.pair)
         result_S = np.array(result_S.contents)
-        result_S = (
-            self._tensor2stress(rotator.T @ self._stress2tensor(result_S) @ rotator)
-            / atoms.get_volume()
-        )
+        if has_pbc:
+            result_S = (
+                self._tensor2stress(
+                    rotator.T @ self._stress2tensor(result_S) @ rotator
+                )
+                / atoms.get_volume()
+            )
+        else:
+            result_S = np.zeros(6)
 
         self.results = {
             'free_energy': result_E,

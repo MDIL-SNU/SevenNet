@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 - Support OpenEquivariance
 - Per-atom stress (atomic virial) support in LAMMPS pair_e3gnn and ASE calculator
 - `compute_atomic_virial` option in `SevenNetCalculator`
+- Add Batch D3 and SevenNetD3Model in Torch-Sim interface
 
 ### Changed
 - **[Breaking]** Rename optional dependency group `mliap` into `mliap12` (reflecting its CUDA 12.x dependency).
