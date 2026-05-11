@@ -11,7 +11,7 @@ Key differences from the single-system version:
     because threads within a block can belong to different systems.
 */
 
-#include "pair_d3_for_ts.h"
+#include "pair_d3_batch.h"
 
 /* --------- CUDA error handling macros --------- */
 #define CHECK_CUDA(call) do {                                            \
@@ -34,11 +34,13 @@ Key differences from the single-system version:
 
 /* --------- Math functions for CUDA compatibility --------- */
 
-// Overflow-safe triangular unroll: linij -> (i, j) where i >= j
+// Overflow-safe triangular unroll: linij -> (i, j) where i >= j.
+// The sqrt gives a closed-form estimate of i. The following integer
+// correction loops only guard against rare floating-point roundoff at
+// triangular-number boundaries; they enforce T_i <= linij < T_{i+1}.
 inline __host__ __device__ void ij_at_linij(int64_t linij, int &i, int &j) {
     double d = static_cast<double>(linij);
     i = static_cast<int>((sqrt(1.0 + 8.0 * d) - 1.0) / 2.0);
-    // Guard against floating-point undershoot
     while (static_cast<int64_t>(i) * (i + 1) / 2 > linij) i--;
     while (static_cast<int64_t>(i + 1) * (i + 2) / 2 <= linij) i++;
     j = static_cast<int>(linij - static_cast<int64_t>(i) * (i + 1) / 2);
@@ -723,7 +725,8 @@ void BatchPairD3::compute_lattice_reps(const double lat_v[3][3],
                                         const int pbc_flags[3],
                                         float r_threshold, int rep_out[3]) {
     double r_cutoff = sqrt(r_threshold);
-    // lat_v is column-major: lat_v[col][row], i.e. lat_v_1 = lat_v[0]
+    // lat_v[vec][comp]: vec=0,1,2 means a,b,c lattice vectors;
+    // comp=0,1,2 means x,y,z Cartesian components.
     double lat_cp_12[3], lat_cp_23[3], lat_cp_31[3];
     cross3(lat_v[0], lat_v[1], lat_cp_12);
     cross3(lat_v[1], lat_v[2], lat_cp_23);
@@ -1383,7 +1386,10 @@ void BatchPairD3::compute_async(int B,
     // Temporary CPU storage for per-system info
     std::vector<int> rep_vdw_all(B * 3), rep_cn_all(B * 3);
     std::vector<int> n_tau_vdw(B), n_tau_cn(B);
-    std::vector<double> lat_v_all(B * 9); // [B][3][3] column-major: lat_v_all[s*9 + col*3 + row]
+    // [B][3 lattice vectors][3 Cartesian components]:
+    // lat_v_all[s*9 + vec*3 + comp], where vec=0,1,2 means a,b,c
+    // and comp=0,1,2 means x,y,z.
+    std::vector<double> lat_v_all(B * 9);
 
     int N_total = 0;
     int64_t P_total = 0;
@@ -1394,13 +1400,14 @@ void BatchPairD3::compute_async(int B,
         int64_t n = natoms_each[s];
         P_total += n * (n + 1) / 2;
 
-        // Convert cells[s*9..] (row-major: row0=a, row1=b, row2=c) to lat_v (column-major in Bohr)
-        // cells is [a0 a1 a2 | b0 b1 b2 | c0 c1 c2] in Angstrom
-        // lat_v[col][row]: col0 = a-vector, col1 = b-vector, col2 = c-vector
+        // Convert cells[s*9..] to lattice vectors in Bohr.
+        // cells is [a_x a_y a_z | b_x b_y b_z | c_x c_y c_z]
+        // in Angstrom. lv[vec][comp] uses vec=0,1,2 for a,b,c
+        // and comp=0,1,2 for x,y,z.
         double lv[3][3];
-        for (int col = 0; col < 3; col++) {
-            for (int row = 0; row < 3; row++) {
-                lv[col][row] = h_cells[s * 9 + col * 3 + row] / AU_TO_ANG;
+        for (int vec = 0; vec < 3; vec++) {
+            for (int comp = 0; comp < 3; comp++) {
+                lv[vec][comp] = h_cells[s * 9 + vec * 3 + comp] / AU_TO_ANG;
             }
         }
         for (int i = 0; i < 9; i++) lat_v_all[s * 9 + i] = ((double*)lv)[i];
@@ -1458,11 +1465,11 @@ void BatchPairD3::compute_async(int B,
         double lv[3][3];
         for (int i = 0; i < 9; i++) ((double*)lv)[i] = lat_v_all[s * 9 + i];
 
-        // lat[row][col] for inversion (column vectors are lv[col][row])
+        // lat[comp][vec] for inversion; lv[vec][comp] stores a,b,c vectors.
         double lat[3][3];
-        for (int row = 0; row < 3; row++)
-            for (int col = 0; col < 3; col++)
-                lat[row][col] = lv[col][row];
+        for (int comp = 0; comp < 3; comp++)
+            for (int vec = 0; vec < 3; vec++)
+                lat[comp][vec] = lv[vec][comp];
 
         double det = lat[0][0] * lat[1][1] * lat[2][2]
                    + lat[0][1] * lat[1][2] * lat[2][0]
@@ -1600,8 +1607,8 @@ void BatchPairD3::sync(int B,
         forces_out[i] = d_f[i] * f_conv;
     }
 
-    // Convert stress: sigma[sys*9+..] -> Voigt (xx,yy,zz,xy,xz,yz) in eV
-    // Output as full 3x3 for TorchSim: stress_out[s*9 + row*3 + col]
+    // Convert sigma[sys*9+..] to full 3x3 output:
+    // stress_out[s*9 + row*3 + col]
     for (int s = 0; s < B; s++) {
         for (int i = 0; i < 9; i++) {
             stress_out[s * 9 + i] = d_sigma[s * 9 + i] * AU_TO_EV;

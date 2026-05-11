@@ -4,8 +4,8 @@ Processes multiple systems in a single batch on GPU.
 All dependencies on LAMMPS have been removed.
 */
 
-#ifndef BATCH_PAIR_D3_H
-#define BATCH_PAIR_D3_H
+#ifndef PAIR_D3_BATCH_H
+#define PAIR_D3_BATCH_H
 
 #include <cmath>
 #include <cstdint>
@@ -33,11 +33,12 @@ public:
        natoms_each : [B] number of atoms per system
        atomtype    : [N_total] 1-indexed type per atom (into unified table)
        x_flat      : [N_total*3] positions in Angstrom
-       cells       : [B*9] row-major cell vectors per system (Angstrom)
+       cells       : [B*9] cell vectors per system (Angstrom),
+                     cells[s*9 + vec*3 + comp], vec=a,b,c, comp=x,y,z
        pbc         : [B*3] periodic boundary flags per system
        energy_out  : [B] output energies in eV
        forces_out  : [N_total*3] output forces in eV/Ang
-       stress_out  : [B*9] output stress (Voigt: xx,yy,zz,xy,xz,yz mapped to 3x3) in eV
+       stress_out  : [B*9] output full 3x3 stress-like tensor in eV
     */
     void compute(int B,
                  const int* natoms_each,
@@ -133,7 +134,7 @@ protected:
 
     // Per-system [B]
     double* d_disp = nullptr;       // [B] energy in AU
-    double* d_sigma = nullptr;      // [B*9] stress in AU
+    double* d_sigma = nullptr;      // [B*9] full 3x3 stress-like tensor in AU
 
     // Tau arrays (concatenated)
     float* d_tau_vdw = nullptr;     // [T_vdw_total*3]
@@ -150,4 +151,4 @@ protected:
     cudaStream_t stream;
 };
 
-#endif // BATCH_PAIR_D3_H
+#endif // PAIR_D3_BATCH_H

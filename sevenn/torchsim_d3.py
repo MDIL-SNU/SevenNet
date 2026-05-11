@@ -1,7 +1,7 @@
 """TorchSim wrapper for SevenNet + batched D3 dispersion correction.
 
 Replaces the serial per-system D3 loop in torchsim.py with a single
-batched CUDA kernel launch (pair_d3_for_ts.so) for all systems.
+batched CUDA kernel launch (pair_d3_batch.so) for all systems.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from sevenn.nn.sequential import AtomGraphSequential
 
 
-# ---- .so loading (mirrors calculator._load but for pair_d3_for_ts) ----
+# ---- .so loading (mirrors calculator._load but for pair_d3_batch) ----
 
 class _BatchPairD3(ctypes.Structure):
     """Opaque ctypes handle for BatchPairD3 C++ object."""
@@ -36,7 +36,7 @@ class _BatchPairD3(ctypes.Structure):
 
 
 def _load_batch_d3() -> ctypes.CDLL:
-    """Load (or compile) pair_d3_for_ts shared library."""
+    """Load (or compile) pair_d3_batch shared library."""
     from torch.utils.cpp_extension import LIB_EXT, _get_build_directory, load
 
     name = 'pair_d3_batch'
@@ -76,7 +76,7 @@ def _load_batch_d3() -> ctypes.CDLL:
 
     load(
         name=name,
-        sources=[os.path.join(package_dir, 'pair_e3gnn', 'pair_d3_for_ts.cu')],
+        sources=[os.path.join(package_dir, 'pair_e3gnn', 'pair_d3_batch.cu')],
         extra_cuda_cflags=['-O3', '--expt-relaxed-constexpr', '-fmad=false'],
         build_directory=compile_dir,
         verbose=True,
@@ -89,7 +89,7 @@ def _load_batch_d3() -> ctypes.CDLL:
 # ---- Batch D3 wrapper ----
 
 class BatchD3:
-    """Python wrapper for batched D3 CUDA library (pair_d3_for_ts.so).
+    """Python wrapper for batched D3 CUDA library (pair_d3_batch.so).
 
     Handles ctypes bindings, species tracking, and numpy<->C data marshalling.
     """
