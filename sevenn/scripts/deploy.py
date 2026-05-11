@@ -10,7 +10,7 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.util import load_checkpoint
+from sevenn.util import load_checkpoint, warn_no_tp_accelerator
 
 
 def deploy(
@@ -21,13 +21,7 @@ def deploy(
     use_oeq: bool = False,
 ) -> None:
     if not (use_flash or use_oeq):
-        print(
-            '[WARNING] No tensor product accelerator is enabled for LAMMPS '
-            'TorchScript deployment. SevenNet may run much slower without a '
-            'TP accelerator. We strongly recommend enabling flashTP or '
-            'OpenEquivariance when available.',
-            flush=True,
-        )
+        warn_no_tp_accelerator('LAMMPS TorchScript deployment')
 
     cp = load_checkpoint(checkpoint)
     model, config = (
@@ -91,12 +85,8 @@ def deploy_parallel(
     use_oeq: bool = False,
 ) -> None:
     if not (use_flash or use_oeq):
-        print(
-            '[WARNING] No tensor product accelerator is enabled for LAMMPS '
-            'parallel TorchScript deployment. SevenNet may run much slower '
-            'without a TP accelerator. We strongly recommend enabling flashTP '
-            'or OpenEquivariance when available.',
-            flush=True,
+        warn_no_tp_accelerator(
+            'LAMMPS parallel TorchScript deployment',
         )
 
     # Additional layer for ghost atom (and copy parameters from original)
