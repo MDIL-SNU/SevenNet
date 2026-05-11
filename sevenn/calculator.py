@@ -89,6 +89,9 @@ class SevenNetCalculator(Calculator):
         enable_flash = os.getenv('SEVENNET_ENABLE_FLASH') == '1' or enable_flash
         enable_oeq = os.getenv('SEVENNET_ENABLE_OEQ') == '1' or enable_oeq
 
+        if not (enable_cueq or enable_flash or enable_oeq):
+            util.warn_no_tp_accelerator('SevenNetCalculator')
+
         if enable_cueq and file_type == 'model_instance':
             warnings.warn(
                 'file_type should be checkpoint to enable cueq. cueq set to False'

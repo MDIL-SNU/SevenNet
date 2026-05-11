@@ -3,8 +3,6 @@ import os
 
 import torch
 
-from sevenn import __version__
-
 description_get_model = (
     'deploy LAMMPS model from the checkpoint'
 )
@@ -126,6 +124,11 @@ def run(args):
             deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
     else:
         from sevenn import mliap
+
+        if not (use_cueq or use_flash or use_oeq):
+            sevenn.util.warn_no_tp_accelerator(
+                'LAMMPS ML-IAP deployment',
+            )
 
         if output_prefix.endswith('.pt') is False:
             output_prefix += '.pt'

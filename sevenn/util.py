@@ -2,6 +2,7 @@ import os
 import os.path as osp
 import pathlib
 import shutil
+import warnings
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
 
 import numpy as np
@@ -19,6 +20,18 @@ from sevenn.train.loss import LossDefinition
 if TYPE_CHECKING:
     from sevenn.atom_graph_data import AtomGraphData
     from sevenn.checkpoint import SevenNetCheckpoint
+
+
+def warn_no_tp_accelerator(context: str, stacklevel: int = 2) -> None:
+    warnings.warn(
+        (
+            f'No tensor product accelerator is enabled for {context}. '
+            'SevenNet may run much slower without a TP accelerator. '
+            'Please refer to the accelerator section of the documentation.'
+        ),
+        UserWarning,
+        stacklevel=stacklevel,
+    )
 
 
 def to_atom_graph_list(atom_graph_batch) -> List[_const.AtomGraphDataType]:

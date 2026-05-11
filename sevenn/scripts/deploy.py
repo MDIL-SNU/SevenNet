@@ -10,7 +10,7 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.util import load_checkpoint
+from sevenn.util import load_checkpoint, warn_no_tp_accelerator
 
 
 def deploy(
@@ -20,6 +20,9 @@ def deploy(
     use_flash: bool = False,
     use_oeq: bool = False,
 ) -> None:
+    if not (use_flash or use_oeq):
+        warn_no_tp_accelerator('LAMMPS TorchScript deployment')
+
     cp = load_checkpoint(checkpoint)
     model, config = (
         cp.build_model(
@@ -81,6 +84,11 @@ def deploy_parallel(
     use_flash: bool = False,
     use_oeq: bool = False,
 ) -> None:
+    if not (use_flash or use_oeq):
+        warn_no_tp_accelerator(
+            'LAMMPS parallel TorchScript deployment',
+        )
+
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
