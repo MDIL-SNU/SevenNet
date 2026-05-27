@@ -1,0 +1,23 @@
+units            metal
+boundary         p p p
+atom_style       atomic
+read_data        delete_third_atom_initial.data
+
+mass * 1.0
+
+pair_style       e3gnn
+pair_coeff       * * __POTENTIALS__ H He Li Be B C N O
+
+compute pa all pe/atom
+
+thermo           1
+thermo_style     custom step pe ke vol pxx pyy pzz pxy pxz pyz press temp
+
+run 0
+
+group remove_li id 3
+delete_atoms group remove_li compress no
+dump mydump all custom 1 force.dump id type element c_pa x y z fx fy fz
+dump_modify mydump sort id element H He Li Be B C N O
+
+run 0

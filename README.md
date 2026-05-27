@@ -63,9 +63,11 @@ If you utilize the pretrained model SevenNet-Omni or multi-task training strateg
 ```bib
 @article{kim_optimizing_2025,
 	title = {Optimizing Cross-Domain Transfer for Universal Machine Learning Interatomic Potentials},
-	doi = {10.48550/arxiv.2510.11241},
-	journal = {arXiv},
+	volume = {17},
+	doi = {10.1038/s41467-026-70195-8},
+	number = {3432},
+	journal = {Nat. Commun.},
 	author = {Kim, Jaesun and You, Jinmu and Park, Yutack and Lim, Yunsung and Kang, Yujin and Kim, Jisu and Jeon, Haekwan and Ju, Suyeon and Hong, Deokgi and Lee, Seung Yul and Choi, Saerom and Kim, Yongdeok and Lee, Jae W and Han, Seungwu},
-	year = {2025},
+	year = {2026},
 }
 ```

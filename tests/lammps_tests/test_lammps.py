@@ -1,6 +1,7 @@
 import copy
 import logging
 import pathlib
+import shutil
 import subprocess
 
 import ase.calculators.lammps
@@ -28,6 +29,12 @@ cutoff = 4.0
 lmp_script_path = str(
     (pathlib.Path(__file__).parent / 'scripts' / 'skel.lmp').resolve()
 )
+lmp_stress_script_path = str(
+    (pathlib.Path(__file__).parent / 'scripts' / 'stress_skel.lmp').resolve()
+)
+non_consecutive_assets_dir = (
+    pathlib.Path(__file__).parent / 'assets-non-consecutive'
+).resolve()
 
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
 cp_0_path = str(data_root / 'checkpoints' / 'cp_0.pth')  # knows Hf, O
@@ -106,6 +113,21 @@ def ref_modal_calculator():
     return SevenNetCalculator(cp_mf_path, modal='PBE')
 
 
+@pytest.fixture(scope='module')
+def ref_stress_calculator():
+    return SevenNetCalculator(cp_0_path, compute_atomic_virial=True)
+
+
+@pytest.fixture(scope='module')
+def ref_7net0_stress_calculator():
+    return SevenNetCalculator(cp_7net0_path, compute_atomic_virial=True)
+
+
+@pytest.fixture(scope='module')
+def ref_modal_stress_calculator():
+    return SevenNetCalculator(cp_mf_path, modal='PBE', compute_atomic_virial=True)
+
+
 def get_model_config():
     config = {
         'cutoff': cutoff,
@@ -176,7 +198,7 @@ def get_system(system_name, **kwargs):
         raise ValueError()
 
 
-def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
+def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6, check_atomic_stress=False):
     def acl(a, b, rtol=rtol, atol=atol):
         return np.allclose(a, b, rtol=rtol, atol=atol)
 
@@ -190,26 +212,33 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
         rtol * 10,
         atol * 10,
     )
+    if check_atomic_stress:
+        ref_atomic_virial = np.asarray(atoms1.calc.results['stresses'])
+        lmp_atomic_stress = np.asarray(atoms2.calc.results['atomic_stress'])
+        lmp_atomic_virial = -lmp_atomic_stress[:, [0, 1, 2, 3, 5, 4]]
+        assert acl(ref_atomic_virial, lmp_atomic_virial, rtol * 10, atol * 10)
     # assert acl(atoms1.get_potential_energies(), atoms2.get_potential_energies())
 
 
-def _lammps_results_to_atoms(lammps_log, force_dump):
+def _lammps_results_to_atoms(lammps_log, force_dump, result_index=0):
     with open(lammps_log, 'r') as f:
         lines = f.readlines()
-    lmp_log = None
+
+    thermo_entries = []
     for i, line in enumerate(lines):
         if not line.startswith('Per MPI rank memory allocation'):
             continue
-        lmp_log = {
-            k: eval(v) for k, v in zip(lines[i + 1].split(), lines[i + 2].split())
-        }
-        break
+        thermo_entries.append(
+            {k: eval(v) for k, v in zip(lines[i + 1].split(), lines[i + 2].split())}
+        )
 
-    assert lmp_log is not None and 'PotEng' in lmp_log
+    assert thermo_entries
+    lmp_log = thermo_entries[result_index]
+    assert 'PotEng' in lmp_log
 
     latoms_list = ase.io.read(force_dump, format='lammps-dump-text', index=':')
     assert isinstance(latoms_list, list)
-    latoms = latoms_list[0]
+    latoms = latoms_list[result_index]
     assert latoms.calc is not None
     latoms.calc.results['energy'] = lmp_log['PotEng']
     latoms.calc.results['free_energy'] = lmp_log['PotEng']
@@ -219,7 +248,7 @@ def _lammps_results_to_atoms(lammps_log, force_dump):
         'lmp_dump': force_dump,
     }
     # atomic energy read
-    latoms.calc.results['energies'] = latoms.arrays['c_pa'][:, 0]
+    latoms.calc.results['energies'] = np.ravel(latoms.arrays['c_pa'])
     stress = np.array(
         [
             [lmp_log['Pxx'], lmp_log['Pxy'], lmp_log['Pxz']],
@@ -230,10 +259,41 @@ def _lammps_results_to_atoms(lammps_log, force_dump):
     stress = -1 * stress / 1602.1766208 / 1000  # convert bars to eV/A^3
     latoms.calc.results['stress'] = stress
 
+    if 'c_astress[1]' in latoms.arrays:
+        atomic_stress = np.column_stack(
+            [
+                np.asarray(latoms.arrays['c_astress[1]']),
+                np.asarray(latoms.arrays['c_astress[2]']),
+                np.asarray(latoms.arrays['c_astress[3]']),
+                np.asarray(latoms.arrays['c_astress[4]']),
+                np.asarray(latoms.arrays['c_astress[5]']),
+                np.asarray(latoms.arrays['c_astress[6]']),
+            ]
+        )
+        latoms.calc.results['atomic_stress'] = atomic_stress / 1602.1766208 / 1000
+
     return latoms
 
 
-def _run_lammps(atoms, pair_style, potential, wd, command, test_name):
+def _run_lammps(atoms, pair_style, potential, wd, command, test_name, script_path):
+    def _rotate_stress(atomic_stress, rot_mat):
+        out = np.empty_like(atomic_stress)
+        for i, s in enumerate(atomic_stress):
+            sigma = np.array([
+                [s[0], s[3], s[4]],
+                [s[3], s[1], s[5]],
+                [s[4], s[5], s[2]]
+            ])
+            sigma = rot_mat @ sigma @ rot_mat.T
+            out[i] = [
+                sigma[0, 0],
+                sigma[1, 1],
+                sigma[2, 2],
+                sigma[0, 1],
+                sigma[0, 2],
+                sigma[1, 2]
+            ]
+        return out
     wd = wd.resolve()
     pbc = atoms.get_pbc()
     pbc_str = ' '.join(['p' if x else 'f' for x in pbc])
@@ -248,7 +308,7 @@ def _run_lammps(atoms, pair_style, potential, wd, command, test_name):
         lmp_stct, atoms, prismobj=prism, specorder=chem
     )
 
-    with open(lmp_script_path, 'r') as f:
+    with open(script_path, 'r') as f:
         cont = f.read()
 
     lammps_log = str(wd / 'log.lammps')
@@ -276,6 +336,10 @@ def _run_lammps(atoms, pair_style, potential, wd, command, test_name):
 
     rot_mat = prism.rot_mat
     results = copy.deepcopy(lmp_atoms.calc.results)
+
+    # SinglePointCalculator does not know atomic_stress
+    at_stress = results.pop('atomic_stress', None)
+
     r_force = np.dot(results['forces'], rot_mat.T)
     results['forces'] = r_force
     if 'stress' in results:
@@ -287,19 +351,33 @@ def _run_lammps(atoms, pair_style, potential, wd, command, test_name):
     lmp_atoms.set_cell(r_cell, scale_atoms=True)
     lmp_atoms = SinglePointCalculator(lmp_atoms, **results).get_atoms()
 
+    if at_stress is not None:
+        lmp_atoms.calc.results['atomic_stress'] = _rotate_stress(at_stress, rot_mat)
+
     return lmp_atoms
 
 
 def serial_lammps_run(atoms, potential, wd, test_name, lammps_cmd):
     command = lammps_cmd
-    return _run_lammps(atoms, 'e3gnn', potential, wd, command, test_name)
+    return _run_lammps(
+        atoms, 'e3gnn', potential, wd, command, test_name, lmp_script_path
+    )
 
 
 def parallel_lammps_run(
     atoms, potential, wd, test_name, ncores, lammps_cmd, mpirun_cmd
 ):
     command = f'{mpirun_cmd} -np {ncores} {lammps_cmd}'
-    return _run_lammps(atoms, 'e3gnn/parallel', potential, wd, command, test_name)
+    return _run_lammps(
+        atoms, 'e3gnn/parallel', potential, wd, command, test_name, lmp_script_path
+    )
+
+
+def serial_stress_lammps_run(atoms, potential, wd, test_name, lammps_cmd):
+    command = lammps_cmd
+    return _run_lammps(
+        atoms, 'e3gnn', potential, wd, command, test_name, lmp_stress_script_path
+    )
 
 
 def subprocess_routine(cmd, name):
@@ -368,6 +446,95 @@ def test_serial_flash(
     )
     atoms.calc = ref_7net0_calculator
     assert_atoms(atoms, atoms_lammps, atol=1e-5)
+
+
+@pytest.mark.parametrize(
+    'system',
+    ['bulk', 'surface'],
+)
+def test_serial_stress(
+    system, serial_potential_path, ref_stress_calculator, lammps_cmd, tmp_path
+):
+    atoms = get_system(system)
+    atoms_lammps = serial_stress_lammps_run(
+        atoms=atoms,
+        potential=serial_potential_path,
+        wd=tmp_path,
+        test_name='serial stress lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_stress_calculator
+    assert_atoms(atoms, atoms_lammps, atol=1e-5, check_atomic_stress=True)
+
+
+@pytest.mark.skipif(not is_oeq_available(), reason='oeq not available')
+@pytest.mark.parametrize(
+    'system',
+    ['bulk', 'surface'],
+)
+def test_serial_stress_oeq(
+    system,
+    serial_potential_path_oeq,
+    ref_7net0_stress_calculator,
+    lammps_cmd,
+    tmp_path
+):
+    atoms = get_system(system)
+    atoms_lammps = serial_stress_lammps_run(
+        atoms=atoms,
+        potential=serial_potential_path_oeq,
+        wd=tmp_path,
+        test_name='serial oeq stress lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_stress_calculator
+    assert_atoms(atoms, atoms_lammps, atol=1e-5, check_atomic_stress=True)
+
+
+@pytest.mark.skipif(not is_flash_available(), reason='flash not available')
+@pytest.mark.parametrize(
+    'system',
+    ['bulk', 'surface'],
+)
+def test_serial_stress_flash(
+    system,
+    serial_potential_path_flash,
+    ref_7net0_stress_calculator,
+    lammps_cmd,
+    tmp_path
+):
+    atoms = get_system(system)
+    atoms_lammps = serial_stress_lammps_run(
+        atoms=atoms,
+        potential=serial_potential_path_flash,
+        wd=tmp_path,
+        test_name='serial flash stress lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_stress_calculator
+    assert_atoms(atoms, atoms_lammps, atol=1e-5, check_atomic_stress=True)
+
+
+@pytest.mark.parametrize(
+    'system',
+    ['bulk', 'surface'],
+)
+def test_modal_serial_stress(
+    system,
+    serial_modal_potential_path,
+    ref_modal_stress_calculator,
+    lammps_cmd, tmp_path
+):
+    atoms = get_system(system)
+    atoms_lammps = serial_stress_lammps_run(
+        atoms=atoms,
+        potential=serial_modal_potential_path,
+        wd=tmp_path,
+        test_name='modal serial lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_modal_stress_calculator
+    assert_atoms(atoms, atoms_lammps)
 
 
 @pytest.mark.parametrize(
@@ -688,3 +855,48 @@ def test_disconnected_serial_oeq(
     )
     atoms.calc = ref_7net0_calculator
     assert_atoms(atoms, atoms_lammps, atol=1e-5)
+
+
+def _run_static_lammps_input(script_name, data_name, potential, wd, lammps_cmd):
+    wd = wd.resolve()
+    shutil.copy(non_consecutive_assets_dir / script_name, wd / script_name)
+    shutil.copy(non_consecutive_assets_dir / data_name, wd / data_name)
+    script_path = wd / script_name
+    script_path.write_text(
+        script_path.read_text().replace('__POTENTIALS__', potential)
+    )
+    log_path = wd / 'log.lammps'
+    res = subprocess.run(
+        [lammps_cmd, '-in', script_name, '-log', log_path.name],
+        capture_output=True,
+        timeout=120,
+        cwd=wd,
+    )
+    if res.returncode != 0:
+        if res.stdout:
+            logger.error(res.stdout.decode('utf-8'))
+        logger.error(res.stderr.decode('utf-8'))
+        if log_path.exists():
+            logger.error(log_path.read_text())
+        raise RuntimeError(f'{script_name} failed')
+    return _lammps_results_to_atoms(
+        str(log_path), str(wd / 'force.dump'), result_index=-1
+    )
+
+
+def test_serial_delete_atom(
+    serial_potential_path_7net0, lammps_cmd, tmp_path
+):
+    ref_atoms = ase.io.read(
+        non_consecutive_assets_dir / 'delete_third_atom_reference.extxyz'
+    )
+    atoms_lammps = _run_static_lammps_input(
+        'delete_third_atom.lmp',
+        'delete_third_atom_initial.data',
+        serial_potential_path_7net0,
+        tmp_path,
+        lammps_cmd,
+    )
+    assert ref_atoms.get_chemical_symbols() == atoms_lammps.get_chemical_symbols()
+    assert np.allclose(ref_atoms.get_positions(), atoms_lammps.get_positions())
+    assert_atoms(ref_atoms, atoms_lammps, atol=1e-5)

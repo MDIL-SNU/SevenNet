@@ -18,6 +18,7 @@ def write_inference_csv(output_list, out):
         output = output.fit_dimension()
         output[KEY.STRESS] = output[KEY.STRESS] * 1602.1766208
         output[KEY.PRED_STRESS] = output[KEY.PRED_STRESS] * 1602.1766208
+        # atomic virial: keep model units (energy-like)
         output_list[i] = output.to_numpy_dict()
 
     per_graph_keys = [
@@ -35,6 +36,7 @@ def write_inference_csv(output_list, out):
         KEY.POS,
         KEY.FORCE,
         KEY.PRED_FORCE,
+        KEY.PRED_ATOMIC_VIRIAL,
     ]
 
     def unfold_dct_val(dct, keys, suffix_list=None):
@@ -53,15 +55,36 @@ def write_inference_csv(output_list, out):
         return res
 
     def per_atom_dct_list(dct, keys):
-        sfx_list = ['x', 'y', 'z']
         res = []
-        natoms = dct[KEY.NUM_ATOMS]
-        extracted = {k: dct[k] for k in keys}
+        natoms = int(dct[KEY.NUM_ATOMS])
         for i in range(natoms):
-            raw = {}
-            raw.update({k: v[i] for k, v in extracted.items()})
-            per_atom_dct = unfold_dct_val(raw, keys, suffix_list=sfx_list)
-            res.append(per_atom_dct)
+            entry = {}
+            for k in keys:
+                if k not in dct:
+                    continue
+                v = dct[k]
+                if isinstance(v, np.ndarray):
+                    if v.ndim == 0:
+                        entry[k] = v.item()
+                    elif v.ndim == 1:
+                        entry[k] = v[i]
+                    elif v.ndim == 2:
+                        d = v.shape[1]
+                        if k in (KEY.POS, KEY.FORCE, KEY.PRED_FORCE):
+                            sfx = ['x', 'y', 'z']
+                        elif k == KEY.PRED_ATOMIC_VIRIAL:
+                            sfx = ['xx', 'yy', 'zz', 'xy', 'yz', 'zx']
+                        else:
+                            sfx = [str(j) for j in range(d)]
+                        for j in range(d):
+                            entry[f'{k}_{sfx[j]}'] = v[i, j]
+                    else:
+                        flat = v[i].ravel()
+                        for j, val in enumerate(flat):
+                            entry[f'{k}_{j}'] = val
+                else:
+                    entry[k] = v
+            res.append(entry)
         return res
 
     try:
