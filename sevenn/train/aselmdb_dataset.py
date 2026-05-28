@@ -481,38 +481,18 @@ class SevenNetASElmdbDataset(SevenNetAtomsDataset):
         self.statistics = {}
 
         self._dataset = AseDBDataset(src=files)
-        """
-        if sequence:
-            self.total_sequence = np.array(sequence)
-        else:
-            _seq = list(range(len(self._dataset)))
-            np.random.shuffle(_seq)
-            self.total_sequence = _seq
-        """
 
         if isinstance(stat_sequence_info, str) and osp.exists(stat_sequence_info):
             self.stat_sequence = np.load(stat_sequence_info)
 
         elif isinstance(stat_sequence_info, int):
-            #sample_num = min(len(self.total_sequence), stat_sequence_info)
             sample_num = min(len(self), stat_sequence_info)
-            """
-            self.stat_sequence = np.random.choice(
-                self.total_sequence, sample_num, replace=False
-            )
-            """
             self.stat_sequence = np.random.choice(
                 np.arange(len(self)), sample_num, replace=False
             )
 
         elif isinstance(stat_sequence_info, float):
-            #sample_num = int(len(self.total_sequence) * stat_sequence_info)
             sample_num = int(len(self) * stat_sequence_info)
-            """
-            self.stat_sequence = np.random.choice(
-                self.total_sequence, sample_num, replace=False
-            )
-            """
             self.stat_sequence = np.random.choice(
                 np.arange(len(self)), sample_num, replace=False
             )
@@ -522,7 +502,6 @@ class SevenNetASElmdbDataset(SevenNetAtomsDataset):
                 'stat_sequence_info should be one of str, int, float, '
                 + f'but got {type(stat_sequence_info)}'
             )
-        #self._run_sequence = self.total_sequence
 
     def __len__(self):
         # total, run_sequence deprecated.
@@ -564,55 +543,6 @@ class SevenNetASElmdbDataset(SevenNetAtomsDataset):
         atoms = _set_atoms_y([atoms])[0]
         return atoms
 
-    """
-    def continue_from_data_progress(
-        self,
-        total_data_num: int = -1,
-        current_data_index: int = 0,
-        sequence: Optional[List[int]] = None,
-    ):
-        if total_data_num < 0:  # Nothing to continue
-            return
-        elif total_data_num != len(self._dataset):
-            raise ValueError(
-                'data_progress is not compatible with the dataset'
-                + 'set reset_data_progress: True to fresh start'
-            )
-        if sequence is not None:
-            assert len(sequence) == len(self._dataset)
-            self.total_sequence = sequence
-        self._truncated_sequence(current_data_index)
-
-    def set_epoch(self, epoch: int, is_ddp: bool):
-        '''
-        Should be called before every epoch
-        Mimic behavior of distributed sampler
-        '''
-        # TODO: rngkey things based on epoch?
-        self.shuffle_sequence(is_ddp)
-        self._run_sequence = self.total_sequence
-
-    def _truncated_sequence(self, index):
-        '''
-        Used to start from middle of index (for continuing large-data training)
-        Also changes __len__ of the dataset
-        '''
-        self._run_sequence = self.total_sequence[index:]
-
-    def shuffle_sequence(self, broadcast=False):
-        # ambiguous as both run_sequence and total_sequece can be random idx
-        # assume total_sequnce is the one that is shuffled every epoch and
-        # run_sequence is simlpy for truncation of total_sequence for continue
-        shuffled = np.random.permutation(self.total_sequence)
-        if broadcast:
-            shuffled_bcast = [shuffled]
-            dist.broadcast_object_list(shuffled_bcast, src=0)
-            shuffled = shuffled_bcast[0]
-        self.total_sequence = shuffled
-
-    def save_sequence(self, filename):  # should not used
-        np.save(filename, self.total_sequence)
-    """
     @property
     def species(self):
         mode = (
@@ -654,7 +584,6 @@ class SevenNetASElmdbDataset(SevenNetAtomsDataset):
         if self._scanned is True:
             return  # statistics already computed
         target_sequence = (
-            #self.stat_sequence if mode == 'stat' else self.total_sequence
             self.stat_sequence if mode == 'stat' else np.arange(len(self))
         )
         y_keys: List[str] = [KEY.ENERGY, KEY.PER_ATOM_ENERGY, KEY.FORCE, KEY.STRESS]
@@ -752,15 +681,12 @@ def from_config(
         name = dk.split('_')[1].strip()
         sk = dk.replace('_path', '_sequence')
 
-        total_sequence_path = None
         stat_sequence_info = 10000
         if sk in config:
-            #total_sequence_path = config[sk].get('total_sequence_path', None)
             stat_sequence_info = config[sk].get('stat_sequence_info', None)
         dataset_args.update(
             {
                 'files': paths,
-                #'sequence_file': total_sequence_path,
                 'stat_sequence_info': stat_sequence_info,
                 'is_auto_mode': is_auto_mode,
             }
