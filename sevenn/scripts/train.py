@@ -59,7 +59,10 @@ def loader_from_config(
         world_size, rank = 1, 0
 
     # Use OrderedSampler for batch training mode to preserve data order
-    if train_by_batch and is_train:
+    # verified only for validset
+    # TODO: I think 'train_by_batch' and 'sampling validset' is independent,
+    #       so 'train_by_batch' should be removed
+    if train_by_batch:
         from sevenn.train.sampler import OrderedSampler
 
         seed = config.get(KEY.RANDOM_SEED, None)
