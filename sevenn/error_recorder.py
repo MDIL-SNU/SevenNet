@@ -14,7 +14,7 @@ import torch
 import torch.distributed as dist
 
 import sevenn._keys as KEY
-from sevenn.train.loss import LossDefinition, make_loss_info_dict_from_config
+from sevenn.train.loss import LossDefinition
 
 from .train.optim import loss_dict
 
@@ -121,8 +121,9 @@ class AverageNumber:
 
 class ErrorMetric:
     """
-    Base class for error metrics We always average error by # of structures,
-    and designed to collect errors in the middle of iteration (by AverageNumber)
+    Base class for error metrics
+    Always average error by # of structures,
+    Designed to collect errors in the middle of iteration (by AverageNumber)
     """
 
     def __init__(
@@ -468,16 +469,18 @@ class ErrorRecorder:
         loss_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
         reg_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
     ) -> 'ErrorRecorder':
-        loss_info_dict = config[KEY.LOSS]
-        if isinstance(loss_info_dict, str):
-            loss_info_dict = make_loss_info_dict_from_config(config)
-
-        criteria_dict = {}
-        for err_type in ['Energy' ,'Force', 'Stress']:
-            loss_cls = loss_dict[loss_info_dict.get(KEY.LOSS_TYPE, 'mse').lower()]
-            loss_param = loss_info_dict.get(KEY.LOSS_PARAM, {})
-            criteria = loss_cls(**loss_param) if loss_functions is None else None
-            criteria_dict[err_type] = criteria
+        loss_config = config.get(KEY.LOSS, 'mse')
+        if isinstance(loss_config, dict) and loss_functions is None:
+            raise NotImplementedError(
+                'Structured loss config is not supported in train_v1. '
+                'Use train_v2 instead.'
+            )
+        if loss_functions is None:
+            loss_cls = loss_dict[loss_config.lower()]
+            loss_param = config.get(KEY.LOSS_PARAM, {})
+            criteria = loss_cls(**loss_param)
+        else:
+            criteria = None
 
         if loss_functions is not None:
             all_loss_functions = (
@@ -504,7 +507,6 @@ class ErrorRecorder:
         err_metrics = []
         for err_type, metric_name in err_config:
             metric_kwargs = get_err_type(err_type)
-            criteria = criteria_dict.get(err_type, None)
             if err_type == 'TotalLoss':  # special case
                 err_metrics.append(
                     ErrorRecorder.init_total_loss_metric(
