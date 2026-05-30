@@ -360,4 +360,3 @@ def get_loss_functions_from_config(
         loss_functions.append((loss_function, loss_weight))
 
     return loss_functions
-
