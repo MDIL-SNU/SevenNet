@@ -112,7 +112,7 @@ def processing_by_batch(
     )
 
     scheduler_update_every_batch = (
-            config.get(KEY.SCHEDULER_BATCH_MODE, False)
+        config.get(KEY.SCHEDULER_BATCH_MODE, False)
     )
 
     # TODO: too long, refactor more

@@ -167,7 +167,9 @@ class LMDBDatabase(Database):
             self.ids.append(idx)
             self.txn.put(
                 'nextid'.encode('ascii'),
-                zlib.compress(orjson.dumps(nextid, option=orjson.OPT_SERIALIZE_NUMPY)),
+                zlib.compress(
+                    orjson.dumps(nextid, option=orjson.OPT_SERIALIZE_NUMPY)
+                ),
             )
         # check if id is in removed ids and remove accordingly
         if idx in self.deleted_ids:
@@ -185,7 +187,9 @@ class LMDBDatabase(Database):
         # hack this to play nicely with ASE code
         row = self._get_row(idx, include_data=True)
         if data is not None or key_value_pairs is not None:
-            self._write(atoms=row, idx=idx, key_value_pairs=key_value_pairs, data=data)
+            self._write(
+                atoms=row, idx=idx, key_value_pairs=key_value_pairs, data=data
+            )
 
     def _write_deleted_ids(self):
         self.txn.put(
@@ -364,7 +368,9 @@ class LMDBDatabase(Database):
             self.deleted_ids = orjson.loads(zlib.decompress(deleted_ids_data))
 
         # Reconstruct the full id list
-        self.ids = [i for i in range(1, self._nextid) if i not in set(self.deleted_ids)]
+        self.ids = [
+            i for i in range(1, self._nextid) if i not in set(self.deleted_ids)
+        ]
 
 
 class AseDBDataset:
@@ -399,11 +405,10 @@ class AseDBDataset:
             except ValueError:
                 pass
 
-
         # In order to get all of the unique IDs using the default ASE db interface
-        # we have to load all the data and check ids using a select. This is extremely
-        # inefficient for large dataset. If the db we're using already presents a list of
-        # ids and there is no query, we can just use that list instead and save ourselves
+        # we have to load all the data and check ids using a select. This is extremely     # noqa: E501
+        # inefficient for large dataset. If the db we're using already presents a list of  # noqa: E501
+        # ids and there is no query, we can just use that list instead and save ourselves  # noqa: E501
         # a lot of time!
         self.db_ids = []
         for db in self.dbs:
@@ -422,17 +427,14 @@ class AseDBDataset:
         if self.num_samples == 0:
             raise ValueError(f"No valid ase data found, check src {src}!")
 
-
     def __len__(self) -> int:
         return self.num_samples
-
 
     def connect_db(self, path: str) -> Database:
         if any(path.endswith(ext) for ext in ['aselmdb', 'lmdb']):
             return LMDBDatabase(path, readonly=True)
 
         return ase.db.connect(path)
-
 
     def get_atoms(self, idx: int) -> ase.Atoms:
         db_idx = bisect.bisect(self._idlen_cumulative, idx)
@@ -456,7 +458,7 @@ class SevenNetASElmdbDataset(SevenNetAtomsDataset):
         self,
         cutoff: float,
         files: Union[str, List[str]],
-        #sequence: Optional[List[int]] = None,
+        # sequence: Optional[List[int]] = None,
         stat_sequence_info: Union[str, float, int] = 10000,
         is_auto_mode: bool = False,
         atoms_filter: Optional[Callable] = None,  # not used yet
@@ -504,12 +506,12 @@ class SevenNetASElmdbDataset(SevenNetAtomsDataset):
     def __len__(self):
         # total, run_sequence deprecated.
         # Should only be used in OrderedSampler.__init__
-        #return len(self._run_sequence)
+        # return len(self._run_sequence)
         return len(self._dataset)
 
     def __getitem__(self, index):
-        #idx = self._run_sequence[index]
-        #atoms = self.set_atoms_y_with_idx(idx)
+        # idx = self._run_sequence[index]
+        # atoms = self.set_atoms_y_with_idx(idx)
         atoms = self.set_atoms_y_with_idx(index)
         if self.atoms_trasform is not None:
             atoms = self.atoms_trasform(atoms)

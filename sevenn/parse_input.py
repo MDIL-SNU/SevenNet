@@ -188,7 +188,8 @@ def init_data_config(config: Dict[str, Any]) -> Dict[str, Any]:
 
     for k in config:
         if k.startswith('load_') and k.endswith('_sequence'):
-            data_meta[k] = config[k]  # TODO: check validity in here, not `from_config`
+            # TODO: check validity in here, not `from_config`
+            data_meta[k] = config[k]
 
     for key, default in _const.DEFAULT_DATA_CONFIG.items():
         data_meta[key] = config_initialize(

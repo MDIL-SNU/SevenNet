@@ -192,10 +192,6 @@ class SevenNetCheckpoint:
         self._config = None
         self._epoch = None
         self._data_progress = None
-        reset_optimizer: False
-        reset_scheduler: False
-        reset_data_progress: False
-        reset_epoch: False
         self._model_state_dict = None
         self._optimizer_state_dict = None
         self._scheduler_state_dict = None
