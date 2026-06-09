@@ -226,19 +226,6 @@ class Trainer:
 
         total_loss.backward()
 
-        # TODO: NaN sanitizer - replace NaN/Inf gradients with zero
-        # for name, p in self.model.named_parameters():
-        #     if p.grad is None:
-        #         continue
-        #     if not torch.isfinite(p.grad).all():
-        #         if self.rank == 0:
-        #             print(
-        #                 f'[nan2zero] NaN/Inf gradient detected in {p.shape}, '
-        #                 'resetting to 0',
-        #                 flush=True,
-        #             )
-        #         p.grad = torch.nan_to_num(p.grad, nan=0.0, posinf=0.0, neginf=0.0)
-
         # Grad clipping
         if self.grad_clip_norm_th is not None:
             norm = torch.nn.utils.clip_grad_norm_(

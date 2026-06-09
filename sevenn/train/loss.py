@@ -254,9 +254,18 @@ class L2Regularization(LossDefinition):
         return ret
 
 
-def _get_modal_module_keys_for_reg(
+def get_regularization_from_config(
     config: Dict[str, Any], all_module_keys: List[str]
-) -> List[str]:
+) -> List[Tuple[LossDefinition, float]]:
+    reg_params = config.get(KEY.REG_PARAM, {})
+    reg_functions: List[Tuple[LossDefinition, float]] = []
+
+    modal_param = reg_params.get('modal', {})
+    if not modal_param:
+        return reg_functions
+
+    reg_weight = float(modal_param.get(KEY.REG_WEIGHT, 1e-5))
+
     module_keys_to_reg = []
     for module_key in all_module_keys:
         for (
@@ -271,23 +280,6 @@ def _get_modal_module_keys_for_reg(
             elif modal_module_name == 'reduce_input_to_hidden':
                 continue
             module_keys_to_reg.append(module_key)
-    return module_keys_to_reg
-
-
-def get_regularization_from_config(
-    config: Dict[str, Any], all_module_keys: List[str]
-) -> List[Tuple[LossDefinition, float]]:
-    reg_params = config.get(KEY.REG_PARAM, {})
-    reg_functions: List[Tuple[LossDefinition, float]] = []
-
-    modal_param = reg_params.get('modal', {})
-    if not modal_param:
-        return reg_functions
-
-    reg_weight = float(modal_param.get(KEY.REG_WEIGHT, 1e-5))
-    module_keys_to_reg = _get_modal_module_keys_for_reg(
-        config, all_module_keys
-    )
 
     reg_functions.append((
         L2Regularization('L2_modal', module_keys_to_reg, reg_modal_only=True),
