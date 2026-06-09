@@ -30,7 +30,7 @@ model = SevenNetModel(model="7net-omni", modal="mpa", enable_oeq=True)
 # or enable_cueq=True or enable_flash=True
 ```
 
-The `device` parameter defaults to `'auto'` (CUDA if available, otherwise CPU).
+The `device` parameter defaults to `auto` (CUDA if available, otherwise CPU).
 
 ### Batched MD
 
@@ -85,11 +85,11 @@ It requires a CUDA GPU (the D3 backends are GPU-only) and accepts the same D3 pa
 
 D3 can be evaluated two ways, selected by `d3_mode`:
 
-- `'serial'`: a per-system loop over the ASE-style `D3Calculator`.
-- `'batch'`: a single batched CUDA kernel launch that computes D3 for all systems at once.
-- `'auto'` (default): use `'batch'` when the number of systems in the batch exceeds `d3_batch_threshold` (default `4`), otherwise `'serial'`.
+- `serial`: a per-system loop over the ASE-style `D3Calculator`.
+- `batch`: a single batched CUDA kernel launch that computes D3 for all systems at once.
+- `auto` (default): use `batch` when the number of systems in the batch exceeds `d3_batch_threshold` (default `4`), otherwise `serial`.
 
-The `'auto'` heuristic exists because the two paths have different trade-offs: the batched kernel amortizes its per-call overhead across many systems, so it wins for large batches, while the serial loop is cheaper for the few-system case. Tune the cutoff with `d3_batch_threshold`, or force a single backend with `d3_mode`:
+The `auto` heuristic exists because the two paths have different trade-offs: the batched kernel amortizes its per-call overhead across many systems, so it wins for large batches, while the serial loop is cheaper for the few-system case. Tune the cutoff with `d3_batch_threshold`, or force a single backend with `d3_mode`:
 
 ```python
 # Always use the batched CUDA kernel

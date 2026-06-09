@@ -1,6 +1,8 @@
 (ase_calculator)=
 # ASE calculator
 
+### `SevenNetCalculator`
+
 SevenNet provides an ASE interface via the ASE calculator. Models can be loaded using the following Python code:
 ```python
 from sevenn.calculator import SevenNetCalculator
