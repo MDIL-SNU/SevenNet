@@ -1,4 +1,6 @@
+import importlib.util
 import math
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import numpy as np
@@ -13,6 +15,7 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.scripts.processing_continue import (
     convert_modality_of_checkpoint_state_dct,
 )
+from sevenn.train.sampler import OrderedSampler
 from sevenn.train.trainer import Trainer
 
 
@@ -30,15 +33,13 @@ def loader_from_config(
                  (or dict with 'dataset' and 'batch_size')
         dataset_key: Key identifying the dataset
     """
-    is_train = dataset_key == 'trainset'
     batch_size = config[KEY.BATCH_SIZE]
 
     if isinstance(dataset, dict):
         batch_size = dataset.get('batch_size', batch_size)
         dataset = dataset['dataset']
 
-    shuffle = is_train and config[KEY.TRAIN_SHUFFLE]
-    train_by_batch = config.get(KEY.TRAIN_BY_BATCH, False)
+    shuffle = config[KEY.TRAIN_SHUFFLE]
     sampler = None
 
     loader_args = {'dataset': dataset, 'batch_size': batch_size, 'shuffle': shuffle}
@@ -48,6 +49,7 @@ def loader_from_config(
     if (loader_kwargs := config.get(KEY.LOADER_KWARGS, None)) is not None:
         loader_args.update(**loader_kwargs)
 
+    world_size, rank = 1, 0
     if config[KEY.IS_DDP]:
         dist.barrier()
         world_size = dist.get_world_size()
@@ -55,45 +57,36 @@ def loader_from_config(
         sampler = DistributedSampler(dataset, world_size, rank, shuffle=shuffle)
         loader_args.update({'sampler': sampler})
         loader_args.pop('shuffle')  # sampler is mutually exclusive with shuffle
-    else:
-        world_size, rank = 1, 0
 
     # Use OrderedSampler for batch training mode to preserve data order
     # verified only for validset
     # TODO: I think 'train_by_batch' and 'sampling validset' is independent,
     #       so 'train_by_batch' should be removed
-    if train_by_batch:
-        from sevenn.train.sampler import OrderedSampler
+    if config.get(KEY.TRAIN_BY_BATCH, False):
+        sequence = config[f'load_{dataset_key}_sequence'].get(
+            'total_sequence_path', None
+        )
 
-        seed = config.get(KEY.RANDOM_SEED, None)
-        try:
-            sequence = config[f'load_{dataset_key}_sequence']['total_sequence_path']
-        except:
-            sequence = None
-        if sequence is not None:  # when using custom sequence (e.g. subset)
-            sequence = np.load(sequence)
-        sampler = OrderedSampler(dataset, sequence, shuffle, seed, world_size, rank)
-        loader_args.update({'sampler': sampler})
-        loader_args.pop(
-            'shuffle', None
-        )  # sampler is mutually exclusive with shuffle
-
+        sampler = OrderedSampler(
+            dataset=dataset,
+            sequence=np.load(sequence) if sequence else None,
+            shuffle=shuffle,
+            seed=config.get(KEY.RANDOM_SEED, 777),
+            world_size=world_size,
+            rank=rank,
+        )
+        # sampler is mutually exclusive with shuffle
+        loader_args.update({'sampler': sampler, 'shuffle': None})
     return DataLoader(**loader_args)
 
 
-def update_config_for_batch_training(
-    config: Dict[str, Any],
-    train_loader
-) -> None:
+def update_config_for_batch_training(config: Dict[str, Any], train_loader) -> None:
     """
     Update scheduler parameters for batch-level training.
 
     This converts epoch-based scheduler parameters to step-based parameters
     when using batch training mode.
     """
-    if not config.get(KEY.TRAIN_BY_BATCH, False):
-        return
-
     # convert float type `epoch` related parameters for batch training
     effective_batch_size = config[KEY.WORLD_SIZE] * config[KEY.BATCH_SIZE]
     steps_per_epoch = math.ceil(
@@ -138,9 +131,6 @@ def update_config_for_batch_training(
 
 
 def datasets_from_py(config, script):
-    import importlib.util
-    from pathlib import Path
-
     if isinstance(script, list):
         assert len(script) == 1, 'Need single python script'
     script = script[0]
@@ -148,8 +138,8 @@ def datasets_from_py(config, script):
     file_path = Path(script).resolve()
     print(f'Init dataset from {file_path}', flush=True)
     spec = importlib.util.spec_from_file_location('dataset', file_path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    module = importlib.util.module_from_spec(spec)  # type: ignore
+    spec.loader.exec_module(module)  # type: ignore
 
     ret = module.dataset(config)
     assert isinstance(ret, dict) and 'trainset' in ret
@@ -186,24 +176,21 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
 
     # Initialize data progress for batch training
     train_by_batch = config.get(KEY.TRAIN_BY_BATCH, False)
+
+    data_progress = {}
     if train_by_batch:
         data_progress = {
             KEY.TOTAL_DATA_NUM: -1,
             KEY.CURRENT_DATA_IDX: 0,
             KEY.NUMPY_RNG_STATE: None,
         }
-    else:
-        data_progress = {}   # dummy
 
     # config updated
     start_epoch = 1
     state_dicts: Optional[List[dict]] = None
     if config[KEY.CONTINUE][KEY.CHECKPOINT]:
-        result = processing_continue_v2(config)
-        if train_by_batch:
-            state_dicts, start_epoch, data_progress = result
-        else:
-            state_dicts, start_epoch = result
+        # data_progress is non-empty only if train_by_batch is True
+        state_dicts, start_epoch, data_progress = processing_continue_v2(config)
 
     # Load datasets based on type
     dataset_type = config[KEY.DATASET_TYPE]
@@ -224,8 +211,7 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
         raise ValueError(f'Unknown dataset type: {dataset_type}')
 
     loaders = {
-        k: loader_from_config(config, v, dataset_key=k)
-        for k, v in datasets.items()
+        k: loader_from_config(config, v, dataset_key=k) for k, v in datasets.items()
     }
 
     # Update scheduler config for batch training
@@ -278,8 +264,7 @@ def train(config, working_dir: str):
     train, valid, _ = processing_dataset(config, working_dir)
     datasets = {'dataset': train, 'validset': valid}
     loaders = {
-        k: loader_from_config(config, v, dataset_key=k)
-        for k, v in datasets.items()
+        k: loader_from_config(config, v, dataset_key=k) for k, v in datasets.items()
     }
     loaders = list(loaders.values())
 

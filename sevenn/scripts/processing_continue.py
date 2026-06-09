@@ -98,6 +98,7 @@ def processing_continue_v2(config: Dict[str, Any]):
     ]
 
     # Handle data progress for batch training
+    data_progress = {}
     if train_by_batch:
         data_progress = {
             KEY.TOTAL_DATA_NUM: -1,
@@ -112,10 +113,8 @@ def processing_continue_v2(config: Dict[str, Any]):
             # log.writeline(f'Checkpoint previous epoch was: {from_epoch}')  # duplicated? # noqa: E501
 
         log.writeline('checkpoint loading success')
-        return state_dicts, epoch, data_progress
-    else:
-        log.writeline('checkpoint loading success')
-        return state_dicts, epoch
+
+    return state_dicts, epoch, data_progress or {}
 
 
 def check_config_compatible(config: Dict[str, Any], config_cp: Dict[str, Any]):
