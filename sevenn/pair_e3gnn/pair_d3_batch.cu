@@ -963,6 +963,7 @@ __global__ void batch_kernel_forces_zero(
     float dc6i_local_i = 0.0f;
     float dc6i_local_j = 0.0f;
     float sigma_local[9] = { 0.0f };
+        float sigma_c[9] = { 0.0f };
     float disp_local = 0.0f;
     float disp_c = 0.0f;  // Kahan compensation
 
@@ -1010,15 +1011,15 @@ __global__ void batch_kernel_forces_zero(
 
             const float vec[3] = { x1 * rij[0], x1 * rij[1], x1 * rij[2] };
 
-            sigma_local[0] += vec[0] * rij[0];
-            sigma_local[1] += vec[0] * rij[1];
-            sigma_local[2] += vec[0] * rij[2];
-            sigma_local[3] += vec[1] * rij[0];
-            sigma_local[4] += vec[1] * rij[1];
-            sigma_local[5] += vec[1] * rij[2];
-            sigma_local[6] += vec[2] * rij[0];
-            sigma_local[7] += vec[2] * rij[1];
-            sigma_local[8] += vec[2] * rij[2];
+            kahan_add(sigma_local[0], sigma_c[0], vec[0] * rij[0]);
+            kahan_add(sigma_local[1], sigma_c[1], vec[0] * rij[1]);
+            kahan_add(sigma_local[2], sigma_c[2], vec[0] * rij[2]);
+            kahan_add(sigma_local[3], sigma_c[3], vec[1] * rij[0]);
+            kahan_add(sigma_local[4], sigma_c[4], vec[1] * rij[1]);
+            kahan_add(sigma_local[5], sigma_c[5], vec[1] * rij[2]);
+            kahan_add(sigma_local[6], sigma_c[6], vec[2] * rij[0]);
+            kahan_add(sigma_local[7], sigma_c[7], vec[2] * rij[1]);
+            kahan_add(sigma_local[8], sigma_c[8], vec[2] * rij[2]);
 
             const float dc6_rest = 0.5f * r6_rc * fmaf(3.0f * r2_rc, s8r42 * damp8, s6 * damp6);
             kahan_add(disp_local, disp_c, -(dc6_rest * c6));
@@ -1070,15 +1071,15 @@ __global__ void batch_kernel_forces_zero(
             f_local[1] -= vec[1];
             f_local[2] -= vec[2];
 
-            sigma_local[0] += vec[0] * rij[0];
-            sigma_local[1] += vec[0] * rij[1];
-            sigma_local[2] += vec[0] * rij[2];
-            sigma_local[3] += vec[1] * rij[0];
-            sigma_local[4] += vec[1] * rij[1];
-            sigma_local[5] += vec[1] * rij[2];
-            sigma_local[6] += vec[2] * rij[0];
-            sigma_local[7] += vec[2] * rij[1];
-            sigma_local[8] += vec[2] * rij[2];
+            kahan_add(sigma_local[0], sigma_c[0], vec[0] * rij[0]);
+            kahan_add(sigma_local[1], sigma_c[1], vec[0] * rij[1]);
+            kahan_add(sigma_local[2], sigma_c[2], vec[0] * rij[2]);
+            kahan_add(sigma_local[3], sigma_c[3], vec[1] * rij[0]);
+            kahan_add(sigma_local[4], sigma_c[4], vec[1] * rij[1]);
+            kahan_add(sigma_local[5], sigma_c[5], vec[1] * rij[2]);
+            kahan_add(sigma_local[6], sigma_c[6], vec[2] * rij[0]);
+            kahan_add(sigma_local[7], sigma_c[7], vec[2] * rij[1]);
+            kahan_add(sigma_local[8], sigma_c[8], vec[2] * rij[2]);
 
             const float dc6_rest = r6_rc * fmaf(3.0f * r2_rc, s8r42 * damp8, s6 * damp6);
             kahan_add(disp_local, disp_c, -(dc6_rest * c6));
@@ -1137,6 +1138,7 @@ __global__ void batch_kernel_forces_bj(
     float dc6i_local_i = 0.0f;
     float dc6i_local_j = 0.0f;
     float sigma_local[9] = { 0.0f };
+        float sigma_c[9] = { 0.0f };
     float disp_local = 0.0f;
     float disp_c = 0.0f;  // Kahan compensation
 
@@ -1179,15 +1181,15 @@ __global__ void batch_kernel_forces_bj(
                 x1 * rij[2] * r_rc
             };
 
-            sigma_local[0] += vec[0] * rij[0];
-            sigma_local[1] += vec[0] * rij[1];
-            sigma_local[2] += vec[0] * rij[2];
-            sigma_local[3] += vec[1] * rij[0];
-            sigma_local[4] += vec[1] * rij[1];
-            sigma_local[5] += vec[1] * rij[2];
-            sigma_local[6] += vec[2] * rij[0];
-            sigma_local[7] += vec[2] * rij[1];
-            sigma_local[8] += vec[2] * rij[2];
+            kahan_add(sigma_local[0], sigma_c[0], vec[0] * rij[0]);
+            kahan_add(sigma_local[1], sigma_c[1], vec[0] * rij[1]);
+            kahan_add(sigma_local[2], sigma_c[2], vec[0] * rij[2]);
+            kahan_add(sigma_local[3], sigma_c[3], vec[1] * rij[0]);
+            kahan_add(sigma_local[4], sigma_c[4], vec[1] * rij[1]);
+            kahan_add(sigma_local[5], sigma_c[5], vec[1] * rij[2]);
+            kahan_add(sigma_local[6], sigma_c[6], vec[2] * rij[0]);
+            kahan_add(sigma_local[7], sigma_c[7], vec[2] * rij[1]);
+            kahan_add(sigma_local[8], sigma_c[8], vec[2] * rij[2]);
 
             const float dc6_rest = 0.5f * fmaf(s8r42x3, t8_rc, s6 * t6_rc);
             kahan_add(disp_local, disp_c, -(dc6_rest * c6));
@@ -1233,15 +1235,15 @@ __global__ void batch_kernel_forces_bj(
             f_local[1] -= vec[1];
             f_local[2] -= vec[2];
 
-            sigma_local[0] += vec[0] * rij[0];
-            sigma_local[1] += vec[0] * rij[1];
-            sigma_local[2] += vec[0] * rij[2];
-            sigma_local[3] += vec[1] * rij[0];
-            sigma_local[4] += vec[1] * rij[1];
-            sigma_local[5] += vec[1] * rij[2];
-            sigma_local[6] += vec[2] * rij[0];
-            sigma_local[7] += vec[2] * rij[1];
-            sigma_local[8] += vec[2] * rij[2];
+            kahan_add(sigma_local[0], sigma_c[0], vec[0] * rij[0]);
+            kahan_add(sigma_local[1], sigma_c[1], vec[0] * rij[1]);
+            kahan_add(sigma_local[2], sigma_c[2], vec[0] * rij[2]);
+            kahan_add(sigma_local[3], sigma_c[3], vec[1] * rij[0]);
+            kahan_add(sigma_local[4], sigma_c[4], vec[1] * rij[1]);
+            kahan_add(sigma_local[5], sigma_c[5], vec[1] * rij[2]);
+            kahan_add(sigma_local[6], sigma_c[6], vec[2] * rij[0]);
+            kahan_add(sigma_local[7], sigma_c[7], vec[2] * rij[1]);
+            kahan_add(sigma_local[8], sigma_c[8], vec[2] * rij[2]);
 
             const float dc6_rest = fmaf(s8r42x3, t8_rc, s6 * t6_rc);
             kahan_add(disp_local, disp_c, -(dc6_rest * c6));
@@ -1296,6 +1298,7 @@ __global__ void batch_kernel_forces_with_dC6(
 
     float f_local[3] = { 0.0f };
     float sigma_local[9] = { 0.0f };
+        float sigma_c[9] = { 0.0f };
 
     if (iat == jat) {
         const float rcov_sum = rcov[atomtype[iat]] * 2.0f;
@@ -1323,15 +1326,15 @@ __global__ void batch_kernel_forces_with_dC6(
                 x1 * rij[2] * r_rc
             };
 
-            sigma_local[0] += vec[0] * rij[0];
-            sigma_local[1] += vec[0] * rij[1];
-            sigma_local[2] += vec[0] * rij[2];
-            sigma_local[3] += vec[1] * rij[0];
-            sigma_local[4] += vec[1] * rij[1];
-            sigma_local[5] += vec[1] * rij[2];
-            sigma_local[6] += vec[2] * rij[0];
-            sigma_local[7] += vec[2] * rij[1];
-            sigma_local[8] += vec[2] * rij[2];
+            kahan_add(sigma_local[0], sigma_c[0], vec[0] * rij[0]);
+            kahan_add(sigma_local[1], sigma_c[1], vec[0] * rij[1]);
+            kahan_add(sigma_local[2], sigma_c[2], vec[0] * rij[2]);
+            kahan_add(sigma_local[3], sigma_c[3], vec[1] * rij[0]);
+            kahan_add(sigma_local[4], sigma_c[4], vec[1] * rij[1]);
+            kahan_add(sigma_local[5], sigma_c[5], vec[1] * rij[2]);
+            kahan_add(sigma_local[6], sigma_c[6], vec[2] * rij[0]);
+            kahan_add(sigma_local[7], sigma_c[7], vec[2] * rij[1]);
+            kahan_add(sigma_local[8], sigma_c[8], vec[2] * rij[2]);
         }
     } else {
         const float rcov_sum = rcov[atomtype[iat]] + rcov[atomtype[jat]];
@@ -1362,15 +1365,15 @@ __global__ void batch_kernel_forces_with_dC6(
             f_local[1] -= vec[1];
             f_local[2] -= vec[2];
 
-            sigma_local[0] += vec[0] * rij[0];
-            sigma_local[1] += vec[0] * rij[1];
-            sigma_local[2] += vec[0] * rij[2];
-            sigma_local[3] += vec[1] * rij[0];
-            sigma_local[4] += vec[1] * rij[1];
-            sigma_local[5] += vec[1] * rij[2];
-            sigma_local[6] += vec[2] * rij[0];
-            sigma_local[7] += vec[2] * rij[1];
-            sigma_local[8] += vec[2] * rij[2];
+            kahan_add(sigma_local[0], sigma_c[0], vec[0] * rij[0]);
+            kahan_add(sigma_local[1], sigma_c[1], vec[0] * rij[1]);
+            kahan_add(sigma_local[2], sigma_c[2], vec[0] * rij[2]);
+            kahan_add(sigma_local[3], sigma_c[3], vec[1] * rij[0]);
+            kahan_add(sigma_local[4], sigma_c[4], vec[1] * rij[1]);
+            kahan_add(sigma_local[5], sigma_c[5], vec[1] * rij[2]);
+            kahan_add(sigma_local[6], sigma_c[6], vec[2] * rij[0]);
+            kahan_add(sigma_local[7], sigma_c[7], vec[2] * rij[1]);
+            kahan_add(sigma_local[8], sigma_c[8], vec[2] * rij[2]);
         }
         atomicAdd(&f[iat * 3 + 0], static_cast<double>(f_local[0]));
         atomicAdd(&f[iat * 3 + 1], static_cast<double>(f_local[1]));
