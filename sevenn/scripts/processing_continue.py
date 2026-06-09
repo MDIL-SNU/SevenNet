@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 import torch
 
@@ -111,11 +111,11 @@ def processing_continue_v2(config: Dict[str, Any]):
             log.writeline(f'data index start from {data_progress[KEY.CURRENT_DATA_IDX]}')  # noqa: E501
             # log.writeline(f'Checkpoint previous epoch was: {from_epoch}')  # duplicated? # noqa: E501
 
-        log.writeline('checkpoint loading successful')
+        log.writeline('checkpoint loading success')
         return state_dicts, epoch, data_progress
-
-    log.writeline('checkpoint loading successful')
-    return state_dicts, epoch
+    else:
+        log.writeline('checkpoint loading success')
+        return state_dicts, epoch
 
 
 def check_config_compatible(config: Dict[str, Any], config_cp: Dict[str, Any]):
