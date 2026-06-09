@@ -12,6 +12,7 @@ from torch_geometric.loader.dataloader import Collater
 
 import sevenn._keys as key
 from sevenn.atom_graph_data import AtomGraphData
+from sevenn.batch_d3 import BatchD3
 from sevenn.util import load_checkpoint
 
 try:
@@ -294,15 +295,21 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         return results
 
 
-# TODO: replace this with torchsim_d3.SevenNetD3Model
-class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
+class SevenNetD3Model(ModelInterface):
     """SevenNet + D3 dispersion composite model for TorchSim.
 
-    Wraps SevenNetModel and D3Calculator, sums their E/F/S outputs.
-    Interface-compatible with SevenNetModel (same forward signature).
+    Wraps SevenNetModel and adds the D3 dispersion correction,
+    summing their E/F/S outputs.
+    Same forward signature with SevenNetModel.
 
-    Args match SevenNetModel plus D3 parameters. Mirrors
-    SevenNetD3Calculator's arguments for consistency.
+    D3 can be evaluated two ways, selected by 'd3_mode':
+
+    - serial: per-system loop over the ASE-style D3Calculator.
+    - batch : a single batched CUDA kernel launch (BatchD3)
+    - auto (default): pick 'batch' when the number of systems B
+      is larger than d3_batch_threshold, otherwise 'serial'.
+
+    Args match SevenNetModel plus D3 parameters.
     """
 
     def __init__(
@@ -316,6 +323,8 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
         neighbor_list_fn: Callable | None = None,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
+        d3_mode: str = 'auto',
+        d3_batch_threshold: int = 4,
         damping_type: str = 'damp_bj',
         functional_name: str = 'pbe',
         vdw_cutoff: float = 9000,
@@ -323,8 +332,10 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
     ) -> None:
         super().__init__()
 
-        # Check if the D3Calculator is available
-        from sevenn.calculator import D3Calculator
+        if d3_mode not in ('auto', 'serial', 'batch'):
+            raise ValueError(
+                f"d3_mode must be 'auto', 'serial' or 'batch', got {d3_mode!r}"
+            )
 
         self.sevennet = SevenNetModel(
             model,
@@ -336,12 +347,21 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
             device=device,
             dtype=dtype,
         )
-        self.d3 = D3Calculator(
-            damping_type=damping_type,
-            functional_name=functional_name,
-            vdw_cutoff=vdw_cutoff,
-            cn_cutoff=cn_cutoff,
-        )
+
+        self.d3_mode = d3_mode
+        self.d3_batch_threshold = d3_batch_threshold
+        # D3 backends are created lazily on first use:
+        # 'serial' never touches CUDA, and
+        # 'auto' avoids compiling the batched kernel unless a batch
+        # actually exceeds the threshold.
+        self._d3_kwargs = {
+            'damping_type': damping_type,
+            'functional_name': functional_name,
+            'vdw_cutoff': vdw_cutoff,
+            'cn_cutoff': cn_cutoff,
+        }
+        self._serial_d3 = None
+        self._batch_d3: BatchD3 | None = None
 
         # Proxy ModelInterface attributes from inner SevenNetModel
         self._device = self.sevennet._device
@@ -363,22 +383,50 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
         """Data type for computation."""
         return self._dtype
 
+    def _get_serial_d3(self):
+        if self._serial_d3 is None:
+            from sevenn.calculator import D3Calculator
+            self._serial_d3 = D3Calculator(**self._d3_kwargs)
+        return self._serial_d3
+
+    def _get_batch_d3(self) -> BatchD3:
+        if self._batch_d3 is None:
+            self._batch_d3 = BatchD3(**self._d3_kwargs)
+        return self._batch_d3
+
     def forward(self, state: ts.SimState, **kwargs) -> dict[str, torch.Tensor]:
-        """Forward pass: SevenNet (batched GPU) + D3 (per-system CUDA ctypes).
+        """Forward pass: SevenNet (batched GPU) + D3 (serial or batched).
 
         Returns combined {"energy", "forces", "stress"} dict.
         """
         results = self.sevennet(state, **kwargs)
-
-        # Make tensors writable (sevennet detaches but they may share storage)
         results = {k: v.clone() for k, v in results.items()}
 
-        # D3 uses a separate CUDA kernel via ctypes; sync to avoid conflicts
+        # Sync PyTorch before D3 ctypes kernel
         if self._device.type == 'cuda':
             torch.cuda.synchronize(self._device)
 
         # D3 wraps positions internally (load_atom_info applies floor()
         # in fractional coords), so no need to wrap here.
+
+        # Prepare batch data from SimState
+        B = int(state.system_idx.max().item() + 1)
+        use_batch_d3 = self.d3_mode == 'batch' or (
+            self.d3_mode == 'auto' and B > self.d3_batch_threshold
+        )
+
+        if use_batch_d3:
+            self._apply_batch_d3(results, state, B)
+        else:
+            self._apply_serial_d3(results, state)
+
+        return results
+
+    def _apply_serial_d3(
+        self, results: dict[str, torch.Tensor], state: ts.SimState,
+    ) -> None:
+        """Add D3 via per-system loop over the ASE-style D3Calculator."""
+        d3 = self._get_serial_d3()
 
         n_per = state.n_atoms_per_system.tolist()
         offsets = [0]
@@ -387,8 +435,8 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
 
         for i, single in enumerate(state.split()):
             atoms = single.to_atoms()[0]
-            self.d3.calculate(atoms)
-            d3r = self.d3.results
+            d3.calculate(atoms)
+            d3r = d3.results
 
             results['energy'][i] += d3r['energy']
 
@@ -406,10 +454,53 @@ class SevenNetD3Model(ModelInterface):  # type: ignore[misc,valid-type]
             )
             results['stress'][i] += d3_stress_3x3
 
-        return results
+    def _apply_batch_d3(
+        self, results: dict[str, torch.Tensor], state: ts.SimState, B: int,
+    ) -> None:
+        """Add D3 via a single batched CUDA kernel launch for all systems."""
+        d3 = self._get_batch_d3()
+
+        natoms_each = state.n_atoms_per_system.detach().cpu().numpy().astype(np.int32)  # noqa: E501
+        atomic_numbers = state.atomic_numbers.detach().cpu().numpy().astype(np.int64)
+        positions = state.positions.detach().cpu().to(torch.float64).numpy()
+        cells = state.row_vector_cell.detach().cpu().to(torch.float64).numpy()
+        pbc_raw = state.pbc.detach().cpu().numpy().astype(np.int32)
+        # state.pbc can be [3] (shared) or [B, 3] (per-system); kernel needs [B, 3]
+        if pbc_raw.ndim == 1:
+            pbc = np.tile(pbc_raw, (B, 1))
+        else:
+            pbc = pbc_raw
+
+        # Single batched D3 call
+        d3_energy, d3_forces, d3_stress = d3.compute(
+            B, natoms_each, atomic_numbers, positions, cells, pbc,
+        )
+
+        results['energy'] += torch.from_numpy(d3_energy).to(
+            device=self._device, dtype=self._dtype,
+        )
+        results['forces'] += torch.from_numpy(
+            np.ascontiguousarray(d3_forces),
+        ).to(device=self._device, dtype=self._dtype)
+
+        # D3 stress from batch kernel is extensive virial [B, 3, 3] in eV
+        # ASE/TorchSim convention: stress = -virial / volume (eV/A^3)
+        # For non-periodic systems (zero cell -> zero volume)
+        # stress is physically undefined, so we zero it out.
+        volumes = torch.det(state.row_vector_cell.detach()).abs().cpu().numpy()
+        has_volume = volumes > 0
+        safe_volumes = np.where(has_volume, volumes, 1.0)
+        d3_stress_intensive = np.where(
+            has_volume[:, None, None],
+            -d3_stress / safe_volumes[:, None, None],
+            0.0,
+        )
+        results['stress'] += torch.from_numpy(
+            np.ascontiguousarray(d3_stress_intensive),
+        ).to(device=self._device, dtype=self._dtype)
 
 
-class Float64Wrapper(ModelInterface):  # type: ignore[misc,valid-type]
+class Float64Wrapper(ModelInterface):
     """Wraps a float32 model so torch-sim runs in float64 precision.
 
     Casts state tensors to float32 before calling the wrapped model, then

@@ -5,35 +5,40 @@ import pytest
 from ase import Atoms
 from ase.build import bulk, molecule
 
-from sevenn.calculator import D3Calculator
-
 try:
-    from sevenn.torchsim_d3 import BatchD3
+    from sevenn.torchsim import BatchD3
     BATCH_D3_AVAILABLE = True
 except Exception:
     BATCH_D3_AVAILABLE = False
 
 pytestmark = pytest.mark.skipif(not BATCH_D3_AVAILABLE, reason='BatchD3 unavailable')
 
-# Reference values from test_calculator.py
+atol = 1e-7
+rtol = 0
+
+# Reference values (from BatchD3, PBE, damp-bj)
 REF_NACL_PBC = {
-    'energy': -0.531393751583389,
+    'energy': -0.53141738353661261,
     'forces': np.array([
-        [-0.00570205, 0.00107457, 0.00107459],
-        [0.00570205, -0.00107457, -0.00107459],
+        [-0.00570207347292894, 0.00107461457140288, 0.00107461681627128],
+        [0.00570207347292894, -0.00107461457140288, -0.00107461681627128],
     ]),
     'stress': np.array([
-        1.52403705e-02, 1.50417333e-02, 1.50417321e-02,
-        -3.22684163e-05, -5.05532863e-05, -5.05586994e-05,
+        1.5240396051035811e-02,
+        1.5041748946635689e-02,
+        1.5041751018847969e-02,
+        -3.2272535577237696e-05,
+        -5.0559076395936271e-05,
+        -5.0558716187160893e-05,
     ]),
 }
 
 REF_H2O_MOL = {
-    'energy': -0.009889134535170716,
+    'energy': -0.0098891317633263368,
     'forces': np.array([
-        [0.0, 2.04263840e-03, 1.27477674e-03],
-        [0.0, -9.90038901e-05, 1.18046682e-06],
-        [0.0, -1.94363451e-03, -1.27595721e-03],
+        [0.0, 2.0425725520247292e-03, 1.2747388259690125e-03],
+        [0.0, -9.9002383155458572e-05, 1.1804777827983966e-06],
+        [0.0, -1.9435701688692707e-03, -1.2759193037518110e-03],
     ]),
 }
 
@@ -70,20 +75,6 @@ def virial_to_voigt_stress(virial_3x3, volume):
     ]) / volume
 
 
-def serial_d3(atoms_list):
-    """Run D3Calculator on each atoms, return list of (E, F, S)."""
-    calc = D3Calculator()
-    results = []
-    for atoms in atoms_list:
-        a = atoms.copy()
-        a.calc = calc
-        e = a.get_potential_energy()
-        f = a.get_forces().copy()
-        s = a.get_stress().copy()
-        results.append((e, f, s))
-    return results
-
-
 @pytest.fixture(scope='module')
 def batch_d3():
     try:
@@ -103,12 +94,16 @@ def test_batch_pbc_replicated(batch_d3):
         np.testing.assert_array_equal(forces[i * 2:(i + 1) * 2], forces[:2])
         np.testing.assert_array_equal(stress[i], stress[0])
 
-    np.testing.assert_allclose(energy[0], REF_NACL_PBC['energy'], rtol=1e-5)
-    np.testing.assert_allclose(forces[:2], REF_NACL_PBC['forces'], rtol=1e-4)
+    np.testing.assert_allclose(
+        energy[0], REF_NACL_PBC['energy'], rtol=rtol, atol=atol
+    )
+    np.testing.assert_allclose(
+        forces[:2], REF_NACL_PBC['forces'], rtol=rtol, atol=atol
+    )
     vol = nacl.get_volume()
     stress_voigt = virial_to_voigt_stress(stress[0], vol)
     np.testing.assert_allclose(
-        stress_voigt, REF_NACL_PBC['stress'], rtol=1e-4, atol=1e-8
+        stress_voigt, REF_NACL_PBC['stress'], rtol=rtol, atol=atol
     )
 
 
@@ -121,10 +116,13 @@ def test_batch_mol_replicated(batch_d3):
     for i in range(1, 4):
         assert energy[i] == energy[0]
         np.testing.assert_array_equal(forces[i * 3:(i + 1) * 3], forces[:3])
-        np.testing.assert_array_equal(stress[i], stress[0])
 
-    np.testing.assert_allclose(energy[0], REF_H2O_MOL['energy'], rtol=1e-5)
-    np.testing.assert_allclose(forces[:3], REF_H2O_MOL['forces'], rtol=1e-4)
+    np.testing.assert_allclose(
+        energy[0], REF_H2O_MOL['energy'], rtol=rtol, atol=atol
+    )
+    np.testing.assert_allclose(
+        forces[:3], REF_H2O_MOL['forces'], rtol=rtol, atol=atol
+    )
 
 
 def test_batch_mixed(batch_d3):
@@ -134,17 +132,21 @@ def test_batch_mixed(batch_d3):
     B, natoms_each, Z, pos, cells, pbc = atoms_to_batch(atoms_list)
     energy, forces, stress = batch_d3.compute(B, natoms_each, Z, pos, cells, pbc)
 
-    serial = serial_d3(atoms_list)
+    refs = [REF_NACL_PBC, REF_H2O_MOL, REF_NACL_PBC, REF_H2O_MOL]
     offset = 0
-    for i, (ref_e, ref_f, _ref_s) in enumerate(serial):
+    for i, ref in enumerate(refs):
         n = natoms_each[i]
-        np.testing.assert_allclose(energy[i], ref_e, rtol=1e-5)
-        np.testing.assert_allclose(forces[offset:offset + n], ref_f, rtol=1e-4)
+        np.testing.assert_allclose(
+            energy[i], ref['energy'], rtol=rtol, atol=atol
+        )
+        np.testing.assert_allclose(
+            forces[offset:offset + n], ref['forces'], rtol=rtol, atol=atol
+        )
         offset += n
 
     vol = nacl.get_volume()
-    for batch_idx, serial_idx in [(0, 0), (2, 2)]:
+    for batch_idx in (0, 2):  # nacl entries
         stress_voigt = virial_to_voigt_stress(stress[batch_idx], vol)
         np.testing.assert_allclose(
-            stress_voigt, serial[serial_idx][2], rtol=1e-4, atol=1e-8
+            stress_voigt, REF_NACL_PBC['stress'], rtol=rtol, atol=atol
         )

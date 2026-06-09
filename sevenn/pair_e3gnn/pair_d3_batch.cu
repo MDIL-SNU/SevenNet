@@ -51,6 +51,18 @@ inline __host__ __device__ float lensq3(const float *v)
   return v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
 } // from MathExtra::lensq3
 
+// Kahan (compensated) summation step for FP32 accumulation:
+// adds `term` to `sum` while carrying lost low-order bits in `c`.
+// `volatile` prevents the compiler from
+// algebraically cancelling the compensation
+__device__ __forceinline__ void kahan_add(float &sum, float &c, float term)
+{
+  volatile float y = term - c;
+  volatile float t = sum + y;
+  c = (t - sum) - y;
+  sum = t;
+}
+
 inline void cross3(const double *v1, const double *v2, double *ans)
 {
   ans[0] = v1[1] * v2[2] - v1[2] * v2[1];
@@ -801,6 +813,7 @@ __global__ void batch_kernel_get_coordination_number(
     int center_t = center_tau_cn[sys];
 
     float cn_local = 0.0f;
+    float cn_c = 0.0f;  // Kahan compensation
 
     if (iat == jat) {
         const float rcov_sum = rcov[atomtype[iat]] * 2.0f;
@@ -813,7 +826,7 @@ __global__ void batch_kernel_get_coordination_number(
             if (r2 <= cnthr) {
                 const float r_rc = rsqrtf(r2);
                 const float damp = 1.0f / (1.0f + expf(-K1 * ((rcov_sum * r_rc) - 1.0f)));
-                cn_local += damp;
+                kahan_add(cn_local, cn_c, damp);
             }
         }
         atomicAdd(&cn[iat], cn_local);
@@ -827,7 +840,7 @@ __global__ void batch_kernel_get_coordination_number(
             if (r2 <= cnthr) {
                 const float r_rc = rsqrtf(r2);
                 const float damp = 1.0f / (1.0f + expf(-K1 * ((rcov_sum * r_rc) - 1.0f)));
-                cn_local += damp;
+                kahan_add(cn_local, cn_c, damp);
             }
         }
         atomicAdd(&cn[iat], cn_local);
@@ -951,6 +964,7 @@ __global__ void batch_kernel_forces_zero(
     float dc6i_local_j = 0.0f;
     float sigma_local[9] = { 0.0f };
     float disp_local = 0.0f;
+    float disp_c = 0.0f;  // Kahan compensation
 
     const float c6 = c6_ij_tot[iter];
     const float dc6iji = dc6_iji_tot[iter];
@@ -1007,7 +1021,7 @@ __global__ void batch_kernel_forces_zero(
             sigma_local[8] += vec[2] * rij[2];
 
             const float dc6_rest = 0.5f * r6_rc * fmaf(3.0f * r2_rc, s8r42 * damp8, s6 * damp6);
-            disp_local -= dc6_rest * c6;
+            kahan_add(disp_local, disp_c, -(dc6_rest * c6));
             dc6i_local_i += dc6_rest * dc6iji;
             dc6i_local_j += dc6_rest * dc6ijj;
         }
@@ -1067,7 +1081,7 @@ __global__ void batch_kernel_forces_zero(
             sigma_local[8] += vec[2] * rij[2];
 
             const float dc6_rest = r6_rc * fmaf(3.0f * r2_rc, s8r42 * damp8, s6 * damp6);
-            disp_local -= dc6_rest * c6;
+            kahan_add(disp_local, disp_c, -(dc6_rest * c6));
             dc6i_local_i += dc6_rest * dc6iji;
             dc6i_local_j += dc6_rest * dc6ijj;
         }
@@ -1124,6 +1138,7 @@ __global__ void batch_kernel_forces_bj(
     float dc6i_local_j = 0.0f;
     float sigma_local[9] = { 0.0f };
     float disp_local = 0.0f;
+    float disp_c = 0.0f;  // Kahan compensation
 
     const float c6 = c6_ij_tot[iter];
     const float dc6iji = dc6_iji_tot[iter];
@@ -1175,7 +1190,7 @@ __global__ void batch_kernel_forces_bj(
             sigma_local[8] += vec[2] * rij[2];
 
             const float dc6_rest = 0.5f * fmaf(s8r42x3, t8_rc, s6 * t6_rc);
-            disp_local -= dc6_rest * c6;
+            kahan_add(disp_local, disp_c, -(dc6_rest * c6));
             dc6i_local_i += dc6_rest * dc6iji;
             dc6i_local_j += dc6_rest * dc6ijj;
         }
@@ -1229,7 +1244,7 @@ __global__ void batch_kernel_forces_bj(
             sigma_local[8] += vec[2] * rij[2];
 
             const float dc6_rest = fmaf(s8r42x3, t8_rc, s6 * t6_rc);
-            disp_local -= dc6_rest * c6;
+            kahan_add(disp_local, disp_c, -(dc6_rest * c6));
             dc6i_local_i += dc6_rest * dc6iji;
             dc6i_local_j += dc6_rest * dc6ijj;
         }
