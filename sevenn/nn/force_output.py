@@ -224,7 +224,14 @@ class ForceStressOutputFromEdge(nn.Module):
             else:
                 sout = torch.sum(_s, dim=0)
 
+            volume = data[self.key_cell_volume]
+            vlim = 1e-3  # for cell volume = 0 for non PBC structures
+            if self._is_batch_data:
+                volume[volume < vlim] = vlim
+            elif volume < vlim:
+                volume = torch.tensor(vlim)
+
             data[self.key_stress] =\
-                torch.neg(sout) / data[self.key_cell_volume].unsqueeze(-1)
+                torch.neg(sout) / volume.unsqueeze(-1)
 
         return data
