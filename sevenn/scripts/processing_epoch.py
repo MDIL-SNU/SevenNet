@@ -41,6 +41,12 @@ def processing_epoch_v2(
         config, trainer.loss_functions
     )
     recorders = {k: deepcopy(recorder) for k in loaders}
+    # reEWC: log the replayed memory set as a separate 'memoryset' column group.
+    memory_recorder = (
+        deepcopy(recorder)
+        if getattr(trainer, 'memory_loader', None) is not None
+        else None
+    )
 
     best_val = float('inf')
     best_key = None
@@ -58,6 +64,8 @@ def processing_epoch_v2(
         head = ['epoch', 'lr']
         for k, rec in recorders.items():
             head.extend(list(rec.get_dct(prefix=k)))
+        if memory_recorder is not None:
+            head.extend(list(memory_recorder.get_dct(prefix='memoryset')))
         with open(csv_path, 'w') as f:
             f.write(','.join(head) + '\n')
 
@@ -88,9 +96,17 @@ def processing_epoch_v2(
                 loader.sampler.set_epoch(epoch)
 
             rec = recorders[k]
-            trainer.run_one_epoch(loader, is_train, rec)
+            trainer.run_one_epoch(
+                loader,
+                is_train,
+                rec,
+                memory_error_recorder=memory_recorder if is_train else None,
+            )
             csv_dct.update(rec.get_dct(prefix=k))
             errors[k] = rec.epoch_forward()
+        if memory_recorder is not None:
+            csv_dct.update(memory_recorder.get_dct(prefix='memoryset'))
+            errors['memoryset'] = memory_recorder.epoch_forward()
         log.write_full_table(list(errors.values()), list(errors))
         trainer.scheduler_step(best_val)
 

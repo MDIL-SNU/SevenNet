@@ -3,6 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.12.2.dev]
 ### Added
+- reEWC fine-tuning with forgetting prevention for single-modal models: optional experience replay (`rehearsal`, `load_memory_path`, `mem_batch_size`, `mem_ratio`) and an Elastic Weight Consolidation penalty from a precomputed Fisher matrix (`continue.fisher_information`, `continue.opt_params`, `continue.ewc_lambda`), plus a `cosineannealingwarmuplr` scheduler
 - Support OpenEquivariance
 - Per-atom stress (atomic virial) support in LAMMPS pair_e3gnn and ASE calculator
 - `compute_atomic_virial` option in `SevenNetCalculator`
@@ -13,6 +14,9 @@ All notable changes to this project will be documented in this file.
 - **[Breaking]** `torchscript` file_type is no longer supported in `SevenNetCalculator`.
 - LAMMPS pair_e3gnn refactored to use pair-wise force (dE/dr) instead of position-based gradient.
 - Deploy no longer replaces force_output with ForceStressOutput; force/stress computed in LAMMPS C++ side.
+
+### Fixed
+- Load FlashTP-saved checkpoints (e.g. SevenNet-Nano) when FlashTP is unavailable by falling back to the e3nn backend, so they work for inference and fine-tuning without FlashTP installed. An explicit `enable_flash=True` still fails loud.
 
 ## [0.12.1]
 ### Fixed

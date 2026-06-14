@@ -45,6 +45,7 @@ class Trainer:
         device: Union[torch.device, str] = 'auto',
         distributed: bool = False,
         distributed_backend: str = 'nccl',
+        memory_loader: Optional[Iterable] = None,
     ) -> None:
         if device == 'auto':
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -80,9 +81,14 @@ class Trainer:
         else:
             self.scheduler = None
         self.loss_functions = loss_functions
+        self.memory_loader = memory_loader
 
     @staticmethod
-    def from_config(model: torch.nn.Module, config: Dict[str, Any]) -> 'Trainer':
+    def from_config(
+        model: torch.nn.Module,
+        config: Dict[str, Any],
+        memory_loader: Optional[Iterable] = None,
+    ) -> 'Trainer':
         trainer = Trainer(
             model,
             loss_functions=get_loss_functions_from_config(config),
@@ -95,6 +101,7 @@ class Trainer:
             device=config.get(KEY.DEVICE, 'auto'),
             distributed=config.get(KEY.IS_DDP, False),
             distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
+            memory_loader=memory_loader,
         )
         return trainer
 
@@ -137,6 +144,7 @@ class Trainer:
         loader: Iterable,
         is_train: bool = False,
         error_recorder: Optional[ErrorRecorder] = None,
+        memory_error_recorder: Optional[ErrorRecorder] = None,
         wrap_tqdm: Union[bool, int] = False,
     ) -> None:
         """
@@ -155,6 +163,11 @@ class Trainer:
         if wrap_tqdm:
             total_len = wrap_tqdm if isinstance(wrap_tqdm, int) else None
             loader = tqdm(loader, total=total_len)
+
+        mem_iter = None
+        if is_train and self.memory_loader is not None:
+            mem_iter = iter(self.memory_loader)
+
         for _, batch in enumerate(loader):
             if is_train:
                 self.optimizer.zero_grad()
@@ -169,6 +182,27 @@ class Trainer:
                     if indv_loss is not None:
                         total_loss += (indv_loss * w)
                 total_loss.backward()
+                self.optimizer.step()
+
+            # reEWC rehearsal: replay one memory batch with an independent
+            # optimizer step.
+            if mem_iter is not None:
+                try:
+                    mem_batch = next(mem_iter)
+                except StopIteration:
+                    mem_iter = iter(self.memory_loader)
+                    mem_batch = next(mem_iter)
+                mem_batch = mem_batch.to(self.device, non_blocking=True)
+                mem_output = self.model(mem_batch)
+                if memory_error_recorder is not None:
+                    memory_error_recorder.update(mem_output)
+                self.optimizer.zero_grad()
+                mem_loss = torch.tensor([0.0], device=self.device)
+                for loss_def, w in self.loss_functions:
+                    indv_loss = loss_def.get_loss(mem_output, self.model)
+                    if indv_loss is not None:
+                        mem_loss += (indv_loss * w)
+                mem_loss.backward()
                 self.optimizer.step()
 
         if self.distributed and error_recorder is not None:

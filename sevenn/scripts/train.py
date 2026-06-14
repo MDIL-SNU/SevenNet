@@ -34,6 +34,41 @@ def loader_from_config(
     return DataLoader(**loader_args)
 
 
+def _build_memory_loader(config: Dict[str, Any]) -> DataLoader:
+    """Build the reEWC rehearsal (replay) memory loader from load_memory_path."""
+    import random
+
+    from sevenn.train.graph_dataset import SevenNetGraphDataset
+
+    memory_paths = config.get(KEY.LOAD_MEMORY_PATH, False)
+    if not memory_paths:
+        raise ValueError('rehearsal is True but load_memory_path is not set')
+    if isinstance(memory_paths, str):
+        memory_paths = [memory_paths]
+    mem_batch_size = config.get(KEY.MEM_BATCH_SIZE, 0)
+    if not (isinstance(mem_batch_size, int) and mem_batch_size > 0):
+        raise ValueError('rehearsal requires mem_batch_size > 0')
+    mem_ratio = config.get(KEY.MEM_RATIO, 1)
+    if not (0 < mem_ratio <= 1):
+        raise ValueError('rehearsal requires 0 < mem_ratio <= 1')
+
+    graphs = []
+    for file in memory_paths:
+        graphs.extend(
+            SevenNetGraphDataset.file_to_graph_list(file, cutoff=config[KEY.CUTOFF])
+        )
+    if mem_ratio < 1:
+        random.Random(config.get(KEY.RANDOM_SEED, 1)).shuffle(graphs)
+        graphs = graphs[: int(len(graphs) * mem_ratio)]
+    if len(graphs) == 0:
+        raise ValueError('reEWC rehearsal memory set is empty after loading')
+    Logger().writeline(
+        f'Rehearsal enabled: {len(graphs)} memory graphs, '
+        f'mem_batch_size={mem_batch_size}'
+    )
+    return DataLoader(graphs, batch_size=mem_batch_size, shuffle=True)
+
+
 def train_v2(config: Dict[str, Any], working_dir: str) -> None:
     """
     Main program flow, since v0.9.6
@@ -55,6 +90,28 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
         log.writeline('***************************************************')
         config[KEY.LOAD_TRAINSET] = config.pop(KEY.LOAD_DATASET)
 
+    # reEWC keys are optional; with rehearsal off and no Fisher/opt set, the
+    # branches below are skipped.
+    rehearsal = config.get(KEY.REHEARSAL, False)
+    _cont = config.get(KEY.CONTINUE, {})
+    ewc_active = bool(_cont.get(KEY.FISHER, False)) or bool(
+        _cont.get(KEY.OPT_PARAMS, False)
+    )
+    memory_paths = config.get(KEY.LOAD_MEMORY_PATH, False)
+    if (rehearsal or ewc_active) and config.get(KEY.IS_DDP, False):
+        raise NotImplementedError(
+            'reEWC (rehearsal/EWC) does not support distributed training'
+        )
+    if memory_paths and not rehearsal:
+        raise ValueError(
+            'load_memory_path is set but rehearsal is False; load_memory_path '
+            'is reserved for reEWC rehearsal'
+        )
+    if rehearsal and config.get(KEY.DATASET_TYPE) == 'atoms':
+        raise NotImplementedError(
+            'reEWC rehearsal supports dataset_type="graph" only'
+        )
+
     # config updated
     start_epoch = 1
     state_dicts: Optional[List[dict]] = None
@@ -62,9 +119,27 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
         state_dicts, start_epoch = processing_continue_v2(config)
 
     if config.get(KEY.USE_MODALITY, False):
+        if rehearsal or ewc_active:
+            raise ValueError(
+                'reEWC (rehearsal/EWC) supports single-modal models only; '
+                'multifidelity/modal models are not supported'
+            )
         datasets = modal_dataset.from_config(config, working_dir)
     elif config[KEY.DATASET_TYPE] == 'graph':
-        datasets = graph_dataset.from_config(config, working_dir)
+        # exclude the rehearsal memory set from normal dataset discovery so it
+        # is not run as an extra (validation-style) loader every epoch.
+        dataset_keys = None
+        if memory_paths:
+            dataset_keys = [
+                k
+                for k in config
+                if k.startswith('load_')
+                and k.endswith('_path')
+                and k != KEY.LOAD_MEMORY_PATH
+            ]
+        datasets = graph_dataset.from_config(
+            config, working_dir, dataset_keys=dataset_keys
+        )
     elif config[KEY.DATASET_TYPE] == 'atoms':
         datasets = atoms_dataset.from_config(config, working_dir)
     else:
@@ -74,11 +149,13 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
         for k, v in datasets.items()
     }
 
+    memory_loader = _build_memory_loader(config) if rehearsal else None
+
     log.write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
     log.print_model_info(model, config)
 
-    trainer = Trainer.from_config(model, config)
+    trainer = Trainer.from_config(model, config, memory_loader=memory_loader)
     if state_dicts:
         trainer.load_state_dicts(*state_dicts, strict=False)
 

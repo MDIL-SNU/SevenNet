@@ -327,10 +327,28 @@ class SevenNetCheckpoint:
         enable_cueq = cp_using_cueq if enable_cueq is None else enable_cueq
 
         cp_using_flash = self.config.get(KEY.USE_FLASH_TP, False)
+        flash_requested_explicitly = enable_flash is True
         enable_flash = cp_using_flash if enable_flash is None else enable_flash
 
         cp_using_oeq = self.config.get(KEY.USE_OEQ, False)
         enable_oeq = cp_using_oeq if enable_oeq is None else enable_oeq
+
+        # FlashTP-saved checkpoints must still load where FlashTP is unavailable.
+        if enable_flash:
+            from sevenn.nn.flash_helper import is_flash_available
+
+            if not is_flash_available():
+                if flash_requested_explicitly or _flash_lammps:
+                    raise ValueError(
+                        'FlashTP was requested but is not available (package '
+                        'not installed or no GPU available).'
+                    )
+                warnings.warn(
+                    'FlashTP is unavailable; loading the checkpoint with the '
+                    'e3nn backend instead.',
+                    UserWarning,
+                )
+                enable_flash = False
 
         if sum([enable_cueq, enable_flash, enable_oeq]) > 1:
             raise ValueError('Only one TP accelerator can be enabled.')
