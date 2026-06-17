@@ -7,7 +7,8 @@ from torch_geometric.loader import DataLoader
 
 from sevenn.logger import Logger
 from sevenn.train.dataload import graph_build
-from sevenn.train.loss import EWCLoss
+from sevenn.train.reewc.loss import EWCLoss
+from sevenn.train.reewc.trainer import ReewcTrainer
 from sevenn.train.trainer import Trainer
 
 Logger()  # init singleton used by train_v2
@@ -179,7 +180,8 @@ def _write_ewc_pkls(tmp_path):
 
 
 def test_loss_functions_inject_ewc(tmp_path):
-    from sevenn.train.loss import EWCLoss, get_loss_functions_from_config
+    from sevenn.train.loss import get_loss_functions_from_config
+    from sevenn.train.reewc.loss import EWCLoss
 
     fp, op = _write_ewc_pkls(tmp_path)
     cfg = _base_loss_cfg()
@@ -196,7 +198,8 @@ def test_loss_functions_inject_ewc(tmp_path):
 
 
 def test_no_ewc_keys_no_ewc_loss():
-    from sevenn.train.loss import EWCLoss, get_loss_functions_from_config
+    from sevenn.train.loss import get_loss_functions_from_config
+    from sevenn.train.reewc.loss import EWCLoss
 
     lfs = get_loss_functions_from_config(_base_loss_cfg())
     assert not any(isinstance(ld, EWCLoss) for ld, _ in lfs)
@@ -289,7 +292,7 @@ class _CountingLoader:
 def test_replay_consumed_only_in_train(hfo2_loader):
     targs, _, _ = Trainer.args_from_checkpoint(_cp_0_path)
     mem = _CountingLoader(hfo2_loader)
-    trainer = Trainer(**targs, device='cpu', memory_loader=mem)
+    trainer = ReewcTrainer(**targs, device='cpu', memory_loader=mem)
     n_batches = sum(1 for _ in hfo2_loader)
     trainer.run_one_epoch(hfo2_loader, is_train=True)
     assert mem.pulls == n_batches  # one memory batch per training batch
@@ -300,7 +303,7 @@ def test_replay_consumed_only_in_train(hfo2_loader):
 
 def test_replay_changes_params(hfo2_loader):
     targs, _, _ = Trainer.args_from_checkpoint(_cp_0_path)
-    trainer = Trainer(**targs, device='cpu', memory_loader=hfo2_loader)
+    trainer = ReewcTrainer(**targs, device='cpu', memory_loader=hfo2_loader)
     before = [p.detach().clone() for p in trainer.model.parameters()]
     trainer.run_one_epoch(hfo2_loader, is_train=True)
     after = list(trainer.model.parameters())
@@ -312,7 +315,7 @@ def test_replay_records_memory_metrics(hfo2_loader):
     from sevenn.util import get_error_recorder
 
     targs, _, _ = Trainer.args_from_checkpoint(_cp_0_path)
-    trainer = Trainer(**targs, device='cpu', memory_loader=hfo2_loader)
+    trainer = ReewcTrainer(**targs, device='cpu', memory_loader=hfo2_loader)
     mem_rec = get_error_recorder([('Energy', 'RMSE'), ('Force', 'RMSE')])
     trainer.run_one_epoch(
         hfo2_loader, is_train=True, memory_error_recorder=mem_rec
