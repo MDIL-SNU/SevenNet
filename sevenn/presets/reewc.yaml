@@ -1,0 +1,90 @@
+# Example input.yaml for forgetting-prevented fine-tuning (reEWC).
+# Replay and EWC are independent; keep one block, both, or neither.
+# reEWC is for single-modal models (e.g. SevenNet-0, SevenNet-Nano).
+
+model:  # keep consistent with the checkpoint being fine-tuned
+    chemical_species: 'Auto'
+    cutoff: 5.0
+    channel: 128
+    is_parity: False
+    lmax: 2
+    num_convolution_layer: 5
+    irreps_manual:
+        - "128x0e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e+64x1e+32x2e"
+        - "128x0e"
+
+    weight_nn_hidden_neurons: [64, 64]
+    radial_basis:
+        radial_basis_name: 'bessel'
+        bessel_basis_num: 8
+    cutoff_function:
+        cutoff_function_name: 'XPLOR'
+        cutoff_on: 4.5
+    self_connection_type: 'linear'
+
+    train_shift_scale: False
+    train_denominator: False
+
+train:
+    random_seed: 1
+    is_train_stress: True
+    epoch: 100
+
+    loss: 'Huber'
+    loss_param:
+        delta: 0.01
+
+    optimizer: 'adam'
+    optim_param:
+        lr: 0.004
+    # cosineannealingwarmuplr (cosine annealing with warm-up restarts) was used
+    # for the reEWC work; exponentiallr also works.
+    scheduler: 'exponentiallr'
+    scheduler_param:
+        gamma: 0.99
+
+    force_loss_weight: 1.0
+    stress_loss_weight: 0.01
+
+    per_epoch: 10
+
+    error_record:
+        - ['Energy', 'RMSE']
+        - ['Force', 'RMSE']
+        - ['Stress', 'RMSE']
+        - ['TotalLoss', 'None']
+
+    continue:
+        reset_optimizer: True
+        reset_scheduler: True
+        reset_epoch: True
+        checkpoint: 'SevenNet-0_11July2024'
+
+        # EWC: anchor parameters to their pre-fine-tuning values via a
+        # precomputed Fisher matrix. fisher_information and opt_params are
+        # torch.save'd dicts {param_name: tensor} matching the model's
+        # trainable parameters; opt_params is the checkpoint before fine-tuning.
+        # All three keys are required together; remove them to disable EWC.
+        fisher_information: './fisher.pt'
+        opt_params: './opt_params.pt'
+        ewc_lambda: 100000        # EWC penalty weight (> 0)
+
+data:
+    batch_size: 4
+    data_divide_ratio: 0.1
+    data_format_args:
+        index: ':'
+
+    load_trainset_path: ['./target_train.extxyz']
+    load_validset_path: ['./valid.extxyz']
+
+    # Replay (experience replay): replay an old-task memory set each step so the
+    # model keeps fitting it. Remove this block to disable replay.
+    rehearsal: True
+    load_memory_path: ['./memory.extxyz']  # requires rehearsal: True
+    mem_batch_size: 8
+    mem_ratio: 1                            # fraction (0, 1] of the memory set

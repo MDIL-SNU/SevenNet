@@ -75,14 +75,17 @@ def test_ewc_loss_shape_mismatch_raises():
         ewc.get_loss({}, model)
 
 
-def test_ewc_loss_incomplete_fisher_raises():
-    # every trainable parameter must be covered (no silent skip)
+def test_ewc_loss_partial_fisher_warns_and_skips():
+    # a trainable param without a Fisher entry is left unconstrained, not fatal
     model = _TinyModel()
-    fisher = {'a': torch.ones(3)}  # missing 'b'
+    fisher = {'a': torch.ones(3)}  # no entry for 'b'
     opt = {'a': torch.zeros(3)}
     ewc = EWCLoss(fisher, opt)
-    with pytest.raises(ValueError):
-        ewc.get_loss({}, model)
+    with torch.no_grad():
+        model.a += 1.0  # 'b' stays at its optimum
+    with pytest.warns(UserWarning):
+        loss = float(ewc.get_loss({}, model))
+    assert loss == pytest.approx(3.0)  # 3 * (1 * 1^2); 'b' contributes nothing
 
 
 def test_ewc_loss_opt_shape_mismatch_raises():

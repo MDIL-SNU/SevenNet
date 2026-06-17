@@ -1,3 +1,4 @@
+import warnings
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
@@ -41,41 +42,53 @@ class EWCLoss(LossDefinition):
     def _check_and_align(self, model: Callable) -> None:
         if len(self.fisher_dict) == 0 or len(self.opt_params_dict) == 0:
             raise ValueError('EWC fisher_information/opt_params is empty')
+
+        # Fisher and reference params are a matched pair; they must agree on
+        # both parameter names and shapes regardless of the model.
+        if set(self.fisher_dict) != set(self.opt_params_dict):
+            raise ValueError(
+                'EWC fisher_information and opt_params cover different parameters'
+            )
+        for name, fisher in self.fisher_dict.items():
+            if fisher.shape != self.opt_params_dict[name].shape:
+                raise ValueError(
+                    f'EWC fisher/opt_params shape mismatch for {name}: '
+                    f'{tuple(fisher.shape)} != '
+                    f'{tuple(self.opt_params_dict[name].shape)}'
+                )
+
         model_params = {
             n: p for n, p in model.named_parameters() if p.requires_grad
         }
         if len(model_params) == 0:
             raise ValueError('EWC requires the model to have trainable parameters')
-        if len(set(self.fisher_dict) & set(model_params)) == 0:
+
+        shared = set(self.fisher_dict) & set(model_params)
+        if len(shared) == 0:
             raise ValueError(
                 'EWC fisher/opt_params parameter names do not match the model; '
                 'the pickle was likely produced by an incompatible SevenNet '
                 f'version. example model param: {next(iter(model_params))}; '
                 f'example fisher key: {next(iter(self.fisher_dict))}'
             )
-        # every trainable parameter must be covered by Fisher and reference
-        # params with the right shape, so EWC never silently skips a parameter
-        # it should constrain.
-        for name, param in model_params.items():
-            if name not in self.fisher_dict:
-                raise ValueError(
-                    f'EWC fisher_information is missing trainable param {name}'
-                )
-            if name not in self.opt_params_dict:
-                raise ValueError(
-                    f'EWC opt_params is missing trainable param {name}'
-                )
-            if self.fisher_dict[name].shape != param.shape:
+        for name in shared:
+            if self.fisher_dict[name].shape != model_params[name].shape:
                 raise ValueError(
                     f'EWC fisher shape mismatch for {name}: '
-                    f'{tuple(self.fisher_dict[name].shape)} != {tuple(param.shape)}'
+                    f'{tuple(self.fisher_dict[name].shape)} != '
+                    f'{tuple(model_params[name].shape)}'
                 )
-            if self.opt_params_dict[name].shape != param.shape:
-                raise ValueError(
-                    f'EWC opt_params shape mismatch for {name}: '
-                    f'{tuple(self.opt_params_dict[name].shape)} != '
-                    f'{tuple(param.shape)}'
-                )
+
+        # A trainable param without a Fisher entry is left unconstrained.
+        unconstrained = [n for n in model_params if n not in self.fisher_dict]
+        if unconstrained:
+            warnings.warn(
+                f'EWC has no Fisher information for {len(unconstrained)} '
+                f'trainable parameter(s); they stay unconstrained '
+                f'(e.g. {unconstrained[0]})',
+                UserWarning,
+            )
+
         self.to(next(iter(model_params.values())).device)
         self._checked = True
 
