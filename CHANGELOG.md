@@ -14,6 +14,10 @@ All notable changes to this project will be documented in this file.
 - **[Breaking]** `torchscript` file_type is no longer supported in `SevenNetCalculator`.
 - LAMMPS pair_e3gnn refactored to use pair-wise force (dE/dr) instead of position-based gradient.
 - Deploy no longer replaces force_output with ForceStressOutput; force/stress computed in LAMMPS C++ side.
+- **[Breaking]** Accelerator None options (use the same setting as checkpoint) are removed and default is changed to False.
+
+### Fixed
+- Omni (flash TP trained checkpoint) loads w/o an error for flashTP disabled environment.
 
 ## [0.12.1]
 ### Fixed
