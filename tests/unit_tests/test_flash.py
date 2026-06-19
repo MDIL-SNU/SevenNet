@@ -292,4 +292,3 @@ def test_flash_checkpoint_loads_when_flash_unavailable(tmp_path, monkeypatch):
     # default build_model() must fall back to e3nn, not fail on missing keys
     model = load_checkpoint(path).build_model()
     assert isinstance(model, AtomGraphSequential)
-
