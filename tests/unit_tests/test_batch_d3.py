@@ -6,7 +6,7 @@ from ase import Atoms
 from ase.build import bulk, molecule
 
 try:
-    from sevenn.torchsim import BatchD3
+    from sevenn.batch_d3 import BatchD3
     BATCH_D3_AVAILABLE = True
 except Exception:
     BATCH_D3_AVAILABLE = False
