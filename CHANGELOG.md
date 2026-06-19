@@ -1,7 +1,7 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [0.12.2.dev]
+## [0.13.0]
 ### Added
 - reEWC fine-tuning with forgetting prevention for single-modal models: optional experience replay (`rehearsal`, `load_memory_path`, `mem_batch_size`, `mem_ratio`) and an Elastic Weight Consolidation penalty from a precomputed Fisher matrix (`continue.fisher_information`, `continue.opt_params`, `continue.ewc_lambda`), plus a `cosineannealingwarmuplr` scheduler
 - Support OpenEquivariance
@@ -19,8 +19,6 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - Omni (flash TP trained checkpoint) loads w/o an error for flashTP disabled environment.
-
-### Fixed
 - Load FlashTP-saved checkpoints (e.g. SevenNet-Nano) when FlashTP is unavailable by falling back to the e3nn backend, so they work for inference and fine-tuning without FlashTP installed. An explicit `enable_flash=True` still fails loud.
 
 ## [0.12.1]
