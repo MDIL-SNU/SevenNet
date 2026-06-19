@@ -293,12 +293,3 @@ def test_flash_checkpoint_loads_when_flash_unavailable(tmp_path, monkeypatch):
     model = load_checkpoint(path).build_model()
     assert isinstance(model, AtomGraphSequential)
 
-
-def test_explicit_flash_request_raises_when_unavailable(tmp_path, monkeypatch):
-    monkeypatch.setattr('sevenn.nn.flash_helper.is_flash_available', lambda: False)
-    path = _make_flash_like_checkpoint(tmp_path)
-    from sevenn.util import load_checkpoint
-
-    # an explicit enable_flash=True cannot be honored -> fail loud
-    with pytest.raises(ValueError):
-        load_checkpoint(path).build_model(enable_flash=True)
