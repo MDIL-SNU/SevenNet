@@ -57,9 +57,9 @@ class SevenNetCalculator(Calculator):
             'mp_r2scan', 'oc20', 'oc22', 'odac23', 'omol25_low', 'omol25_high',
             'spice', 'qcml', 'pet_mad'
             case insensitive
-        enable_cueq: bool, default=None (use the checkpoint's backend)
+        enable_cueq: bool, default=False
             if True, use cuEquivariant to accelerate inference.
-        enable_flash: bool, default=None (use the checkpoint's backend)
+        enable_flash: bool, default=False
             if True, use FlashTP to accelerate inference.
         enable_oeq: bool, default=False
             if True, use OpenEquivariance to accelerate inference.
