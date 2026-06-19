@@ -105,7 +105,7 @@ class ForceStressOutput(nn.Module):
         if self._is_batch_data:
             volume[volume < vlim] = vlim
         elif volume < vlim:
-            volume = torch.tensor(vlim)
+            volume = torch.tensor(vlim, dtype=volume.dtype, device=volume.device)
 
         if sgrad is not None:
             if self._is_batch_data:
@@ -229,7 +229,9 @@ class ForceStressOutputFromEdge(nn.Module):
             if self._is_batch_data:
                 volume[volume < vlim] = vlim
             elif volume < vlim:
-                volume = torch.tensor(vlim)
+                volume = torch.tensor(
+                    vlim, dtype=volume.dtype, device=volume.device
+                )
 
             data[self.key_stress] =\
                 torch.neg(sout) / volume.unsqueeze(-1)
