@@ -21,6 +21,41 @@ from sevenn.nn.scale import get_resolved_shift_scale
 from sevenn.nn.sequential import AtomGraphSequential
 
 
+def _solve_accelerator(enable_cueq: bool, enable_flash: bool, enable_oeq: bool):
+    if sum([enable_cueq, enable_flash, enable_oeq]) > 1:
+        raise ValueError('Only one TP accelerator can be enabled.')
+    if enable_cueq:
+        import sevenn.nn.cue_helper as cue_helper
+        if not cue_helper.is_cue_available():
+            warnings.warn(
+                'cuEquivariance is requested, but the package is not installed. '
+                + 'Fallback to e3nn.'
+            )
+            enable_cueq = False
+    elif enable_flash:
+        import sevenn.nn.flash_helper as flash_helper
+        if not flash_helper.is_flash_available():
+            warnings.warn(
+                (
+                    'FlashTP is requested, but the package is not installed '
+                    + 'or GPU not available. Fallback to e3nn.'
+                )
+            )
+            enable_flash = False
+    elif enable_oeq:
+        import sevenn.nn.oeq_helper as oeq_helper
+        if not oeq_helper.is_oeq_available():
+            warnings.warn(
+                (
+                    'OpenEquivariance (oeq) is requested, but the package is not '
+                    'installed or GPU not available. Fallback to e3nn.'
+                )
+            )
+            enable_oeq = False
+
+    return enable_cueq, enable_flash, enable_oeq
+
+
 def assert_atoms(
     atoms1: Atoms, atoms2: Atoms, rtol: float = 1e-5, atol: float = 1e-6
 ) -> None:
@@ -310,38 +345,34 @@ class SevenNetCheckpoint:
     def build_model(
         self,
         *,
-        enable_cueq: Optional[bool] = None,
-        enable_flash: Optional[bool] = None,
-        enable_oeq: Optional[bool] = None,
+        enable_cueq: bool = False,
+        enable_flash: bool = False,
+        enable_oeq: bool = False,
         _flash_lammps: bool = False,
     ) -> AtomGraphSequential:
-        """
-        Breaking change (backends X)
-        """
         from .model_build import build_E3_equivariant_model
 
         try:
             cp_using_cueq = self.config[KEY.CUEQUIVARIANCE_CONFIG]['use']
         except KeyError:
             cp_using_cueq = False
-        enable_cueq = cp_using_cueq if enable_cueq is None else enable_cueq
-
         cp_using_flash = self.config.get(KEY.USE_FLASH_TP, False)
-        enable_flash = cp_using_flash if enable_flash is None else enable_flash
-
         cp_using_oeq = self.config.get(KEY.USE_OEQ, False)
-        enable_oeq = cp_using_oeq if enable_oeq is None else enable_oeq
 
-        if sum([enable_cueq, enable_flash, enable_oeq]) > 1:
-            raise ValueError('Only one TP accelerator can be enabled.')
+        enable_cueq, enable_flash, enable_oeq = _solve_accelerator(
+            enable_cueq, enable_flash, enable_oeq
+        )
 
         assert not _flash_lammps or enable_flash
         cfg_new = self.config
         cfg_new['_flash_lammps'] = _flash_lammps
         cfg_new[KEY.USE_OEQ] = enable_oeq
 
-        if (cp_using_cueq, cp_using_flash, cp_using_oeq) \
-                == (enable_cueq, enable_flash, enable_oeq):
+        if (cp_using_cueq, cp_using_flash, cp_using_oeq) == (
+            enable_cueq,
+            enable_flash,
+            enable_oeq,
+        ):
             # backend not given, or checkpoint backend is same as requested
             model = build_E3_equivariant_model(cfg_new)
             state_dict = compat.patch_state_dict_if_old(
