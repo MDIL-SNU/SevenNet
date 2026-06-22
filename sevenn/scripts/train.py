@@ -63,7 +63,7 @@ def loader_from_config(
     # TODO: I think 'train_by_batch' and 'sampling validset' is independent,
     #       so 'train_by_batch' should be removed
     if config.get(KEY.TRAIN_BY_BATCH, False):
-        sequence = config[f'load_{dataset_key}_sequence'].get(
+        sequence = config.get(f'load_{dataset_key}_sequence', {}).get(
             'total_sequence_path', None
         )
 
