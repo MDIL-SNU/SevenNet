@@ -119,9 +119,9 @@ def onehot_to_chem(
 def model_from_checkpoint(
     checkpoint: str,
     *,
-    enable_cueq: Optional[bool] = None,
-    enable_flash: Optional[bool] = None,
-    enable_oeq: Optional[bool] = None,
+    enable_cueq: bool = False,
+    enable_flash: bool = False,
+    enable_oeq: bool = False,
 ) -> Tuple[torch.nn.Module, Dict[str, Any]]:
     cp = load_checkpoint(checkpoint)
     model = cp.build_model(

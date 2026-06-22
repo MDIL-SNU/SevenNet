@@ -59,11 +59,12 @@ repos:
     hooks:
       - id: codespell
         stages: [pre-commit, commit-msg]
-        args: ["--ignore-words-list", "Commun"]
+        args: ["--ignore-words-list", "Commun,Mater"]
         exclude: |
           (?x)(
               ^example_inputs/data/|
               ^sevenn/pair_e3gnn/comm_brick.cpp|
               ^sevenn/pair_e3gnn/pair_d3.cu|
-              ^sevenn/pair_e3gnn/pair_d3_for_ase.cu
+              ^sevenn/pair_e3gnn/pair_d3_for_ase.cu|
+              ^sevenn/pair_e3gnn/pair_d3_batch.cu
           )

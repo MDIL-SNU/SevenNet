@@ -237,6 +237,21 @@ def test_d3_cal_mol(atoms_mol, d3_cal):
     assert np.allclose(atoms_mol.get_forces(), atoms2_ref['force'])
 
 
+def test_d3_cal_reuse(d3_cal):
+    from pathlib import Path
+
+    from ase.io import read
+
+    # 4 different molecular structures
+    data = Path(__file__).parent / 'data' / 'serial_d3_segfault.extxyz'
+    frames = read(data, index=':')
+    for atoms in frames:
+        atoms = atoms.copy()
+        atoms.calc = d3_cal
+        print(atoms.get_potential_energy())
+        assert np.isfinite(atoms.get_potential_energy())
+
+
 REF_VALUES = {
     'single_o_pbc': {
         'energy': -1.9413528442382812,

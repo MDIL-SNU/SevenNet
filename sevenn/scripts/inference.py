@@ -180,9 +180,9 @@ def inference(
     # TODO: False as default, priority?
     model, _ = util.model_from_checkpoint(
         checkpoint,
-        enable_cueq=enable_cueq or None,
-        enable_flash=enable_flash or None,
-        enable_oeq=enable_oeq or None,
+        enable_cueq=enable_cueq,
+        enable_flash=enable_flash,
+        enable_oeq=enable_oeq,
     )
     cutoff = model.cutoff
 

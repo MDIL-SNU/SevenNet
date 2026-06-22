@@ -73,6 +73,11 @@ train:
         #checkpoint: 'checkpoint_best.pth'         # Checkpoint of pre-trained model or a model want to continue training.
         #reset_optimizer: False                    # Set True for fine-tuning
         #reset_scheduler: False                    # Set True for fine-tuning
+        # reEWC (single-modal models only): add an Elastic Weight Consolidation penalty from a
+        # precomputed Fisher matrix and reference parameters to preserve prior-task accuracy.
+        #fisher_information: './fisher.pt'         # dict {param_name: tensor} of precomputed Fisher information
+        #opt_params: './opt_params.pt'             # dict {param_name: tensor} of reference (pre-finetune) parameters
+        #ewc_lambda: 100000                        # EWC penalty weight (must be > 0 when fisher/opt are given)
 
 data:
     batch_size: 4                                 # Per GPU batch size.
@@ -91,3 +96,10 @@ data:
     load_trainset_path: ['./structure_list']  # Example of using ase as data_format, support multiple files and expansion(*)
     #load_validset_path: ['./valid.extxyz']
     #load_testset_path:  ['./sevenn_data/mydata.pt']  # Graph can be preprocessed using `sevenn_graph_build` and accessible like this
+
+    # reEWC rehearsal (experience replay, single-modal models only): replay an old-task memory set
+    # each training step to mitigate catastrophic forgetting while fine-tuning on the target data.
+    #rehearsal: False                              # Set True to enable replay
+    #load_memory_path: ['./memory.extxyz']         # memory (old-task) set; this key is reserved for rehearsal
+    #mem_batch_size: 8                             # batch size for the replayed memory set
+    #mem_ratio: 1                                  # fraction (0, 1] of the memory set to use

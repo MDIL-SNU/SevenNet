@@ -351,4 +351,8 @@ def get_loss_functions_from_config(
         loss_function = loss_function_cls(criterion=criterion, **commons)
         loss_functions.append((loss_function, loss_weight))
 
+    from sevenn.train.reewc.loss import append_ewc_loss
+
+    append_ewc_loss(loss_functions, config)
+
     return loss_functions

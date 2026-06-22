@@ -259,3 +259,36 @@ def test_calculator(tmp_path):
     atoms2.calc = calc2
 
     assert_atoms(atoms, atoms2)
+
+
+def _make_flash_like_checkpoint(tmp_path):
+    """A FlashTP-style checkpoint (use_flash_tp=True) whose state_dict lacks the
+    e3nn-only convolution keys, as a FlashTP-saved checkpoint would. Built on CPU
+    so it can be loaded where FlashTP is unavailable."""
+    cf = get_model_config()
+    cf['use_flash_tp'] = False
+    model = build_E3_equivariant_model(cf, parallel=False)
+    sd = model.state_dict()
+    drop = [
+        k
+        for k in sd
+        if k.endswith('.convolution.weight')
+        or k.endswith('.convolution.output_mask')
+        or '._compiled_main_left_right._w3j' in k
+    ]
+    state_dict = {k: v for k, v in sd.items() if k not in drop}
+    cfg = get_model_config()
+    cfg.update({'use_flash_tp': True, 'version': sevenn.__version__})
+    path = str(tmp_path / 'flash_like_cp.pth')
+    torch.save({'model_state_dict': state_dict, 'config': cfg}, path)
+    return path
+
+
+def test_flash_checkpoint_loads_when_flash_unavailable(tmp_path, monkeypatch):
+    monkeypatch.setattr('sevenn.nn.flash_helper.is_flash_available', lambda: False)
+    path = _make_flash_like_checkpoint(tmp_path)
+    from sevenn.util import load_checkpoint
+
+    # default build_model() must fall back to e3nn, not fail on missing keys
+    model = load_checkpoint(path).build_model()
+    assert isinstance(model, AtomGraphSequential)

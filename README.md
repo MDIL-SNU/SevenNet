@@ -15,6 +15,7 @@ Full documentation, including **installation**, **usage**, and **pretrained mode
  - GPU-parallelized molecular dynamics with LAMMPS
  - CUDA-accelerated D3 (van der Waals) dispersion
  - Multi-fidelity training for combining multiple databases with different calculation settings
+ - Fine-tuning with forgetting prevention (experience replay + Elastic Weight Consolidation) for continual learning
  - [Tensor product accelerators](https://sevennet.readthedocs.io/en/latest/user_guide/accelerator.html)
 
 
@@ -68,6 +69,19 @@ If you utilize the pretrained model SevenNet-Omni or multi-task training strateg
 	number = {3432},
 	journal = {Nat. Commun.},
 	author = {Kim, Jaesun and You, Jinmu and Park, Yutack and Lim, Yunsung and Kang, Yujin and Kim, Jisu and Jeon, Haekwan and Ju, Suyeon and Hong, Deokgi and Lee, Seung Yul and Choi, Saerom and Kim, Yongdeok and Lee, Jae W and Han, Seungwu},
+	year = {2026},
+}
+```
+
+If you utilize the reEWC forgetting-aware fine-tuning strategy for continual learning of pretrained universal machine-learning interatomic potentials, please cite the following paper:
+```bib
+@article{kim_efficient_2026,
+	title = {An Efficient Forgetting-Aware Fine-Tuning Framework for Pretrained Universal Machine-Learning Interatomic Potentials},
+	volume = {12},
+	doi = {10.1038/s41524-025-01895-w},
+	number = {26},
+	journal = {npj Comput. Mater.},
+	author = {Kim, Jisu and Lee, Jiho and Oh, Sangmin and Park, Yutack and Hwang, Seungwoo and Han, Seungwu and Kang, Sungwoo and Kang, Youngho},
 	year = {2026},
 }
 ```

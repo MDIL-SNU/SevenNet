@@ -16,6 +16,7 @@ SevenNet (Scalable EquiVariance-Enabled Neural Network) is a graph neural networ
 * GPU-parallelized molecular dynamics with LAMMPS
 * CUDA-accelerated D3 (van der Waals) dispersion
 * Multi-fidelity training for combining multiple databases with different calculation settings
+* Fine-tuning with forgetting prevention (Experience replay + Elastic Weight Consolidation) for continual learning
 
 
 Installation

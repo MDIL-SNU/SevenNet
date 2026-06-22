@@ -86,7 +86,10 @@ class Trainer:
         self.grad_clip_norm_th = grad_clip_norm_th
 
     @staticmethod
-    def from_config(model: torch.nn.Module, config: Dict[str, Any]) -> 'Trainer':
+    def from_config(
+        model: torch.nn.Module,
+        config: Dict[str, Any],
+    ) -> 'Trainer':
         reg_functions = get_regularization_from_config(
             config, list(model._modules.keys())
         )
@@ -150,6 +153,7 @@ class Trainer:
         loader: Iterable,
         is_train: bool = False,
         error_recorder: Optional[ErrorRecorder] = None,
+        memory_error_recorder: Optional[ErrorRecorder] = None,
         wrap_tqdm: Union[bool, int] = False,
     ) -> None:
         """
@@ -169,6 +173,7 @@ class Trainer:
             total_len = wrap_tqdm if isinstance(wrap_tqdm, int) else None
             loader = tqdm(loader, total=total_len)
         _model = self.model if not self.distributed else self.model.module
+
         for _, batch in enumerate(loader):
             if is_train:
                 self.optimizer.zero_grad()

@@ -1,13 +1,22 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
-## [0.12.2.dev]
+## [0.13.1.dev]
 ### Added
+- L2MAE loss
+- OrderedSampler, batch training
+
+### Fixed
+- `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
+
+
+## [0.13.0]
+### Added
+- reEWC fine-tuning with forgetting prevention for single-modal models: optional experience replay (`rehearsal`, `load_memory_path`, `mem_batch_size`, `mem_ratio`) and an Elastic Weight Consolidation penalty from a precomputed Fisher matrix (`continue.fisher_information`, `continue.opt_params`, `continue.ewc_lambda`), plus a `cosineannealingwarmuplr` scheduler
 - Support OpenEquivariance
 - Per-atom stress (atomic virial) support in LAMMPS pair_e3gnn and ASE calculator
 - `compute_atomic_virial` option in `SevenNetCalculator`
-- L2MAE loss
-- OrderedSampler, batch training
+- Add Batch D3 and SevenNetD3Model in Torch-Sim interface
 
 ### Changed
 - **[Breaking]** Rename optional dependency group `mliap` into `mliap12` (reflecting its CUDA 12.x dependency).
@@ -15,6 +24,11 @@ All notable changes to this project will be documented in this file.
 - **[Breaking]** `torchscript` file_type is no longer supported in `SevenNetCalculator`.
 - LAMMPS pair_e3gnn refactored to use pair-wise force (dE/dr) instead of position-based gradient.
 - Deploy no longer replaces force_output with ForceStressOutput; force/stress computed in LAMMPS C++ side.
+- **[Breaking]** Accelerator None options (use the same setting as checkpoint) are removed and default is changed to False.
+
+### Fixed
+- Omni (flash TP trained checkpoint) loads w/o an error for flashTP disabled environment.
+- Load FlashTP-saved checkpoints (e.g. SevenNet-Nano) when FlashTP is unavailable by falling back to the e3nn backend, so they work for inference and fine-tuning without FlashTP installed. An explicit `enable_flash=True` still fails loud.
 
 ## [0.12.1]
 ### Fixed

@@ -27,6 +27,7 @@ def add_args(parser):
             'base',
             'multi_modal',
             'mf_ompa_fine_tune',
+            'reewc',
         ],
         help=preset_help
     )
