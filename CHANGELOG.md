@@ -3,7 +3,7 @@ All notable changes to this project will be documented in this file.
 
 ## [0.13.1.dev]
 ### Fixed
-- `D3Calculator()` segfault bug when resuing the calculator within different sized `Atoms`.
+- `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
 
 
 ## [0.13.0]
