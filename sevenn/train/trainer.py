@@ -11,9 +11,9 @@ from tqdm import tqdm
 
 import sevenn._keys as KEY
 from sevenn.error_recorder import ErrorRecorder
-from sevenn.train.loss import L2Regularization, LossDefinition
+from sevenn.train.loss import LossDefinition
 
-from .loss import get_loss_functions_from_config, get_regularization_from_config
+from .loss import get_loss_functions_from_config
 from .optim import optim_dict, scheduler_dict
 
 
@@ -38,7 +38,6 @@ class Trainer:
         self,
         model: torch.nn.Module,
         loss_functions: List[Tuple[LossDefinition, float]],
-        reg_functions: Optional[List[Tuple[L2Regularization, float]]] = None,
         optimizer_cls=None,
         optimizer_args: Optional[Dict[str, Any]] = None,
         scheduler_cls=None,
@@ -82,7 +81,6 @@ class Trainer:
         else:
             self.scheduler = None
         self.loss_functions = loss_functions
-        self.reg_functions = reg_functions or []
         self.grad_clip_norm_th = grad_clip_norm_th
 
     @staticmethod
@@ -90,13 +88,11 @@ class Trainer:
         model: torch.nn.Module,
         config: Dict[str, Any],
     ) -> 'Trainer':
-        reg_functions = get_regularization_from_config(
-            config, list(model._modules.keys())
-        )
         trainer = Trainer(
             model,
-            loss_functions=get_loss_functions_from_config(config),
-            reg_functions=reg_functions,
+            loss_functions=get_loss_functions_from_config(
+                config, list(model._modules.keys())
+            ),
             optimizer_cls=optim_dict[config.get(KEY.OPTIMIZER, 'adam').lower()],
             optimizer_args=config.get(KEY.OPTIM_PARAM, {}),
             scheduler_cls=scheduler_dict[
@@ -129,8 +125,7 @@ class Trainer:
         config = cp.config
         optimizer_cls = optim_dict[config[KEY.OPTIMIZER].lower()]
         scheduler_cls = scheduler_dict[config[KEY.SCHEDULER].lower()]
-        loss_functions = get_loss_functions_from_config(config)
-        reg_functions = get_regularization_from_config(
+        loss_functions = get_loss_functions_from_config(
             config, list(model._modules.keys())
         )
 
@@ -138,7 +133,6 @@ class Trainer:
             {
                 'model': model,
                 'loss_functions': loss_functions,
-                'reg_functions': reg_functions,
                 'optimizer_cls': optimizer_cls,
                 'optimizer_args': config[KEY.OPTIM_PARAM],
                 'scheduler_cls': scheduler_cls,
@@ -187,9 +181,6 @@ class Trainer:
                     indv_loss = loss_def.get_loss(output, _model)
                     if indv_loss is not None:
                         total_loss += (indv_loss * w)
-                for reg_def, w in self.reg_functions:
-                    reg_loss = reg_def.get_loss(output, _model)
-                    total_loss += reg_loss * w / 2
                 total_loss.backward()
                 if self.grad_clip_norm_th is not None:
                     torch.nn.utils.clip_grad_norm_(
@@ -225,9 +216,6 @@ class Trainer:
         total_loss = torch.tensor([0.0], device=self.device)
         for loss_def, w in self.loss_functions:
             total_loss += loss_def.get_loss(output, _model) * w
-        for reg_def, w in self.reg_functions:
-            reg_loss = reg_def.get_loss(output, _model)
-            total_loss += reg_loss * w / 2
 
         total_loss.backward()
 

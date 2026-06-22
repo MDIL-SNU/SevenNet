@@ -305,7 +305,8 @@ def make_loss_info_dict_from_config(config: Dict[str, Any]):
 
 
 def get_loss_functions_from_config(
-    config: Dict[str, Any]
+    config: Dict[str, Any],
+    model_keys: Optional[List[str]] = None,
 ) -> List[Tuple[LossDefinition, float]]:
     from sevenn.train.optim import loss_dict
 
@@ -354,5 +355,13 @@ def get_loss_functions_from_config(
     from sevenn.train.reewc.loss import append_ewc_loss
 
     append_ewc_loss(loss_functions, config)
+
+    # Modal L2 regularization
+    # fold the 1/2 convention factor into the stored weight
+    if model_keys is not None:
+        for reg_def, reg_weight in get_regularization_from_config(
+            config, model_keys
+        ):
+            loss_functions.append((reg_def, reg_weight / 2.0))
 
     return loss_functions
