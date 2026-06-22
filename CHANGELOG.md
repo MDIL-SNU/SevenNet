@@ -1,6 +1,11 @@
 # Changelog
 All notable changes to this project will be documented in this file.
 
+## [0.13.1.dev]
+### Fixed
+- `D3Calculator()` segfault bug when resuing the calculator within different sized `Atoms`.
+
+
 ## [0.13.0]
 ### Added
 - reEWC fine-tuning with forgetting prevention for single-modal models: optional experience replay (`rehearsal`, `load_memory_path`, `mem_batch_size`, `mem_ratio`) and an Elastic Weight Consolidation penalty from a precomputed Fisher matrix (`continue.fisher_information`, `continue.opt_params`, `continue.ewc_lambda`), plus a `cosineannealingwarmuplr` scheduler
