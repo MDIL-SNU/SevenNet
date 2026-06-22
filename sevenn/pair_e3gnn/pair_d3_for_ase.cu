@@ -905,7 +905,12 @@ void PairD3::set_lattice_vectors() {
     int vdw_range_y = 2 * rep_vdw[1] + 1;
     int vdw_range_z = 2 * rep_vdw[2] + 1;
     int tau_loop_size_vdw = vdw_range_x * vdw_range_y * vdw_range_z * 3;
-    if (tau_loop_size_vdw != tau_idx_vdw_total_size) {
+    bool resize_tau_vdw =
+        tau_idx_vdw == nullptr ||
+        vdw_range_x != vdwrx_save ||
+        vdw_range_y != vdwry_save ||
+        vdw_range_z != vdwrz_save;
+    if (resize_tau_vdw) {
         if (tau_idx_vdw != nullptr) {
             for (int i = 0; i < vdwrx_save; i++) {
                 for (int j = 0; j < vdwry_save; j++) {
@@ -937,7 +942,12 @@ void PairD3::set_lattice_vectors() {
     int cn_range_y  = 2 * rep_cn[1] + 1;
     int cn_range_z  = 2 * rep_cn[2] + 1;
     int tau_loop_size_cn = cn_range_x * cn_range_y * cn_range_z * 3;
-    if (tau_loop_size_cn != tau_idx_cn_total_size) {
+    bool resize_tau_cn =
+        tau_idx_cn == nullptr ||
+        cn_range_x != cnrx_save ||
+        cn_range_y != cnry_save ||
+        cn_range_z != cnrz_save;
+    if (resize_tau_cn) {
         if (tau_idx_cn != nullptr) {
             for (int i = 0; i < cnrx_save; i++) {
                 for (int j = 0; j < cnry_save; j++) {
