@@ -239,6 +239,7 @@ def test_d3_cal_mol(atoms_mol, d3_cal):
 
 def test_d3_cal_reuse(d3_cal):
     from pathlib import Path
+
     from ase.io import read
 
     # 4 different molecular structures
