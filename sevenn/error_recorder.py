@@ -467,7 +467,6 @@ class ErrorRecorder:
     def from_config(
         config: Dict[str, Any],
         loss_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
-        reg_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
     ) -> 'ErrorRecorder':
         loss_config = config.get(KEY.LOSS, 'mse')
         if isinstance(loss_config, dict) and loss_functions is None:
@@ -481,15 +480,6 @@ class ErrorRecorder:
             criteria = loss_cls(**loss_param)
         else:
             criteria = None
-
-        if loss_functions is not None:
-            all_loss_functions = (
-                loss_functions + reg_functions
-                if isinstance(reg_functions, list)
-                else loss_functions
-            )
-        else:
-            all_loss_functions = None
 
         err_config = config.get(KEY.ERROR_RECORD, False)
         if not err_config:
@@ -510,14 +500,14 @@ class ErrorRecorder:
             if err_type == 'TotalLoss':  # special case
                 err_metrics.append(
                     ErrorRecorder.init_total_loss_metric(
-                        config, criteria, all_loss_functions
+                        config, criteria, loss_functions
                     )
                 )
                 continue
             elif err_type == 'Modal_cos':  # special case
                 metric_cls = ModalWeightCosine
                 metric_kwargs['loss_def'], _ = _get_loss_function_from_name(
-                    all_loss_functions, 'L2_modal'
+                    loss_functions, 'L2_modal'
                 )
                 metric_kwargs.pop('unit', None)
                 err_metrics.append(metric_cls(**metric_kwargs))
@@ -525,10 +515,10 @@ class ErrorRecorder:
             metric_cls = ErrorRecorder.METRIC_DICT[metric_name]
             assert isinstance(metric_kwargs['name'], str)
             if metric_name == 'Loss':
-                if all_loss_functions is not None:
+                if loss_functions is not None:
                     metric_cls = LossError
                     metric_kwargs['loss_def'], _ = _get_loss_function_from_name(
-                        all_loss_functions, metric_kwargs['name']
+                        loss_functions, metric_kwargs['name']
                     )
                 else:
                     metric_cls = CustomError

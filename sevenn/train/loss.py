@@ -261,7 +261,7 @@ def get_regularization_from_config(
     reg_functions: List[Tuple[LossDefinition, float]] = []
 
     modal_param = reg_params.get('modal', {})
-    if not modal_param:
+    if not modal_param or not config.get(KEY.USE_MODALITY, False):
         return reg_functions
 
     reg_weight = float(modal_param.get(KEY.REG_WEIGHT, 1e-5))
