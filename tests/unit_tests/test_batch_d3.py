@@ -2,7 +2,6 @@
 # TODO: check stress-things with non-pbc input
 import numpy as np
 import pytest
-from ase import Atoms
 from ase.build import bulk, molecule
 
 try:

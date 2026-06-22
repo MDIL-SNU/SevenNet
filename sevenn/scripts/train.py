@@ -208,7 +208,7 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
         datasets = modal_dataset.from_config(config, working_dir)
     elif dataset_type == 'graph':
         datasets = graph_dataset.from_config(
-                config, working_dir, dataset_keys=reewc_dataset_keys(config)
+            config, working_dir, dataset_keys=reewc_dataset_keys(config)
         )
     elif dataset_type == 'atoms':
         datasets = atoms_dataset.from_config(config, working_dir)

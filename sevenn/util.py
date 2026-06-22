@@ -3,7 +3,7 @@ import os.path as osp
 import pathlib
 import shutil
 import warnings
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Dict, List, Tuple, Union
 
 import numpy as np
 import requests
