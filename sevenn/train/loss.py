@@ -235,7 +235,7 @@ class L2Regularization(LossDefinition):
             reg_params = list(module._modules['linear'].weight_views())[-1]
             reg_loss = torch.sum(torch.pow(reg_params, 2))
             ret = ret + reg_loss
-        return ret
+        return 0.5 * ret  # penalty = (1/2)||w||^2
 
     def get_cosine(
         self, batch_data: Dict[str, Any], model: Optional[Callable] = None
@@ -357,11 +357,7 @@ def get_loss_functions_from_config(
     append_ewc_loss(loss_functions, config)
 
     # Modal L2 regularization
-    # fold the 1/2 convention factor into the stored weight
     if model_keys is not None:
-        for reg_def, reg_weight in get_regularization_from_config(
-            config, model_keys
-        ):
-            loss_functions.append((reg_def, reg_weight / 2.0))
+        loss_functions.extend(get_regularization_from_config(config, model_keys))
 
     return loss_functions

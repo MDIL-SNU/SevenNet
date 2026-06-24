@@ -308,6 +308,18 @@ class LossError(ErrorMetric):
         self.value.update(loss)  # type: ignore
 
 
+class L2RegLogError(LossError):
+    """
+    Logs (legacy) ||w||^2 of L2 regularization, i.e. 2 * get_loss
+    """
+
+    def update(
+        self, output: 'AtomGraphData', model: Optional[Callable] = None
+    ) -> None:
+        loss = 2.0 * self.loss_def.get_loss(output, model)  # type: ignore
+        self.value.update(loss)  # type: ignore
+
+
 class ModalWeightCosine(ErrorMetric):
     """
     Cosine similarity between modal weight views.
@@ -511,6 +523,14 @@ class ErrorRecorder:
                 )
                 metric_kwargs.pop('unit', None)
                 err_metrics.append(metric_cls(**metric_kwargs))
+                continue
+            elif err_type == 'L2_modal':  # special case
+                metric_kwargs['loss_def'], _ = _get_loss_function_from_name(
+                    loss_functions, 'L2_modal'
+                )
+                metric_kwargs.pop('unit', None)
+                metric_kwargs['name'] += f'_{metric_name}'
+                err_metrics.append(L2RegLogError(**metric_kwargs))
                 continue
             metric_cls = ErrorRecorder.METRIC_DICT[metric_name]
             assert isinstance(metric_kwargs['name'], str)
