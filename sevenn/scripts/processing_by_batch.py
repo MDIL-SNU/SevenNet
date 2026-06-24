@@ -76,7 +76,7 @@ def processing_by_batch(
 
     csv_path = unique_filepath(f'{prefix}/lc.csv')
     if write_csv:
-        head = ['epoch', 'lr']
+        head = ['epoch', 'batch', 'lr']
         for k, rec in recorders.items():
             head.extend(list(rec.get_dct(prefix=k)))
         with open(csv_path, 'w') as f:
