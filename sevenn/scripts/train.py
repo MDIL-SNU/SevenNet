@@ -200,7 +200,9 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
             config, trainer, loaders, data_progress, start_epoch, working_dir
         )
     else:
-        processing_epoch_v2(config, trainer, loaders, start_epoch, working_dir)
+        processing_epoch_v2(
+            config, trainer, loaders, start_epoch, working_dir=working_dir
+        )
     log.timer_end('total', message='Total wall time')
 
 
