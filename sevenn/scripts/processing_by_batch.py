@@ -1,7 +1,8 @@
+import math
 import os
 import time
 from copy import deepcopy
-from typing import Optional
+from typing import Any, Dict, Optional
 
 import numpy as np
 
@@ -10,6 +11,58 @@ from sevenn.error_recorder import AverageNumber, ErrorRecorder
 from sevenn.logger import Logger
 from sevenn.train.trainer import Trainer
 from sevenn.util import unique_filepath
+
+
+def update_config_for_batch_training(config: Dict[str, Any], loaders) -> None:
+    """
+    Called from sevenn/scripts/train.py, between dataset build and model build
+    Update scheduler parameters for batch-level training.
+
+    This converts epoch-based scheduler parameters to step-based parameters
+    when using batch training mode.
+    """
+    train_loader = loaders['trainset']
+    # convert float type `epoch` related parameters for batch training
+    effective_batch_size = config[KEY.WORLD_SIZE] * config[KEY.BATCH_SIZE]
+    steps_per_epoch = math.ceil(
+        train_loader.sampler.total_size / effective_batch_size
+    )
+
+    scheduler_type = config.get(KEY.SCHEDULER, 'exponentiallr').lower()
+    scheduler_param = config.get(KEY.SCHEDULER_PARAM, {})
+    config[KEY.SCHEDULER_BATCH_MODE] = scheduler_param.pop(
+        KEY.SCHEDULER_BATCH_MODE, False
+    )
+
+    if scheduler_type == 'onecyclelr':  # special case, always batch mode
+        total_steps = scheduler_param.get('total_steps', None)
+        if total_steps is None:
+            # total_steps not given, automatically calculated
+            # allow epochs to be float for SWA
+            epochs = scheduler_param.get('epochs', None)
+            if epochs is None:
+                raise ValueError('One of total_steps or epochs should be given')
+            total_steps = math.ceil(epochs * steps_per_epoch)
+        config[KEY.SCHEDULER_PARAM]['total_steps'] = total_steps
+        config[KEY.SCHEDULER_BATCH_MODE] = True
+
+    elif config[KEY.SCHEDULER_BATCH_MODE]:
+        scheduler_epoch_params = {
+            'linearlr': ['total_iters', lambda x, y: math.ceil(x * y)],
+            'cosineannealinglr': ['T_max', lambda x, y: math.ceil(x * y)],
+            'exponentiallr': ['gamma', lambda x, y: x ** (1 / y)],
+        }.get(scheduler_type, None)
+        if scheduler_epoch_params is None:
+            raise NotImplementedError(
+                f'Scheduler batch mode not implemented for {scheduler_type}.'
+            )
+
+        config[KEY.SCHEDULER_PARAM][scheduler_epoch_params[0]] = (
+            scheduler_epoch_params[1](
+                config[KEY.SCHEDULER_PARAM][scheduler_epoch_params[0]],
+                steps_per_epoch,
+            )
+        )
 
 
 def processing_by_batch(

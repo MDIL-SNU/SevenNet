@@ -20,8 +20,7 @@ def processing_continue_v2(config: Dict[str, Any]):
     Skips model compatibility
 
     Returns:
-        For epoch training: (state_dicts, epoch)
-        For batch training: (state_dicts, epoch, data_progress)
+        (state_dicts, epoch, data_progress or None)
     """
     log = Logger()
     continue_dct = config[KEY.CONTINUE]
@@ -110,7 +109,6 @@ def processing_continue_v2(config: Dict[str, Any]):
                 data_progress.update(checkpoint.data_progress)
             log.writeline(f'epoch start from {epoch}')
             log.writeline(f'data index start from {data_progress[KEY.CURRENT_DATA_IDX]}')  # noqa: E501
-            # log.writeline(f'Checkpoint previous epoch was: {from_epoch}')  # duplicated? # noqa: E501
 
         log.writeline('checkpoint loading success')
 

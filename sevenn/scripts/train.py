@@ -86,56 +86,6 @@ def loader_from_config(
     return DataLoader(**loader_args)
 
 
-def update_config_for_batch_training(config: Dict[str, Any], train_loader) -> None:
-    """
-    Update scheduler parameters for batch-level training.
-
-    This converts epoch-based scheduler parameters to step-based parameters
-    when using batch training mode.
-    """
-    # convert float type `epoch` related parameters for batch training
-    effective_batch_size = config[KEY.WORLD_SIZE] * config[KEY.BATCH_SIZE]
-    steps_per_epoch = math.ceil(
-        train_loader.sampler.total_size / effective_batch_size
-    )
-
-    scheduler_type = config.get(KEY.SCHEDULER, 'exponentiallr').lower()
-    scheduler_param = config.get(KEY.SCHEDULER_PARAM, {})
-    config[KEY.SCHEDULER_BATCH_MODE] = scheduler_param.pop(
-        KEY.SCHEDULER_BATCH_MODE, False
-    )
-
-    if scheduler_type == 'onecyclelr':  # special case, always batch mode
-        total_steps = scheduler_param.get('total_steps', None)
-        if total_steps is None:
-            # total_steps not given, automatically calculated
-            # allow epochs to be float for SWA
-            epochs = scheduler_param.get('epochs', None)
-            if epochs is None:
-                raise ValueError('One of total_steps or epochs should be given')
-            total_steps = math.ceil(epochs * steps_per_epoch)
-        config[KEY.SCHEDULER_PARAM]['total_steps'] = total_steps
-        config[KEY.SCHEDULER_BATCH_MODE] = True
-
-    elif config[KEY.SCHEDULER_BATCH_MODE]:
-        scheduler_epoch_params = {
-            'linearlr': ['total_iters', lambda x, y: math.ceil(x * y)],
-            'cosineannealinglr': ['T_max', lambda x, y: math.ceil(x * y)],
-            'exponentiallr': ['gamma', lambda x, y: x ** (1 / y)],
-        }.get(scheduler_type, None)
-        if scheduler_epoch_params is None:
-            raise NotImplementedError(
-                f'Scheduler batch mode not implemented for {scheduler_type}.'
-            )
-
-        config[KEY.SCHEDULER_PARAM][scheduler_epoch_params[0]] = (
-            scheduler_epoch_params[1](
-                config[KEY.SCHEDULER_PARAM][scheduler_epoch_params[0]],
-                steps_per_epoch,
-            )
-        )
-
-
 def datasets_from_py(config, script):
     if isinstance(script, list):
         assert len(script) == 1, 'Need single python script'
@@ -166,7 +116,10 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
     import sevenn.train.graph_dataset as graph_dataset
     import sevenn.train.modal_dataset as modal_dataset
 
-    from .processing_by_batch import processing_by_batch
+    from .processing_by_batch import (
+        processing_by_batch,
+        update_config_for_batch_training,
+    )
     from .processing_continue import processing_continue_v2
     from .processing_epoch import processing_epoch_v2
 
@@ -223,39 +176,31 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
         k: loader_from_config(config, v, dataset_key=k) for k, v in datasets.items()
     }
 
-    rehearsal = config.get(KEY.REHEARSAL, False)
-    memory_loader = build_memory_loader(config) if rehearsal else None
-
     # Update scheduler config for batch training
     if train_by_batch:
-        update_config_for_batch_training(config, loaders['trainset'])
+        update_config_for_batch_training(config, loaders)
 
     log.write('\nModel building...\n')
     model = build_E3_equivariant_model(config)
     log.print_model_info(model, config)
 
-    if memory_loader is not None:
+    if config.get(KEY.REHEARSAL, False):
+        memory_loader = build_memory_loader(config)
         trainer = ReewcTrainer.from_config(
             model, config, memory_loader=memory_loader
         )
     else:
         trainer = Trainer.from_config(model, config)
+
     if state_dicts:
         trainer.load_state_dicts(*state_dicts, strict=False)
 
     if train_by_batch:
         processing_by_batch(
-            config,
-            trainer,
-            loaders,
-            data_progress,
-            start_epoch,
-            working_dir=working_dir,
+            config, trainer, loaders, data_progress, start_epoch, working_dir
         )
     else:
-        processing_epoch_v2(
-            config, trainer, loaders, start_epoch, working_dir=working_dir
-        )
+        processing_epoch_v2(config, trainer, loaders, start_epoch, working_dir)
     log.timer_end('total', message='Total wall time')
 
 

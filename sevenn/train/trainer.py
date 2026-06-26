@@ -90,9 +90,7 @@ class Trainer:
     ) -> 'Trainer':
         trainer = Trainer(
             model,
-            loss_functions=get_loss_functions_from_config(
-                config, list(model._modules.keys())
-            ),
+            loss_functions=get_loss_functions_from_config(config, model),
             optimizer_cls=optim_dict[config.get(KEY.OPTIMIZER, 'adam').lower()],
             optimizer_args=config.get(KEY.OPTIM_PARAM, {}),
             scheduler_cls=scheduler_dict[
@@ -125,9 +123,7 @@ class Trainer:
         config = cp.config
         optimizer_cls = optim_dict[config[KEY.OPTIMIZER].lower()]
         scheduler_cls = scheduler_dict[config[KEY.SCHEDULER].lower()]
-        loss_functions = get_loss_functions_from_config(
-            config, list(model._modules.keys())
-        )
+        loss_functions = get_loss_functions_from_config(config, model)
 
         return (
             {
@@ -180,7 +176,7 @@ class Trainer:
                 for loss_def, w in self.loss_functions:
                     indv_loss = loss_def.get_loss(output, _model)
                     if indv_loss is not None:
-                        total_loss += (indv_loss * w)
+                        total_loss += indv_loss * w
                 total_loss.backward()
                 if self.grad_clip_norm_th is not None:
                     torch.nn.utils.clip_grad_norm_(
@@ -227,8 +223,7 @@ class Trainer:
             )
             if norm > self.grad_clip_norm_th and self.rank == 0:
                 print(
-                    f'[Clipping] Grad norm {norm:.2f} into '
-                    f'{self.grad_clip_norm_th}',
+                    f'[Clipping] Grad norm {norm:.2f} into {self.grad_clip_norm_th}',
                     flush=True,
                 )
         self.optimizer.step()

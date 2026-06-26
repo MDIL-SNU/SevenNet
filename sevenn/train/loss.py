@@ -225,9 +225,7 @@ class L2Regularization(LossDefinition):
         self.module_keys = module_keys
         self.reg_modal_only = reg_modal_only
 
-    def get_loss(
-        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
-    ):
+    def get_loss(self, batch_data: Dict[str, Any], model: Optional[Callable] = None):
         device = batch_data['x'].device
         ret = torch.tensor([0.0], device=device)
         for module_key in self.module_keys:
@@ -254,20 +252,21 @@ class L2Regularization(LossDefinition):
         return ret
 
 
-def get_regularization_from_config(
-    config: Dict[str, Any], all_module_keys: List[str]
-) -> List[Tuple[LossDefinition, float]]:
+def get_modal_regularization(
+    config: Dict[str, Any],
+    model: Optional[torch.nn.Module] = None,
+) -> Optional[Tuple[LossDefinition, float]]:
     reg_params = config.get(KEY.REG_PARAM, {})
-    reg_functions: List[Tuple[LossDefinition, float]] = []
 
     modal_param = reg_params.get('modal', {})
     if not modal_param or not config.get(KEY.USE_MODALITY, False):
-        return reg_functions
+        return None
 
-    reg_weight = float(modal_param.get(KEY.REG_WEIGHT, 1e-5))
+    if not model:
+        raise ValueError('modal reg is requested but model is not given.')
 
     module_keys_to_reg = []
-    for module_key in all_module_keys:
+    for module_key in list(model._modules.keys()):
         for (
             use_modal_module_key,
             modal_module_name,
@@ -281,12 +280,10 @@ def get_regularization_from_config(
                 continue
             module_keys_to_reg.append(module_key)
 
-    reg_functions.append((
+    return (
         L2Regularization('L2_modal', module_keys_to_reg, reg_modal_only=True),
-        reg_weight,
-    ))
-
-    return reg_functions
+        float(modal_param.get(KEY.REG_WEIGHT, 1e-5)),
+    )
 
 
 def make_loss_info_dict_from_config(config: Dict[str, Any]):
@@ -306,9 +303,10 @@ def make_loss_info_dict_from_config(config: Dict[str, Any]):
 
 def get_loss_functions_from_config(
     config: Dict[str, Any],
-    model_keys: Optional[List[str]] = None,
+    model: Optional[torch.nn.Module] = None,
 ) -> List[Tuple[LossDefinition, float]]:
     from sevenn.train.optim import loss_dict
+    from sevenn.train.reewc.loss import get_ewc_loss
 
     loss_functions = []  # list of tuples (loss_definition, weight)
 
@@ -352,12 +350,9 @@ def get_loss_functions_from_config(
         loss_function = loss_function_cls(criterion=criterion, **commons)
         loss_functions.append((loss_function, loss_weight))
 
-    from sevenn.train.reewc.loss import append_ewc_loss
-
-    append_ewc_loss(loss_functions, config)
-
-    # Modal L2 regularization
-    if model_keys is not None:
-        loss_functions.extend(get_regularization_from_config(config, model_keys))
+    if addi_loss := get_ewc_loss(config):
+        loss_functions.append(addi_loss)
+    if addi_loss := get_modal_regularization(config, model):
+        loss_functions.append(addi_loss)
 
     return loss_functions

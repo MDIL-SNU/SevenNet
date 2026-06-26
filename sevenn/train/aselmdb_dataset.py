@@ -4,7 +4,6 @@ import bisect
 import os
 import os.path as osp
 import time
-import typing
 import warnings
 import zlib
 from collections import Counter
@@ -16,7 +15,6 @@ import ase
 import lmdb
 import numpy as np
 import orjson
-import torch.distributed as dist
 from ase.data import chemical_symbols
 from ase.db.core import Database, now, ops
 from ase.db.row import AtomsRow
@@ -42,6 +40,7 @@ class LMDBDatabase(Database):
     The ASE notice for the LGPL2.1 license is available here:
     https://gitlab.com/ase/ase/-/blob/master/LICENSE
     """
+
     def __init__(
         self,
         filename: str | Path | None = None,
