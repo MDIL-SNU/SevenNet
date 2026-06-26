@@ -15,12 +15,12 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.scripts.processing_continue import (
     convert_modality_of_checkpoint_state_dct,
 )
-from sevenn.train.reewc import (
-    ReewcTrainer,
+from sevenn.train.reewc.rehearsal import (
     build_memory_loader,
     reewc_dataset_keys,
     validate_reewc_config,
 )
+from sevenn.train.reewc.trainer import ReewcTrainer
 from sevenn.train.sampler import OrderedSampler
 from sevenn.train.trainer import Trainer
 
