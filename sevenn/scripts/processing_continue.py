@@ -29,7 +29,11 @@ def processing_continue_v2(config: Dict[str, Any]):
     log.write('\nContinue found, loading checkpoint\n')
 
     checkpoint = util.load_checkpoint(continue_dct[KEY.CHECKPOINT])
-    model_cp = checkpoint.build_model()
+    model_cp = checkpoint.build_model(
+        enable_flash=config.get(KEY.USE_FLASH_TP, None),
+        enable_cueq=config.get(KEY.CUEQUIVARIANCE_CONFIG, {'use': None}).get('use', None),
+        enable_oeq=config.get(KEY.USE_OEQ, None),
+    )
     config_cp = checkpoint.config
     model_state_dict_cp = model_cp.state_dict()
 

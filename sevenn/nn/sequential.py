@@ -127,6 +127,20 @@ class AtomGraphSequential(nn.Sequential):
         if key in self._modules.keys():
             del self._modules[key]
 
+    def infer_grad_entropy(self, flag: bool):
+        if 'free_energy_output' in self._modules:
+            self._modules['free_energy_output'].infer_grad_entropy = flag
+
+    def infer_heat_capacity(self, flag: bool):
+        if 'free_energy_output' in self._modules:
+            self._modules['free_energy_output'].infer_grad_heat_capacity = flag
+        if 'debye_block' in self._modules:
+            self._modules['debye_block'].infer_heat_capacity = flag
+
+    def infer_debye(self, flag: bool):
+        if 'debye_block' in self._modules:
+            self._modules['debye_block'].infer_debye = flag
+
     @torch.jit.unused
     def _atomic_numbers_to_onehot(self, atomic_numbers: torch.Tensor):
         assert atomic_numbers.dtype == torch.int64

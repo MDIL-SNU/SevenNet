@@ -14,12 +14,21 @@ IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of parallel model
 IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
 IMPLEMENTED_INTERACTION_TYPE = ['nequip']
+IMPLEMENTED_TEMPERATURE_ENCODING = ['gaussian', 'sine', 'cosine', 'polynomial'] #['sigmoid', 'tanh', 'avrami']
+IMPLEMENTED_TEMPERATURE_COEFF = ['sigmoid', 'tanh', 'uniform']
 
 IMPLEMENTED_MODAL_MODULE_DICT = {
     KEY.USE_MODAL_NODE_EMBEDDING: 'onehot_to_feature_x',
     KEY.USE_MODAL_SELF_INTER_INTRO: 'self_interaction_1',
     KEY.USE_MODAL_SELF_INTER_OUTRO: 'self_interaction_2',
     KEY.USE_MODAL_OUTPUT_BLOCK: 'reduce_input_to_hidden',
+}
+
+IMPLEMENTED_TEMPERATURE_BLOCK_DICT = {
+    KEY.USE_TEMPERATURE_NODE_EMBEDDING: 'onehot_to_feature_x',
+    KEY.USE_TEMPERATURE_SELF_INTER_INTRO: 'self_interaction_1',
+    KEY.USE_TEMPERATURE_SELF_INTER_OUTRO: 'self_interaction_2',
+    KEY.USE_TEMPERATURE_OUTPUT_BLOCK: 'reduce_input_to_hidden',
 }
 
 IMPLEMENTED_SHIFT = ['per_atom_energy_mean', 'elemwise_reference_energies']
@@ -32,8 +41,15 @@ SUPPORTING_ERROR_TYPES = [
     'Force',
     'Stress',
     'Stress_GPa',
+    'Entropy',
+    'FreeEnergy',
+    'HeatCapacity',
+    'HeatCapacity_kB',
+    'Asymptot',
     'TotalLoss',
     'L2_modal',
+    'L2_T_enc',
+    'L2_T_gate',
     'Modal_cos',
 ]
 
@@ -127,12 +143,23 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.TRAIN_SHIFT_SCALE: False,
     KEY.TRAIN_SHIFT: False,
     KEY.TRAIN_SCALE: False,
+    KEY.TRAIN_SHIFT_SCALE+'_entropy': False,
+    KEY.TRAIN_SHIFT+'_entropy': False,
+    KEY.TRAIN_SCALE+'_entropy': False,
+    KEY.TRAIN_SHIFT_SCALE+'_asymptot': False,
+    KEY.TRAIN_SHIFT+'_asymptot': False,
+    KEY.TRAIN_SCALE+'_asymptot': False,
+    KEY.TRAIN_DEBYE_TEMPERATURE: False,
     # KEY.OPTIMIZE_BY_REDUCE: True,  # deprecated, always True
     KEY.USE_BIAS_IN_LINEAR: False,
     KEY.USE_MODAL_NODE_EMBEDDING: False,
     KEY.USE_MODAL_SELF_INTER_INTRO: False,
     KEY.USE_MODAL_SELF_INTER_OUTRO: False,
     KEY.USE_MODAL_OUTPUT_BLOCK: False,
+    KEY.USE_TEMPERATURE_NODE_EMBEDDING: False,
+    KEY.USE_TEMPERATURE_SELF_INTER_INTRO: False,
+    KEY.USE_TEMPERATURE_SELF_INTER_OUTRO: False,
+    KEY.USE_TEMPERATURE_OUTPUT_BLOCK: False,
     KEY.READOUT_AS_FCN: False,
     # Applied af readout as fcn is True
     KEY.READOUT_FCN_HIDDEN_NEURONS: [30, 30],
@@ -143,6 +170,14 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
     KEY.USE_OEQ: False,
+
+    KEY.TEMPERATURE_ENC_FUNC: 'gaussian',
+    KEY.TEMPERATURE_ENC_PARAMS: {'num_basis': 8},
+    KEY.TEMPERATURE_GATE_FUNCTION: 'gaussian',
+    KEY.TEMPERATURE_GATE_PARAMS: {'num_basis': 1},
+    KEY.TEMPERATURE_COEFF_FUNCTION: 'uniform',
+    KEY.TEMPERATURE_COEFF_PARAMS: {},
+    KEY.DEBYE_TEMPERATURE: 1000,
 }
 
 
@@ -171,12 +206,23 @@ MODEL_CONFIG_CONDITION = {
     KEY.TRAIN_SHIFT_SCALE: bool,
     KEY.TRAIN_SHIFT: bool,
     KEY.TRAIN_SCALE: bool,
+    KEY.TRAIN_SHIFT_SCALE+'_entropy': bool,
+    KEY.TRAIN_SHIFT+'_entropy': bool,
+    KEY.TRAIN_SHIFT+'_entropy': bool,
+    KEY.TRAIN_SHIFT_SCALE+'_asymptot': bool,
+    KEY.TRAIN_SHIFT+'_asymptot': bool,
+    KEY.TRAIN_SHIFT+'_asymptot': bool,
+    KEY.TRAIN_DEBYE_TEMPERATURE: bool,
     KEY.TRAIN_DENOMINTAOR: bool,
     KEY.USE_BIAS_IN_LINEAR: bool,
     KEY.USE_MODAL_NODE_EMBEDDING: bool,
     KEY.USE_MODAL_SELF_INTER_INTRO: bool,
     KEY.USE_MODAL_SELF_INTER_OUTRO: bool,
     KEY.USE_MODAL_OUTPUT_BLOCK: bool,
+    KEY.USE_TEMPERATURE_NODE_EMBEDDING: bool,
+    KEY.USE_TEMPERATURE_SELF_INTER_INTRO: bool,
+    KEY.USE_TEMPERATURE_SELF_INTER_OUTRO: bool,
+    KEY.USE_TEMPERATURE_OUTPUT_BLOCK: bool,
     KEY.READOUT_AS_FCN: bool,
     KEY.READOUT_FCN_HIDDEN_NEURONS: list,
     KEY.READOUT_FCN_ACTIVATION: str,
@@ -193,6 +239,11 @@ MODEL_CONFIG_CONDITION = {
     KEY.USE_FLASH_TP: bool,
     KEY.CUEQUIVARIANCE_CONFIG: dict,
     KEY.USE_OEQ: bool,
+
+    KEY.TEMPERATURE_ENC_FUNC: lambda x: x in IMPLEMENTED_TEMPERATURE_ENCODING,
+    KEY.TEMPERATURE_GATE_FUNCTION: lambda x: x in IMPLEMENTED_TEMPERATURE_ENCODING,
+    KEY.TEMPERATURE_COEFF_FUNCTION: lambda x: x in IMPLEMENTED_TEMPERATURE_COEFF,
+    KEY.DEBYE_TEMPERATURE: float,
 }
 
 
@@ -273,6 +324,10 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.ENERGY_WEIGHT: 1.0,
     KEY.FORCE_WEIGHT: 0.1,
     KEY.STRESS_WEIGHT: 1e-6,  # SIMPLE-NN default
+    KEY.FREE_ENERGY_WEIGHT: 1.0,
+    KEY.ENTROPY_WEIGHT: 1000.0,
+    KEY.HEAT_CAPACITY_WEIGHT: 1000.0,
+    KEY.ASYMPTOT_WEIGHT: 1.0,
     KEY.GRAD_CLIP: None,
     KEY.REG_PARAM: {},
     KEY.PER_EPOCH: 5,
@@ -291,6 +346,8 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.CSV_LOG: 'log.csv',
     KEY.NUM_WORKERS: 0,
     KEY.IS_TRAIN_STRESS: True,
+    KEY.IS_TRAIN_HEAT_CAPACITY: False,
+    KEY.IS_TRAIN_ASYMPTOT: False,
     KEY.TRAIN_SHUFFLE: True,
     KEY.ERROR_RECORD: [
         ['Energy', 'RMSE'],
@@ -301,6 +358,12 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.BEST_METRIC: 'TotalLoss',
     KEY.USE_WEIGHT: False,
     KEY.USE_MODALITY: False,
+    KEY.USE_TEMPERATURE: False,
+
+    KEY.TRAIN_TEMPERATURE_BLOCK_ONLY: False,
+    KEY.TRAIN_ENERGY_HEAD: True,
+    KEY.TRAIN_ENTROPY_HEAD: False,
+    KEY.TRAIN_ASYMPTOT_HEAD: True,
 }
 
 
@@ -308,6 +371,10 @@ TRAINING_CONFIG_CONDITION = {
     KEY.RANDOM_SEED: int,
     KEY.EPOCH: int,
     KEY.ENERGY_WEIGHT: float,
+    KEY.FREE_ENERGY_WEIGHT: float,
+    KEY.ENTROPY_WEIGHT: float,
+    KEY.HEAT_CAPACITY_WEIGHT: float,
+    KEY.ASYMPTOT_WEIGHT: float,
     KEY.FORCE_WEIGHT: float,
     KEY.STRESS_WEIGHT: float,
     KEY.GRAD_CLIP: lambda x: x is None or (type(x) in [float, int] and x > 0),
@@ -327,14 +394,21 @@ TRAINING_CONFIG_CONDITION = {
     },
     KEY.DEFAULT_MODAL: str,
     KEY.IS_TRAIN_STRESS: bool,
+    KEY.IS_TRAIN_HEAT_CAPACITY: bool,
+    KEY.IS_TRAIN_ASYMPTOT: bool,
     KEY.TRAIN_SHUFFLE: bool,
     KEY.ERROR_RECORD: error_record_condition,
     KEY.BEST_METRIC: str,
     KEY.CSV_LOG: str,
     KEY.USE_MODALITY: bool,
+    KEY.USE_TEMPERATURE: bool,
     KEY.USE_WEIGHT: bool,
-}
 
+    KEY.TRAIN_TEMPERATURE_BLOCK_ONLY: bool,
+    KEY.TRAIN_ENERGY_HEAD: bool,
+    KEY.TRAIN_ENTROPY_HEAD: bool,
+    KEY.TRAIN_ASYMPTOT_HEAD: bool,
+}
 
 def train_defaults(config):
     defaults = DEFAULT_TRAINING_CONFIG
@@ -343,3 +417,26 @@ def train_defaults(config):
     if not config[KEY.IS_TRAIN_STRESS]:
         defaults.pop(KEY.STRESS_WEIGHT, None)
     return defaults
+
+# Debye integral table
+
+DEBYE_XTOL, TRUNC_X, NGRID = 0.3, 20, 10000
+DEBYE_F = lambda t: 3*(t**3) / (torch.exp(t) - 1.0)
+INTEGRAL_FTDT_TAYLOR = lambda t: t**3 - 3/8*t**4 + t**5/20 - t**7/7/240
+INTEGRAL_FTDT_TAYLOR_DIV_X3 = lambda t: 1 - 3/8*t + t**2/20 - t**4/7/240
+
+# before DEBYE_XTOL, better describe it with taylor expansion
+
+DEBYE_X = torch.linspace(DEBYE_XTOL, TRUNC_X, NGRID)
+t = torch.linspace(DEBYE_XTOL, TRUNC_X, NGRID)
+DEBYE_FT = DEBYE_F(t)
+x = DEBYE_X.unsqueeze(1)
+t = t.unsqueeze(0)
+ft = DEBYE_FT.unsqueeze(0)
+mask = t <= x
+mask_ft = ft * mask
+last_ft = ft * (t==x)
+INTEGRAL_FTDT = torch.trapz(mask_ft, t, dim=1) - torch.sum(last_ft, dim=1) * (TRUNC_X-DEBYE_XTOL)/NGRID/2 + INTEGRAL_FTDT_TAYLOR(DEBYE_XTOL)
+
+del t, x, ft, mask, mask_ft, last_ft
+

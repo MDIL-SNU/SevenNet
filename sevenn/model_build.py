@@ -29,6 +29,8 @@ from .nn.self_connection import (
     SelfConnectionOutro,
 )
 from .nn.sequential import AtomGraphSequential
+from .nn.temperature import TemperatureEncoding, TemperatureBlock, TemperatureGate, TemperatureOutputBlock
+from .nn.debye import DebyeBlock 
 
 # warning from PyTorch, about e3nn type annotations
 warnings.filterwarnings(
@@ -106,7 +108,7 @@ def init_feature_reduce(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict
         hidden_irreps = Irreps([(irreps_x.dim // 2, (0, 1))])
         layers.update(
             {
-                'reduce_input_to_hidden': IrrepsLinear(
+                f'reduce_input_to_hidden': IrrepsLinear(
                     irreps_x,
                     hidden_irreps,
                     data_key_in=KEY.NODE_FEATURE,
@@ -140,16 +142,21 @@ def init_feature_reduce(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict
 
 
 def init_shift_scale(
-    config: Dict[str, Any],
+    config: Dict[str, Any], entropy=False, asymptot=False,
 ) -> Union[Rescale, SpeciesWiseRescale, ModalWiseRescale]:
     # for mm, ex, shift: modal_idx -> shifts
+    key_add = ''
+    if entropy:
+        key_add = '_entropy'
+    if asymptot:
+        key_add = '_asymptot'
     shift_scale = []
-    train_shift = config.get(KEY.TRAIN_SHIFT, False)
-    train_scale = config.get(KEY.TRAIN_SCALE, False)
+    train_shift = config.get(f'{KEY.TRAIN_SHIFT}{key_add}', False)
+    train_scale = config.get(f'{KEY.TRAIN_SCALE}{key_add}', False)
 
     # Legacy: train_shift_scale overrides both
     # TODO: log this as legacy warning
-    train_shift_scale = config.get(KEY.TRAIN_SHIFT_SCALE, False)
+    train_shift_scale = config.get(f'{KEY.TRAIN_SHIFT_SCALE}{key_add}', False)
     if train_shift_scale:
         train_shift = True
         train_scale = True
@@ -157,7 +164,7 @@ def init_shift_scale(
 
     # in case of modal, shift or scale has more dims [][]
     # correct typing (I really want static python)
-    for s in (config[KEY.SHIFT], config[KEY.SCALE]):
+    for s in (config[f'{KEY.SHIFT}{key_add}'], config[f'{KEY.SCALE}{key_add}']):
         if hasattr(s, 'tolist'):  # numpy or torch
             s = s.tolist()
         if isinstance(s, dict):
@@ -238,6 +245,164 @@ def patch_modality(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
             module.set_num_modalities(num_modal)
     return layers
 
+
+def patch_temperature(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
+    cfg = config
+    if not cfg.get(KEY.USE_TEMPERATURE, False):
+        return layers
+
+    _layers = list(layers.items())
+    _layers = _insert_after(
+        'onehot_idx_to_onehot',
+        (
+            'temperature_encoding',
+            TemperatureEncoding(
+                temperature_key_in=KEY.TEMPERATURE,
+                temperature_key_out=KEY.TEMPERATURE_ENC,
+                temperature_encoding_function=cfg.get(KEY.TEMPERATURE_ENC_FUNC, 'sigmoid'),
+                temperature_encoding_params=cfg.get(KEY.TEMPERATURE_ENC_PARAMS, {}),
+            ),
+        ),
+        _layers,
+    )
+
+    n_basis = cfg.get(KEY.TEMPERATURE_ENC_PARAMS, {'num_basis': 8})['num_basis']
+
+    for k, module in layers.items():
+        if not isinstance(module, IrrepsLinear):
+            continue
+        if (
+            (cfg[KEY.USE_TEMPERATURE_NODE_EMBEDDING] and k.endswith('onehot_to_feature_x'))
+            or (
+                cfg[KEY.USE_TEMPERATURE_SELF_INTER_INTRO]
+                and k.endswith('self_interaction_1')
+            )
+            or (
+                cfg[KEY.USE_TEMPERATURE_SELF_INTER_OUTRO]
+                and k.endswith('self_interaction_2')
+            )
+            or (cfg[KEY.USE_TEMPERATURE_OUTPUT_BLOCK] and k == 'reduce_input_to_hidden')
+        ):
+            _layers = _insert_after(
+                k,
+                (
+                    f'temperature_block_{k}',
+                    TemperatureBlock(
+                        data_key_in=module.key_output,
+                        irreps_node=module.irreps_out,
+                        enc_dimension=n_basis,
+                    ),
+                ),
+                _layers,
+            )
+
+    out_module_key = 'reduce_hidden_to_energy'
+    out_module_key = 'reduce_hidden_to_energy' if out_module_key in layers.keys() else 'readout_FCN'
+    _layers = _insert_after(
+        out_module_key,
+        (
+            'reduce_hidden_to_entropy',
+            IrrepsLinear(
+                layers[out_module_key].irreps_in,
+                Irreps([(1, (0, 1))]),
+                data_key_in=KEY.NODE_FEATURE,
+                data_key_out=KEY.SCALED_ATOMIC_ENTROPY,
+                biases=config[KEY.USE_BIAS_IN_LINEAR],
+            ),
+        ),
+        _layers,
+    )
+    _layers = _insert_after(
+        out_module_key,
+        (
+            'reduce_hidden_to_asymptot',
+            IrrepsLinear(
+                layers[out_module_key].irreps_in,
+                Irreps([(1, (0, 1))]),
+                data_key_in=KEY.NODE_FEATURE,
+                data_key_out=KEY.SCALED_ATOMIC_ASYMPTOT,
+                biases=config[KEY.USE_BIAS_IN_LINEAR],
+            ),
+        ),
+        _layers,
+    )
+
+
+    entropy_shift_scale = init_shift_scale(config, entropy=True)
+    entropy_shift_scale.key_input = KEY.SCALED_ATOMIC_ENTROPY
+    entropy_shift_scale.key_output = KEY.ATOMIC_ENTROPY
+
+    asymptot_shift_scale = init_shift_scale(config, asymptot=True)
+    asymptot_shift_scale.key_input = KEY.SCALED_ATOMIC_ASYMPTOT
+    asymptot_shift_scale.key_output = KEY.ATOMIC_ASYMPTOT
+
+    _layers = _insert_after(
+        'rescale_atomic_energy',
+        (
+            'rescale_atomic_entropy',
+            entropy_shift_scale
+        ),
+        _layers,
+    )
+    _layers = _insert_after(
+        'rescale_atomic_energy',
+        (
+            'rescale_atomic_asymptot',
+            asymptot_shift_scale
+        ),
+        _layers,
+    )
+    _layers = _insert_after(
+        'rescale_atomic_entropy',
+        (
+            'temperature_gate',
+            TemperatureGate(
+                irreps_hidden=layers[out_module_key].irreps_in,
+                temperature_gate_function=cfg.get(KEY.TEMPERATURE_GATE_FUNCTION, 'gaussian'),
+                temperature_gate_params=cfg.get(KEY.TEMPERATURE_GATE_PARAMS, {}),
+                temperature_coeff_function=cfg.get(KEY.TEMPERATURE_COEFF_FUNCTION, 'uniform'),
+                temperature_coeff_params=cfg.get(KEY.TEMPERATURE_COEFF_PARAMS, {}),
+            )
+        ),
+        _layers,
+    )
+    _layers = _insert_after(
+        'reduce_total_enegy',
+        (
+            'reduce_total_entropy',
+            AtomReduce(
+                data_key_in=KEY.ATOMIC_ENTROPY,
+                data_key_out=KEY.PRED_TOTAL_HEAD_ENTROPY,
+            )
+        ),
+        _layers,
+    )
+    _layers = _insert_after(
+        'reduce_total_enegy',
+        (
+            'reduce_total_asymptot',
+            AtomReduce(
+                data_key_in=KEY.ATOMIC_ASYMPTOT,
+                data_key_out=KEY.PRED_TOTAL_HEAD_ASYMPTOT,
+            )
+        ),
+        _layers,
+    )
+    _layers = _insert_after(
+        'reduce_total_entropy',
+        (
+            'debye_block',
+            DebyeBlock(
+                debye_temperature=cfg.get(KEY.DEBYE_TEMPERATURE, 1000.),
+                trainable_coeff=cfg.get(KEY.TRAIN_DEBYE_TEMPERATURE, True),
+            )
+        ),
+        _layers,
+    )
+            
+    layers = OrderedDict(_layers)
+    return layers
+    
 
 def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     cue_cfg = copy.deepcopy(config.get(KEY.CUEQUIVARIANCE_CONFIG, {}))
@@ -361,6 +526,7 @@ def patch_oeq(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
 
 def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
+    layers = patch_temperature(layers, config)
     layers = patch_cue(layers, config)
     layers = patch_flash_tp(layers, config)
     layers = patch_oeq(layers, config)
@@ -620,9 +786,15 @@ def build_E3_equivariant_model(
         }
     )
 
-    gradient_module = ForceStressOutputFromEdge()
-    grad_key = gradient_module.get_grad_key()
-    layers.update({'force_output': gradient_module})
+    if config.get(KEY.USE_TEMPERATURE, False):
+        gradient_module = TemperatureOutputBlock()
+        grad_key = gradient_module.get_grad_key()
+        layers.update({'free_energy_output': gradient_module})
+
+    else:
+        gradient_module = ForceStressOutputFromEdge()
+        grad_key = gradient_module.get_grad_key()
+        layers.update({'force_output': gradient_module})
 
     common_args = {
         'cutoff': cutoff,

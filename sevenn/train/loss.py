@@ -2,6 +2,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 
+from ase.units import kB
+
 import sevenn._const as CONST
 import sevenn._keys as KEY
 
@@ -111,6 +113,162 @@ class PerAtomEnergyLoss(LossDefinition):
         assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
         pred = batch_data[self.pred_key] / num_atoms
         ref = batch_data[self.ref_key] / num_atoms
+        w_tensor = None
+
+        if self.use_weight:
+            loss_type = self.name.lower()
+            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
+            w_tensor = torch.repeat_interleave(weight, 1)
+
+        return pred, ref, w_tensor
+
+
+class PerAtomVibEntropyLoss(LossDefinition):
+    def __init__(
+        self,
+        name: str = 'Entropy',
+        unit: str = 'eV/atom/K',
+        criterion: Optional[Callable] = None,
+        ref_key: str = KEY.TOTAL_ENTROPY,
+        debye_key: str = KEY.DEBYE_ENTROPY,
+        pred_key: str = KEY.PRED_TOTAL_ENTROPY,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unit=unit,
+            criterion=criterion,
+            ref_key=ref_key,
+            pred_key=pred_key,
+            **kwargs,
+        )
+        self.debye_key = debye_key
+
+    def _preprocess(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        num_atoms = batch_data[KEY.NUM_ATOMS]
+        assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
+        pred = batch_data[self.pred_key] / num_atoms + batch_data[self.debye_key]
+        ref = batch_data[self.ref_key] / num_atoms
+        w_tensor = None
+
+        if self.use_weight:
+            loss_type = self.name.lower()
+            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
+            w_tensor = torch.repeat_interleave(weight, 1)
+
+        return pred, ref, w_tensor
+
+
+class PerAtomVibFreeEnergyLoss(LossDefinition):
+    def __init__(
+        self,
+        name: str = 'FreeEnergy',
+        unit: str = 'eV/atom',
+        criterion: Optional[Callable] = None,
+        ref_key: str = KEY.TOTAL_FREE_ENERGY,
+        debye_key: str = KEY.DEBYE_FREE_ENERGY,
+        pred_key: str = KEY.PRED_TOTAL_FREE_ENERGY,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unit=unit,
+            criterion=criterion,
+            ref_key=ref_key,
+            pred_key=pred_key,
+            **kwargs,
+        )
+        self.debye_key = debye_key
+
+    def _preprocess(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        num_atoms = batch_data[KEY.NUM_ATOMS]
+        assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
+        pred = batch_data[self.pred_key] / num_atoms + batch_data[self.debye_key]
+        ref = batch_data[self.ref_key] / num_atoms
+        w_tensor = None
+
+        if self.use_weight:
+            loss_type = self.name.lower()
+            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
+            w_tensor = torch.repeat_interleave(weight, 1)
+
+        return pred, ref, w_tensor
+
+
+class PerAtomHeatCapacityLoss(LossDefinition):
+    def __init__(
+        self,
+        name: str = 'HeatCapacity',
+        unit: str = 'eV/atom/K',
+        criterion: Optional[Callable] = None,
+        ref_key: str = KEY.TOTAL_HEAT_CAPACITY,
+        debye_key: str = KEY.DEBYE_HEAT_CAPACITY,
+        pred_key: str = KEY.PRED_TOTAL_HEAT_CAPACITY,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unit=unit,
+            criterion=criterion,
+            ref_key=ref_key,
+            pred_key=pred_key,
+            **kwargs,
+        )
+        self.debye_key = debye_key
+
+    def _preprocess(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        num_atoms = batch_data[KEY.NUM_ATOMS]
+        assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
+        pred = batch_data[self.pred_key] / num_atoms + batch_data[self.debye_key]
+        ref = batch_data[self.ref_key] / num_atoms
+        w_tensor = None
+
+        if self.use_weight:
+            loss_type = self.name.lower()
+            weight = batch_data[KEY.DATA_WEIGHT][loss_type]
+            w_tensor = torch.repeat_interleave(weight, 1)
+
+        return pred, ref, w_tensor
+
+
+class PerAtomVibAsymptotLoss(LossDefinition):
+    def __init__(
+        self,
+        name: str = 'Asymptot',
+        unit: str = 'eV*K/atom',
+        criterion: Optional[Callable] = None,
+        ref_key: str = KEY.TOTAL_ASYMPTOT,
+        debye_key: str = KEY.DEBYE_ASYMPTOT,
+        pred_key: str = KEY.PRED_TOTAL_HEAD_ASYMPTOT,
+        heat_capacity_power: int = 4,
+        **kwargs,
+    ) -> None:
+        super().__init__(
+            name=name,
+            unit=unit,
+            criterion=criterion,
+            ref_key=ref_key,
+            pred_key=pred_key,
+            **kwargs,
+        )
+        self.debye_key = debye_key
+        self.heat_capacity_power = heat_capacity_power
+
+    def _preprocess(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ) -> Tuple[torch.Tensor, torch.Tensor, Optional[torch.Tensor]]:
+        num_atoms = batch_data[KEY.NUM_ATOMS]
+        per_atom_heat_capacity = batch_data[KEY.PER_ATOM_HEAT_CAPACITY]
+        cv_weight = (per_atom_heat_capacity / 3 / kB) ** self.heat_capacity_power  # range 0 to 1, high for converged Cv = 3 kB
+        assert isinstance(self.pred_key, str) and isinstance(self.ref_key, str)
+        pred = cv_weight * (batch_data[self.pred_key] / num_atoms + batch_data[self.debye_key])
+        ref = cv_weight * (batch_data[self.ref_key] / num_atoms)
         w_tensor = None
 
         if self.use_weight:
@@ -254,6 +412,76 @@ class L2Regularization(LossDefinition):
         return ret
 
 
+class TemperatureEncodingRegularization(LossDefinition):
+    def __init__(
+        self,
+        name: str,# 'L2_T_enc'
+        module_keys: List[str],
+        heat_capacity_power: int=4,
+    ):
+        super().__init__(
+            name=name,
+            unit=None,
+            criterion=None,
+            ref_key=None,
+            pred_key=None,
+        )
+        self.module_keys = module_keys
+        self.heat_capacity_power = heat_capacity_power
+
+    def get_loss(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ):
+        encoding = batch_data[KEY.TEMPERATURE_ENC]
+        per_atom_heat_capacity = batch_data[KEY.PER_ATOM_HEAT_CAPACITY]
+        weight = (per_atom_heat_capacity / 3 / kB) ** self.heat_capacity_power  # range 0 to 1, high for converged Cv = 3 kB
+
+        device = batch_data['x'].device
+        ret = torch.tensor([0.0], device=device)
+
+        for module_key in self.module_keys:
+            module = model._modules[module_key]
+            embedding = module.linear(encoding)
+            l2_norm = torch.sum(torch.pow(embedding, 2), dim=1)
+            ret = ret + torch.mean(weight * l2_norm)
+
+        return ret
+
+
+class TemperatureGateRegularization(LossDefinition):
+    def __init__(
+        self,
+        name: str,# 'L2_T_gate'
+        heat_capacity_power: int=4,
+    ):
+        super().__init__(
+            name=name,
+            unit=None,
+            criterion=None,
+            ref_key=None,
+            pred_key=None,
+        )
+        self.heat_capacity_power = heat_capacity_power
+
+
+    def get_loss(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ):
+        per_atom_heat_capacity = batch_data[KEY.PER_ATOM_HEAT_CAPACITY]
+        weight = (per_atom_heat_capacity / 3 / kB) ** self.heat_capacity_power  # range 0 to 1, high for converged Cv = 3 kB
+
+        gate_value = batch_data['_gate'].squeeze(-1)
+        reg_each_atom = 1. - gate_value
+        reg_loss = torch.zeros(
+            (int(batch_data[KEY.BATCH].max())+1),
+            dtype = reg_each_atom.dtype,
+            device = reg_each_atom.device, 
+        ).scatter_reduce_(0, batch_data[KEY.BATCH], reg_each_atom, reduce='sum')
+        reg_loss = reg_loss / batch_data[KEY.NUM_ATOMS]
+
+        return torch.mean(weight * reg_loss)
+
+
 def _get_modal_module_keys_for_reg(
     config: Dict[str, Any], all_module_keys: List[str]
 ) -> List[str]:
@@ -274,6 +502,25 @@ def _get_modal_module_keys_for_reg(
     return module_keys_to_reg
 
 
+def _get_temperature_block_keys_for_reg(
+    config: Dict[str, Any], all_module_keys: List[str]
+) -> List[str]:
+    tblock_keys_to_reg = []
+    for module_key in all_module_keys:
+        for (
+            use_tblock_module_key,
+            tblock_module_name,
+        ) in CONST.IMPLEMENTED_TEMPERATURE_BLOCK_DICT.items():
+            if (
+                not config[use_tblock_module_key]
+                or tblock_module_name not in module_key
+                or 'temperature_block' not in module_key
+            ):
+                continue
+            tblock_keys_to_reg.append(module_key)
+    return tblock_keys_to_reg
+
+
 def get_regularization_from_config(
     config: Dict[str, Any], all_module_keys: List[str]
 ) -> List[Tuple[LossDefinition, float]]:
@@ -281,18 +528,36 @@ def get_regularization_from_config(
     reg_functions: List[Tuple[LossDefinition, float]] = []
 
     modal_param = reg_params.get('modal', {})
-    if not modal_param:
-        return reg_functions
+    if modal_param:
+        reg_weight = float(modal_param.get(KEY.REG_WEIGHT, 1e-5))
+        module_keys_to_reg = _get_modal_module_keys_for_reg(
+            config, all_module_keys
+        )
 
-    reg_weight = float(modal_param.get(KEY.REG_WEIGHT, 1e-5))
-    module_keys_to_reg = _get_modal_module_keys_for_reg(
-        config, all_module_keys
-    )
+        reg_functions.append((
+            L2Regularization('L2_modal', module_keys_to_reg, reg_modal_only=True),
+            reg_weight,
+        ))
 
-    reg_functions.append((
-        L2Regularization('L2_modal', module_keys_to_reg, reg_modal_only=True),
-        reg_weight,
-    ))
+    t_enc_param = reg_params.get('temperature_encoding', {})
+    if t_enc_param:
+        reg_weight = float(t_enc_param.get(KEY.REG_WEIGHT, 1e-5))
+        module_keys_to_reg = _get_temperature_block_keys_for_reg(
+            config, all_module_keys
+        )
+
+        reg_functions.append((
+            TemperatureEncodingRegularization('L2_T_enc', module_keys_to_reg, t_enc_param.get('heat_capacity_power', 4)),
+            reg_weight,
+        ))
+
+    t_gate_param = reg_params.get('temperature_gate', {})
+    if t_gate_param:
+        reg_weight = float(t_gate_param.get(KEY.REG_WEIGHT, 1e-5))
+        reg_functions.append((
+            TemperatureGateRegularization('L2_T_gate', t_gate_param.get('heat_capacity_power', 4)),
+            reg_weight,
+        ))
 
     return reg_functions
 
@@ -316,6 +581,9 @@ def get_loss_functions_from_config(
     config: Dict[str, Any]
 ) -> List[Tuple[LossDefinition, float]]:
     from sevenn.train.optim import loss_dict
+
+    if config.get(KEY.USE_TEMPERATURE, False):
+        return get_vib_loss_func_from_config(config)
 
     loss_functions = []  # list of tuples (loss_definition, weight)
 
@@ -350,6 +618,51 @@ def get_loss_functions_from_config(
                 raise NotImplementedError('L2MAE not implemented for energy.')
             else:
                 loss_param.update({'prop': key})
+
+        loss_cls = loss_dict[loss_type]
+        if use_weight:
+            loss_param['reduction'] = 'none'
+        criterion = loss_cls(**loss_param)
+        loss_function_cls = loss_function_cls_dict[key]
+        loss_function = loss_function_cls(criterion=criterion, **commons)
+        loss_functions.append((loss_function, loss_weight))
+
+    return loss_functions
+
+
+def get_vib_loss_func_from_config(config):
+    from sevenn.train.optim import loss_dict
+    loss_functions = []
+    loss_info_dict = config[KEY.LOSS]
+
+    loss_function_cls_dict = {
+        'entropy': PerAtomVibEntropyLoss,
+        'free_energy': PerAtomVibFreeEnergyLoss,
+        'heat_capacity': PerAtomHeatCapacityLoss,
+        'asymptot': PerAtomVibAsymptotLoss,
+    }
+    loss_weights = {
+        'entropy': config.get(KEY.ENTROPY_WEIGHT, 1000.0),
+        'free_energy': config.get(KEY.FREE_ENERGY_WEIGHT, 1.0),
+        'heat_capacity': config.get(KEY.HEAT_CAPACITY_WEIGHT, 1000.0),
+        'asymptot': config.get(KEY.ASYMPTOT_WEIGHT, 1.0),
+    }
+
+    use_weight = config.get(KEY.USE_WEIGHT, False)
+    commons = {'use_weight': use_weight}
+
+    keys = ['entropy', 'free_energy']
+    if config[KEY.IS_TRAIN_HEAT_CAPACITY]:
+        keys += ['heat_capacity']
+    if config[KEY.IS_TRAIN_ASYMPTOT]:
+        keys += ['asymptot']
+
+    for key in keys:
+        loss_info = loss_info_dict.get(key, {})
+        loss_param = loss_info.get(KEY.LOSS_PARAM, {})
+        loss_weight = loss_info.get(KEY.LOSS_WEIGHT, loss_weights[key])
+        if (loss_type := loss_info.get(KEY.LOSS_TYPE, 'mse').lower()) == 'l2mae':
+            raise NotImplementedError('L2MAE not implemented for ThreeNet.')
 
         loss_cls = loss_dict[loss_type]
         if use_weight:

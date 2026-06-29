@@ -47,6 +47,11 @@ class Trainer:
         device: Union[torch.device, str] = 'auto',
         distributed: bool = False,
         distributed_backend: str = 'nccl',
+        train_temperature_block_only: bool = False,
+        train_energy_head: bool = True,
+        train_entropy_head: bool = True,
+        train_asymptot_head: bool = True,
+        is_train_heat_capacity: bool = False,
     ) -> None:
         if device == 'auto':
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -65,16 +70,69 @@ class Trainer:
                 raise ValueError(f'Unknown DDP backend: {distributed_backend}')
             dist.barrier()
             self.model.module.set_is_batch_data(True)
+            self.model.module.infer_heat_capacity(is_train_heat_capacity)
+            self.model.module.infer_debye(True)
         else:
             self.model = model.to(device)
             self.model.set_is_batch_data(True)
+            self.model.infer_heat_capacity(is_train_heat_capacity)
+            self.model.infer_debye(True)
             self.rank = 0
 
         self.device = torch.device(device)
         self.distributed = distributed
 
         optimizer_args = optimizer_args or {}
-        param = [p for p in self.model.parameters() if p.requires_grad]
+        train_module_names = [
+            n for n, p in self.model.named_parameters()
+            if p.requires_grad and (
+                (not train_temperature_block_only or any([n.startswith(module_name) for module_name in ['temperature_', 'debye_']]))  # train temperature block only
+                or (
+                    any([
+                           n.startswith(module_name) for module_name in [
+                                'reduce_input_to_hidden',
+                                'reduce_hidden_to_energy',
+                                'readout_FCN',
+                                'rescale_atomic_energy'
+                            ]
+                    ])
+                    and train_energy_head
+                )  # train energy head
+                or (
+                    any([
+                           n.startswith(module_name) for module_name in [
+                                'reduce_hidden_to_entropy',
+                                'rescale_atomic_entropy'
+                        ]
+                    ]) 
+                    and train_entropy_head
+                )  # train entropy head
+                or (
+                    any([
+                           n.startswith(module_name) for module_name in [
+                                'reduce_hidden_to_asymptot',
+                                'rescale_atomic_asymptot'
+                        ]
+                    ]) 
+                    and train_asymptot_head
+                )  # train asymptot head
+            )
+        ]
+
+        param = []
+        for n, p in self.model.named_parameters():
+            if n not in train_module_names:
+                p.requires_grad=False
+            else:
+                param.append(p)
+
+        """
+        for n, p in self.model.named_parameters():
+            if n not in train_module_names:
+                print('not in param', n, p.requires_grad, flush=True)
+            else:
+                print('in param', n, flush=True)
+        """
         self.optimizer = optimizer_cls(param, **optimizer_args)
         if scheduler_cls is not None:
             scheduler_args = scheduler_args or {}
@@ -104,6 +162,11 @@ class Trainer:
             device=config.get(KEY.DEVICE, 'auto'),
             distributed=config.get(KEY.IS_DDP, False),
             distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
+            train_temperature_block_only=config.get(KEY.TRAIN_TEMPERATURE_BLOCK_ONLY, False),
+            train_energy_head=config.get(KEY.TRAIN_ENERGY_HEAD, True),
+            train_entropy_head=config.get(KEY.TRAIN_ENTROPY_HEAD, False),
+            train_asymptot_head=config.get(KEY.TRAIN_ASYMPTOT_HEAD, False),
+            is_train_heat_capacity=config.get(KEY.IS_TRAIN_HEAT_CAPACITY, False),
         )
         return trainer
 

@@ -116,6 +116,7 @@ def unlabeled_atoms_to_graph(
         KEY.NODE_FEATURE: atomic_numbers,  # just placeholder
         KEY.ATOMIC_NUMBERS: atomic_numbers,
         KEY.POS: pos,
+        KEY.TEMPERATURE: _correct_scalar(atoms.info.get('temperature', np.nan)),
         KEY.EDGE_IDX: edge_idx,
         KEY.EDGE_VEC: edge_vec,
         KEY.CELL_VOLUME: _correct_scalar(atoms.cell.volume),
@@ -158,6 +159,11 @@ def atoms_to_graph(
     """
     if not y_from_calc:
         y_energy = atoms.info['y_energy']
+        y_free_energy = atoms.info['y_free_energy']
+        y_entropy = atoms.info['y_entropy']
+        y_heat_capacity = atoms.info['y_heat_capacity']
+        y_asymptot = atoms.info['y_asymptot']
+        temperature = atoms.info['temperature']
         y_force = atoms.arrays['y_force']
         y_stress = atoms.info.get('y_stress', np.full((6,), np.nan))
         if y_stress.shape == (3, 3):
@@ -176,6 +182,11 @@ def atoms_to_graph(
     else:
         from_calc = _y_from_calc(atoms)
         y_energy = from_calc['energy']
+        y_free_energy = from_calc['free_energy']
+        y_entropy = from_calc['entropy']
+        y_heat_capacity = from_calc['heat_capacity']
+        y_asymptot = from_calc['asymptot']
+        temperature = from_calc['temperature']
         y_force = from_calc['force']
         y_stress = from_calc['stress']
     assert y_stress.shape == (6,), 'If you see this, please raise a issue'
@@ -204,6 +215,16 @@ def atoms_to_graph(
         KEY.CELL_VOLUME: _correct_scalar(atoms.cell.volume),
         KEY.NUM_ATOMS: _correct_scalar(len(atomic_numbers)),
         KEY.PER_ATOM_ENERGY: _correct_scalar(y_energy / len(pos)),
+
+        KEY.TEMPERATURE: _correct_scalar(temperature),
+        KEY.TOTAL_FREE_ENERGY: _correct_scalar(y_free_energy),
+        KEY.PER_ATOM_FREE_ENERGY: _correct_scalar(y_free_energy / len(pos)),
+        KEY.TOTAL_ENTROPY: _correct_scalar(y_entropy),
+        KEY.PER_ATOM_ENTROPY: _correct_scalar(y_entropy / len(pos)),
+        KEY.TOTAL_HEAT_CAPACITY: _correct_scalar(y_heat_capacity),
+        KEY.PER_ATOM_HEAT_CAPACITY: _correct_scalar(y_heat_capacity / len(pos)),
+        KEY.TOTAL_ASYMPTOT: _correct_scalar(y_asymptot),
+        KEY.PER_ATOM_ASYMPTOT: _correct_scalar(y_asymptot / len(pos)),
     }
 
     if with_shift:
@@ -272,6 +293,11 @@ def graph_build(
 def _y_from_calc(atoms: ase.Atoms):
     ret = {
         'energy': np.nan,
+        'free_energy': np.nan,
+        'entropy': np.nan,
+        'heat_capacity': np.nan,
+        'asymptot': np.nan,
+        'temperature': np.nan,
         'force': np.full((len(atoms), 3), np.nan),
         'stress': np.full((6,), np.nan),
     }
@@ -294,12 +320,43 @@ def _y_from_calc(atoms: ase.Atoms):
         ret['stress'] = np.array(y_stress[[0, 1, 2, 5, 3, 4]])
     except RuntimeError:
         pass
+
+    try:
+        ret['free_energy'] = atoms.info['vib_free_energy']
+    except:
+        pass
+
+    try:
+        ret['entropy'] = atoms.info['vib_entropy']
+    except:
+        pass
+
+    try:
+        ret['heat_capacity'] = atoms.info['heat_capacity']
+    except:
+        pass
+
+    try:
+        ret['asymptot'] = atoms.info['asymptot']
+    except:
+        pass
+
+    try:
+        ret['temperature'] = atoms.info['temperature']
+    except:
+        pass
+
     return ret
 
 
 def _set_atoms_y(
     atoms_list: List[ase.Atoms],
     energy_key: Optional[str] = None,
+    free_energy_key: Optional[str] = None,
+    temperature_key: Optional[str] = None,
+    entropy_key: Optional[str] = None,
+    heat_capacity_key: Optional[str] = None,
+    asymptot_key: Optional[str] = None,
     force_key: Optional[str] = None,
     stress_key: Optional[str] = None,
 ) -> List[ase.Atoms]:
@@ -333,6 +390,31 @@ def _set_atoms_y(
             atoms.info['y_energy'] = atoms.info.pop(energy_key)
         else:
             atoms.info['y_energy'] = from_calc['energy']
+
+        if free_energy_key is not None:
+            atoms.info['y_free_energy'] = atoms.info.pop(free_energy_key)
+        else:
+            atoms.info['y_free_energy'] = from_calc['free_energy']
+
+        if entropy_key is not None:
+            atoms.info['y_entropy'] = atoms.info.pop(entropy_key)
+        else:
+            atoms.info['y_entropy'] = from_calc['entropy']
+
+        if heat_capacity_key is not None:
+            atoms.info['y_heat_capacity'] = atoms.info.pop(heat_capacity_key)
+        else:
+            atoms.info['y_heat_capacity'] = from_calc['heat_capacity']
+
+        if asymptot_key is not None:
+            atoms.info['y_asymptot'] = atoms.info.pop(asymptot_key)
+        else:
+            atoms.info['y_asymptot'] = from_calc['asymptot']
+
+        if temperature_key is not None:
+            atoms.info['temperature'] = atoms.info.pop(temperature_key)
+        else:
+            atoms.info['temperature'] = from_calc['temperature']
 
         if force_key is not None:
             atoms.arrays['y_force'] = atoms.arrays.pop(force_key)

@@ -10,6 +10,8 @@ from typing import (
     Union,
 )
 
+from ase.units import kB
+
 import torch
 import torch.distributed as dist
 
@@ -34,6 +36,54 @@ _ERROR_TYPES = {
         'ref_key': KEY.ENERGY,
         'pred_key': KEY.PRED_TOTAL_ENERGY,
         'unit': 'eV/atom',
+        'per_atom': True,
+        'vdim': 1,
+    },
+    'Entropy': {  # by default per-atom for energy
+        'name': 'Entropy',
+        'ref_key': KEY.TOTAL_ENTROPY,
+        'pred_key': KEY.PRED_TOTAL_ENTROPY,
+        'debye_key': KEY.DEBYE_ENTROPY,
+        'unit': 'meV/atom/K',
+        'per_atom': True,
+        'coeff': 1000,
+        'vdim': 1,
+    },
+    'FreeEnergy': {  # by default per-atom for energy
+        'name': 'FreeEnergy',
+        'ref_key': KEY.TOTAL_FREE_ENERGY,
+        'pred_key': KEY.PRED_TOTAL_FREE_ENERGY,
+        'debye_key': KEY.DEBYE_FREE_ENERGY,
+        'unit': 'eV/atom',
+        'per_atom': True,
+        'vdim': 1,
+    },
+    'HeatCapacity': {
+        'name': 'HeatCapacity',
+        'ref_key': KEY.TOTAL_HEAT_CAPACITY,
+        'pred_key': KEY.PRED_TOTAL_HEAT_CAPACITY,
+        'debye_key': KEY.DEBYE_HEAT_CAPACITY,
+        'unit': 'meV/atom/K',
+        'per_atom': True,
+        'coeff': 1000,
+        'vdim': 1,
+    },
+    'HeatCapacity_kB': {
+        'name': 'HeatCapacity',
+        'ref_key': KEY.TOTAL_HEAT_CAPACITY,
+        'pred_key': KEY.PRED_TOTAL_HEAT_CAPACITY,
+        'debye_key': KEY.DEBYE_HEAT_CAPACITY,
+        'unit': 'kB/atom',
+        'per_atom': True,
+        'coeff': 1/kB,
+        'vdim': 1,
+    },
+    'Asymptot': {
+        'name': 'Asymptot',
+        'ref_key': KEY.TOTAL_ASYMPTOT,
+        'pred_key': KEY.PRED_TOTAL_HEAD_ASYMPTOT,
+        'debye_key': KEY.DEBYE_ASYMPTOT,
+        'unit': 'eV*K/atom',
         'per_atom': True,
         'vdim': 1,
     },
@@ -62,6 +112,18 @@ _ERROR_TYPES = {
     },
     'L2_modal': {
         'name': 'L2_modal',
+        'ref_key': None,
+        'pred_key': None,
+        'unit': None,
+    },
+    'L2_T_enc': {
+        'name': 'L2_T_enc',
+        'ref_key': None,
+        'pred_key': None,
+        'unit': None,
+    },
+    'L2_T_gate': {
+        'name': 'L2_T_gate',
         'ref_key': None,
         'pred_key': None,
         'unit': None,
@@ -134,6 +196,7 @@ class ErrorMetric:
         unit: Optional[str] = None,
         per_atom: bool = False,
         ignore_unlabeled: bool = True,
+        debye_key: Optional[str] = None,
         **kwargs,
     ) -> None:
         self.name = name
@@ -143,6 +206,7 @@ class ErrorMetric:
         self.pred_key = pred_key
         self.per_atom = per_atom
         self.ignore_unlabeled = ignore_unlabeled
+        self.debye_key = debye_key
         self.value = AverageNumber()
 
     def update(
@@ -164,6 +228,8 @@ class ErrorMetric:
             unlabelled_idx = torch.isnan(y_ref)
             y_ref = y_ref[~unlabelled_idx]
             y_pred = y_pred[~unlabelled_idx]
+        if self.debye_key is not None:
+            y_pred += output[self.debye_key] * self.coeff
         return y_ref, y_pred
 
     def ddp_reduce(self, device: torch.device) -> None:
@@ -463,6 +529,48 @@ class ErrorRecorder:
         return total_loss_metric
 
     @staticmethod
+    def init_vib_total_loss_metric(
+        config: Dict[str, Any],
+        criteria: Optional[Callable] = None,
+        loss_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
+    ) -> ErrorMetric:
+        if criteria is None and loss_functions is None:
+            raise ValueError('both criteria and loss functions not given')
+
+        is_heat_capacity = config[KEY.IS_TRAIN_HEAT_CAPACITY]
+        is_asymptot = config[KEY.IS_TRAIN_ASYMPTOT]
+        metrics = []
+        if criteria is not None:
+            free_energy_metric = CustomError(criteria, **get_err_type('FreeEnergy'))
+            metrics.append((free_energy_metric, config[KEY.ENTROPY_WEIGHT]))
+            entropy_metric = CustomError(criteria, **get_err_type('FreeEnergy'))
+            metrics.append((entropy_metric, config[KEY.ENTROPY_WEIGHT]))
+            if is_heat_capacity:
+                heat_capacity_metric = CustomError(criteria, **get_err_type('HeatCapacity'))
+                metrics.append((heat_capacity_metric, config[KEY.HEAT_CAPACITY_WEIGHT]))
+            if is_asymptot:
+                asymptot_metric = CustomError(criteria, **get_err_type('Asymptot'))
+                metrics.append((asymptot_metric, config[KEY.ASYMPTOT_WEIGHT]))
+
+        else:
+            for name in ['FreeEnergy', 'Entropy', 'HeatCapacity', 'Asymptot']:
+                if name == 'HeatCapacity' and not is_heat_capacity:
+                    continue
+                if name == 'Asymptot' and not is_asymptot:
+                    continue
+                lf, w = _get_loss_function_from_name(loss_functions, name)
+                if lf is None:
+                    raise ValueError(f'{name} not found from loss_functions')
+                metric = LossError(loss_def=lf, **get_err_type(name))
+                metrics.append((metric, w))
+
+        total_loss_metric = CombinedError(
+            metrics, name='TotalLoss', unit=None, ref_key=None, pred_key=None
+        )
+        return total_loss_metric
+
+
+    @staticmethod
     def from_config(
         config: Dict[str, Any],
         loss_functions: Optional[List[Tuple[LossDefinition, float]]] = None,
@@ -472,8 +580,14 @@ class ErrorRecorder:
         if isinstance(loss_info_dict, str):
             loss_info_dict = make_loss_info_dict_from_config(config)
 
+        err_types = (
+            ['Energy', 'Force', 'Stress']
+            if not config[KEY.USE_TEMPERATURE]
+            else ['FreeEnergy', 'Entropy', 'HeatCapacity', 'Asymptot']
+        )
+
         criteria_dict = {}
-        for err_type in ['Energy' ,'Force', 'Stress']:
+        for err_type in err_types:
             loss_cls = loss_dict[loss_info_dict.get(KEY.LOSS_TYPE, 'mse').lower()]
             loss_param = loss_info_dict.get(KEY.LOSS_PARAM, {})
             criteria = loss_cls(**loss_param) if loss_functions is None else None
@@ -501,16 +615,34 @@ class ErrorRecorder:
                 err_config_n.append((err_type, metric_name))
             err_config = err_config_n
 
+        if not config.get(KEY.IS_TRAIN_HEAT_CAPACITY, True):
+            for err_type, metric_name in err_config:
+                if 'HeatCapacity' in err_type:
+                    continue
+                err_config_n.append((err_type, metric_name))
+            err_config = err_config_n
+
+        if not config.get(KEY.IS_TRAIN_ASYMPTOT, True):
+            for err_type, metric_name in err_config:
+                if 'Asymptot' in err_type:
+                    continue
+                err_config_n.append((err_type, metric_name))
+            err_config = err_config_n
+
         err_metrics = []
         for err_type, metric_name in err_config:
             metric_kwargs = get_err_type(err_type)
             criteria = criteria_dict.get(err_type, None)
             if err_type == 'TotalLoss':  # special case
-                err_metrics.append(
-                    ErrorRecorder.init_total_loss_metric(
+                if config[KEY.USE_TEMPERATURE]:
+                    total_loss_metric = ErrorRecorder.init_vib_total_loss_metric(
                         config, criteria, all_loss_functions
                     )
-                )
+                else:
+                    total_loss_metric = ErrorRecorder.init_total_loss_metric(
+                        config, criteria, all_loss_functions
+                    )
+                err_metrics.append(total_loss_metric)
                 continue
             elif err_type == 'Modal_cos':  # special case
                 metric_cls = ModalWeightCosine
@@ -535,3 +667,4 @@ class ErrorRecorder:
             metric_kwargs['name'] += f'_{metric_name}'
             err_metrics.append(metric_cls(**metric_kwargs))
         return ErrorRecorder(err_metrics)
+
