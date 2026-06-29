@@ -52,6 +52,7 @@ class BaseBasis(nn.Module):
         else:
             raise ValueError('Initial shift value should be list of float or float/int')
 
+        self.num_basis = num_basis
         self.initial_T0 = nn.Parameter(self.initial_T0, requires_grad=trainable_coeff)
         self.initial_shift = nn.Parameter(self.initial_shift, requires_grad=trainable_coeff)
 
@@ -63,6 +64,7 @@ class BaseBasis(nn.Module):
     def forward(self, temperature: torch.Tensor) -> torch.Tensor:
         t = temperature.unsqueeze(-1)
         val = self.enc_function(t / self.softplus(self.initial_T0) - self.relu(self.initial_shift))
+        val[torch.isinf(t).repeat((1, self.num_basis))] = 0.
         if self.as_gate:
             return 1. - val
         return val
