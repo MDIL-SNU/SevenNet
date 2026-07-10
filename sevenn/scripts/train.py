@@ -1,5 +1,4 @@
 import importlib.util
-import math
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -197,7 +196,12 @@ def train_v2(config: Dict[str, Any], working_dir: str) -> None:
 
     if train_by_batch:
         processing_by_batch(
-            config, trainer, loaders, data_progress, start_epoch, working_dir
+            config,
+            trainer,
+            loaders,
+            data_progress,
+            start_epoch,
+            working_dir=working_dir,
         )
     else:
         processing_epoch_v2(
