@@ -3,8 +3,9 @@ All notable changes to this project will be documented in this file.
 
 ## [0.13.1.dev]
 ### Added
-- L2MAE loss
-- OrderedSampler, batch training
+- Training features used for SevenNet-Omni: batch training, `OrderedSampler`, `grad_clip`, `onecyclelr`
+- Loss: MAE, L2MAE
+- Dataset type: `aselmdb`, `custom`
 
 ### Fixed
 - `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
