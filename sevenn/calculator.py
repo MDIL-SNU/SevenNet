@@ -37,6 +37,7 @@ class SevenNetCalculator(Calculator):
         enable_oeq: bool = False,
         compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
+        shift_scale_dtype: str = 'double',
         **kwargs,
     ) -> None:
         """Initialize SevenNetCalculator.
@@ -67,10 +68,14 @@ class SevenNetCalculator(Calculator):
             Not used, but can be used to carry meta information of this calculator
         compute_atomic_virial: bool, default=False
             If True, request per-atom virial output (`stresses`) at runtime.
+        shift_scale_dtype: str, default='double'
+            dtype of the final shift/scale (rescale) parameters used at inference.
+            'single' is only for backward reproducibility.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
         self.compute_atomic_virial = compute_atomic_virial
+        self.shift_scale_dtype = shift_scale_dtype
 
         if isinstance(model, pathlib.PurePath):
             model = str(model)
@@ -118,7 +123,8 @@ class SevenNetCalculator(Calculator):
             cp = util.load_checkpoint(model)
 
             model_loaded = cp.build_model(
-                enable_cueq=enable_cueq, enable_flash=enable_flash, enable_oeq=enable_oeq  # noqa: E501
+                enable_cueq=enable_cueq, enable_flash=enable_flash, enable_oeq=enable_oeq,  # noqa: E501
+                shift_scale_dtype=shift_scale_dtype,
             )
             model_loaded.set_is_batch_data(False)
 
@@ -248,6 +254,7 @@ class SevenNetD3Calculator(SumCalculator):
         functional_name: str = 'pbe',
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
+        shift_scale_dtype: Optional[str] = 'double',
         **kwargs,  # pass extra kwargs to both calculators
     ) -> None:
         """Initialize SevenNetD3Calculator. CUDA required.
@@ -308,10 +315,18 @@ class SevenNetD3Calculator(SumCalculator):
             enable_flash=enable_flash,
             enable_oeq=enable_oeq,
             sevennet_config=sevennet_config,
+            shift_scale_dtype=shift_scale_dtype,
             **kwargs,
         )
 
         super().__init__([sevennet_calc, d3_calc])
+
+    def calculate(self, atoms=None, properties=None, system_changes=all_changes):
+        # To match the precision of SevenNetCalculator output
+        super().calculate(atoms, properties, system_changes)
+        for key in ('forces', 'stress', 'stresses'):
+            if key in self.results:
+                self.results[key] = np.asarray(self.results[key], dtype=np.float32)
 
 
 def _load(name: str) -> ctypes.CDLL:

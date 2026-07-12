@@ -167,7 +167,11 @@ def init_shift_scale(
         shift_scale.append(s)
     shift, scale = shift_scale
 
-    ss_kwargs = {'train_shift': train_shift, 'train_scale': train_scale}
+    ss_kwargs = {
+        'train_shift': train_shift,
+        'train_scale': train_scale,
+        'shift_scale_dtype': config.get(KEY.SHIFT_SCALE_DTYPE, 'double'),
+    }
     rescale_module = None
     if config.get(KEY.USE_MODALITY, False):
         rescale_module = ModalWiseRescale.from_mappers(  # type: ignore

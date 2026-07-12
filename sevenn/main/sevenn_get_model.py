@@ -62,6 +62,15 @@ def add_args(parser):
         help='Use LAMMPS ML-IAP interface.',
         action='store_true',
     )
+    ag.add_argument(
+        '--shift_scale_dtype',
+        choices=('double', 'single'),
+        default='double',
+        help=(
+            'dtype of final shift/scale energy rescaling at inference. '
+            'Default is double; single is for backward compatibility.'
+        ),
+    )
 
 
 def run(args):
@@ -76,6 +85,7 @@ def run(args):
     use_cueq = args.enable_cueq
     use_oeq = args.enable_oeq
     use_mliap = args.use_mliap
+    shift_scale_dtype = args.shift_scale_dtype
 
     # Check dependencies
     if use_flash:
@@ -119,9 +129,15 @@ def run(args):
         from sevenn.scripts.deploy import deploy, deploy_parallel
 
         if get_serial:
-            deploy(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
+            deploy(
+                checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq,  # noqa: E501
+                shift_scale_dtype=shift_scale_dtype
+            )
         else:
-            deploy_parallel(checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq)  # noqa: E501
+            deploy_parallel(
+                checkpoint_path, output_prefix, modal, use_flash=use_flash, use_oeq=use_oeq,  # noqa: E501
+                shift_scale_dtype=shift_scale_dtype
+            )
     else:
         from sevenn import mliap
 
@@ -139,6 +155,7 @@ def run(args):
             use_cueq=use_cueq,
             use_flash=use_flash,
             use_oeq=use_oeq,
+            shift_scale_dtype=shift_scale_dtype,
         )
         torch.save(mliap_module, output_prefix)
 

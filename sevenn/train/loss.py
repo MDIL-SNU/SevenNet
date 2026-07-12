@@ -75,6 +75,10 @@ class LossDefinition:
             assert self.ref_key is not None
             return torch.zeros(1, device=batch_data[self.ref_key].device)
 
+        ref = ref.to(dtype=pred.dtype)
+        if w_tensor is not None:
+            w_tensor = w_tensor.to(dtype=pred.dtype)
+
         loss = self.criterion(pred, ref)
         if self.use_weight:
             loss = torch.mean(loss * w_tensor)

@@ -19,6 +19,7 @@ def deploy(
     modal: Optional[str] = None,
     use_flash: bool = False,
     use_oeq: bool = False,
+    shift_scale_dtype: str = 'double',
 ) -> None:
     if not (use_flash or use_oeq):
         warn_no_tp_accelerator('LAMMPS TorchScript deployment')
@@ -30,6 +31,7 @@ def deploy(
             enable_flash=use_flash,
             enable_oeq=use_oeq,
             _flash_lammps=use_flash,
+            shift_scale_dtype=shift_scale_dtype,
         ),
         cp.config,
     )
@@ -69,6 +71,7 @@ def deploy(
     )
     md_configs.update({'version': __version__})
     md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
+    md_configs.update({'shift_scale_dtype': shift_scale_dtype})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     if fname.endswith('.pt') is False:
@@ -83,6 +86,7 @@ def deploy_parallel(
     modal: Optional[str] = None,
     use_flash: bool = False,
     use_oeq: bool = False,
+    shift_scale_dtype: str = 'double',
 ) -> None:
     if not (use_flash or use_oeq):
         warn_no_tp_accelerator(
@@ -100,12 +104,14 @@ def deploy_parallel(
             enable_flash=use_flash,
             enable_oeq=use_oeq,
             _flash_lammps=use_flash,
+            shift_scale_dtype=shift_scale_dtype,
         ),
         cp.config,
     )
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
     config[KEY.USE_FLASH_TP] = use_flash
     config[KEY.USE_OEQ] = use_oeq
+    config[KEY.SHIFT_SCALE_DTYPE] = shift_scale_dtype
     config['_flash_lammps'] = use_flash
     model_state_dct = model.state_dict()
 
@@ -164,6 +170,7 @@ def deploy_parallel(
     )
     md_configs.update({'version': __version__})
     md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
+    md_configs.update({'shift_scale_dtype': shift_scale_dtype})
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     os.makedirs(fname, exist_ok=True)

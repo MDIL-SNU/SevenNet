@@ -229,6 +229,7 @@ AVG_NUM_NEIGH = 'avg_num_neigh'
 CONV_DENOMINATOR = 'conv_denominator'
 SHIFT = 'shift'
 SCALE = 'scale'
+SHIFT_SCALE_DTYPE = 'shift_scale_dtype'
 LOADER_KWARGS = 'loader_kwargs'
 
 USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'

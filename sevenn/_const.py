@@ -127,6 +127,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.TRAIN_SHIFT_SCALE: False,
     KEY.TRAIN_SHIFT: False,
     KEY.TRAIN_SCALE: False,
+    KEY.SHIFT_SCALE_DTYPE: 'double',
     # KEY.OPTIMIZE_BY_REDUCE: True,  # deprecated, always True
     KEY.USE_BIAS_IN_LINEAR: False,
     KEY.USE_MODAL_NODE_EMBEDDING: False,
@@ -171,6 +172,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.TRAIN_SHIFT_SCALE: bool,
     KEY.TRAIN_SHIFT: bool,
     KEY.TRAIN_SCALE: bool,
+    KEY.SHIFT_SCALE_DTYPE: lambda x: x in ['single', 'double'],
     KEY.TRAIN_DENOMINTAOR: bool,
     KEY.USE_BIAS_IN_LINEAR: bool,
     KEY.USE_MODAL_NODE_EMBEDDING: bool,

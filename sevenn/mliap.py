@@ -87,6 +87,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             modal: Optional[str] = None
             use_cueq: bool = False
             use_flash: bool = False
+            shift_scale_dtype: str = 'double'
         """
 
         super().__init__()
@@ -112,6 +113,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.use_cueq = kwargs.get('use_cueq', False)
         self.use_flash = kwargs.get('use_flash', False)
         self.use_oeq = kwargs.get('use_oeq', False)
+        self.shift_scale_dtype = kwargs.get('shift_scale_dtype', 'double')
         self.modal = kwargs.get('modal', None)
 
         # extract configs
@@ -153,7 +155,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         print('[INFO] Lazy initializing SevenNet model...', flush=True)
         print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}, oeq={self.use_oeq}', flush=True)  # noqa: E501
         model = self.cp.build_model(
-            enable_cueq=self.use_cueq, enable_flash=self.use_flash, enable_oeq=self.use_oeq  # noqa: E501
+            enable_cueq=self.use_cueq, enable_flash=self.use_flash, enable_oeq=self.use_oeq,  # noqa: E501
+            shift_scale_dtype=self.shift_scale_dtype
         )
 
         for k, module in model._modules.items():
