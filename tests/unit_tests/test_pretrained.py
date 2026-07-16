@@ -11,7 +11,7 @@ from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 
 def acl(a, b, atol=1e-6):
-    return torch.allclose(a, b, atol=atol)
+    return torch.allclose(a.float(), b.float(), atol=atol)
 
 
 @pytest.fixture
