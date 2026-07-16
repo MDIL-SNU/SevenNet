@@ -1,7 +1,7 @@
 # LAMMPS: ML-IAP
 
 :::{caution}
-Currently the parallel implementation of LAMMPS/ML-IAP is not tested.
+Parallel execution of LAMMPS/ML-IAP using CUDA-aware MPI is supported, but not yet sufficiently tested. For multi-rank LAMMPS runs, use the TorchScript `e3gnn/parallel` workflow described in {doc}`lammps_torch`.
 :::
 
 ## Requirements
@@ -22,10 +22,12 @@ Get LAMMPS source code:
 ```bash
 git clone https://github.com/lammps/lammps lammps-mliap
 cd lammps-mliap
-git checkout ccca772
+git checkout stable_22Jul2025_update4
 ```
 :::{note}
-We found that some of the latest versions of LAMMPS produce inconsistent energies. Therefore, we highly recommend using this specific commit. This restriction will be relaxed once consistency checks are completed.
+SevenNet's ML-IAP tests are validated against the LAMMPS
+`stable_22Jul2025_update4` release. Other LAMMPS versions may work, but should
+be validated with the ML-IAP test suite before production use.
 :::
 
 
