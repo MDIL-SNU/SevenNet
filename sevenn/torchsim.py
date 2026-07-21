@@ -81,7 +81,6 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         compute_atomic_virial: bool = False,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
-        shift_scale_dtype: str = 'double',
     ) -> None:
         """Initialize the SevenNetModel with specified configuration.
 
@@ -105,8 +104,6 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             dtype (torch.dtype): TorchSim interface dtype.  Only float32 is
                 supported; wrap with Float64Wrapper if outer TorchSim cell/state
                 arithmetic must run in double precision.
-            shift_scale_dtype (str): dtype for final energy shift/scale rescaling.
-                Defaults to 'double'; 'single' keeps legacy energy dtype.
 
         Raises:
             ImportError: if torch_sim is not installed
@@ -149,7 +146,6 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
                 enable_flash=enable_flash,
                 enable_cueq=enable_cueq,
                 enable_oeq=enable_oeq,
-                shift_scale_dtype=shift_scale_dtype,
             )
 
         _validate(model, modal)
@@ -326,7 +322,6 @@ class SevenNetD3Model(ModelInterface):
         neighbor_list_fn: Callable | None = None,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
-        shift_scale_dtype: str = 'double',
         d3_mode: str = 'auto',
         d3_batch_threshold: int = 4,
         damping_type: str = 'damp_bj',
@@ -350,7 +345,6 @@ class SevenNetD3Model(ModelInterface):
             neighbor_list_fn=neighbor_list_fn,
             device=device,
             dtype=dtype,
-            shift_scale_dtype=shift_scale_dtype,
         )
 
         self.d3_mode = d3_mode

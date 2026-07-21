@@ -357,7 +357,6 @@ class SevenNetCheckpoint:
         enable_flash: bool = False,
         enable_oeq: bool = False,
         _flash_lammps: bool = False,
-        shift_scale_dtype: str = 'double',
     ) -> AtomGraphSequential:
         from .model_build import build_E3_equivariant_model
 
@@ -376,13 +375,6 @@ class SevenNetCheckpoint:
         cfg_new = self.config
         cfg_new['_flash_lammps'] = _flash_lammps
         cfg_new[KEY.USE_OEQ] = enable_oeq
-
-        if shift_scale_dtype not in ('single', 'double'):
-            raise ValueError(
-                "shift_scale_dtype must be 'single' or 'double', "
-                f'got {shift_scale_dtype!r}'
-            )
-        cfg_new[KEY.SHIFT_SCALE_DTYPE] = shift_scale_dtype
 
         if (cp_using_cueq, cp_using_flash, cp_using_oeq) == (
             enable_cueq,

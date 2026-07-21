@@ -10,6 +10,7 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
+from sevenn.nn.scale import resolve_shift_scale_dtype
 from sevenn.util import load_checkpoint, warn_no_tp_accelerator
 
 
@@ -19,7 +20,6 @@ def deploy(
     modal: Optional[str] = None,
     use_flash: bool = False,
     use_oeq: bool = False,
-    shift_scale_dtype: str = 'double',
 ) -> None:
     if not (use_flash or use_oeq):
         warn_no_tp_accelerator('LAMMPS TorchScript deployment')
@@ -31,7 +31,6 @@ def deploy(
             enable_flash=use_flash,
             enable_oeq=use_oeq,
             _flash_lammps=use_flash,
-            shift_scale_dtype=shift_scale_dtype,
         ),
         cp.config,
     )
@@ -69,9 +68,12 @@ def deploy(
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )
+    ss_dtype = resolve_shift_scale_dtype()
     md_configs.update({'version': __version__})
     md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
-    md_configs.update({'shift_scale_dtype': shift_scale_dtype})
+    md_configs.update(
+        {'shift_scale_dtype': 'single' if ss_dtype == torch.float32 else 'double'}
+    )
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     if fname.endswith('.pt') is False:
@@ -86,7 +88,6 @@ def deploy_parallel(
     modal: Optional[str] = None,
     use_flash: bool = False,
     use_oeq: bool = False,
-    shift_scale_dtype: str = 'double',
 ) -> None:
     if not (use_flash or use_oeq):
         warn_no_tp_accelerator(
@@ -104,14 +105,12 @@ def deploy_parallel(
             enable_flash=use_flash,
             enable_oeq=use_oeq,
             _flash_lammps=use_flash,
-            shift_scale_dtype=shift_scale_dtype,
         ),
         cp.config,
     )
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
     config[KEY.USE_FLASH_TP] = use_flash
     config[KEY.USE_OEQ] = use_oeq
-    config[KEY.SHIFT_SCALE_DTYPE] = shift_scale_dtype
     config['_flash_lammps'] = use_flash
     model_state_dct = model.state_dict()
 
@@ -168,9 +167,12 @@ def deploy_parallel(
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )
+    ss_dtype = resolve_shift_scale_dtype()
     md_configs.update({'version': __version__})
     md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
-    md_configs.update({'shift_scale_dtype': shift_scale_dtype})
+    md_configs.update(
+        {'shift_scale_dtype': 'single' if ss_dtype == torch.float32 else 'double'}
+    )
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     os.makedirs(fname, exist_ok=True)

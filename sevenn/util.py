@@ -122,14 +122,10 @@ def model_from_checkpoint(
     enable_cueq: bool = False,
     enable_flash: bool = False,
     enable_oeq: bool = False,
-    shift_scale_dtype: str = 'double',
 ) -> Tuple[torch.nn.Module, Dict[str, Any]]:
     cp = load_checkpoint(checkpoint)
     model = cp.build_model(
-        enable_cueq=enable_cueq,
-        enable_flash=enable_flash,
-        enable_oeq=enable_oeq,
-        shift_scale_dtype=shift_scale_dtype,
+        enable_cueq=enable_cueq, enable_flash=enable_flash, enable_oeq=enable_oeq
     )
 
     return model, cp.config

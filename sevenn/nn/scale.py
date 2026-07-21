@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List, Optional, Union
 
 import torch
@@ -7,13 +8,21 @@ from e3nn.util.jit import compile_mode
 import sevenn._keys as KEY
 from sevenn._const import NUM_UNIV_ELEMENT, AtomGraphDataType
 
+# Precision of the final energy shift/scale (rescale) parameters. Defaults to
+# double for numerical consistency; set SEVENN_SHIFT_SCALE_DTYPE='single' only
+# to reproduce the legacy float32 behavior. The dtype is frozen into the
+# parameters when the model is built, so it must be set at build/deploy time
+# (not at inference time).
+SHIFT_SCALE_DTYPE_ENV = 'SEVENN_SHIFT_SCALE_DTYPE'
 
-def _resolve_shift_scale_dtype(dtype: str) -> torch.dtype:
+
+def resolve_shift_scale_dtype() -> torch.dtype:
+    dtype = os.environ.get(SHIFT_SCALE_DTYPE_ENV, 'double')
     if dtype == 'single':
         return torch.float32
     if dtype == 'double':
         return torch.float64
-    raise ValueError(f'Unsupported shift/scale dtype: {dtype}')
+    raise ValueError(f'Unsupported shift/scale dtype: {dtype!r}')
 
 
 def _as_univ(
@@ -41,7 +50,6 @@ class Rescale(nn.Module):
         train_shift: bool = False,
         train_scale: bool = False,
         train_shift_scale: bool = False,
-        shift_scale_dtype: str = 'double',
         **kwargs,
     ) -> None:
         assert isinstance(shift, float) and isinstance(scale, float)
@@ -49,7 +57,7 @@ class Rescale(nn.Module):
         if train_shift_scale:
             train_shift = True
             train_scale = True
-        dtype = _resolve_shift_scale_dtype(shift_scale_dtype)
+        dtype = resolve_shift_scale_dtype()
         self.shift = nn.Parameter(
             torch.tensor([shift], dtype=dtype), requires_grad=train_shift
         )
@@ -90,13 +98,12 @@ class SpeciesWiseRescale(nn.Module):
         train_shift: bool = False,
         train_scale: bool = False,
         train_shift_scale: bool = False,
-        shift_scale_dtype: str = 'double',
     ) -> None:
         super().__init__()
         if train_shift_scale:
             train_shift = True
             train_scale = True
-        dtype = _resolve_shift_scale_dtype(shift_scale_dtype)
+        dtype = resolve_shift_scale_dtype()
         assert isinstance(shift, float) or isinstance(shift, list)
         assert isinstance(scale, float) or isinstance(scale, list)
 
@@ -207,13 +214,12 @@ class ModalWiseRescale(nn.Module):
         train_shift: bool = False,
         train_scale: bool = False,
         train_shift_scale: bool = False,
-        shift_scale_dtype: str = 'double',
     ) -> None:
         super().__init__()
         if train_shift_scale:
             train_shift = True
             train_scale = True
-        dtype = _resolve_shift_scale_dtype(shift_scale_dtype)
+        dtype = resolve_shift_scale_dtype()
         self.shift = nn.Parameter(
             torch.tensor(shift, dtype=dtype), requires_grad=train_shift
         )
