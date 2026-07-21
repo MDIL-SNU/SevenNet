@@ -10,7 +10,6 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.nn.scale import resolve_shift_scale_dtype
 from sevenn.util import load_checkpoint, warn_no_tp_accelerator
 
 
@@ -68,12 +67,8 @@ def deploy(
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )
-    ss_dtype = resolve_shift_scale_dtype()
     md_configs.update({'version': __version__})
     md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
-    md_configs.update(
-        {'shift_scale_dtype': 'single' if ss_dtype == torch.float32 else 'double'}
-    )
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     if fname.endswith('.pt') is False:
@@ -167,12 +162,8 @@ def deploy_parallel(
     md_configs.update(
         {'model_type': config.pop(KEY.MODEL_TYPE, 'E3_equivariant_model')}
     )
-    ss_dtype = resolve_shift_scale_dtype()
     md_configs.update({'version': __version__})
     md_configs.update({'dtype': config.pop(KEY.DTYPE, 'single')})
-    md_configs.update(
-        {'shift_scale_dtype': 'single' if ss_dtype == torch.float32 else 'double'}
-    )
     md_configs.update({'time': datetime.now().strftime('%Y-%m-%d')})
 
     os.makedirs(fname, exist_ok=True)

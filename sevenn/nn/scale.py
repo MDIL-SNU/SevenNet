@@ -10,14 +10,11 @@ from sevenn._const import NUM_UNIV_ELEMENT, AtomGraphDataType
 
 # Precision of the final energy shift/scale (rescale) parameters. Defaults to
 # double for numerical consistency; set SEVENN_SHIFT_SCALE_DTYPE='single' only
-# to reproduce the legacy float32 behavior. The dtype is frozen into the
-# parameters when the model is built, so it must be set at build/deploy time
-# (not at inference time).
-SHIFT_SCALE_DTYPE_ENV = 'SEVENN_SHIFT_SCALE_DTYPE'
+# to reproduce the legacy float32 behavior.
 
 
 def resolve_shift_scale_dtype() -> torch.dtype:
-    dtype = os.environ.get(SHIFT_SCALE_DTYPE_ENV, 'double')
+    dtype = os.environ.get('SEVENN_SHIFT_SCALE_DTYPE', 'double')
     if dtype == 'single':
         return torch.float32
     if dtype == 'double':
