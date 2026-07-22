@@ -6,6 +6,11 @@ All notable changes to this project will be documented in this file.
 - Training features used for SevenNet-Omni: batch training, `OrderedSampler`, `grad_clip`, `onecyclelr`
 - Loss: MAE, L2MAE
 - Dataset type: `aselmdb`, `custom`
+- SevenNet-Nano checkpoints for `7net-nano-4.5`, `7net-nano-5.0`, `7net-nano-5.5`, and `7net-nano-6.0`
+
+### Changed
+- The default dtype of the rescale layer is changed to double precision. Use the `SEVENN_SHIFT_SCALE_DTYPE` environment variable for backward single-precision compatibility.
+- The recommended LAMMPS ML-IAP version is bumped to `stable_22Jul2025_update4`.
 
 ### Fixed
 - `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.

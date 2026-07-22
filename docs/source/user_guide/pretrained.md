@@ -42,6 +42,12 @@ Multiple inference tasks are available for multi-fidelity architecture models, S
   - Multi-task
   - `mpa` (PBE+U) <br> `matpes_r2scan` (r²SCAN) <br> `omol25_low` (ωB97M-V) <br> and 10 more tasks
 
+* - [SevenNet-Nano](#sevennet-nano)
+  - Lightweight model distilled from the SevenNet-Omni `mpa` task
+  - $l_{\mathrm{max}}=2$ <br> $N_{\mathrm{layer}}=3$ <br> parity=full <br> cutoff=4.5, 5.0, 5.5, or 6.0 Å
+  - Single-task
+  - N/A
+
 * - [SevenNet-MF-ompa](#sevennet-mf-ompa)
   - MPtrj, sAlex, OMat24
   - $l_{\mathrm{max}}=3$ <br> $N_{\mathrm{layer}}=5$ <br> parity=full
@@ -145,6 +151,29 @@ SevenNet-Omni-i12 follows the same training strategy as [SevenNet-Omni](#sevenne
 | CPS  | F1 | $\kappa_{\mathrm{SRME}}$ | RMSD |
 |:---:|:---:|:---:|:---:|
 |**0.873**|0.906|0.192|0.0617|
+
+---
+## SevenNet-Nano
+> Model keywords: `7net-nano-4.5` | `7net-nano-5.0` | `7net-nano-5.5` | `7net-nano-6.0`
+
+SevenNet-Nano is a lightweight pretrained model released with [A Lightweight Universal Machine-Learning Interatomic Potential via Knowledge Distillation for Scalable Atomistic Simulations](https://doi.org/10.1021/acs.jcim.6c01103). It is provided as four single-task checkpoint variants with different radial cutoffs. Distilled from the SevenNet-Omni `mpa` task, SevenNet-Nano compresses broad cross-domain chemical knowledge into a 105k-parameter model, achieving over an order-of-magnitude speedup over its teacher while retaining balanced accuracy across diverse atomistic environments.
+
+Choose the cutoff explicitly through the model keyword:
+
+```python
+from sevenn.calculator import SevenNetCalculator
+calc = SevenNetCalculator('7net-nano-5.5')
+```
+
+```{table} SevenNet-Nano cutoff variants
+:widths: 40 60
+| Model keyword | Cutoff |
+|---------------|--------|
+| `7net-nano-4.5` | 4.5 Å |
+| `7net-nano-5.0` | 5.0 Å |
+| `7net-nano-5.5` | 5.5 Å |
+| `7net-nano-6.0` | 6.0 Å |
+```
 
 ---
 ## SevenNet-MF-ompa

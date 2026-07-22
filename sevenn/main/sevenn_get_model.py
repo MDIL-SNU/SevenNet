@@ -7,8 +7,8 @@ description_get_model = (
     'deploy LAMMPS model from the checkpoint'
 )
 checkpoint_help = (
-    'Pretrained model name (7net-omni, 7net-omni-i8, 7net-omni-i12, etc.) '
-    'or path to checkpoint file. See documentation for all available models.'
+    'Pretrained model name (7net-omni, 7net-nano-5.5, etc.) or path to '
+    'checkpoint file. See documentation for all available models.'
 )
 output_name_help = 'filename prefix'
 get_parallel_help = 'deploy parallel model'

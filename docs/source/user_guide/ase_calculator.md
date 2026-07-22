@@ -69,7 +69,7 @@ calc = SevenNetCalculator(model='7net-0', enable_cueq=True) # or enable_flash=Tr
 
 If you encounter the error `CUDA is not installed or nvcc is not available`, please ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
 
-Various pretrained SevenNet models can be accessed by setting the model variable to predefined keywords like `7net-omni`, `7net-mf-ompa`, `7net-omat`, `7net-l3i5`, and `7net-0`.
+Various pretrained SevenNet models can be accessed by setting the model variable to predefined keywords like `7net-omni`, `7net-nano-5.5`, `7net-mf-ompa`, `7net-omat`, `7net-l3i5`, and `7net-0`.
 
 User-trained models can be applied with the ASE calculator. In this case, the `model` parameter should be set to the checkpoint path from training.
 

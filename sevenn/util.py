@@ -289,6 +289,14 @@ def pretrained_name_to_path(name: str) -> str:
         checkpoint_path = _const.SEVENNET_omni_i8
     elif name in [f'{n}-omni-i12' for n in heads]:
         checkpoint_path = _const.SEVENNET_omni_i12
+    elif name in [f'{n}-nano-4.5' for n in heads]:
+        checkpoint_path = _const.SEVENNET_nano_4_5
+    elif name in [f'{n}-nano-5.0' for n in heads]:
+        checkpoint_path = _const.SEVENNET_nano_5_0
+    elif name in [f'{n}-nano-5.5' for n in heads]:
+        checkpoint_path = _const.SEVENNET_nano_5_5
+    elif name in [f'{n}-nano-6.0' for n in heads]:
+        checkpoint_path = _const.SEVENNET_nano_6_0
     else:
         raise ValueError('Not a valid pretrained model name')
     url = _const.CHECKPOINT_DOWNLOAD_LINKS.get(checkpoint_path)
@@ -331,6 +339,10 @@ def get_available_pretrained_models() -> List[str]:
         'SEVENNET_omni': '7net-omni',
         'SEVENNET_omni_i8': '7net-omni-i8',
         'SEVENNET_omni_i12': '7net-omni-i12',
+        'SEVENNET_nano_4_5': '7net-nano-4.5',
+        'SEVENNET_nano_5_0': '7net-nano-5.0',
+        'SEVENNET_nano_5_5': '7net-nano-5.5',
+        'SEVENNET_nano_6_0': '7net-nano-6.0',
     }
 
     models = []

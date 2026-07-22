@@ -44,8 +44,9 @@ class SevenNetCalculator(Calculator):
         Parameters
         ----------
         model: str | Path | AtomGraphSequential, default='7net-0'
-            Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
-            7net-0) or path to the checkpoint, deployed model or the model itself
+            Name of pretrained models (7net-omni, 7net-nano-5.5, 7net-mf-ompa,
+            7net-omat, 7net-l3i5, 7net-0) or path to the checkpoint, deployed model
+            or the model itself
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -255,8 +256,9 @@ class SevenNetD3Calculator(SumCalculator):
         Parameters
         ----------
         model: str | Path | AtomGraphSequential
-            Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
-            7net-0) or path to the checkpoint, deployed model or the model itself
+            Name of pretrained models (7net-omni, 7net-nano-5.5, 7net-mf-ompa,
+            7net-omat, 7net-l3i5, 7net-0) or path to the checkpoint, deployed model
+            or the model itself
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
