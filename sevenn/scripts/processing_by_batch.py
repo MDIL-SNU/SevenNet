@@ -1,5 +1,6 @@
 import os
 import time
+from tqdm import tqdm
 from copy import deepcopy
 from typing import Optional
 
@@ -114,11 +115,16 @@ def processing_by_batch(
     scheduler_update_every_batch = (
             config.get(KEY.SCHEDULER_BATCH_MODE, False)
     )
+    if config['rank'] == 0:
+        train_loader = tqdm(train_loader)
 
     # TODO: too long, refactor more
     log.writeline('Entering training loop')
     for epoch in range(start_epoch, total_epoch + 1):  # one indexing
-        data_progress[KEY.NUMPY_RNG_STATE] = train_loader.sampler.get_rng_state()
+        if isinstance(train_loader, tqdm):
+            data_progress[KEY.NUMPY_RNG_STATE] = train_loader.iterable.sampler.get_rng_state()
+        else:
+            data_progress[KEY.NUMPY_RNG_STATE] = train_loader.sampler.get_rng_state()
         log.timer_start('epoch')
         log.timer_start('batch')
 

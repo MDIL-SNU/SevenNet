@@ -395,6 +395,7 @@ def patch_temperature(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDic
             DebyeBlock(
                 debye_temperature=cfg.get(KEY.DEBYE_TEMPERATURE, 1000.),
                 trainable_coeff=cfg.get(KEY.TRAIN_DEBYE_TEMPERATURE, True),
+                positive_method=cfg.get('debye_positive_method', 'softplus'),
             )
         ),
         _layers,

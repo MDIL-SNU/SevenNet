@@ -43,12 +43,20 @@ class DebyeBlock(nn.Module):
         trainable_coeff: bool = True,
         infer_heat_capacity: bool = False,
         infer_debye: bool = True,
+        positive_method: str='softplus',  # one of softplus / exp(onential)
     ) -> None:
         super().__init__()
         self.debye_temperature = torch.tensor(debye_temperature, dtype=torch.float32)
-        self.softplus = nn.Softplus()
-        if trainable_coeff:
-            self.debye_temperature = nn.Parameter(self.debye_temperature)
+
+        if positive_method.lower() == 'softplus':
+            self.positive = nn.Softplus()
+        elif positive_method.lower().startswith('exp'):
+            self.debye_temperature = torch.log(self.debye_temperature)
+            self.positive = torch.exp
+        else:
+            raise NotImplementedError(f'Positive method not implemented for {positive_method}')
+
+        self.debye_temperature = nn.Parameter(self.debye_temperature, requires_grad=trainable_coeff)
         self.infer_heat_capacity = infer_heat_capacity
         self.infer_debye = infer_debye
 
@@ -57,15 +65,15 @@ class DebyeBlock(nn.Module):
             return data
 
         size = int(data[KEY.BATCH].max()) + 1 if self._is_batch_data else 1
-        data[KEY.DEBYE_ZPE] = zpe(self.softplus(self.debye_temperature)).repeat(size)
+        data[KEY.DEBYE_ZPE] = zpe(self.positive(self.debye_temperature)).repeat(size)
         safe_temperature = torch.where(data[KEY.TEMPERATURE] == 0, -1, data[KEY.TEMPERATURE])
-        x = torch.where(data[KEY.TEMPERATURE] == 0, -1, self.softplus(self.debye_temperature) / safe_temperature)
+        x = torch.where(data[KEY.TEMPERATURE] == 0, -1, self.positive(self.debye_temperature) / safe_temperature)
         debye_integral_value = debye_integral(x)
         debye_log_value = debye_log(x)
         data[KEY.DEBYE_FREE_ENERGY] = data[KEY.DEBYE_ZPE] + kB * data[KEY.TEMPERATURE] * (3 * debye_log_value - debye_integral_value)
         data[KEY.DEBYE_INTERNAL_ENERGY] = data[KEY.DEBYE_ZPE] + 3 * kB * data[KEY.TEMPERATURE] * debye_integral_value
         data[KEY.DEBYE_ENTROPY] = kB * (4 * debye_integral_value - 3 * debye_log_value)
-        data[KEY.DEBYE_ASYMPTOT] = - (kB * self.softplus(self.debye_temperature) ** 2 * 3 / 40).repeat(size)
+        data[KEY.DEBYE_ASYMPTOT] = - (kB * self.positive(self.debye_temperature) ** 2 * 3 / 40).repeat(size)
 
         if self.infer_heat_capacity:
             heat_capacity = 3 * kB * (4 * debye_integral_value - 3 * x / (torch.exp(x) - 1))

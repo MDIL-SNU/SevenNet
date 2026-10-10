@@ -613,21 +613,21 @@ class ErrorRecorder:
                 if 'Stress' in err_type:
                     continue
                 err_config_n.append((err_type, metric_name))
-            err_config = err_config_n
+            err_config = deepcopy(err_config_n)
 
         if not config.get(KEY.IS_TRAIN_HEAT_CAPACITY, True):
             for err_type, metric_name in err_config:
                 if 'HeatCapacity' in err_type:
                     continue
                 err_config_n.append((err_type, metric_name))
-            err_config = err_config_n
+            err_config = deepcopy(err_config_n)
 
         if not config.get(KEY.IS_TRAIN_ASYMPTOT, True):
             for err_type, metric_name in err_config:
                 if 'Asymptot' in err_type:
                     continue
                 err_config_n.append((err_type, metric_name))
-            err_config = err_config_n
+            err_config = deepcopy(err_config_n)
 
         err_metrics = []
         for err_type, metric_name in err_config:

@@ -16,7 +16,7 @@ from sevenn._const import AtomGraphDataType
 
 class BaseBasis(nn.Module):
     """
-    f : T (*, 1) -> [g(T/softplus(T0)-relu(shift))] (*, num_basis)
+    f : T (*, 1) -> [g(T/positive(T0)-relu(shift))] (*, num_basis)
     """
     def __init__(
         self,
@@ -24,6 +24,7 @@ class BaseBasis(nn.Module):
         initial_T0: Optional[List]=None,
         initial_shift: Optional[List]=None,
         trainable_coeff: bool=True,
+        positive_method: Optional[str]='softplus',  # one of softplus / exp(onential)
         softplus_params: Optional[Dict]={},
         as_gate: bool=False,
     ) -> None:
@@ -39,6 +40,14 @@ class BaseBasis(nn.Module):
             )
         else:
             raise ValueError('Initial T0 value should be list of float or float/int')
+
+        if positive_method.lower() == 'softplus':
+            self.positive = nn.Softplus(**softplus_params)
+        elif positive_method.lower().startswith('exp'):
+            self.initial_T0 = torch.log(self.initial_T0)
+            self.positive = torch.exp
+        else:
+            raise NotImplementedError(f'Positive method not implemented for {positive_method}')
 
         if initial_shift is None:
             self.initial_shift = torch.linspace(0, 7, num_basis, dtype=torch.float32)
@@ -56,14 +65,13 @@ class BaseBasis(nn.Module):
         self.initial_T0 = nn.Parameter(self.initial_T0, requires_grad=trainable_coeff)
         self.initial_shift = nn.Parameter(self.initial_shift, requires_grad=trainable_coeff)
 
-        self.softplus = nn.Softplus(**softplus_params)
         self.relu = nn.ReLU()
         self.enc_function = None
         self.as_gate = as_gate
 
     def forward(self, temperature: torch.Tensor) -> torch.Tensor:
         t = temperature.unsqueeze(-1)
-        val = self.enc_function(t / self.softplus(self.initial_T0) - self.relu(self.initial_shift))
+        val = self.enc_function(t / self.positive(self.initial_T0) - self.relu(self.initial_shift))
         val[torch.isinf(t).repeat((1, self.num_basis))] = 0.
         if self.as_gate:
             return 1. - val
@@ -155,6 +163,7 @@ class GaussianEncoding(BaseBasis):
         initial_T0: Optional[List]=None,
         initial_shift: Optional[List]=None,
         trainable_coeff: bool=True,
+        positive_method: Optional[str]='softplus',  # one of softplus / exp(onential)
         softplus_params: Optional[Dict]={},
         as_gate: bool=False,
         decay_x0: Optional[float] = None,
@@ -166,6 +175,7 @@ class GaussianEncoding(BaseBasis):
             initial_T0=initial_T0,
             initial_shift=initial_shift,
             trainable_coeff=trainable_coeff,
+            positive_method=positive_method,
             softplus_params=softplus_params,
             as_gate=as_gate,
         )
@@ -203,6 +213,7 @@ class SineEncoding(BaseBasis):
         initial_T0: Optional[List]=None,
         initial_shift: Optional[List]=None,
         trainable_coeff: bool=True,
+        positive_method: Optional[str]='softplus',  # one of softplus / exp(onential)
         softplus_params: Optional[Dict]={},
         as_gate: bool=False,
         decay_x0: Optional[float] = 1,
@@ -214,6 +225,7 @@ class SineEncoding(BaseBasis):
             initial_T0=initial_T0,
             initial_shift=initial_shift,
             trainable_coeff=trainable_coeff,
+            positive_method=positive_method,
             softplus_params=softplus_params,
             as_gate=as_gate,
         )
@@ -237,6 +249,7 @@ class CosineEncoding(BaseBasis):
         initial_T0: Optional[List]=None,
         initial_shift: Optional[List]=None,
         trainable_coeff: bool=True,
+        positive_method: Optional[str]='softplus',  # one of softplus / exp(onential)
         softplus_params: Optional[Dict]={},
         as_gate: bool=False,
         decay_x0: Optional[float] = 1,
@@ -248,6 +261,7 @@ class CosineEncoding(BaseBasis):
             initial_T0=initial_T0,
             initial_shift=initial_shift,
             trainable_coeff=trainable_coeff,
+            positive_method=positive_method,
             softplus_params=softplus_params,
             as_gate=as_gate,
         )
@@ -272,6 +286,7 @@ class PolynomialEncoding(BaseBasis):
         initial_T0: Optional[List]=None,
         initial_shift: Optional[List]=None,
         trainable_coeff: bool=True,
+        positive_method: Optional[str]='softplus',  # one of softplus / exp(onential)
         softplus_params: Optional[Dict]={},
         as_gate: bool=False,
         decay_x0: Optional[float] = 1,
@@ -283,6 +298,7 @@ class PolynomialEncoding(BaseBasis):
             initial_T0=initial_T0,
             initial_shift=initial_shift,
             trainable_coeff=trainable_coeff,
+            positive_method=positive_method,
             softplus_params=softplus_params,
             as_gate=as_gate,
         )
