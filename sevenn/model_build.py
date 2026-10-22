@@ -360,11 +360,28 @@ def patch_oeq(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     return layers
 
 
+def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
+    import sevenn.nn.lunatp_helper as lunatp_helper
+
+    if not config.get(KEY.USE_LUNATP, False):
+        return layers
+
+    # raises ImportError if LunaTP is not available, no fallback to e3nn
+    updates = {}
+    for k, module in layers.items():
+        if isinstance(module, IrrepsConvolution):
+            updates[k] = lunatp_helper.patch_convolution(module)
+
+    layers.update(updates)
+    return layers
+
+
 def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
     layers = patch_cue(layers, config)
     layers = patch_flash_tp(layers, config)
     layers = patch_oeq(layers, config)
+    layers = patch_lunatp(layers, config)
     return layers
 
 

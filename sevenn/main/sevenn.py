@@ -48,6 +48,7 @@ def run(args):
     use_cue = args.enable_cueq
     use_flash = args.enable_flash
     use_oeq = args.enable_oeq
+    use_lunatp = args.enable_lunatp
 
     if use_cue:
         import sevenn.nn.cue_helper
@@ -66,6 +67,12 @@ def run(args):
 
         if not sevenn.nn.oeq_helper.is_oeq_available():
             raise ImportError('OpenEquivariance not installed or no GPU found.')
+
+    if use_lunatp:
+        import sevenn.nn.lunatp_helper
+
+        if not sevenn.nn.lunatp_helper.is_lunatp_available():
+            raise ImportError('LunaTP not installed or no GPU found.')
 
     if working_dir is None:
         working_dir = os.getcwd()
@@ -128,6 +135,9 @@ def run(args):
         if use_oeq:
             model_config[KEY.USE_OEQ] = True
 
+        if use_lunatp:
+            model_config[KEY.USE_LUNATP] = True
+
         logger.print_config(model_config, data_config, train_config)
         # don't have to distinguish configs inside program
         global_config.update(model_config)
@@ -179,6 +189,12 @@ def cmd_parser_train(parser):
         '-oeq',
         '--enable_oeq',
         help='use OpenEquivariance accelerations for training',
+        action='store_true',
+    )
+    ag.add_argument(
+        '-lunatp',
+        '--enable_lunatp',
+        help='use LunaTP accelerations for training',
         action='store_true',
     )
     ag.add_argument(

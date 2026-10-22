@@ -57,6 +57,12 @@ def add_args(parser):
         action='store_true',
     )
     ag.add_argument(
+        '-lunatp',
+        '--enable_lunatp',
+        help='use LunaTP. Only support ML-IAP interface.',
+        action='store_true',
+    )
+    ag.add_argument(
         '-mliap',
         '--use_mliap',
         help='Use LAMMPS ML-IAP interface.',
@@ -75,6 +81,7 @@ def run(args):
     use_flash = args.enable_flash
     use_cueq = args.enable_cueq
     use_oeq = args.enable_oeq
+    use_lunatp = args.enable_lunatp
     use_mliap = args.use_mliap
 
     # Check dependencies
@@ -96,8 +103,17 @@ def run(args):
         if not is_oeq_available():
             raise ImportError('OpenEquivariance not installed or no GPU found.')
 
+    if use_lunatp:
+        from sevenn.nn.lunatp_helper import is_lunatp_available
+
+        if not is_lunatp_available():
+            raise ImportError('LunaTP not installed or no GPU found.')
+
     if use_cueq and not use_mliap:
         raise ValueError('cuEquivariance is only supported in ML-IAP interface.')
+
+    if use_lunatp and not use_mliap:
+        raise ValueError('LunaTP is only supported in ML-IAP interface.')
 
     if use_mliap and get_parallel:
         raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
@@ -125,7 +141,7 @@ def run(args):
     else:
         from sevenn import mliap
 
-        if not (use_cueq or use_flash or use_oeq):
+        if not (use_cueq or use_flash or use_oeq or use_lunatp):
             sevenn.util.warn_no_tp_accelerator(
                 'LAMMPS ML-IAP deployment',
             )
@@ -139,6 +155,7 @@ def run(args):
             use_cueq=use_cueq,
             use_flash=use_flash,
             use_oeq=use_oeq,
+            use_lunatp=use_lunatp,
         )
         torch.save(mliap_module, output_prefix)
 
