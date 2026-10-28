@@ -73,8 +73,14 @@ class Trainer:
         self.distributed = distributed
 
         optimizer_args = optimizer_args or {}
-        param = [p for p in self.model.parameters() if p.requires_grad]
-        self.optimizer = optimizer_cls(param, **optimizer_args)
+        if hasattr(optimizer_cls, 'from_model'):  # builds its own param groups
+            unwrapped_model = self.model.module if distributed else self.model
+            self.optimizer = optimizer_cls.from_model(
+                unwrapped_model, **optimizer_args
+            )
+        else:
+            param = [p for p in self.model.parameters() if p.requires_grad]
+            self.optimizer = optimizer_cls(param, **optimizer_args)
         if scheduler_cls is not None:
             scheduler_args = scheduler_args or {}
             self.scheduler = scheduler_cls(self.optimizer, **scheduler_args)
