@@ -262,6 +262,7 @@ def main():
     import sevenn.main.sevenn_get_model as get_model_cmd
     import sevenn.main.sevenn_graph_build as graph_build_cmd
     import sevenn.main.sevenn_inference as inference_cmd
+    import sevenn.main.sevenn_lunatp_precompile as lunatp_precompile_cmd
     import sevenn.main.sevenn_patch_lammps as patch_lammps_cmd
     import sevenn.main.sevenn_preset as preset_cmd
 
@@ -275,6 +276,7 @@ def main():
     preset_cmd.add_parser(subparsers)
     get_model_cmd.add_parser(subparsers)
     patch_lammps_cmd.add_parser(subparsers)
+    lunatp_precompile_cmd.add_parser(subparsers)
 
     ag.set_default_subparser('train')  # type: ignore
     args = ag.parse_args()
@@ -293,6 +295,8 @@ def main():
         patch_lammps_cmd.run(args)
     elif args.command == 'preset':
         preset_cmd.run(args)
+    elif args.command == 'lunatp_precompile':
+        lunatp_precompile_cmd.run(args)
 
 
 if __name__ == '__main__':

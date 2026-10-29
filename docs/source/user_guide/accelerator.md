@@ -113,7 +113,7 @@ For more information, see [OpenEquivariance](https://github.com/PASSIONLab/OpenE
 LunaTP support in SevenNet is currently experimental.
 :::
 
-LunaTP (LunaEquivariance package) replaces the tensor product convolution with a fused kernel that accumulates the messages of each destination atom in registers before one store to global memory. Its kernels are compiled at the first use of each irreps configuration and cached on disk.
+LunaTP (LunaEquivariance package) replaces the tensor product convolution with a fused kernel that accumulates the messages of each destination atom in registers before one store to global memory. SevenNet also replaces the linear layers, the self-connection tensor product, and the gate nonlinearity with their LunaEquivariance counterparts. The kernels are compiled at the first use of each irreps configuration and cached on disk.
 
 ### Requirements
 - Python >= 3.10, PyTorch >= 2.8
@@ -130,6 +130,14 @@ Check your installation:
 python -c 'from sevenn.nn.lunatp_helper import is_lunatp_available; print(is_lunatp_available())'
 True
 ```
+
+### Kernel compilation
+The first calculation with a model compiles its LunaTP kernels one after another, which takes several minutes. We recommend `sevenn lunatp_precompile`, which compiles the kernels of a checkpoint in parallel before the first calculation:
+```bash
+sevenn lunatp_precompile 7net-omni           # kernels for inference (energy, forces, stress)
+sevenn lunatp_precompile 7net-omni --train   # also the kernels for training with force and stress losses
+```
+The compiled kernels are cached on disk, and later calculations load them. Run the command in the environment of the later calculations, since the cache depends on the Python environment, `LD_LIBRARY_PATH`, and the GPU architecture. `--max_workers` sets the number of parallel processes (default: min(8, available CPUs)).
 
 For more information, see [LunaEquivariance](https://github.com/HPC-AI-Team/LunaEquivariance).
 

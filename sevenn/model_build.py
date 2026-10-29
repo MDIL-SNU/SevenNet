@@ -18,6 +18,7 @@ from .nn.edge_embedding import (
     SphericalEncoding,
     XPLORCutoff,
 )
+from .nn.equivariant_gate import EquivariantGate
 from .nn.force_output import ForceStressOutputFromEdge
 from .nn.interaction_blocks import NequIP_interaction_block
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
@@ -371,6 +372,12 @@ def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     for k, module in layers.items():
         if isinstance(module, IrrepsConvolution):
             updates[k] = lunatp_helper.patch_convolution(module)
+        elif isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
+            updates[k] = lunatp_helper.patch_linear(module)
+        elif isinstance(module, SelfConnectionIntro):
+            updates[k] = lunatp_helper.patch_fully_connected(module)
+        elif isinstance(module, EquivariantGate):
+            updates[k] = lunatp_helper.patch_gate(module)
 
     layers.update(updates)
     return layers
