@@ -48,6 +48,7 @@ cueq13 = [
     "cuequivariance-ops-torch-cu13>=0.7.0,<0.10.0; python_version >= '3.10'"
 ]
 oeq = ["openequivariance"]
+lunatp = ["LunaEquivariance"]
 mliap12 = ["cython==3.0.11", "cupy-cuda12x"]
 mliap13 = ["cython==3.0.11", "cupy-cuda13x"]
 

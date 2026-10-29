@@ -78,6 +78,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
         enable_cueq: bool = False,
         enable_flash: bool = False,
         enable_oeq: bool = False,
+        enable_lunatp: bool = False,
         compute_atomic_virial: bool = False,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
@@ -98,6 +99,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             enable_cueq (bool): Enable cuEquivariance backend.
             enable_flash (bool): Enable flashTP backend.
             enable_oeq (bool): Enable OpenEquivariance backend.
+            enable_lunatp (bool): Enable LunaTP backend.
             neighbor_list_fn (Callable): Neighbor list function to use.
                 Default is torch_nl_linked_cell.
             device (torch.device | str): Device to run the model on
@@ -146,6 +148,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
                 enable_flash=enable_flash,
                 enable_cueq=enable_cueq,
                 enable_oeq=enable_oeq,
+                enable_lunatp=enable_lunatp,
             )
 
         _validate(model, modal)
@@ -319,6 +322,7 @@ class SevenNetD3Model(ModelInterface):
         enable_cueq: bool = False,
         enable_flash: bool = False,
         enable_oeq: bool = False,
+        enable_lunatp: bool = False,
         neighbor_list_fn: Callable | None = None,
         device: torch.device | str = 'auto',
         dtype: torch.dtype = torch.float32,
@@ -342,6 +346,7 @@ class SevenNetD3Model(ModelInterface):
             enable_cueq=enable_cueq,
             enable_flash=enable_flash,
             enable_oeq=enable_oeq,
+            enable_lunatp=enable_lunatp,
             neighbor_list_fn=neighbor_list_fn,
             device=device,
             dtype=dtype,

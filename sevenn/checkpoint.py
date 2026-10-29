@@ -21,8 +21,10 @@ from sevenn.nn.scale import get_resolved_shift_scale
 from sevenn.nn.sequential import AtomGraphSequential
 
 
-def _solve_accelerator(enable_cueq: bool, enable_flash: bool, enable_oeq: bool):
-    if sum([enable_cueq, enable_flash, enable_oeq]) > 1:
+def _solve_accelerator(
+    enable_cueq: bool, enable_flash: bool, enable_oeq: bool, enable_lunatp: bool
+):
+    if sum([enable_cueq, enable_flash, enable_oeq, enable_lunatp]) > 1:
         raise ValueError('Only one TP accelerator can be enabled.')
     if enable_cueq:
         import sevenn.nn.cue_helper as cue_helper
@@ -52,8 +54,15 @@ def _solve_accelerator(enable_cueq: bool, enable_flash: bool, enable_oeq: bool):
                 )
             )
             enable_oeq = False
+    elif enable_lunatp:
+        import sevenn.nn.lunatp_helper as lunatp_helper
+        if not lunatp_helper.is_lunatp_available():
+            raise ImportError(
+                'LunaTP is requested, but the package is not installed '
+                'or GPU not available.'
+            )
 
-    return enable_cueq, enable_flash, enable_oeq
+    return enable_cueq, enable_flash, enable_oeq, enable_lunatp
 
 
 def assert_atoms(
@@ -164,7 +173,12 @@ def _convert_e3nn_and_cueq(stct_src, stct_dst, src_config, from_cueq):
         'convolution.weight',
         'convolution.output_mask',
     ]
-    ignores_in_conv = cue_only_conv_followers + e3nn_only_conv_followers
+    lunatp_only_conv_followers = ['convolution.tp_conv.tp.weight']
+    ignores_in_conv = (
+        cue_only_conv_followers
+        + e3nn_only_conv_followers
+        + lunatp_only_conv_followers
+    )
 
     cue_only_fc_followers = ['fc_tensor_product.f.tp.f_fx.module.c']
     e3nn_only_fc_followers = [
@@ -356,6 +370,7 @@ class SevenNetCheckpoint:
         enable_cueq: bool = False,
         enable_flash: bool = False,
         enable_oeq: bool = False,
+        enable_lunatp: bool = False,
         _flash_lammps: bool = False,
     ) -> AtomGraphSequential:
         from .model_build import build_E3_equivariant_model
@@ -366,20 +381,23 @@ class SevenNetCheckpoint:
             cp_using_cueq = False
         cp_using_flash = self.config.get(KEY.USE_FLASH_TP, False)
         cp_using_oeq = self.config.get(KEY.USE_OEQ, False)
+        cp_using_lunatp = self.config.get(KEY.USE_LUNATP, False)
 
-        enable_cueq, enable_flash, enable_oeq = _solve_accelerator(
-            enable_cueq, enable_flash, enable_oeq
+        enable_cueq, enable_flash, enable_oeq, enable_lunatp = _solve_accelerator(
+            enable_cueq, enable_flash, enable_oeq, enable_lunatp
         )
 
         assert not _flash_lammps or enable_flash
         cfg_new = self.config
         cfg_new['_flash_lammps'] = _flash_lammps
         cfg_new[KEY.USE_OEQ] = enable_oeq
+        cfg_new[KEY.USE_LUNATP] = enable_lunatp
 
-        if (cp_using_cueq, cp_using_flash, cp_using_oeq) == (
+        if (cp_using_cueq, cp_using_flash, cp_using_oeq, cp_using_lunatp) == (
             enable_cueq,
             enable_flash,
             enable_oeq,
+            enable_lunatp,
         ):
             # backend not given, or checkpoint backend is same as requested
             model = build_E3_equivariant_model(cfg_new)
@@ -396,6 +414,7 @@ class SevenNetCheckpoint:
             cfg_new[KEY.CUEQUIVARIANCE_CONFIG] = {'use': enable_cueq}
             cfg_new[KEY.USE_FLASH_TP] = enable_flash
             cfg_new[KEY.USE_OEQ] = enable_oeq
+            cfg_new[KEY.USE_LUNATP] = enable_lunatp
             model = build_E3_equivariant_model(cfg_new)
             stct_src = compat.patch_state_dict_if_old(
                 self.model_state_dict, self.config, model

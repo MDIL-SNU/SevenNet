@@ -18,6 +18,7 @@ from .nn.edge_embedding import (
     SphericalEncoding,
     XPLORCutoff,
 )
+from .nn.equivariant_gate import EquivariantGate
 from .nn.force_output import ForceStressOutputFromEdge
 from .nn.interaction_blocks import NequIP_interaction_block
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
@@ -360,11 +361,34 @@ def patch_oeq(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     return layers
 
 
+def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
+    import sevenn.nn.lunatp_helper as lunatp_helper
+
+    if not config.get(KEY.USE_LUNATP, False):
+        return layers
+
+    # raises ImportError if LunaTP is not available, no fallback to e3nn
+    updates = {}
+    for k, module in layers.items():
+        if isinstance(module, IrrepsConvolution):
+            updates[k] = lunatp_helper.patch_convolution(module)
+        elif isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
+            updates[k] = lunatp_helper.patch_linear(module)
+        elif isinstance(module, SelfConnectionIntro):
+            updates[k] = lunatp_helper.patch_fully_connected(module)
+        elif isinstance(module, EquivariantGate):
+            updates[k] = lunatp_helper.patch_gate(module)
+
+    layers.update(updates)
+    return layers
+
+
 def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
     layers = patch_cue(layers, config)
     layers = patch_flash_tp(layers, config)
     layers = patch_oeq(layers, config)
+    layers = patch_lunatp(layers, config)
     return layers
 
 
