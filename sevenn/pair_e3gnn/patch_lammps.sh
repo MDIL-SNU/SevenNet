@@ -138,8 +138,34 @@ optional_rpaths=()
 
 if [ "$enable_flashTP" -eq 1 ]; then
     optional_libs+=("    \${CMAKE_CURRENT_LIST_DIR}/flashTP/libflashtp_large_kernel_lammps.so")
-    optional_rpaths+=("\${CMAKE_CURRENT_LIST_DIR}/flashTP")
-    mkdir -p $lammps_root/cmake/flashTP && cp $flashTP_so $lammps_root/cmake/flashTP/libflashtp_large_kernel_lammps.so && echo "[FlashTP] flashTP so file copied"
+    flashTP_original_dir="$(dirname "$flashTP_so")"
+    mkdir -p $lammps_root/cmake/flashTP
+    cp $flashTP_so $lammps_root/cmake/flashTP/libflashtp_large_kernel_lammps.so && echo "[FlashTP] flashTP so file copied"
+    # Copy all companion .so files from the original flashTP package dir (e.g. flashtp_large_core*.so)
+    # and the torch runtime libs that libflashtp depends on, into cmake/flashTP/.
+    # cmake/flashTP/ is already in lmp's RUNPATH (from the full-path link above), so the loader
+    # finds everything there without any extra RPATH or LD_LIBRARY_PATH.
+    for _so in "$flashTP_original_dir"/*.so; do
+        [ -f "$_so" ] || continue
+        _name=$(basename "$_so")
+        [ "$_name" = "libflashtp_large_kernel_lammps.so" ] && continue  # already copied
+        cp "$_so" "$lammps_root/cmake/flashTP/$_name" \
+            && echo "[FlashTP] Copied $_name from $flashTP_original_dir"
+    done
+
+    torch_lib_dir=$(python -c "import torch, os; print(os.path.join(os.path.dirname(torch.__file__), 'lib'))" 2>/dev/null)
+    if [ -n "$torch_lib_dir" ]; then
+        for _so in libtorch_python.so libshm.so; do
+            if [ -f "$torch_lib_dir/$_so" ]; then
+                cp "$torch_lib_dir/$_so" "$lammps_root/cmake/flashTP/$_so" \
+                    && echo "[FlashTP] Copied $_so from $torch_lib_dir"
+            else
+                echo "[FlashTP] Warning: $_so not found in $torch_lib_dir"
+            fi
+        done
+    else
+        echo "[FlashTP] Warning: torch not importable — libtorch_python.so/libshm.so may be missing at runtime"
+    fi
 fi
 
 if [ "$enable_oeq" -eq 1 ]; then
