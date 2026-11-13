@@ -15,6 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
+- `e3gnn/parallel` gave wrong energies, forces and stress on processor grids whose unsplit direction lies between two split ones (e.g. `2 1 2`, which LAMMPS chooses for 4 ranks when the box is shortest along y): relayed ghost atoms copied by a self-swap were forwarded with empty node features.
 
 
 ## [0.13.0]
