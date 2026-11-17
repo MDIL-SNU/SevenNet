@@ -389,3 +389,158 @@ def test_no_fallback(monkeypatch):
         _solve_accelerator(False, False, False, True)
     with pytest.raises(ValueError):
         _solve_accelerator(False, False, True, True)
+
+
+_metaformer = {
+    'interaction_type': 'metaformer',
+    'self_connection_type': 'identity',
+    'irreps_manual': ['16x0e', '16x0e+8x1o+4x2e', '16x0e+8x1o+4x2e', '16x0e'],
+    'use_final_norm': True,
+}
+
+
+def _norm_passes(module, x0, v0, r, s):
+    """forward, force-like first derivative (create_graph), loss backward"""
+    x = x0.clone().requires_grad_(True)
+    v = v0.clone().requires_grad_(True)
+    module.zero_grad(set_to_none=True)
+    y = module({'x': x})['x']
+    (g,) = torch.autograd.grad(y, x, v, create_graph=True)
+    ((y * r).sum() + (g * s).sum()).backward()
+    out = [y.detach(), g.detach(), x.grad, v.grad]
+    return out + [q.grad for q in module.parameters()]
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize(
+    'irreps,centering,affine',
+    [
+        ('16x0e+8x1o+4x2e+4x3o', True, True),
+        ('3x1o+5x0e+2x2e', True, True),  # 0e block not first
+        ('16x0e', True, True),
+        ('4x1o+2x2e', True, True),  # no scalars: no centering
+        ('5x0e+3x1o', False, True),
+        ('5x0e+3x1o', True, False),
+    ],
+)
+def test_fused_rmsnorm_module(irreps, centering, affine):
+    from sevenn.nn.lunatp_helper import (
+        LunaTPEquivariantRMSNorm,
+        _run_once,
+        patch_rms_norm,
+    )
+    from sevenn.nn.normalization import EquivariantRMSNorm
+
+    torch.manual_seed(0)
+    ref = EquivariantRMSNorm(irreps, 'x', centering=centering, affine=affine).cuda()
+    if affine:
+        with torch.no_grad():
+            ref.weight.uniform_(0.5, 1.5)
+            ref.bias.normal_()
+    fused = patch_rms_norm(ref)
+    assert isinstance(fused, LunaTPEquivariantRMSNorm)
+    assert fused.state_dict().keys() == ref.state_dict().keys()
+    x0 = torch.randn(37, ref.irreps.dim, device='cuda') * 3.0 + 0.5
+    v0, r, s = (torch.randn_like(x0) for _ in range(3))
+    expected = _norm_passes(ref, x0, v0, r, s)
+    actual = _norm_passes(fused, x0, v0, r, s)
+    for a, b in zip(expected, actual):
+        assert (a is None) == (b is None)
+        if a is not None:
+            assert torch.allclose(a, b, rtol=1e-5, atol=1e-5)
+    _run_once(fused, x0.device, x0.dtype, 2)  # precompile path
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_fused_rmsnorm_needs_one_scalar_block():
+    from sevenn.nn.lunatp_helper import patch_rms_norm
+    from sevenn.nn.normalization import EquivariantRMSNorm
+
+    norm = EquivariantRMSNorm('4x0e+2x1o+3x0e', 'x')  # centered jointly
+    assert patch_rms_norm(norm) is norm
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_fused_rmsnorm_model():
+    from sevenn.nn.lunatp_helper import LunaTPEquivariantRMSNorm
+    from sevenn.nn.normalization import EquivariantRMSNorm
+
+    torch.manual_seed(777)
+    model_e3nn = get_model(_metaformer)
+    model_lunatp = get_model(_metaformer, use_lunatp=True)  # fused by default
+    # opt-out keeps the PyTorch norms
+    plain = get_model({**_metaformer, 'lunatp_fused_norm': False}, use_lunatp=True)
+    assert not any(
+        isinstance(m, LunaTPEquivariantRMSNorm) for m in plain.modules()
+    )
+    # same norm parameter / buffer names: checkpoints load across backends
+    # (the convolution keys differ between backends independently of this)
+    norm_keys = [
+        {k for k in m.state_dict() if '_norm' in k}
+        for m in (model_e3nn, model_lunatp)
+    ]
+    assert norm_keys[0] == norm_keys[1] and norm_keys[0]
+    norms = [m for k, m in model_lunatp.named_children() if 'norm' in k]
+    assert len(norms) == 2 * 3 + 1  # 3 layers x (norm_1, norm_2) + final_norm
+    assert all(isinstance(m, LunaTPEquivariantRMSNorm) for m in norms)
+    with torch.no_grad():
+        for m in norms:
+            m.weight.uniform_(0.5, 1.5)
+            m.bias.normal_()
+
+    # reference: the same LunaTP model with the PyTorch norms
+    model_ref = get_model({**_metaformer, 'lunatp_fused_norm': False},
+                          use_lunatp=True)
+    for k, m in list(model_ref.named_children()):
+        if isinstance(m, LunaTPEquivariantRMSNorm):
+            plain = EquivariantRMSNorm(m.irreps, m.key_x, eps=m.eps)
+            model_ref._modules[k] = plain.cuda()
+    model_ref.load_state_dict(model_lunatp.state_dict())
+
+    def run(model):
+        model.train()
+        model.set_is_batch_data(True)
+        model.zero_grad(set_to_none=True)
+        out = model(get_graphs(batched=True))
+        e, f, s = (
+            out.inferred_total_energy, out.inferred_force, out.inferred_stress
+        )
+        (e.square().sum() + f.square().sum() + s.square().sum()).backward()
+        grads = {n: q.grad for n, q in model.named_parameters()}
+        return e.detach(), f.detach(), s.detach(), grads
+
+    e1, f1, s1, g1 = run(model_ref)
+    e2, f2, s2, g2 = run(model_lunatp)
+    assert torch.allclose(e1, e2, rtol=1e-5, atol=1e-5)
+    assert torch.allclose(f1, f2, atol=1e-5)
+    assert torch.allclose(s1, s2, atol=1e-5)
+    for n, g in g1.items():
+        if g is None:
+            assert g2[n] is None, n
+            continue
+        # fp32 noise: relative to the gradient tensor's norm (entries near 0)
+        assert (g - g2[n]).norm() <= 1e-4 * g.norm() + 1e-8, n
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize('irreps', ['6x0e+3x1o+2x2e+2x3o', '6x0e'])
+def test_fused_rmsnorm_gradcheck_float64(irreps):
+    """first and second derivatives (force training) of the fused kernel"""
+    from sevenn.nn.lunatp_helper import patch_rms_norm
+    from sevenn.nn.normalization import EquivariantRMSNorm
+
+    torch.manual_seed(0)
+    fused = patch_rms_norm(EquivariantRMSNorm(irreps, 'x').cuda().double())
+    dim, n0 = fused.irreps.dim, fused.num_scalars
+    kw = dict(device='cuda', dtype=torch.float64, requires_grad=True)
+    x = (torch.randn(5, dim, **kw) * 2 + 0.3).detach().requires_grad_(True)
+    w = (1 + 0.3 * torch.randn(fused.irreps.num_irreps, **kw)).detach()
+    b = (0.2 * torch.randn(dim, **kw)).detach()
+
+    def f(x, w, b):
+        return fused.equ_norm(x, w, b.narrow(0, fused.scalar_start, n0))
+
+    inputs = [t.requires_grad_(True) for t in (x, w, b)]
+    tol = dict(eps=1e-6, atol=1e-7, rtol=1e-5)
+    assert torch.autograd.gradcheck(f, inputs, **tol)
+    assert torch.autograd.gradgradcheck(f, inputs, **tol)

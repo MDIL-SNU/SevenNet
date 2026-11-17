@@ -423,6 +423,11 @@ def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
             updates[k] = lunatp_helper.patch_fully_connected(module)
         elif isinstance(module, EquivariantGate):
             updates[k] = lunatp_helper.patch_gate(module)
+        elif isinstance(module, EquivariantRMSNorm) and config.get(
+            KEY.LUNATP_FUSED_NORM, True
+        ):
+            # same function as the PyTorch norm (fp32 rounding differs)
+            updates[k] = lunatp_helper.patch_rms_norm(module)
 
     layers.update(updates)
     return layers

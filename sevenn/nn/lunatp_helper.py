@@ -15,6 +15,7 @@ from sevenn._const import AtomGraphDataType
 from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
 from .equivariant_gate import EquivariantGate
 from .linear import IrrepsLinear
+from .normalization import EquivariantRMSNorm
 from .self_connection import SelfConnectionIntro, SelfConnectionLinearIntro
 
 try:
@@ -25,6 +26,7 @@ try:
         TensorProductConv,
         make_graph,
     )
+    from LunaEquivariance.nn.equ_norm import EquNormOperator
     from LunaEquivariance.utils import jit as _lunaeq_jit
     from torch.utils import cpp_extension as _cpp_extension
 
@@ -263,6 +265,79 @@ def patch_gate(module: EquivariantGate):
     return module
 
 
+def _scalar_blocks(irreps):
+    return [
+        s for (_, ir), s in zip(irreps, irreps.slices()) if ir.l == 0 and ir.p == 1
+    ]
+
+
+class LunaTPEquivariantRMSNorm(EquivariantRMSNorm):
+    """
+    EquivariantRMSNorm computed by the fused LunaEquivariance equivariant norm
+    (one kernel per forward, backward and double backward instead of ~100
+    small PyTorch kernels over the three passes of force training). Same
+    function, parameters and buffers (state dict) as EquivariantRMSNorm:
+    LunaEq 'merged' grouping with 'component' weighting is the balanced RMS
+    over all irrep blocks, its scalar centering and bias act on the 0e block.
+    LunaEq centers each 0e block separately, EquivariantRMSNorm centers all
+    0e channels together, so only irreps with at most one 0e block are patched
+    (see patch_rms_norm).
+
+    Sources: fused kernel = LunaEquivariance 0.1.0 EquNormOperator
+    (github.com/HPC-AI-Team/LunaEquivariance, BSD-3-Clause,
+    LunaEquivariance/nn/equ_norm/interface.py; docs operators/
+    equivariant_norm.html), cite Y. Zhou et al., LunaTP: Enabling Efficient
+    and Scalable Tensor Product for Equivariant MLIPs, arXiv:2610.18393
+    (2026). Only called, no code copied. The normalization itself follows
+    EquiformerV2 (arXiv:2306.12059) / eSEN (arXiv:2502.12147), see
+    sevenn/nn/normalization.py.
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        scalar_blocks = _scalar_blocks(self.irreps)
+        if self.centering and len(scalar_blocks) != 1:
+            raise ValueError('fused RMSNorm needs exactly one 0e block to center')
+        self.scalar_start = scalar_blocks[0].start if scalar_blocks else 0
+        self.equ_norm = EquNormOperator(
+            self.irreps,
+            grouping='merged',
+            center_scalars=self.centering,
+            weighting='component',
+            layout='mul_ir',
+            eps=self.eps,
+        )
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        beta = None
+        if self.bias is not None and self.centering:
+            # bias holds one entry per feature, only those of the 0e block act
+            beta = self.bias.narrow(0, self.scalar_start, self.num_scalars)
+        data[self.key_x] = self.equ_norm(data[self.key_x], self.weight, beta)
+        return data
+
+
+@lunatp_needed
+def patch_rms_norm(module: EquivariantRMSNorm):
+    """
+    Return the fused (LunaEq) version of an EquivariantRMSNorm, or the module
+    itself if its irreps have more than one 0e block (centering differs).
+    """
+    if module.centering and len(_scalar_blocks(module.irreps)) != 1:
+        return module
+    fused = LunaTPEquivariantRMSNorm(
+        module.irreps,
+        module.key_x,
+        eps=module.eps,
+        centering=module.centering,
+        affine=module.affine,
+    )
+    reference = module.balance  # floating buffer: device and dtype of the module
+    fused.to(device=reference.device, dtype=reference.dtype)
+    fused.load_state_dict(module.state_dict())
+    return fused
+
+
 def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
     # Forward and backward on two nodes (and two edges) build the module's kernels.
     # LunaEquivariance compiles a variant per set of tensors that require grad, so
@@ -274,6 +349,18 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
     # (the atom-type embedding) builds the forward-only library linear_fwd.
     # order 2 also differentiates first derivatives once more, as a force loss
     # does, with an output gradient that does and does not require grad.
+    if isinstance(module, LunaTPEquivariantRMSNorm):
+        # equ_norm kernels depend on the derivative order only (not on which
+        # operands require grad): forward, backward and double backward
+        x = torch.randn(2, module.irreps.dim, device=device, dtype=dtype)
+        x.requires_grad_(True)
+        out = module({module.key_x: x})[module.key_x]
+        grad_out = torch.randn_like(out, requires_grad=True)
+        (grad,) = torch.autograd.grad(out, x, grad_out, create_graph=order >= 2)
+        if order >= 2:
+            grad.square().sum().backward()
+        module.zero_grad(set_to_none=True)
+        return
     if isinstance(module, LunaTPConvolution):
         tp = module.tp_conv
         dims = [tp.irreps_in1.dim, tp.irreps_in2.dim, tp.weight_numel]
@@ -360,6 +447,7 @@ def _precompile_worker(checkpoint_path: str, rank: str, size: str, order: str):
         LunaTPFullyConnectedTensorProduct,
         LunaEqLinear,
         LunaEqGate,
+        LunaTPEquivariantRMSNorm,
     )
     targets = [m for m in model.modules() if isinstance(m, luna_types)]
     for module in targets[int(rank) :: int(size)]:
