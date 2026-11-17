@@ -896,6 +896,10 @@ MFEXT_CONFIGS = {
         {'radial_short_basis': {'num_basis': 4}, 'radial_mlp_block': {},
          'radial_node_cond': True},
         ('table_', 'w_short', 'radial_node_cond')),
+    'pair_repulsion': (
+        {'pair_repulsion': {'cutoff_scale': 1.4, 'param_scale': 1.0},
+         'ffn_type': 's2_bilinear'},
+        ('table_', 'pair_repulsion.log_amp', 'pair_repulsion.decay_raw')),
     'mf_ext_sink': (
         {'readout_activation': None, 'readout_block': {'type': 'swiglu'},
          'per_layer_readout': True, 'radial_mlp_block': {},

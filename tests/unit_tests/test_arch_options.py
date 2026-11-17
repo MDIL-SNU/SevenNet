@@ -1123,3 +1123,105 @@ def test_short_radial_basis_errors():
     with pytest.raises(ValueError):
         get_model({**_metaformer, 'radial_pair_embedding': True,
                    'radial_short_basis': {'cutoff': 4.5}})
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'radial_pair_embedding': True,
+     'pair_repulsion': {'cutoff_scale': 1.4}},
+    {**_partial, 'pair_repulsion': {'num_terms': 3, 'max_cutoff': 3.0,
+                                    'decay_init': [1.0, 3.0, 9.0],
+                                    'param_scale': 1.0}},
+])
+def test_pair_repulsion(cf):
+    """learned pair repulsion added to the atomic energy after the rescale"""
+    import math
+
+    from e3nn.util.jit import script
+
+    from sevenn.logger import Logger
+    from sevenn.model_build import build_E3_equivariant_model
+    from sevenn.nn.pair_repulsion import PairRepulsion, PairRepulsionToEnergy
+    from sevenn.train.muon import build_muon_param_groups
+    from tests.unit_tests.test_model import get_model_config
+
+    opts = cf['pair_repulsion']
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'pair_repulsion': None})
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    names = list(mods)
+    pair = mods['pair_repulsion']
+    assert isinstance(pair, PairRepulsion)
+    # computed after the layer-1 convolution, added after the rescale
+    assert names.index('pair_repulsion') == names.index('1_convolution') + 1
+    add = 'pair_repulsion_to_energy'
+    assert isinstance(mods[add], PairRepulsionToEnergy)
+    assert names.index(add) == names.index('rescale_atomic_energy') + 1
+    assert names.index('reduce_total_enegy') == names.index(add) + 1
+    k = opts.get('num_terms', 2)
+    assert pair.log_amp.shape == pair.decay_raw.shape == (pair.radius.numel(), k)
+    # init: A_ij = amp_init (1e-4 eV A), pair decay constants = decay_init;
+    # parameters stored / param_scale (default 8, exact: power of two)
+    c = opts.get('param_scale', 8.0)
+    assert pair.param_scale == c
+    kap = torch.nn.functional.softplus(c * pair.decay_raw[0]) * 2
+    want = opts.get('decay_init', [2.0, 5.0])
+    assert torch.allclose(kap, torch.tensor(want), rtol=1e-5)
+    lam0 = 0.5 * math.log(1e-4)
+    assert torch.equal(c * pair.log_amp, torch.full_like(pair.log_amp, lam0))
+    log_a = pair.pair_table()[:, 1:1 + k]  # pair log-amplitudes = log(1e-4)
+    assert torch.allclose(log_a, torch.full_like(log_a, math.log(1e-4)))
+    # tiny init: the model without the term plus < 1e-4 eV
+    missing, unexpected = model.load_state_dict(ref.state_dict(), strict=False)
+    assert not unexpected and all(m.startswith('pair_repulsion.') for m in missing)
+    ref.set_is_batch_data(True)
+    model.set_is_batch_data(True)
+    o_ref = ref(get_graphs(batched=True))
+    o = model(get_graphs(batched=True))
+    de = (o[KEY.PRED_TOTAL_ENERGY] - o_ref[KEY.PRED_TOTAL_ENERGY]).abs().max()
+    assert de < 1e-4
+    assert (o[KEY.PAIR_REPULSION_ENERGY] >= 0).all()
+    assert torch.allclose(  # the per-atom term is in the atomic energy
+        o[KEY.ATOMIC_ENERGY].squeeze(-1) - o_ref[KEY.ATOMIC_ENERGY].squeeze(-1),
+        o[KEY.PAIR_REPULSION_ENERGY].to(o[KEY.ATOMIC_ENERGY].dtype), atol=1e-9)
+    with torch.no_grad():  # effective lambda ~ N(1, 0.5^2), theta ~ N(0, 0.5^2)
+        pair.log_amp.normal_(1.0 / c, 0.5 / c)
+        pair.decay_raw.normal_(0.0, 0.5 / c)
+    o2 = model(get_graphs(batched=True))
+    assert (o2[KEY.PRED_FORCE] - o[KEY.PRED_FORCE]).abs().max() > 1e-3
+    out, out_rot, R = _rotated_pair(model)
+    e, e_r = out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    # element embeddings are Adam parameters, not Muon matrices
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert {'pair_repulsion.log_amp', 'pair_repulsion.decay_raw'} <= adam
+    assert 'pair_repulsion.radius' in model.state_dict()  # buffer, saved
+    script(model.eval())
+    config = get_model_config()
+    config.update(cf)
+    Logger().print_model_info(model, config)
+    # e3gnn/parallel: last segment, ghost types (segment 0 builds them)
+    segs = build_E3_equivariant_model(config, parallel=True)
+    for i, seg in enumerate(segs):
+        sm = seg._modules
+        assert ('pair_repulsion' in sm) == (i == len(segs) - 1)
+        assert ('atom_type_all' in sm) == (i == 0)
+    last = list(segs[-1]._modules)  # right after the segment's edge inputs
+    head = 2 if 'edge_pair_input' in last else 1
+    assert last.index('pair_repulsion') == head
+    assert segs[-1]._modules['pair_repulsion'].key_atom_type == KEY.ATOM_TYPE_ALL
+
+
+def test_pair_repulsion_errors():
+    import sevenn._const as _const
+
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'pair_repulsion': {'max_cutoff': 4.5}})
+    cond = _const.MODEL_CONFIG_CONDITION[KEY.PAIR_REPULSION]
+    assert cond(None) and cond({}) and cond({'num_terms': 3, 'param_scale': 2})
+    assert not cond({'cutoff': 3.0}) and not cond({'amp_init': 0.0})
+    assert not cond({'param_scale': 0.0})

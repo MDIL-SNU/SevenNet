@@ -90,6 +90,8 @@ TAG = 'tag'  # replace USER_LABEL
 # etc
 SELF_CONNECTION_TEMP: Final[str] = 'self_cont_tmp'
 LAYER_ENERGY: Final[str] = 'layer_energy'  # (N, 1) sum of per-layer readouts
+# (N,) per-atom energy of the learned pair repulsion (diagnostics)
+PAIR_REPULSION_ENERGY: Final[str] = 'pair_repulsion_energy'
 BATCH_SIZE: Final[str] = 'batch_size'
 INFO: Final[str] = 'data_info'
 
@@ -286,6 +288,10 @@ PARALLEL_BLOCK = 'parallel_block'  # metaformer conv + FFN from one pre-norm inp
 # None | {cutoff: 3.0, num_basis: 6, poly_p: 6}: short-range basis in the pair
 # radial MLP input (ShortRangeBasis)
 RADIAL_SHORT_BASIS = 'radial_short_basis'
+# None | {num_terms: 2, cutoff_scale: 1.0, max_cutoff, amp_init: 1e-4,
+# decay_init, poly_p: 6, param_scale: 8}: learned pair repulsion added to
+# the atomic energy (sevenn/nn/pair_repulsion.py PairRepulsion)
+PAIR_REPULSION = 'pair_repulsion'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

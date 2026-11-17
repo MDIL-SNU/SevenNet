@@ -37,6 +37,7 @@ from .nn.layer_readout import (
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear, ScalarActivation
 from .nn.node_embedding import GhostAtomTypes, OnehotEmbedding
 from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
+from .nn.pair_repulsion import PairRepulsion, PairRepulsionToEnergy
 from .nn.radial_pair import EdgePairInput, NodeCondRadialInput, PairRadialMLP
 from .nn.edge_attention import AttentionOutGate, EdgeAttention
 from .nn.moe_ffn import type_to_expert_table
@@ -313,6 +314,24 @@ def init_feature_reduce(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict
             }
         )
     return layers
+
+
+def init_pair_repulsion(config: Dict[str, Any]) -> PairRepulsion:
+    """
+    Learned pair repulsion (config pair_repulsion, sevenn/nn/pair_repulsion.py)
+    added to the atomic energy after the shift/scale. Pair cutoffs
+    cutoff_scale x (covalent radius sum), capped at max_cutoff (default and
+    maximum: the model cutoff, so no pair outside the graph is needed).
+    """
+    opts = dict(config[KEY.PAIR_REPULSION])
+    cutoff = float(config[KEY.CUTOFF])
+    max_cutoff = float(opts.pop('max_cutoff', None) or cutoff)
+    if max_cutoff > cutoff:
+        raise ValueError('pair_repulsion max_cutoff must not exceed the cutoff')
+    return PairRepulsion(
+        config[KEY.TYPE_MAP], config[KEY.NUM_SPECIES],
+        max_cutoff=max_cutoff, **opts,
+    )
 
 
 def init_shift_scale(
@@ -639,8 +658,9 @@ def _to_parallel_model(
       segment's edge_vec: edge_embedding and (pair radial) edge_pair_input
       are inserted at the start of every segment; a tensor cached from an
       earlier segment would lose its force contribution
-    - per-edge type lookups (pair radial, attention bias, Agnesi) of ghost
-      neighbours read KEY.ATOM_TYPE_ALL (local + ghost types, segment 0)
+    - per-edge type lookups (pair radial, attention bias, Agnesi, pair
+      repulsion) of ghost neighbours read KEY.ATOM_TYPE_ALL (local + ghost
+      types, segment 0)
     - edge modules gathering source-node features (attention keys,
       node-conditioned radial MLP) also read x_ghost
     - self_cont_tmp must not be an ancestor of x at a segment boundary
@@ -648,6 +668,9 @@ def _to_parallel_model(
     - per-layer readout: the running sum of the layer energies crosses every
       boundary inside self_cont_tmp (LayerEnergyPack / LayerEnergyUnpack),
       so its force contribution is back-propagated with the residual
+    - pair repulsion: moved to the head of the last segment (after its
+      edge_embedding), so the term is computed from that segment's edge
+      lengths and nothing position-dependent crosses a boundary
     Communication is unchanged: one forward and one reverse exchange of the
     convolution input per layer t >= 1.
     """
@@ -699,6 +722,9 @@ def _to_parallel_model(
             need_types = need_types or module.use_rb
         elif isinstance(module, NodeCondRadialInput):
             module.is_parallel = True
+        elif isinstance(module, PairRepulsion):
+            module.key_atom_type = KEY.ATOM_TYPE_ALL
+            need_types = True
         elif isinstance(module, SelfConnectionResidualIntro):
             if key.endswith('_self_connection_intro'):
                 module.clone_identity = True
@@ -708,6 +734,9 @@ def _to_parallel_model(
     edge_embedding = layers['edge_embedding']
     pair_input = [m for _, m in _layers if isinstance(m, EdgePairInput)]
     layer_energy = any(isinstance(m, LayerEnergyAccumulate) for _, m in _layers)
+    pair_rep = [(k, m) for k, m in _layers if isinstance(m, PairRepulsion)]
+    if pair_rep and num_convolution_layer > 1:  # -> head of the last segment
+        _layers = [(k, m) for k, m in _layers if not isinstance(m, PairRepulsion)]
     for i in range(1, num_convolution_layer):
         sliced, _layers = slice_until_this(f'{i}_self_interaction_1', _layers)
         if layer_energy:  # per-layer energies cross inside self_cont_tmp
@@ -719,6 +748,8 @@ def _to_parallel_model(
             head.append(('edge_pair_input', copy.deepcopy(pair_input[0])))
         if layer_energy:
             head.append(('layer_energy_unpack', LayerEnergyUnpack()))
+        if pair_rep and i == num_convolution_layer - 1:
+            head.append(pair_rep[0])
         _layers = head + _layers
 
     layers_list.append(OrderedDict(_layers))
@@ -991,9 +1022,21 @@ def build_E3_equivariant_model(
     if per_layer_readout and num_convolution_layer > 1:
         layers['layer_energy_to_readout'] = LayerEnergyToReadout()
 
+    layers['rescale_atomic_energy'] = init_shift_scale(config)
+    if config.get(KEY.PAIR_REPULSION, None) is not None:
+        # per-edge term computed after the layer-1 convolution (its kernels
+        # overlap the convolutions), added to the atomic energy here
+        t_pair = min(1, num_convolution_layer - 1)
+        _layers = _insert_after(
+            f'{t_pair}_convolution',
+            ('pair_repulsion', init_pair_repulsion(config)),
+            list(layers.items()),
+        )
+        layers.clear()
+        layers.update(_layers)
+        layers['pair_repulsion_to_energy'] = PairRepulsionToEnergy()
     layers.update(
         {
-            'rescale_atomic_energy': init_shift_scale(config),
             'reduce_total_enegy': AtomReduce(
                 data_key_in=KEY.ATOMIC_ENERGY,
                 data_key_out=KEY.PRED_TOTAL_ENERGY,

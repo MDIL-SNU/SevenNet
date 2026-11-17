@@ -138,6 +138,14 @@ CONFIGS = {
     'short_radial_block_node_cond': {
         **_A4, 'radial_short_basis': {'num_basis': 4}, 'radial_mlp_block': {},
         'radial_node_cond': True},
+    # learned pair repulsion (per edge, last segment, ghost types)
+    'pair_repulsion': {**_A4, 'pair_repulsion': {'cutoff_scale': 1.4,
+                                                 'amp_init': 1.0}},
+    'pair_repulsion_nequip': {**_A0, 'pair_repulsion': {
+        'num_terms': 3, 'cutoff_scale': 1.4, 'amp_init': 1.0}},
+    'pair_repulsion_s2': {**_A4, 'ffn_type': 's2_bilinear',
+                          'pair_repulsion': {'cutoff_scale': 1.4,
+                                             'amp_init': 1.0}},
     'mf_ext_sink': {
         **_A4, 'readout_activation': None, 'readout_block': {'type': 'swiglu'},
         'per_layer_readout': True, 'radial_mlp_block': {},
@@ -149,12 +157,13 @@ CONFIGS = {
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
                               'kitchen_sink', 'per_layer_readout',
-                              'light_conv', 'mf_ext_sink')
+                              'light_conv', 'mf_ext_sink', 'pair_repulsion')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
 GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
-                           'kitchen_sink', 's2_bilinear', 'mf_ext_sink')
+                           'kitchen_sink', 's2_bilinear', 'mf_ext_sink',
+                           'pair_repulsion_s2')
                if n in CONFIGS]
 MODAL = 'mpa'
 
@@ -495,6 +504,7 @@ def test_parallel_segments_structure(name):
     from sevenn.nn.edge_attention import EdgeAttention
     from sevenn.nn.edge_embedding import EdgeEmbedding
     from sevenn.nn.normalization import SelfConnectionResidualIntro
+    from sevenn.nn.pair_repulsion import PairRepulsion
     from sevenn.nn.radial_pair import EdgePairInput, NodeCondRadialInput
 
     cf = CONFIGS[name]
@@ -536,6 +546,9 @@ def test_parallel_segments_structure(name):
                 need_types = need_types or m.use_rb
             if isinstance(m, NodeCondRadialInput):
                 assert m.is_parallel
+            if isinstance(m, PairRepulsion):  # from the last segment's edges
+                assert m.key_atom_type == KEY.ATOM_TYPE_ALL and seg is segs[-1]
+                need_types = True
             if isinstance(m, SelfConnectionResidualIntro):
                 assert m.clone_identity == k.endswith('_self_connection_intro')
     assert ('atom_type_all' in names0) == need_types
@@ -566,6 +579,25 @@ def test_per_layer_readout_needs_the_residual_path():
     (e, f, _), _ = _e3gnn_parallel(segs, atoms, _config(cf), (2, 1, 1))
     assert abs(e - ser[0]) < 1e-10 * max(1.0, abs(ser[0]))
     assert np.abs(f - ser[1]).max() > 1e-3
+
+
+def test_pair_repulsion_needs_ghost_types():
+    """
+    the pair term looks up the types of ghost neighbours: with the local-only
+    KEY.ATOM_TYPE (as in the serial model) e3gnn/parallel and ML-IAP index
+    past the local atoms
+    """
+    cf = CONFIGS['pair_repulsion']
+    model = _serial(cf)
+    segs = _segments(model, cf)
+    segs[-1]._modules['pair_repulsion'].key_atom_type = KEY.ATOM_TYPE
+    atoms = _atoms((2, 2, 2))
+    with pytest.raises((IndexError, RuntimeError)):
+        _e3gnn_parallel(segs, atoms, _config(cf), (2, 1, 1))
+    mliap = _mliap_model(model)
+    mliap._modules['pair_repulsion'].key_atom_type = KEY.ATOM_TYPE
+    with pytest.raises((IndexError, RuntimeError)):
+        _run_mliap([mliap], atoms, (1, 1, 1))
 
 
 class _SkipModule(torch.nn.Module):

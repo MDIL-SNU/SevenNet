@@ -8,6 +8,8 @@ for each new op before it is used in training:
   differences of the inference-path forces
 - dimer energy is C2 at the cutoff (energy, force and force constant go to
   their far-field values continuously) for the polynomial envelope
+- learned pair repulsion: positive, strictly decreasing, C2 at its own pair
+  cutoff r_c,ij (exactly zero beyond), for random parameters
 """
 import numpy as np
 import pytest
@@ -93,6 +95,12 @@ CONFIGS = {
         **_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
         'radial_mlp_block': {}, 'radial_short_basis': {'cutoff': 3.2,
                                                        'num_basis': 4}},
+    'pair_repulsion': {**_metaformer, 'radial_pair_embedding': True,
+                       'pair_repulsion': {'cutoff_scale': 1.4,
+                                          'amp_init': 1.0}},
+    'pair_repulsion_nequip_3terms': {
+        **_partial, 'pair_repulsion': {'num_terms': 3, 'cutoff_scale': 1.4,
+                                       'max_cutoff': 3.5, 'amp_init': 1.0}},
     'light_conv_full_parity': {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
@@ -131,6 +139,10 @@ def _model(cf):
                 p.normal_(0, 0.3)   # zero-initialized radial bias / output gate
             if cf.get('radial_mlp_block') is not None and 'table_' in n:
                 p.normal_(0, 0.3)   # element-pair tables (zero-initialized)
+            if n.startswith('pair_repulsion.') and 'radius' not in n:
+                # element-dependent pairs; effective spread 0.3 (stored / c)
+                c = model._modules['pair_repulsion'].param_scale
+                p.add_(0.3 * torch.randn_like(p) / c)
     model.set_is_batch_data(False)
     return model
 
@@ -260,7 +272,8 @@ def _dimer_tail(model, h=1e-3):
                                   's2_bilinear_l3', 'radial_mlp_block',
                                   'radial_mlp_block_mlp_layer',
                                   'radial_mlp_block_node_cond', 'short_radial',
-                                  'short_radial_block_node_cond'])
+                                  'short_radial_block_node_cond',
+                                  'pair_repulsion'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
@@ -344,3 +357,83 @@ def test_short_radial_c2_at_inner_cutoff(name):
         assert de(x) == 0.0
     s1, s2 = (_k_jump(model, rs, delta=d, h=5e-4) for d in (0.002, 0.001))
     assert s2 < 0.7 * s1 or s2 < 1e-6, (s1, s2)
+
+
+def _pair_term(model, x, sym='NaCl'):
+    """dimer pair repulsion energy phi(x) (sum of the per-atom terms)"""
+    model.eval()
+    at = Atoms(sym, positions=[[0, 0, 0], [x, 0, 0]])
+    return model(_graph(at))[KEY.PAIR_REPULSION_ENERGY].sum().item()
+
+
+@pytest.mark.parametrize('name', ['pair_repulsion', 'pair_repulsion_nequip_3terms'])
+def test_pair_repulsion_dimer(name):
+    """
+    the pair term of a dimer is positive and strictly decreasing up to its
+    pair cutoff r_c = min(s (R_Na + R_Cl), r_max), diverges as r -> 0, is
+    exactly zero beyond r_c and C2 at r_c (phi, phi', phi'' shrink like
+    (r_c - r)^3, ^2, ^1); the force constant of the whole model is continuous
+    across r_c
+    """
+    from ase.data import atomic_numbers, covalent_radii
+
+    cf = CONFIGS[name]
+    opts = cf['pair_repulsion']
+    rc = opts['cutoff_scale'] * (covalent_radii[atomic_numbers['Na']]
+                                 + covalent_radii[atomic_numbers['Cl']])
+    rc = min(rc, opts.get('max_cutoff', cutoff))
+    model = _model(cf)
+    grid = np.concatenate([np.geomspace(0.02, 0.5, 30),
+                           np.linspace(0.5, rc - 1e-3, 120)[1:]])
+    phi = np.array([_pair_term(model, x) for x in grid])
+    assert (phi > 0).all()
+    assert (np.diff(phi) < 0).all()
+    assert phi[0] > 20 * phi[29]  # 1/r: grows without bound as r -> 0
+    for x in (rc + 1e-4, rc + 0.05, rc + 0.3):
+        assert _pair_term(model, x) == 0.0
+    h = 1e-3
+    out = []
+    for delta in (0.02, 0.01):
+        r = rc - delta
+        e = [_pair_term(model, x) for x in (r - h, r, r + h)]
+        out.append(np.array([e[1], (e[2] - e[0]) / (2 * h),
+                             (e[2] - 2 * e[1] + e[0]) / h**2]))
+    far, near = out
+    assert abs(_pair_term(model, rc - 0.5)) > 1e-4  # active inside r_c
+    for i, thr in enumerate((0.2, 0.35, 0.6)):
+        assert abs(near[i]) < 1e-9 or abs(near[i]) < thr * abs(far[i]), (far, near)
+    s1, s2 = (_k_jump(model, rc, delta=d, h=5e-4) for d in (0.002, 0.001))
+    assert s2 < 0.7 * s1 or s2 < 1e-6, (s1, s2)
+
+
+def test_pair_repulsion_guarantee_random_parameters():
+    """
+    positivity and monotonicity hold by construction for any parameters:
+    20 draws with a wide spread of log amplitudes and decay constants, all
+    element pairs, dense grid 0.01 A .. r_c
+    """
+    from sevenn.nn.pair_repulsion import PairRepulsion
+
+    tm = {1: 0, 8: 1, 29: 2, 68: 3, 18: 4}
+    mod = PairRepulsion(tm, 5, num_terms=3, cutoff_scale=1.2, max_cutoff=6.0)
+    c = mod.param_scale  # stored = effective / c
+    gen = torch.Generator().manual_seed(0)
+    r = torch.linspace(0.01, 6.0, 3000)
+    for _ in range(20):
+        with torch.no_grad():  # effective lambda, theta ~ N(0, 3^2)
+            mod.log_amp.copy_(3.0 * torch.randn(5, 3, generator=gen) / c)
+            mod.decay_raw.copy_(3.0 * torch.randn(5, 3, generator=gen) / c)
+        for i in range(5):
+            for j in range(5):
+                ti = torch.full_like(r, i, dtype=torch.long)
+                tj = torch.full_like(r, j, dtype=torch.long)
+                phi = mod.pair_energy(r, ti, tj)
+                assert torch.equal(phi, mod.pair_energy(r, tj, ti))  # symmetric
+                rc = min(1.2 * float(mod.radius[i] + mod.radius[j]), 6.0)
+                inside = r < rc - 1e-3
+                p = phi[inside]
+                assert (p > 0).all() and (p[1:] <= p[:-1]).all()
+                d = p[1:] - p[:-1]
+                big = p[1:] > 1e-30  # strict where it does not underflow
+                assert (d[big] < 0).all()
+                assert (phi[r >= rc] == 0).all()

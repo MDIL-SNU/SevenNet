@@ -179,6 +179,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.CONV_GATE: True,
     KEY.PARALLEL_BLOCK: False,
     KEY.RADIAL_SHORT_BASIS: None,
+    KEY.PAIR_REPULSION: None,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -261,6 +262,17 @@ MODEL_CONFIG_CONDITION = {
         and set(x) <= {'cutoff', 'num_basis', 'poly_p'}
         and float(x.get('cutoff', 3.0)) > 0
         and int(x.get('num_basis', 6)) > 0
+    ),
+    KEY.PAIR_REPULSION: lambda x: x is None or (
+        isinstance(x, dict)
+        and set(x) <= {
+            'num_terms', 'cutoff_scale', 'max_cutoff', 'amp_init',
+            'decay_init', 'poly_p', 'param_scale',
+        }
+        and int(x.get('num_terms', 2)) > 0
+        and float(x.get('cutoff_scale', 1.0)) > 0
+        and float(x.get('amp_init', 1e-4)) > 0
+        and float(x.get('param_scale', 8.0)) > 0
     ),
     KEY.PARALLEL_BLOCK: lambda x: isinstance(x, bool) or (
         isinstance(x, list) and all(isinstance(v, bool) for v in x)

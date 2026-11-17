@@ -15,6 +15,7 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 from .edge_attention import EdgeAttention
+from .pair_repulsion import PairRepulsion
 
 
 class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
@@ -188,7 +189,8 @@ def patch_model_for_mliap(model: nn.Module) -> nn.Module:
     once per layer, right after {t}_self_interaction_1 (the convolution input),
     i.e. before every module of the layer that gathers source-node features
     (edge attention, node-conditioned radial MLP, convolution). Edge-level type
-    lookups of ghost neighbours read KEY.ATOM_TYPE_ALL. Edge inputs computed
+    lookups of ghost neighbours (attention, pair repulsion) read
+    KEY.ATOM_TYPE_ALL. Edge inputs computed
     once from edge_vec (edge_embedding, edge_pair_input) stay valid: ML-IAP
     back-propagates the whole model in one autograd graph.
     """
@@ -204,7 +206,7 @@ def patch_model_for_mliap(model: nn.Module) -> nn.Module:
             module = MLIAPWrappedConvolution(module, extra)
         elif k == 'onehot_to_feature_x':
             module = MLIAPWrappedIrrepsLinear(module)
-        elif isinstance(module, EdgeAttention):
+        elif isinstance(module, (EdgeAttention, PairRepulsion)):
             module.key_atom_type = KEY.ATOM_TYPE_ALL
         modules[k] = module
         m_si1 = _RE_SI1.fullmatch(k)
