@@ -74,6 +74,7 @@ _A0 = {**_partial, **_xplor, **_modal}  # nequip block, linear residual
 _A2 = {**_metaformer, **_xplor, **_modal}  # metaformer, identity residual
 _A3 = {**_A2, 'radial_pair_embedding': True}
 _A4 = {**_A3, 'readout_activation': 'silu'}
+_irreps_conv = ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']
 CONFIGS = {
     # nequip block (original SevenNet path), ghost types (Agnesi transform)
     'nequip_sc': {},
@@ -87,6 +88,7 @@ CONFIGS = {
     'ffn_hidden_scale_4': {**_A2, 'ffn_hidden_scale': 4},
     'final_norm_no_ffn': {**_A2, 'use_final_norm': True, 'use_ffn': False},
     'linear_residual': {**_A2, 'self_connection_type': 'linear'},
+    'irreps_conv': {**_A2, 'irreps_conv': _irreps_conv},
     'sigmoid_gate': {**_A2, 'act_gate': {'e': 'sigmoid', 'o': 'tanh'}},
     'agnesi_metaformer': {**_A2, 'distance_transform': 'agnesi'},
     # element-pair radial MLP and the edge-embedding options it reads

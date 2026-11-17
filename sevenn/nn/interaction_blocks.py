@@ -27,6 +27,7 @@ def NequIP_interaction_block(
     bias_in_linear: bool,
     num_species: int,
     t: int,   # interaction layer index
+    irreps_conv: Optional[Irreps] = None,
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -45,15 +46,17 @@ def NequIP_interaction_block(
         irreps_out=irreps_for_gate_in,
     )
 
+    # convolution may run on narrower irreps than the node features (MACE-MH-1)
+    irreps_conv = irreps_x if irreps_conv is None else Irreps(irreps_conv)
     block[f'{t}_self_interaction_1'] = IrrepsLinear(
-        irreps_x, irreps_x,
+        irreps_x, irreps_conv,
         data_key_in=data_key_x,
         biases=bias_in_linear,
     )
 
     # convolution part, l>lmax is dropped as defined in irreps_out
     block[f'{t}_convolution'] = IrrepsConvolution(
-        irreps_x=irreps_x,
+        irreps_x=irreps_conv,
         irreps_filter=irreps_filter,
         irreps_out=irreps_out_tp,
         data_key_weight_input=data_key_weight_input,
@@ -100,6 +103,7 @@ def Metaformer_interaction_block(
     ffn_type: str = 'gate',
     layer_scale_init: Optional[float] = None,
     ffn_film: bool = False,
+    irreps_conv: Optional[Irreps] = None,
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -129,13 +133,15 @@ def Metaformer_interaction_block(
         irreps_out=irreps_out,
     )
     block[f'{t}_norm_1'] = EquivariantRMSNorm(irreps_x, data_key_x, eps=norm_eps)
+    # convolution may run on narrower irreps than the node features (MACE-MH-1)
+    irreps_conv = irreps_x if irreps_conv is None else Irreps(irreps_conv)
     block[f'{t}_self_interaction_1'] = IrrepsLinear(
-        irreps_x, irreps_x,
+        irreps_x, irreps_conv,
         data_key_in=data_key_x,
         biases=bias_in_linear,
     )
     block[f'{t}_convolution'] = IrrepsConvolution(
-        irreps_x=irreps_x,
+        irreps_x=irreps_conv,
         irreps_filter=irreps_filter,
         irreps_out=irreps_out_tp,
         data_key_weight_input=data_key_weight_input,

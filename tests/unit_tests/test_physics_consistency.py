@@ -42,6 +42,8 @@ CONFIGS = {
     'film': _film_rand,
     'agnesi': {**_metaformer, 'distance_transform': 'agnesi'},
     'sigmoid_gate': {**_metaformer, 'act_gate': {'e': 'sigmoid', 'o': 'tanh'}},
+    'irreps_conv': {**_metaformer,
+                    'irreps_conv': ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']},
 }
 
 

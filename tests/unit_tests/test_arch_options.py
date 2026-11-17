@@ -296,3 +296,18 @@ def test_sigmoid_gate():
     assert torch.allclose(f @ R.T, f_r, atol=1e-4)
     assert torch.isfinite(f).all()
     del acts
+
+
+@pytest.mark.parametrize('base', [_metaformer, _partial])
+def test_irreps_conv_narrow(base):
+    conv = ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']
+    model = get_model({**base, 'irreps_conv': conv})
+    mods = dict(model.named_children())
+    for t, ir in enumerate(conv):
+        assert Irreps(mods[f'{t}_self_interaction_1'].irreps_out) == Irreps(ir)
+        assert Irreps(mods[f'{t}_convolution'].convolution.irreps_in1) == Irreps(ir)
+    # node features keep the full width (4x1o), the convolution runs on 2x1o
+    assert Irreps(mods['1_self_interaction_2'].irreps_out).count('1o') == 4
+    out, out_rot, R = _rotated_pair(model)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)

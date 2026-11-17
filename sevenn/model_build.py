@@ -693,6 +693,9 @@ def build_E3_equivariant_model(
     else:
         raise ValueError(f'Unknown interaction type: {interaction_type}')
 
+    irreps_conv_list = config.get(KEY.IRREPS_CONV, None)  # None or per layer
+    if irreps_conv_list:
+        assert len(irreps_conv_list) == num_convolution_layer
     use_ffn = config.get(KEY.USE_FFN, True)  # bool or one bool per layer
     if not isinstance(use_ffn, list):
         use_ffn = [use_ffn] * num_convolution_layer
@@ -726,8 +729,11 @@ def build_E3_equivariant_model(
                 if irreps_manual is None
                 else irreps_manual[t + 1]
             )
+            irreps_conv_t = (
+                Irreps(irreps_conv_list[t]) if irreps_conv_list else irreps_x
+            )
             irreps_out_tp = util.infer_irreps_out(
-                irreps_x,  # type: ignore
+                irreps_conv_t,  # type: ignore
                 irreps_filter,
                 irreps_out.lmax,  # type: ignore
                 parity_mode,
@@ -745,6 +751,7 @@ def build_E3_equivariant_model(
             {
                 'irreps_out_tp': irreps_out_tp,
                 'irreps_out': irreps_out,
+                'irreps_conv': irreps_conv_t if irreps_conv_list else None,
             }
         )
         layers.update(interaction_builder(**param_interaction_block))
