@@ -474,3 +474,30 @@ def test_conv_attention(cf):
     assert torch.allclose(f @ R.T, f_r, atol=1e-4)
     assert torch.isfinite(f).all()
     script(model.eval())
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True},
+    {**_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
+     'conv_attention': {}},
+])
+def test_radial_node_cond(cf):
+    from e3nn.util.jit import script
+
+    from sevenn.nn.radial_pair import NodeCondRadialInput
+
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    assert isinstance(mods['1_radial_node_cond'], NodeCondRadialInput)
+    assert mods['1_convolution'].key_weight_input == '1_edge_pair_input_nc'
+    with torch.no_grad():
+        for m in mods.values():
+            if isinstance(m, NodeCondRadialInput):
+                m.p_src.weight.normal_(0, 0.3)
+                m.p_dst.weight.normal_(0, 0.3)
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    script(model.eval())

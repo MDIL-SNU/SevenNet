@@ -267,6 +267,7 @@ LUNATP_FUSED_NORM = 'lunatp_fused_norm'  # LunaEq fused EquivariantRMSNorm
 CONV_ATTENTION = 'conv_attention'  # None | dict: envelope-gated neighbour attention
 # LunaTP only: conv_attention layers share the LunaTP graph and the envelope
 LUNATP_FAST_ATTENTION = 'lunatp_fast_attention'
+RADIAL_NODE_COND = 'radial_node_cond'  # node-state terms in the pair radial MLP
 BILINEAR_PATHS = 'bilinear_paths'  # 'all' | 'same_l' | 'lmax2' | 'scalar'
 BILINEAR_B = 'bilinear_b'  # 'own' (B from self_interaction_2) | 'shared' (B = A)
 READOUT_ACTIVATION = 'readout_activation'  # act between the two readout linears

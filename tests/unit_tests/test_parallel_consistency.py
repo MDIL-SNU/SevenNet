@@ -104,6 +104,17 @@ CONFIGS = {
     # edge attention
     'a05_attention': {**_A4, 'conv_attention': {}},
     'attention_no_pair': {**_A2, 'conv_attention': {'skip_first': False}},
+    # node-conditioned radial MLP
+    'a06_radial_node_cond': {**_A4, 'radial_node_cond': True},
+    'attention_all_layers_node_cond': {
+        **_A4, 'radial_node_cond': True, 'conv_attention': {'skip_first': False}
+    },
+    'kitchen_sink': {
+        **_A4, 'radial_node_cond': True, 'conv_attention': {'skip_first': False},
+        'distance_transform': 'agnesi', 'ffn_type': 'swiglu', 'ffn_film': True,
+        'layer_scale_init': 0.1, 'use_final_norm': True,
+        'irreps_conv': _irreps_conv,
+    },
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
@@ -451,7 +462,7 @@ def test_parallel_segments_structure(name):
     from sevenn.nn.edge_attention import EdgeAttention
     from sevenn.nn.edge_embedding import EdgeEmbedding
     from sevenn.nn.normalization import SelfConnectionResidualIntro
-    from sevenn.nn.radial_pair import EdgePairInput
+    from sevenn.nn.radial_pair import EdgePairInput, NodeCondRadialInput
 
     cf = CONFIGS[name]
     model = _serial(cf)
@@ -489,6 +500,8 @@ def test_parallel_segments_structure(name):
             if isinstance(m, EdgeAttention):
                 assert m.is_parallel and m.key_atom_type == KEY.ATOM_TYPE_ALL
                 need_types = need_types or m.use_rb
+            if isinstance(m, NodeCondRadialInput):
+                assert m.is_parallel
             if isinstance(m, SelfConnectionResidualIntro):
                 assert m.clone_identity == k.endswith('_self_connection_intro')
     assert ('atom_type_all' in names0) == need_types

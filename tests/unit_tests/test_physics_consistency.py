@@ -55,6 +55,8 @@ CONFIGS = {
     'attention': {**_metaformer, 'conv_attention': {}},
     'attention_pair': {**_metaformer, 'conv_attention': {},
                        'radial_pair_embedding': True},
+    'radial_node_cond': {**_metaformer, 'radial_pair_embedding': True,
+                         'radial_node_cond': True},
     'irreps_conv': {**_metaformer,
                     'irreps_conv': ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']},
 }
@@ -83,9 +85,9 @@ def _model(cf):
         for n, p in model.named_parameters():
             if 'film' in n or 'equivariant_gate.linear' in n:  # bilinear term
                 p.normal_(0, 0.3)
-            if 'edge_attention' in n and (
+            if ('edge_attention' in n and (
                 n.split('.')[-2] in ('rb', 'og') or n.endswith(('t_src', 't_dst'))
-            ):
+            )) or 'radial_node_cond' in n:
                 p.normal_(0, 0.3)   # zero-initialized radial bias / output gate
     model.set_is_batch_data(False)
     return model
@@ -210,8 +212,8 @@ def _dimer_tail(model, h=1e-3):
 
 
 @pytest.mark.parametrize('name', ['metaformer', 'agnesi', 'pair_radial',
-                                  'attention', 'swiglu', 'film', 'bilinear_gate',
-                                  'bilinear_gate_l3'])
+                                  'attention', 'radial_node_cond', 'swiglu', 'film',
+                                  'bilinear_gate', 'bilinear_gate_l3'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must

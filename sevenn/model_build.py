@@ -29,7 +29,7 @@ from .nn.interaction_blocks import (
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear, ScalarActivation
 from .nn.node_embedding import GhostAtomTypes, OnehotEmbedding
 from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
-from .nn.radial_pair import EdgePairInput, PairRadialMLP
+from .nn.radial_pair import EdgePairInput, NodeCondRadialInput, PairRadialMLP
 from .nn.edge_attention import AttentionOutGate, EdgeAttention
 from .nn.scale import ModalWiseRescale, Rescale, SpeciesWiseRescale
 from .nn.self_connection import (
@@ -98,6 +98,22 @@ def _patch_pair_radial(layers: OrderedDict, num_species: int) -> None:
             module.key_weight_input = KEY.EDGE_PAIR_INPUT
             module.weight_nn_cls = PairRadialMLP
             module.weight_nn_kwargs['num_species'] = num_species
+
+
+def _patch_radial_node_cond(layers: OrderedDict) -> None:
+    """Node-state terms in every (element-pair) radial MLP (in place)."""
+    items = list(layers.items())
+    for k, conv in [(k, m) for k, m in items if isinstance(m, IrrepsConvolution)]:
+        t = int(k.split('_')[0])
+        hidden = conv.weight_nn_kwargs['hs'][1]
+        mod = NodeCondRadialInput(conv.convolution_kwargs['irreps_in1'], hidden, t)
+        items = _insert_after(
+            f'{t}_self_interaction_1', (f'{t}_radial_node_cond', mod), items
+        )
+        conv.key_weight_input = mod.key_out
+        conv.weight_nn_kwargs['node_cond'] = hidden
+    layers.clear()
+    layers.update(items)
 
 
 def _patch_edge_attention(layers: OrderedDict, config: Dict[str, Any]) -> None:
@@ -587,6 +603,8 @@ def _to_parallel_model(
             module.key_atom_type = KEY.ATOM_TYPE_ALL
             module.is_parallel = True
             need_types = need_types or module.use_rb
+        elif isinstance(module, NodeCondRadialInput):
+            module.is_parallel = True
         elif isinstance(module, SelfConnectionResidualIntro):
             if key.endswith('_self_connection_intro'):
                 module.clone_identity = True
@@ -813,6 +831,8 @@ def build_E3_equivariant_model(
 
     if config.get(KEY.RADIAL_PAIR_EMBEDDING, False):
         _patch_pair_radial(layers, num_species)
+        if config.get(KEY.RADIAL_NODE_COND, False):
+            _patch_radial_node_cond(layers)
 
     if config.get(KEY.CONV_ATTENTION, None) is not None:
         _patch_edge_attention(layers, config)
