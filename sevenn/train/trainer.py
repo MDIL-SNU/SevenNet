@@ -17,6 +17,112 @@ from .loss import get_loss_functions_from_config
 from .optim import optim_dict, scheduler_dict
 
 
+def freeze_to_modals(
+    model: torch.nn.Module,
+    train_only_modals: List[str],
+    rank: int = 0,
+) -> None:
+    """
+    Experimental knob (config key 'train_only_modals'): freeze every parameter
+    except the modality-specific slices that belong to the listed modalities.
+
+    Modality-specific parameters are sub-slices of otherwise-shared tensors:
+      * modal IrrepsLinear (nn/linear.py): the modal one-hot weights, i.e. the
+        last weight-view of `linear.weight`, shape (num_modalities, out_scalars).
+        A modality is one row of that view.
+      * ModalWiseRescale (nn/scale.py): rows of `shift` / `scale`, but only when
+        they are modal-wise and were trainable to begin with.
+
+    Because requires_grad is per-tensor, the partially-trained tensors keep
+    requires_grad=True and a backward hook masks their gradient to the selected
+    rows only. This blocks (a) data-loss gradient from leaking into the shared
+    columns of those layers and (b) L2_modal regularization (train/loss.py) from
+    leaking onto the non-selected modalities. Everything else is frozen via
+    requires_grad=False and is therefore excluded from the optimizer.
+    """
+    from sevenn.nn.linear import IrrepsLinear
+    from sevenn.nn.scale import ModalWiseRescale
+
+    modal_map = getattr(model, 'modal_map', None)
+    if not modal_map:
+        raise ValueError(
+            'train_only_modals is set but the model has no modal_map; '
+            'use_modality must be True with modalities defined'
+        )
+    missing = [m for m in train_only_modals if m not in modal_map]
+    if missing:
+        raise ValueError(
+            f'train_only_modals {missing} not found in model modal_map '
+            f'{sorted(modal_map)}'
+        )
+    keep_idx = sorted({modal_map[m] for m in train_only_modals})
+
+    def _mask_hook(mask: torch.Tensor):
+        cache = {'mask': mask}
+
+        def hook(grad):
+            m = cache['mask']
+            if m.device != grad.device or m.dtype != grad.dtype:
+                m = m.to(device=grad.device, dtype=grad.dtype)
+                cache['mask'] = m
+            return grad * m
+
+        return hook
+
+    # Snapshot trainability before freezing so train_shift/train_scale (and any
+    # other intentionally-frozen params) are respected, not silently re-enabled.
+    was_trainable = {p: p.requires_grad for p in model.parameters()}
+    for p in model.parameters():
+        p.requires_grad_(False)
+
+    report = []
+    for name, module in model.named_modules():
+        if isinstance(module, IrrepsLinear) and module.num_modalities > 1:
+            linear = module.linear
+            weight = linear.weight
+            mask = torch.zeros_like(weight)
+            modal_view = list(linear.weight_views(mask))[-1]
+            if modal_view.shape[0] != module.num_modalities:
+                raise RuntimeError(
+                    f'{name}: last weight-view has {modal_view.shape[0]} rows != '
+                    f'num_modalities {module.num_modalities}; modal weight layout '
+                    'assumption violated'
+                )
+            modal_view[keep_idx, :] = 1.0  # writes through into `mask`
+            weight.requires_grad_(True)
+            weight.register_hook(_mask_hook(mask))
+            report.append(f'{name}.linear.weight (rows {keep_idx})')
+        elif isinstance(module, ModalWiseRescale):
+            for attr, use_mw in (
+                ('shift', module.use_modal_wise_shift),
+                ('scale', module.use_modal_wise_scale),
+            ):
+                param = getattr(module, attr)
+                if use_mw and was_trainable.get(param, False):
+                    mask = torch.zeros_like(param)
+                    mask[keep_idx, :] = 1.0
+                    param.requires_grad_(True)
+                    param.register_hook(_mask_hook(mask))
+                    report.append(f'{name}.{attr} (rows {keep_idx})')
+
+    if not report:
+        raise ValueError(
+            'train_only_modals matched no modal parameters; check that modal '
+            'modules (use_modal_*) and/or modal-wise shift/scale are enabled'
+        )
+
+    if rank == 0:
+        n_tensors = sum(1 for p in model.parameters() if p.requires_grad)
+        n_elems = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(
+            f'[train_only_modals] modalities {train_only_modals} -> indices '
+            f'{keep_idx}; trainable tensors={n_tensors}, '
+            f'masked-trainable elements={n_elems}\n  '
+            + '\n  '.join(report),
+            flush=True,
+        )
+
+
 class Trainer:
     """
     Training routine specialized for this package. Depends on 'sevenn.train.loss'
@@ -46,6 +152,7 @@ class Trainer:
         device: Union[torch.device, str] = 'auto',
         distributed: bool = False,
         distributed_backend: str = 'nccl',
+        train_only_modals: Optional[List[str]] = None,
     ) -> None:
         if device == 'auto':
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -61,18 +168,30 @@ class Trainer:
             self.local_rank = local_rank
             if distributed_backend == 'nccl':
                 device = torch.device('cuda', local_rank)
-                self.model = DDP(model.to(device), device_ids=[device])
-            elif distributed_backend == 'mpi':
-                self.model = DDP(model.to(device))
-            else:
+            elif distributed_backend != 'mpi':
                 raise ValueError(f'Unknown DDP backend: {distributed_backend}')
+        else:
+            self.rank = 0
+            self.local_rank = 0
+
+        model = model.to(device)
+        # Experimental: restrict trainable params to selected modalities' slices.
+        # Must run after .to(device) (gradient-mask buffers match the param
+        # device) and before the DDP wrap (so the reducer sees the final
+        # requires_grad) and the optimizer build (so frozen params are excluded).
+        if train_only_modals is not None:
+            freeze_to_modals(model, train_only_modals, rank=self.rank)
+
+        if distributed:
+            if distributed_backend == 'nccl':
+                self.model = DDP(model, device_ids=[device])
+            else:  # mpi
+                self.model = DDP(model)
             dist.barrier()
             self.model.module.set_is_batch_data(True)
         else:
-            self.model = model.to(device)
+            self.model = model
             self.model.set_is_batch_data(True)
-            self.rank = 0
-            self.local_rank = 0
 
         self.device = torch.device(device)
         self.distributed = distributed
@@ -112,6 +231,7 @@ class Trainer:
             device=config.get(KEY.DEVICE, 'auto'),
             distributed=config.get(KEY.IS_DDP, False),
             distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
+            train_only_modals=config.get(KEY.TRAIN_ONLY_MODALS, None),
         )
         return trainer
 

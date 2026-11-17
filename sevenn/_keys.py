@@ -243,6 +243,9 @@ TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_SHIFT = 'train_shift'
 TRAIN_SCALE = 'train_scale'
 TRAIN_DENOMINTAOR = 'train_denominator'
+# Experimental: list of modal names whose modality-specific parameter slices
+# stay trainable; everything else (shared backbone + other modalities) is frozen
+TRAIN_ONLY_MODALS = 'train_only_modals'
 INTERACTION_TYPE = 'interaction_type'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 

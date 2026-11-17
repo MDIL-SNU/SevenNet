@@ -323,6 +323,7 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.BEST_METRIC: 'TotalLoss',
     KEY.USE_WEIGHT: False,
     KEY.USE_MODALITY: False,
+    KEY.TRAIN_ONLY_MODALS: None,
 }
 
 
@@ -355,6 +356,8 @@ TRAINING_CONFIG_CONDITION = {
     KEY.CSV_LOG: str,
     KEY.USE_MODALITY: bool,
     KEY.USE_WEIGHT: bool,
+    KEY.TRAIN_ONLY_MODALS: lambda x: x is None
+    or (isinstance(x, list) and all(isinstance(i, str) for i in x)),
 }
 
 
