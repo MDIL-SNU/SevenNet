@@ -1,7 +1,9 @@
 """
 Parallel MD gives the same energy, forces and stress as the serial model
-(float64, CPU), for every architecture option. SevenNet has two parallel MD
-interfaces; both are emulated exactly in Python here:
+(float64, CPU), for every architecture option and both model build paths
+(ARCHS: the original SevenNet model, config without 'architecture', and the
+isolation-gate model, architecture: isolation_gate). SevenNet has two
+parallel MD interfaces; both are emulated exactly in Python here:
 
 1. LAMMPS e3gnn/parallel (sevenn/pair_e3gnn/pair_e3gnn_parallel.cpp): the
    segments of sevenn/scripts/deploy.py (build_parallel_model_list, the same
@@ -13,7 +15,11 @@ interfaces; both are emulated exactly in Python here:
    forward_comm of x between segments (ghost rows = the owner's local rows),
    per-segment torch.autograd.grad w.r.t. (edge_vec, x, self_cont_tmp,
    x_ghost) with the C++ wrt-tensor bookkeeping, reverse_comm of the ghost
-   gradients, dE/dr -> forces and virial. Once with the eager segments, and
+   gradients, dE/dr -> forces and virial. Segments: num_convolution_layer
+   (original: layer 0 computes ghost features with ghost twins of the
+   node-wise modules) or num_convolution_layer + 1 (isolation gate: x is
+   exchanged after 0_self_interaction_1 as well, s_i needs the owner's edges).
+   Once with the eager segments, and
    once with e3nn.util.jit.script + torch.jit.freeze (as deploy_parallel),
    with the graph executor optimization off as in the pair style. One test
    goes through a real checkpoint file, deploy_parallel and torch.jit.load.
@@ -27,12 +33,14 @@ interfaces; both are emulated exactly in Python here:
    goes through SevenNetMLIAPWrapper with a stub lammps module.
 
 Standard check for a new op: add its config to CONFIGS below (next to
-tests/unit_tests/test_physics_consistency.py) and run this file. A new module
-that transforms the node features before the first convolution needs a ghost
-twin (model_build._ghost_twin); one that gathers source-node features or
-types per edge must read x_ghost / KEY.ATOM_TYPE_ALL in parallel (see
-EdgeAttention, NodeCondRadialInput); a position-dependent tensor must be
-recomputed in every e3gnn/parallel segment (see edge_pair_input).
+tests/unit_tests/test_physics_consistency.py) and run this file. Original
+path: a module that transforms the node features before the first convolution
+needs a ghost twin (model_build._ghost_twin). Both paths: a module that
+gathers source-node features or types per edge must read x_ghost /
+KEY.ATOM_TYPE_ALL in parallel (see EdgeAttention, NodeCondRadialInput); a
+position-dependent tensor must be recomputed in every e3gnn/parallel segment
+(see edge_pair_input; gate: node_gate) or cross inside self_cont_tmp (see
+LayerEnergyPack; gate: SegmentPack).
 """
 import contextlib
 import copy
@@ -52,7 +60,13 @@ from sevenn._const import AtomGraphDataType
 from sevenn.nn._ghost_exchange import mliap_compute_forces, patch_model_for_mliap
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.scripts.deploy import build_parallel_model_list
-from tests.unit_tests.test_arch_options import _metaformer, _partial
+from tests.unit_tests.test_arch_options import (
+    ARCHS,
+    _metaformer,
+    _partial,
+    gated,
+    with_arch,
+)
 from tests.unit_tests.test_model import cutoff, get_model, get_model_config
 from tests.unit_tests.test_physics_consistency import _graph
 
@@ -187,19 +201,14 @@ CONFIGS = {
     'coord_scale_nequip': {**_A0, 'coord_scale': {'p_max': 0.9}},
     'edge_gate_coord_scale': {**_A4, 'ffn_type': 's2_bilinear', 'edge_gate': {},
                               'coord_scale': {}, 'per_layer_readout': True},
-    # isolated-atom anchor: serial = unfolded (virtual isolated nodes),
-    # e3gnn/parallel and ML-IAP = folded into the shift
-    'anchor': {**_A4, 'ffn_type': 's2_bilinear', 'anchor_isolated_atoms': True},
-    'anchor_full': {
+    # model a18_1: ffn s2_bilinear, edge gate, silu readout, modal
+    'a18': {**_A4, 'ffn_type': 's2_bilinear', 'edge_gate': {'dim': 4}},
+    'full_sink': {
         **_A4, 'ffn_type': 's2_bilinear', 'ffn_film': True,
         'magnitude_residual': True, 'radial_exp_basis': {},
         'edge_gate': {'dim': 4}, 'coord_scale': {}, 'per_layer_readout': True,
-        'pair_repulsion': {'cutoff_scale': 1.4, 'amp_init': 1.0},
-        'anchor_isolated_atoms': True},
-    'anchor_nequip': {**_A0, 'anchor_isolated_atoms': True},
-    'anchor_species_shift': {  # folding makes the shift modal-wise
-        **_A4, 'use_modal_wise_shift': False, 'shift': -2.0,
-        'anchor_isolated_atoms': True},
+        'pair_repulsion': {'cutoff_scale': 1.4, 'amp_init': 1.0}},
+    'modal_node_embedding': {**_A4, 'use_modal_node_embedding': True},
     'mf_ext_sink': {
         **_A4, 'readout_activation': None, 'readout_block': {'type': 'swiglu'},
         'per_layer_readout': True, 'radial_mlp_block': {},
@@ -214,7 +223,7 @@ SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
                               'light_conv', 'mf_ext_sink', 'pair_repulsion',
                               's2_inv', 'short_range_sink', 'magnitude_residual_sink',
                               'exp_radial_short_block_node_cond', 'edge_gate', 'coord_scale',
-                              'edge_gate_coord_scale', 'anchor_full')
+                              'edge_gate_coord_scale', 'full_sink')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
@@ -222,9 +231,16 @@ GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
                            'kitchen_sink', 's2_bilinear', 'mf_ext_sink',
                            'pair_repulsion_s2', 's2_inv',
                            'norm_magnitude_s2', 'magnitude_residual', 'exp_radial',
-                           'edge_gate_s2', 'edge_gate_coord_scale', 'anchor_full')
+                           'edge_gate_s2', 'edge_gate_coord_scale', 'full_sink')
                if n in CONFIGS]
 MODAL = 'mpa'
+# the original SevenNet model (key absent, as pretrained checkpoints) and the
+# isolation-gate model, for every test that builds a model
+arch_param = pytest.mark.parametrize('arch', ARCHS)
+
+
+def _cf(name, arch):
+    return with_arch(CONFIGS[name], arch)
 
 # (supercell, grid): 2 ranks along a (a ghost tag is reached through both
 # periodic sides -> dedup), 3 ranks along a, 2x2 ranks; every rank also sees
@@ -529,9 +545,10 @@ def _assert_close(par, ser, tag):
     return abs(e - e0), np.abs(f - f0).max(), np.abs(s - s0).max()
 
 
+@arch_param
 @pytest.mark.parametrize('name', list(CONFIGS))
-def test_e3gnn_parallel(name):
-    cf = CONFIGS[name]
+def test_e3gnn_parallel(name, arch):
+    cf = _cf(name, arch)
     model = _serial(cf)
     segs = _segments(model, cf)
     for supercell, grid in E3GNN_DOMAINS:
@@ -547,10 +564,11 @@ def test_e3gnn_parallel(name):
         _assert_close(par, ser, (name, grid))
 
 
+@arch_param
 @pytest.mark.parametrize('name', SCRIPT_CONFIGS)
-def test_e3gnn_parallel_torchscript(name):
+def test_e3gnn_parallel_torchscript(name, arch):
     """segments scripted and frozen as deploy_parallel, executor as LAMMPS"""
-    cf = CONFIGS[name]
+    cf = _cf(name, arch)
     model = _serial(cf)
     segs = _segments(model, cf, script=True)
     supercell, grid = E3GNN_DOMAINS[0]
@@ -560,9 +578,10 @@ def test_e3gnn_parallel_torchscript(name):
     _assert_close(par, _serial_efs(model, atoms), name)
 
 
+@arch_param
 @pytest.mark.parametrize('name', list(CONFIGS))
-def test_parallel_segments_structure(name):
-    """ghost twins, per-segment edge inputs, ghost-aware edge modules"""
+def test_parallel_segments_structure(name, arch):
+    """segment layout, per-segment edge inputs, ghost-aware edge modules"""
     from sevenn.nn.edge_attention import EdgeAttention
     from sevenn.nn.edge_embedding import EdgeEmbedding
     from sevenn.nn.edge_gate import EdgeGate
@@ -570,31 +589,45 @@ def test_parallel_segments_structure(name):
     from sevenn.nn.pair_repulsion import PairRepulsion
     from sevenn.nn.radial_pair import EdgePairInput, NodeCondRadialInput
 
-    cf = CONFIGS[name]
+    cf = _cf(name, arch)
     model = _serial(cf)
     segs = _segments(model, cf)
     names0 = list(segs[0]._modules)
-    # layer 0: every node-wise module up to the first convolution has a ghost
-    # twin (same weights) right after it; residual intros act on local atoms
-    i0 = names0.index('onehot_to_feature_x')
-    i1 = names0.index('0_self_interaction_1')
-    for k in names0[i0: i1 + 1]:
-        if k.startswith('ghost_') or k == 'one_hot_ghost':
-            continue
-        if k.endswith('_self_connection_intro') or k.startswith('0_ffn_'):
-            # residual of local atoms (parallel_block: the FFN branch too)
-            assert f'ghost_{k}' not in names0
-            continue
-        assert names0.index(f'ghost_{k}') > names0.index(k)
-        sd = segs[0]._modules[k].state_dict()
-        sd_g = segs[0]._modules[f'ghost_{k}'].state_dict()
-        assert sd.keys() == sd_g.keys()
-        assert all(torch.equal(sd[p], sd_g[p]) for p in sd)
-    # every segment rebuilds its position-dependent edge inputs
+    n_layer = _config(cf)[KEY.NUM_CONVOLUTION]
     pair = any(isinstance(m, EdgePairInput) for m in model.modules())
     coord = 'coord_number' in model._modules
-    head = ['edge_embedding'] + (['edge_pair_input'] if pair else []) + (
-        ['coord_number'] if coord else [])
+    if gated(arch):
+        # x is exchanged after 0_self_interaction_1: one segment per layer + 1
+        assert len(segs) == n_layer + 1
+        assert not any('convolution' in k for k in names0)
+        assert not any(k.startswith('ghost_') for s in segs for k in s._modules)
+        assert names0[-1] == 'edge_link'
+        head = ['edge_embedding'] + (['edge_pair_input'] if pair else []) + [
+            'node_gate'] + (['coord_number'] if coord else [])
+    else:
+        # layer 0: every node-wise module up to the first convolution has a
+        # ghost twin (same weights) right after it; residual intros act on
+        # local atoms
+        assert len(segs) == n_layer
+        assert not any(k.startswith(('node_gate', 'node_reference', 'edge_link'))
+                       for s in segs for k in s._modules)
+        i0 = names0.index('onehot_to_feature_x')
+        i1 = names0.index('0_self_interaction_1')
+        for k in names0[i0: i1 + 1]:
+            if k.startswith('ghost_') or k == 'one_hot_ghost':
+                continue
+            if k.endswith('_self_connection_intro') or k.startswith('0_ffn_'):
+                # residual of local atoms (parallel_block: the FFN branch too)
+                assert f'ghost_{k}' not in names0
+                continue
+            assert names0.index(f'ghost_{k}') > names0.index(k)
+            sd = segs[0]._modules[k].state_dict()
+            sd_g = segs[0]._modules[f'ghost_{k}'].state_dict()
+            assert sd.keys() == sd_g.keys()
+            assert all(torch.equal(sd[p], sd_g[p]) for p in sd)
+        head = ['edge_embedding'] + (['edge_pair_input'] if pair else []) + (
+            ['coord_number'] if coord else [])
+    # every segment rebuilds its position-dependent edge inputs
     for seg in segs[1:]:
         assert list(seg._modules)[: len(head)] == head
     need_types = False
@@ -627,18 +660,20 @@ def test_parallel_segments_structure(name):
         assert getattr(m, 'key_atom_type', KEY.ATOM_TYPE) == KEY.ATOM_TYPE
 
 
-def test_per_layer_readout_needs_the_residual_path():
+@arch_param
+def test_per_layer_readout_needs_the_residual_path(arch):
     """
     the per-layer energies cross the segment boundaries inside self_cont_tmp;
     carried as a separate tensor (pack/unpack removed) the energy is still
     right but their force contribution is lost in e3gnn/parallel
     """
-    cf = CONFIGS['per_layer_readout']
+    cf = _cf('per_layer_readout', arch)
     model = _serial(cf)
     segs = _segments(model, cf)
     n_pack = sum('layer_energy_pack' in s._modules for s in segs)
     n_unpack = sum('layer_energy_unpack' in s._modules for s in segs)
-    assert n_pack == n_unpack == len(segs) - 1
+    # one per cut between layers (gate: none at the extra layer-0 cut)
+    assert n_pack == n_unpack == _config(cf)[KEY.NUM_CONVOLUTION] - 1
     atoms = _atoms((2, 2, 2))
     ser = _serial_efs(model, atoms)
     for s in segs:
@@ -649,13 +684,14 @@ def test_per_layer_readout_needs_the_residual_path():
     assert np.abs(f - ser[1]).max() > 1e-3
 
 
-def test_pair_repulsion_needs_ghost_types():
+@arch_param
+def test_pair_repulsion_needs_ghost_types(arch):
     """
     the pair term looks up the types of ghost neighbours: with the local-only
     KEY.ATOM_TYPE (as in the serial model) e3gnn/parallel and ML-IAP index
     past the local atoms
     """
-    cf = CONFIGS['pair_repulsion']
+    cf = _cf('pair_repulsion', arch)
     model = _serial(cf)
     segs = _segments(model, cf)
     segs[-1]._modules['pair_repulsion'].key_atom_type = KEY.ATOM_TYPE
@@ -674,22 +710,27 @@ class _SkipModule(torch.nn.Module):
 
 
 class _AddToX(torch.nn.Module):
-    def __init__(self, key):
+    def __init__(self, key, gate: bool):
         super().__init__()
         self.key = key
+        self.gate = gate
 
     def forward(self, data):
-        data[KEY.NODE_FEATURE] = data[KEY.NODE_FEATURE] + data[self.key]
+        branch = data[self.key]
+        if self.gate:  # as the gated AddToResidual
+            branch = data[KEY.NODE_GATE].unsqueeze(-1) * branch
+        data[KEY.NODE_FEATURE] = data[KEY.NODE_FEATURE] + branch
         return data
 
 
-def test_parallel_block_needs_the_residual_path():
+@arch_param
+def test_parallel_block_needs_the_residual_path(arch):
     """
     parallel_block: the FFN branch output joins self_cont_tmp before the
     segment cut; added to x only after the cut (same serial math, the branch
     carried as a separate tensor) its force contribution is lost
     """
-    cf = CONFIGS['parallel_block']
+    cf = _cf('parallel_block', arch)
     model = _serial(cf)
     segs = _segments(model, cf)
     atoms = _atoms((2, 2, 2))
@@ -704,16 +745,19 @@ def test_parallel_block_needs_the_residual_path():
                 moved += 1
             items.append((k, m))
             if k.endswith('_self_connection_outro') and t != '0':
-                items.append((f'{t}_ffn_add_late', _AddToX(f'{t}_ffn_x')))
+                items.append(
+                    (f'{t}_ffn_add_late', _AddToX(f'{t}_ffn_x', gated(arch)))
+                )
         seg._modules.clear()
         seg._modules.update(items)
-    assert moved == len(segs) - 1
+    assert moved == _config(cf)[KEY.NUM_CONVOLUTION] - 1  # all layers but 0
     (e, f, _), _ = _e3gnn_parallel(segs, atoms, _config(cf), (2, 1, 1))
     assert abs(e - ser[0]) < 1e-10 * max(1.0, abs(ser[0]))
     assert np.abs(f - ser[1]).max() > 1e-3
 
 
-def test_magnitude_residual_needs_the_residual_path():
+@arch_param
+def test_magnitude_residual_needs_the_residual_path(arch):
     """
     magnitude_residual, last layer: the conv outro after the cut takes rho
     from the full layer input, which crosses inside self_cont_tmp
@@ -722,7 +766,7 @@ def test_magnitude_residual_needs_the_residual_path():
     """
     from sevenn.nn.normalization import SelfConnectionResidualIntro
 
-    cf = CONFIGS['magnitude_residual']
+    cf = _cf('magnitude_residual', arch)
     model = _serial(cf)
     segs = _segments(model, cf)
     intros = [(k, m) for s in segs for k, m in s._modules.items()
@@ -779,17 +823,20 @@ def _assert_close_f32(par, ser, tag):
     assert np.abs(s - s0).max() <= 1e-4 * max(1.0, np.abs(s0).max()), tag
 
 
-def test_deploy_parallel_files(tmp_path):
+@arch_param
+def test_deploy_parallel_files(tmp_path, arch):
     """checkpoint -> deploy_parallel -> torch.jit.load -> emulated LAMMPS (fp32)"""
     from sevenn.scripts.deploy import deploy_parallel
 
-    cf = CONFIGS[FILE_CONFIG]
+    cf = _cf(FILE_CONFIG, arch)
     cp = _save_checkpoint(cf, tmp_path / 'cp.pth')
     out_dir = tmp_path / 'deployed'
     with _default_dtype(torch.float32):  # as the CLI
         deploy_parallel(str(cp), str(out_dir), modal=MODAL)
     segs, comm = [], []
-    for t in range(_config(cf)[KEY.NUM_CONVOLUTION]):
+    n_seg = _config(cf)[KEY.NUM_CONVOLUTION] + int(gated(arch))
+    assert not (out_dir / f'deployed_parallel_{n_seg}.pt').exists()
+    for t in range(n_seg):
         extra = {'comm_size': '', 'cutoff': ''}
         segs.append(torch.jit.load(
             str(out_dir / f'deployed_parallel_{t}.pt'), _extra_files=extra
@@ -908,6 +955,9 @@ def _mliap_model(model):
 def _run_mliap(models, atoms, grid, dtype=torch.float64, compute=None,
                rc=cutoff, device='cpu'):
     ranks = _mliap_domains(atoms, grid, rc=rc, device=device)
+    # threads as ranks: on CUDA one autograd worker thread runs every rank's
+    # backward and blocks in the reverse_exchange barrier
+    assert len(ranks) == 1 or torch.device(device).type == 'cpu'
     world = _World(ranks)
     lmps = [_FakeLmpData(world, r, atoms) for r in range(len(ranks))]
     compute = compute or (
@@ -941,10 +991,11 @@ def _run_mliap(models, atoms, grid, dtype=torch.float64, compute=None,
     return res, ranks, lmps
 
 
+@arch_param
 @pytest.mark.parametrize('grid', [(1, 1, 1), (2, 1, 1)])
 @pytest.mark.parametrize('name', list(CONFIGS))
-def test_mliap(name, grid):
-    cf = CONFIGS[name]
+def test_mliap(name, grid, arch):
+    cf = _cf(name, arch)
     model = _serial(cf)
     atoms = _atoms((2, 2, 2))
     ser = _serial_efs(model, atoms)
@@ -957,8 +1008,15 @@ def test_mliap(name, grid):
     _assert_close(par, ser, (name, grid))
 
 
-def test_mliap_wrapper_class(tmp_path, monkeypatch):
-    """SevenNetMLIAPWrapper (stub lammps module) on a checkpoint, fp32"""
+@arch_param
+def test_mliap_wrapper_class(tmp_path, monkeypatch, arch):
+    """
+    SevenNetMLIAPWrapper (stub lammps module) on a checkpoint, fp32, CPU.
+    Two ranks run as threads: on CUDA both ranks' backward passes (with the
+    reverse_exchange barrier inside) would run on the one autograd worker
+    thread of the device and wait for each other forever (barrier timeout,
+    BrokenBarrierError); LAMMPS runs ranks as processes.
+    """
     stub = types.ModuleType('lammps.mliap.mliap_unified_abc')
 
     class MLIAPUnified:
@@ -972,11 +1030,13 @@ def test_mliap_wrapper_class(tmp_path, monkeypatch):
     monkeypatch.delitem(sys.modules, 'sevenn.mliap', raising=False)
     from sevenn.mliap import SevenNetMLIAPWrapper
 
-    cf = CONFIGS[FILE_CONFIG]
+    cf = _cf(FILE_CONFIG, arch)
     cp = _save_checkpoint(cf, tmp_path / 'cp.pth')
     atoms = _atoms((2, 2, 2))
     with _default_dtype(torch.float32):
         wrappers = [SevenNetMLIAPWrapper(str(cp), modal=MODAL) for _ in range(2)]
+        for w in wrappers:  # model built lazily on w.device
+            w.device = torch.device('cpu')
         par, _, _ = _run_mliap(
             wrappers, atoms, (2, 1, 1), compute=lambda w, lmp: w.compute_forces(lmp)
         )
@@ -997,16 +1057,17 @@ def _backend_available(backend):
     return is_oeq_available()
 
 
+@arch_param
 @pytest.mark.parametrize('backend', ['lunatp', 'oeq'])
 @pytest.mark.parametrize('name', GPU_CONFIGS)
-def test_mliap_gpu_backend(tmp_path, name, backend):
+def test_mliap_gpu_backend(tmp_path, name, backend, arch):
     """ML-IAP wrapping of accelerated models (LunaTP: fused RMSNorm, gates,
     linears, bilinear gate; oeq: convolution), fp32 on GPU, 1 rank"""
     if not _backend_available(backend):
         pytest.skip(f'{backend} not available')
     from sevenn.util import model_from_checkpoint
 
-    cf = CONFIGS[name]
+    cf = _cf(name, arch)
     cp = _save_checkpoint(cf, tmp_path / 'cp.pth')
     atoms = _atoms((2, 2, 2))
     with _default_dtype(torch.float32):
@@ -1014,7 +1075,6 @@ def test_mliap_gpu_backend(tmp_path, name, backend):
             str(cp), **{f'enable_{backend}': True}
         )
         model.set_is_batch_data(False)
-        model.to('cuda')  # before patching: it folds the isolated-atom anchor
         patch_model_for_mliap(model)
         if model.modal_map:
             model.prepare_modal_deploy(MODAL)
@@ -1027,14 +1087,15 @@ def test_mliap_gpu_backend(tmp_path, name, backend):
     _assert_close_f32(par, _serial_f32(cp, atoms), (name, backend))
 
 
+@arch_param
 @pytest.mark.parametrize('name', [SCRIPT_CONFIGS[0], FILE_CONFIG])
-def test_e3gnn_parallel_oeq(tmp_path, name):
+def test_e3gnn_parallel_oeq(tmp_path, name, arch):
     """deploy_parallel's oeq segments (fp32, GPU) through the emulator"""
     if not _backend_available('oeq'):
         pytest.skip('oeq not available')
     from sevenn.util import model_from_checkpoint
 
-    cf = CONFIGS[name]
+    cf = _cf(name, arch)
     cp = _save_checkpoint(cf, tmp_path / 'cp.pth')
     atoms = _atoms((2, 2, 2))
     with _default_dtype(torch.float32):

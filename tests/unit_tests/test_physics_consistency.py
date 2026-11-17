@@ -13,6 +13,8 @@ for each new op before it is used in training:
 - parameters that start at a value that switches their path off (zero
   tables, zero weights, magnitude residual exponent 0) are randomized, so
   every path is differentiated
+Both model build paths (ARCHS): the original model and the isolation gate
+(s_i = 1 - exp(-n_i) inherits the order of the cutoff function at r_c).
 """
 import numpy as np
 import pytest
@@ -24,7 +26,13 @@ import sevenn._keys as KEY
 import sevenn.train.dataload as dl
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.util import dtype_correct
-from tests.unit_tests.test_arch_options import _metaformer, _partial
+from tests.unit_tests.test_arch_options import (
+    ARCHS,
+    _metaformer,
+    _partial,
+    gated,
+    with_arch,
+)
 from tests.unit_tests.test_model import cutoff, get_model
 
 _film_rand = {**_metaformer, 'ffn_film': True}
@@ -164,16 +172,13 @@ CONFIGS = {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
                           '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
-    # isolated-atom anchor (virtual isolated nodes, non-batched here)
-    'anchor': {**_metaformer, 'radial_pair_embedding': True,
-               'ffn_type': 's2_bilinear', 'anchor_isolated_atoms': True},
-    'anchor_full': {
+    'a18': {**_metaformer, 'radial_pair_embedding': True,
+            'ffn_type': 's2_bilinear', 'edge_gate': {}},
+    'full_sink': {
         **_metaformer, 'radial_pair_embedding': True, 'ffn_type': 's2_bilinear',
         'ffn_film': True, 'magnitude_residual': True, 'radial_exp_basis': {},
         'edge_gate': {'dim': 4}, 'coord_scale': {}, 'per_layer_readout': True,
-        'pair_repulsion': {'cutoff_scale': 1.4, 'amp_init': 1.0},
-        'anchor_isolated_atoms': True},
-    'anchor_nequip': {**_partial, 'anchor_isolated_atoms': True},
+        'pair_repulsion': {'cutoff_scale': 1.4, 'amp_init': 1.0}},
 }
 
 
@@ -192,9 +197,12 @@ def _to_double_hook(module, inputs, data):
     return data
 
 
-def _model(cf):
+arch_param = pytest.mark.parametrize('arch', ARCHS)
+
+
+def _model(cf, arch):
     torch.manual_seed(0)
-    model = get_model(cf).double()
+    model = get_model(with_arch(cf, arch)).double()
     model.onehot_idx_to_onehot.register_forward_hook(_to_double_hook)
     with torch.no_grad():  # zero-initialized tables would hide their derivatives
         for n, p in model.named_parameters():
@@ -277,9 +285,10 @@ def _fd4(f, h):
     return (8 * (f(h) - f(-h)) - (f(2 * h) - f(-2 * h))) / (12 * h)
 
 
+@arch_param
 @pytest.mark.parametrize('name', list(CONFIGS))
-def test_force_stress_hessian(name):
-    model = _model(CONFIGS[name])
+def test_force_stress_hessian(name, arch):
+    model = _model(CONFIGS[name], arch)
     atoms = _atoms()
     e0, f0, s0 = _efs(model, atoms)
     assert np.abs(f0).max() > 1e-6
@@ -356,13 +365,14 @@ def _dimer_tail(model, h=1e-3):
                                   'exp_radial', 'exp_radial_short_block_node_cond', 'edge_gate',
                                   'edge_gate_variants', 'coord_scale', 'coord_scale_variants',
                                   'coord_scale_nequip', 'edge_gate_coord_scale',
-                                  'anchor', 'anchor_full', 'anchor_nequip'])
-def test_dimer_c2_at_cutoff(name):
+                                  'a18', 'full_sink'])
+@arch_param
+def test_dimer_c2_at_cutoff(name, arch):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
     shrink E - E_far ~8x, the force ~4x and the force constant ~2x (C2).
     """
-    far, near = _dimer_tail(_model(CONFIGS[name]))
+    far, near = _dimer_tail(_model(CONFIGS[name], arch))
     # components already ~0 at r_c - 0.02 (e.g. env^2-weighted attention: higher
     # order than C2) pass; the others must shrink as (r_c - r)^3, ^2, ^1
     tiny = 1e-8
@@ -397,11 +407,12 @@ def _trimer_tail(model, h=1e-3):
 @pytest.mark.parametrize('name', ['metaformer', 'pair_radial', 'edge_gate',
                                   'edge_gate_variants', 'coord_scale',
                                   'coord_scale_variants', 'coord_scale_nequip',
-                                  'edge_gate_coord_scale', 'anchor_full'])
-def test_trimer_c2_at_cutoff(name):
+                                  'edge_gate_coord_scale', 'full_sink'])
+@arch_param
+def test_trimer_c2_at_cutoff(name, arch):
     """as test_dimer_c2_at_cutoff, for a pair leaving the cutoff of a bonded
     atom (many-body terms of the crossing pair must vanish C2 as well)"""
-    far, near = _trimer_tail(_model(CONFIGS[name]))
+    far, near = _trimer_tail(_model(CONFIGS[name], arch))
     for i, thr in enumerate((0.2, 0.35, 0.6)):
         assert abs(near[i]) < 1e-8 or abs(near[i]) < thr * abs(far[i]), (far, near)
 
@@ -417,40 +428,49 @@ def _k_jump(model, r0, delta=0.002, h=1e-3):
     return abs(kp - km) / max(abs(kp), abs(km))
 
 
-def test_xplor_force_constant_jumps_at_r_on():
+@arch_param
+def test_xplor_force_constant_jumps_at_r_on(arch):
     """
     XPLOR switching S(r) is C1 at r_on: S'' jumps from 0 to
     -24 r_on^2 / (r_c^2 - r_on^2)^2, so the pair force constant is
     discontinuous where a neighbor distance crosses r_on (here 3.5 A).
-    At r_c the Bessel basis itself vanishes, so the product is C2 there.
+    At r_c the Bessel basis itself vanishes, so the product is C2 there
+    (original model); the isolation gate s = 1 - exp(-n), n ~ S, has the
+    order of XPLOR, S ~ (r_c - r)^2: C1 at r_c.
     The polynomial envelope has no such point.
     """
     r_on = CONFIGS['xplor']['cutoff_function']['cutoff_on']
-    xplor, smooth = _model(CONFIGS['xplor']), _model(CONFIGS['metaformer'])
+    xplor = _model(CONFIGS['xplor'], arch)
+    smooth = _model(CONFIGS['metaformer'], arch)
     # a discontinuity does not shrink with the step, smooth variation does
     j1, j2 = (_k_jump(xplor, r_on, delta=d) for d in (0.002, 0.001))
     assert j1 > 0.05 and j2 > 0.8 * j1, (j1, j2)
     s1, s2 = (_k_jump(smooth, r_on, delta=d, h=5e-4) for d in (0.002, 0.001))
     assert s2 < 0.7 * s1, (s1, s2)
-    far, near = _dimer_tail(_model(CONFIGS['xplor']))
+    far, near = _dimer_tail(xplor)
     ratio = np.abs(near / far)
-    assert ratio[0] < 0.2 and ratio[1] < 0.35 and ratio[2] < 0.6, ratio
+    if gated(arch):  # C1: E ~ (r_c - r)^2, force ~ (r_c - r)
+        assert ratio[0] < 0.3 and ratio[1] < 0.6, ratio
+    else:  # C2
+        assert ratio[0] < 0.2 and ratio[1] < 0.35 and ratio[2] < 0.6, ratio
 
 
-def test_coord_scale_inherits_xplor_order():
+@arch_param
+def test_coord_scale_inherits_xplor_order(arch):
     """
     n_i = sum_j f_cut(r_ij) is exactly as smooth as the cutoff function: with
     XPLOR (S ~ (r_c - r)^2 at r_c, C1) the coordination of the trimer's centre
     atom makes E - E_far shrink like (r_c - x)^2 (force constant does not
-    vanish at r_c), while the same model without it is C2 there (the Bessel
-    factor of the message adds one order when the pair tables are zero). With
-    a C2 envelope (poly_cut) it is C2 (test_trimer_c2_at_cutoff).
+    vanish at r_c), while the original model without it is C2 there (the
+    Bessel factor of the message adds one order when the pair tables are
+    zero; the isolation gate is C1 there by itself). With a C2 envelope
+    (poly_cut) it is C2 (test_trimer_c2_at_cutoff).
     """
     xplor = CONFIGS['xplor']
-    base = _model(xplor)
-    far, near = _trimer_tail(base)
-    assert abs(near[2]) < 0.6 * abs(far[2]), (far, near)
-    model = _model({**xplor, 'coord_scale': {}})
+    if not gated(arch):
+        far, near = _trimer_tail(_model(xplor, arch))
+        assert abs(near[2]) < 0.6 * abs(far[2]), (far, near)
+    model = _model({**xplor, 'coord_scale': {}}, arch)
     far, near = _trimer_tail(model)
     ratio = np.abs(near / far)
     assert 0.15 < ratio[0] < 0.35 and 0.35 < ratio[1] < 0.65, ratio
@@ -464,7 +484,8 @@ def test_coord_scale_inherits_xplor_order():
     ('exp_radial_short_block_node_cond', 'radial_exp_basis', 'w_exp'),
     ('exp_radial_short_block_node_cond', 'radial_short_basis', 'w_short'),
 ])
-def test_short_radial_c2_at_inner_cutoff(name, opt, weight):
+@arch_param
+def test_short_radial_c2_at_inner_cutoff(name, opt, weight, arch):
     """
     the short-range (Bessel) and exponential basis terms vanish C2 at their
     own cutoff r_s: for a dimer, dE = E - E(their weights zeroed) shrinks
@@ -476,7 +497,7 @@ def test_short_radial_c2_at_inner_cutoff(name, opt, weight):
 
     cf = CONFIGS[name]
     rs = cf[opt].get('cutoff', 3.0)
-    model = _model(cf)
+    model = _model(cf, arch)
     ref = copy.deepcopy(model)
     with torch.no_grad():
         for n, p in ref.named_parameters():
@@ -496,7 +517,8 @@ def test_short_radial_c2_at_inner_cutoff(name, opt, weight):
             (de(r + h) - 2 * de(r) + de(r - h)) / h**2,
         ]))
     far, near = out
-    assert abs(de(rs - 0.5)) > 1e-4  # the short term is active inside r_s
+    # the short term is active inside r_s (gate: scaled by the dimer's s < 1)
+    assert abs(de(rs - 0.5)) > (1e-5 if gated(arch) else 1e-4)
     for i, thr in enumerate((0.2, 0.35, 0.6)):
         assert abs(near[i]) < 1e-8 or abs(near[i]) < thr * abs(far[i]), (far, near)
     for x in (rs + 1e-3, rs + 0.1, rs + 0.5):
@@ -505,7 +527,8 @@ def test_short_radial_c2_at_inner_cutoff(name, opt, weight):
     assert s2 < 0.7 * s1 or s2 < 1e-6, (s1, s2)
 
 
-def test_exp_radial_contact_slope():
+@arch_param
+def test_exp_radial_contact_slope(arch):
     """
     the Bessel basis is even in r: a dimer's energy E(r) is an even analytic
     function near r = 0, so its force -dE/dr vanishes linearly at contact
@@ -514,7 +537,7 @@ def test_exp_radial_contact_slope():
     """
     import copy
 
-    model = _model(CONFIGS['exp_radial'])
+    model = _model(CONFIGS['exp_radial'], arch)
     base = copy.deepcopy(model)
     with torch.no_grad():
         for n, p in base.named_parameters():
@@ -542,8 +565,9 @@ def _pair_term(model, x, sym='NaCl'):
     return model(_graph(at))[KEY.PAIR_REPULSION_ENERGY].sum().item()
 
 
+@arch_param
 @pytest.mark.parametrize('name', ['pair_repulsion', 'pair_repulsion_nequip_3terms'])
-def test_pair_repulsion_dimer(name):
+def test_pair_repulsion_dimer(name, arch):
     """
     the pair term of a dimer is positive and strictly decreasing up to its
     pair cutoff r_c = min(s (R_Na + R_Cl), r_max), diverges as r -> 0, is
@@ -558,7 +582,7 @@ def test_pair_repulsion_dimer(name):
     rc = opts['cutoff_scale'] * (covalent_radii[atomic_numbers['Na']]
                                  + covalent_radii[atomic_numbers['Cl']])
     rc = min(rc, opts.get('max_cutoff', cutoff))
-    model = _model(cf)
+    model = _model(cf, arch)
     grid = np.concatenate([np.geomspace(0.02, 0.5, 30),
                            np.linspace(0.5, rc - 1e-3, 120)[1:]])
     phi = np.array([_pair_term(model, x) for x in grid])

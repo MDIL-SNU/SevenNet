@@ -10,11 +10,7 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.nn.isolated_anchor import (
-    fold_into_rescale,
-    fold_isolated_anchor,
-    isolated_scaled_energy,
-)
+from sevenn.nn.isolation_gate import is_isolation_gate
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.util import load_checkpoint, warn_no_tp_accelerator
 
@@ -40,8 +36,6 @@ def deploy(
         cp.config,
     )
 
-    # isolated-atom anchor: constant folded into the shift (plain model)
-    fold_isolated_anchor(model)
     if 'force_output' in model._modules:
         model.delete_module_by_key('force_output')
     if hasattr(model, 'eval_type_map'):
@@ -90,20 +84,15 @@ def build_parallel_model_list(
     modal: Optional[str] = None,
     use_flash: bool = False,
     use_oeq: bool = False,
-    isolated_f0: Optional[torch.Tensor] = None,
 ) -> List[AtomGraphSequential]:
     """
     Segments of a LAMMPS e3gnn/parallel model (in memory, eager) from the
     state dict and config of a serial model, exactly as deploy_parallel saves
     them (before TorchScript). Every 'ghost_<key>' entry (layer-0 twins acting
     on the ghost atoms, model_build._to_parallel_model) gets the weights of
-    <key>.
-    Isolated-atom anchor (config anchor_isolated_atoms): the segments carry no
-    anchor modules; the constant scale * f(h0) is folded into the shift of
-    the last segment. isolated_f0: isolated_scaled_energy of the serial model
-    with these weights; if None it is computed from a serial model built from
-    the config and state dict (dtype of the weights, CPU, same TP backend
-    flags).
+    <key>. Isolation-gate models (config architecture: isolation_gate) have
+    no ghost twins and num_convolution_layer + 1 segments
+    (sevenn/model_build_gate.py, to_parallel_model_gate).
     """
     config = dict(config)
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
@@ -118,7 +107,7 @@ def build_parallel_model_list(
         key for seg in model_list for key in seg.state_dict()
         if key.startswith('ghost_')
     }
-    assert ghost_keys, 'no ghost layers found'
+    assert ghost_keys or is_isolation_gate(config), 'no ghost layers found'
     for key in sorted(ghost_keys):
         src = key[len('ghost_'):]
         # Ensure reference weights are copied from state dict
@@ -132,30 +121,16 @@ def build_parallel_model_list(
         # Ensure all values are inserted
         assert len(missing) == 0 or use_flash or use_oeq, missing
 
-    if config.get(KEY.ANCHOR_ISOLATED_ATOMS, False):
-        if isolated_f0 is None:
-            serial = build_E3_equivariant_model(config)
-            dtype = next(  # weights' dtype (deploy: float32; tests: float64)
-                v.dtype for k, v in model_state_dct.items()
-                if torch.is_tensor(v) and v.is_floating_point()
-                and not k.startswith('rescale_atomic_energy')
-            )
-            serial.to(dtype)
-            missing, _ = serial.load_state_dict(model_state_dct, strict=False)
-            assert len(missing) == 0 or use_flash or use_oeq, missing
-            isolated_f0 = isolated_scaled_energy(serial)
-        last = model_list[-1]
-        rescale = last._modules['rescale_atomic_energy']
-        folded = fold_into_rescale(rescale, isolated_f0)
-        if folded is not rescale:
-            last._modules['rescale_atomic_energy'] = folded
-
     modal_map = model_list[0].modal_map
     if modal:
         model_list[0].prepare_modal_deploy(modal)
     elif modal_map is not None and len(modal_map) >= 1:
         raise ValueError(f'Modal is not given. It has: {list(modal_map.keys())}')
     return model_list
+
+
+def _first_conv_segment(config: Dict[str, Any]) -> int:
+    return 1 if is_isolation_gate(config) else 0
 
 
 def deploy_parallel(
@@ -183,10 +158,6 @@ def deploy_parallel(
     )
     model_list = build_parallel_model_list(
         model.state_dict(), config, modal, use_flash, use_oeq,
-        isolated_f0=(
-            isolated_scaled_energy(model)
-            if config.get(KEY.ANCHOR_ISOLATED_ATOMS, False) else None
-        ),
     )
 
     # prepare some extra information for MD
@@ -201,7 +172,8 @@ def deploy_parallel(
     comm_size = max(
         [
             seg._modules[f'{t}_convolution']._comm_size  # type: ignore
-            for t, seg in enumerate(model_list)
+            # isolation gate: segment 0 has no convolution, layer t is in t + 1
+            for t, seg in enumerate(model_list[_first_conv_segment(config):])
         ]
     )
 

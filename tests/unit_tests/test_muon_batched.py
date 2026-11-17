@@ -6,6 +6,7 @@ import pytest
 import torch
 
 from sevenn.train.muon import MuonWithAuxAdam, build_muon_param_groups
+from tests.unit_tests.test_arch_options import with_arch
 from tests.unit_tests.test_model import get_model
 
 _modal = {
@@ -85,6 +86,9 @@ def _assert_equal(m1, m2, o1, o2):
         _metaformer,
         {**_metaformer, 'ffn_type': 'swiglu', 'layer_scale_init': 0.1},
         {**_metaformer, 'ffn_film': True},
+        # isolation-gate build path (readout without bias, gated linears)
+        with_arch({**_partial, **_modal}, 'isolation_gate'),
+        with_arch({**_metaformer, **_modal}, 'isolation_gate'),
     ],
 )
 def test_batched_step_is_bitwise_equal(cf, device, cuda_graph):

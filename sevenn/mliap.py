@@ -115,9 +115,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             enable_lunatp=self.use_lunatp,
         )
 
-        # exchange ghost features after every {t}_self_interaction_1 (folds the
-        # isolated-atom anchor first: model on its device before)
-        model.to(self.device)
+        # exchange ghost features after every {t}_self_interaction_1
         patch_model_for_mliap(model)
 
         model.set_is_batch_data(False)

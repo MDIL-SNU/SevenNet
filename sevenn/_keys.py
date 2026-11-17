@@ -92,12 +92,11 @@ SELF_CONNECTION_TEMP: Final[str] = 'self_cont_tmp'
 LAYER_ENERGY: Final[str] = 'layer_energy'  # (N, 1) sum of per-layer readouts
 # (N,) per-atom energy of the learned pair repulsion (diagnostics)
 PAIR_REPULSION_ENERGY: Final[str] = 'pair_repulsion_energy'
-# isolated-atom anchor (sevenn/nn/isolated_anchor.py), set inside the model:
-# (N,) row of every real atom's virtual isolated twin, and the real batch /
-# per-graph modal indices restored after the subtraction
-ANCHOR_INDEX: Final[str] = '_anchor_index'
-ANCHOR_BATCH: Final[str] = '_anchor_batch'
-ANCHOR_MODAL: Final[str] = '_anchor_modal'
+# isolation gate (sevenn/nn/isolation_gate.py), set inside the model:
+# (N,) s_i = 1 - exp(-c n_i), 0 without neighbours, about 1 in the bulk
+NODE_GATE: Final[str] = 'node_gate'
+# (N, dim x_0) node feature right after the embedding, the readout reference
+NODE_REF: Final[str] = 'x_ref'
 BATCH_SIZE: Final[str] = 'batch_size'
 INFO: Final[str] = 'data_info'
 
@@ -255,6 +254,10 @@ USE_MODAL_WISE_SCALE = 'use_modal_wise_scale'
 TRAIN_SHIFT_SCALE = 'train_shift_scale'
 TRAIN_SHIFT = 'train_shift'
 TRAIN_SCALE = 'train_scale'
+# list of modal names: only these rows of the modal-wise shift train, every other
+# row stays fixed (sevenn/train/trainer.py, mask_shift_to_modals); replaces
+# train_shift, nothing else is frozen
+TRAIN_SHIFT_MODALS = 'train_shift_modals'
 TRAIN_DENOMINTAOR = 'train_denominator'
 # Experimental: list of modal names whose modality-specific parameter slices
 # stay trainable; everything else (shared backbone + other modalities) is frozen
@@ -317,10 +320,11 @@ EDGE_GATE = 'edge_gate'
 # (sevenn/nn/coord_scale.py)
 COORD_SCALE = 'coord_scale'
 NODE_COORD_LOG1P = 'coord_log1p'  # log(1 + n_i / c) per node (CoordNumber)
-# bool: E_i = shift + scale (f(h_i) - f(h0_Z)), h0_Z = the final node state of
-# an atom of the same species (and modality) without neighbours, so that an
-# isolated atom gets exactly the shift (sevenn/nn/isolated_anchor.py)
-ANCHOR_ISOLATED_ATOMS = 'anchor_isolated_atoms'
+# model architecture: 'sevennet' (default; a config without the key, e.g.
+# every pretrained checkpoint, is this) or 'isolation_gate' (sevenn/nn/
+# isolation_gate.py, built by sevenn/model_build_gate.py). Stored in the
+# checkpoint config; continue / append_modal keep the checkpoint's value
+ARCHITECTURE = 'architecture'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

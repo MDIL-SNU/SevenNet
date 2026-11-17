@@ -20,6 +20,7 @@ from sevenn.model_build import build_E3_equivariant_model
 from sevenn.nn.lunatp_helper import is_lunatp_available
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.util import chemical_species_preprocess, model_from_checkpoint
+from tests.unit_tests.test_arch_options import ARCHS, gated, with_arch
 
 cutoff = 4.0
 
@@ -97,7 +98,9 @@ def get_model(config_overwrite=None, use_lunatp=False):
         ({'num_interaction_layer': 4}),
     ],
 )
-def test_model_output(cf):
+@pytest.mark.parametrize('arch', ARCHS)
+def test_model_output(cf, arch):
+    cf = with_arch(cf, arch)
     torch.manual_seed(777)
     model_e3nn = get_model(cf)
     torch.manual_seed(777)
@@ -472,15 +475,17 @@ def test_fused_rmsnorm_needs_one_scalar_block():
 
 
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
-def test_fused_rmsnorm_model():
+@pytest.mark.parametrize('arch', ARCHS)
+def test_fused_rmsnorm_model(arch):
     from sevenn.nn.lunatp_helper import LunaTPEquivariantRMSNorm
     from sevenn.nn.normalization import EquivariantRMSNorm
 
+    cf = with_arch(_metaformer, arch)
     torch.manual_seed(777)
-    model_e3nn = get_model(_metaformer)
-    model_lunatp = get_model(_metaformer, use_lunatp=True)  # fused by default
+    model_e3nn = get_model(cf)
+    model_lunatp = get_model(cf, use_lunatp=True)  # fused by default
     # opt-out keeps the PyTorch norms
-    plain = get_model({**_metaformer, 'lunatp_fused_norm': False}, use_lunatp=True)
+    plain = get_model({**cf, 'lunatp_fused_norm': False}, use_lunatp=True)
     assert not any(
         isinstance(m, LunaTPEquivariantRMSNorm) for m in plain.modules()
     )
@@ -491,17 +496,27 @@ def test_fused_rmsnorm_model():
         for m in (model_e3nn, model_lunatp)
     ]
     assert norm_keys[0] == norm_keys[1] and norm_keys[0]
-    norms = [m for k, m in model_lunatp.named_children() if 'norm' in k]
-    assert len(norms) == 2 * 3 + 1  # 3 layers x (norm_1, norm_2) + final_norm
+    # the norm modules themselves (gate: final_norm sits between
+    # final_gate_ref / final_gate_blend, which are no norms)
+    norms = {k: m for k, m in model_lunatp.named_children()
+             if isinstance(m, EquivariantRMSNorm)}
+    # 3 layers x (norm_1, norm_2) + final_norm
+    assert sorted(norms) == sorted(
+        [f'{t}_norm_{i}' for t in range(3) for i in (1, 2)] + ['final_norm'])
+    norms = list(norms.values())
     assert all(isinstance(m, LunaTPEquivariantRMSNorm) for m in norms)
+    if gated(arch):
+        names = list(dict(model_lunatp.named_children()))
+        i = names.index('final_norm')
+        assert names[i - 1: i + 2] == ['final_gate_ref', 'final_norm',
+                                       'final_gate_blend']
     with torch.no_grad():
         for m in norms:
             m.weight.uniform_(0.5, 1.5)
             m.bias.normal_()
 
     # reference: the same LunaTP model with the PyTorch norms
-    model_ref = get_model({**_metaformer, 'lunatp_fused_norm': False},
-                          use_lunatp=True)
+    model_ref = get_model({**cf, 'lunatp_fused_norm': False}, use_lunatp=True)
     for k, m in list(model_ref.named_children()):
         if isinstance(m, LunaTPEquivariantRMSNorm):
             plain = EquivariantRMSNorm(m.irreps, m.key_x, eps=m.eps)
@@ -710,14 +725,16 @@ _s2ffn = {
 
 
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
-def test_s2_bilinear_ffn_lunatp():
+@pytest.mark.parametrize('arch', ARCHS)
+def test_s2_bilinear_ffn_lunatp(arch):
     """S2 grid FFN on the LunaTP model (patched linears around the plain-torch
     grid GEMMs): E/F/S and the force-loss parameter gradients equal e3nn's"""
     from sevenn.nn.ffn_variants import S2BilinearGate
 
+    cf = with_arch(_s2ffn, arch)
     torch.manual_seed(777)
-    model_e3nn = get_model(_s2ffn)
-    model_lunatp = get_model(_s2ffn, use_lunatp=True)
+    model_e3nn = get_model(cf)
+    model_lunatp = get_model(cf, use_lunatp=True)
     missing, unexpected = model_lunatp.load_state_dict(
         model_e3nn.state_dict(), strict=False
     )
@@ -946,11 +963,10 @@ MFEXT_CONFIGS = {
          'radial_node_cond': True, 'conv_gate': False,
          'parallel_block': [False, True, True]},
         ('table_', 'layer_readout', 'radial_node_cond')),
-    # isolated-atom anchor (virtual isolated nodes, non-batched here)
-    'anchor': ({'anchor_isolated_atoms': True, 'ffn_type': 's2_bilinear'},
-               ('table_',)),
-    'anchor_full': (
-        {'anchor_isolated_atoms': True, 'ffn_type': 's2_bilinear',
+    'a18': ({'edge_gate': {}, 'ffn_type': 's2_bilinear'},
+            ('table_', '_edge_gate.theta')),
+    'full_sink': (
+        {'ffn_type': 's2_bilinear',
          'ffn_film': True, 'magnitude_residual': True, 'radial_exp_basis': {},
          'edge_gate': {}, 'coord_scale': {}, 'per_layer_readout': True},
         ('table_', '_outro.gamma', 'w_exp', '_edge_gate.theta',
@@ -992,10 +1008,10 @@ def _to_double_hook(module, inputs, data):
     return data
 
 
-def _mfext_backends(name):
+def _mfext_backends(name, arch):
     """e3nn fp32, LunaTP fp32 and e3nn fp64 (reference) models, same weights"""
     over, rand = MFEXT_CONFIGS[name]
-    cf = {**_mfext, **over}
+    cf = with_arch({**_mfext, **over}, arch)
     torch.manual_seed(777)
     model_e3nn = get_model(cf)
     gen = torch.Generator().manual_seed(1)
@@ -1021,8 +1037,9 @@ def _mfext_backends(name):
 
 
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize('arch', ARCHS)
 @pytest.mark.parametrize('name', list(MFEXT_CONFIGS))
-def test_mfext_lunatp(name):
+def test_mfext_lunatp(name, arch):
     """
     every new IrrepsLinear / EquivariantGate / EquivariantRMSNorm of the
     metaformer extensions is LunaTP-patched; E/F/S, a Hessian-vector product
@@ -1037,9 +1054,9 @@ def test_mfext_lunatp(name):
     from sevenn.nn.linear import IrrepsLinear
     from sevenn.nn.normalization import EquivariantRMSNorm
 
-    model_e3nn, model_lunatp, model_64 = _mfext_backends(name)
+    model_e3nn, model_lunatp, model_64 = _mfext_backends(name, arch)
     for k, m in model_lunatp._modules.items():
-        if isinstance(m, IrrepsLinear):
+        if isinstance(m, IrrepsLinear):  # gate: GatedIrrepsLinear as well
             assert isinstance(m.linear, LunaEqLinear), k
         elif isinstance(m, EquivariantGate):
             assert isinstance(m.gate, LunaEqGate), k

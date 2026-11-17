@@ -105,6 +105,7 @@ pair_style e3gnn/parallel
 pair_coeff * * 4 ./deployed_parallel Hf O
 ```
 The number of message-passing layers corresponds to the number of `*.pt` files in the `./deployed_parallel` directory.
+A model with `architecture: isolation_gate` is deployed as message-passing layers + 1 segments (4 `*.pt` files for a 3-layer model); give that number instead.
 
 It is expected that there is one GPU per MPI process. If the number of available GPUs is less than the number of MPI processes, the simulation may run inefficiently.
 

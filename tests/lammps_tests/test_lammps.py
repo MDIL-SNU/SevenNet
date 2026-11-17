@@ -771,6 +771,73 @@ def test_oeq_parallel(lammps_cmd, mpirun_cmd, tmp_path):
     assert_atoms(atoms, atoms_lammps)
 
 
+# ------------------------------------------- isolation gate (second build path)
+_GATE = {'architecture': 'isolation_gate'}
+
+
+def _gate_checkpoint(tmp_path):
+    """randomized isolation-gate model (sevenn/model_build_gate.py) and its
+    checkpoint; original-path models are the pretrained ones above"""
+    torch.manual_seed(0)
+    model = get_model(_GATE)
+    with torch.no_grad():
+        for p in model.parameters():
+            if p.numel() > 0 and bool(torch.all(p == p.reshape(-1)[0])):
+                p.add_(0.1 * torch.randn_like(p))
+    cfg = get_model_config()
+    cfg.update({**_GATE, 'version': sevenn.__version__})
+    cp_path = str(tmp_path / 'cp_gate.pth')
+    torch.save({'model_state_dict': model.state_dict(), 'config': cfg}, cp_path)
+    return model, cfg, cp_path
+
+
+@pytest.mark.parametrize('system', ['bulk', 'surface'])
+def test_isolation_gate_serial(system, lammps_cmd, tmp_path):
+    model, _, cp_path = _gate_checkpoint(tmp_path)
+    pot_path = str(tmp_path / 'deployed_gate_serial.pt')
+    deploy(cp_path, pot_path)
+    atoms = get_system(system)
+    atoms_lammps = serial_lammps_run(
+        atoms=atoms,
+        potential=pot_path,
+        wd=tmp_path,
+        test_name='isolation gate serial lmp test',
+        lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = SevenNetCalculator(model, file_type='model_instance')
+    assert_atoms(atoms, atoms_lammps)
+
+
+@pytest.mark.parametrize(
+    'system,ncores', [('bulk', 2), ('surface', 2), ('surface', 4)]
+)
+def test_isolation_gate_parallel(system, ncores, lammps_cmd, mpirun_cmd, tmp_path):
+    """
+    e3gnn/parallel of the isolation gate: num_convolution_layer + 1 segment
+    files (x also exchanged after 0_self_interaction_1, no ghost twins)
+    """
+    model, cfg, cp_path = _gate_checkpoint(tmp_path)
+    pot_path = str(tmp_path / 'deployed_gate_parallel')
+    deploy_parallel(cp_path, pot_path)
+    n_seg = cfg['num_convolution_layer'] + 1
+    assert sorted(p.name for p in pathlib.Path(pot_path).glob('*.pt')) == sorted(
+        f'deployed_parallel_{t}.pt' for t in range(n_seg)
+    )
+    rep = (6, 6, 3) if system == 'bulk' else (4, 4, 1)
+    atoms = get_system(system, replicate=rep)
+    atoms_lammps = parallel_lammps_run(
+        atoms=atoms,
+        potential=' '.join([str(n_seg), pot_path]),
+        wd=tmp_path,
+        test_name='isolation gate parallel lmp test',
+        lammps_cmd=lammps_cmd,
+        mpirun_cmd=mpirun_cmd,
+        ncores=ncores,
+    )
+    atoms.calc = SevenNetCalculator(model, file_type='model_instance')
+    assert_atoms(atoms, atoms_lammps)
+
+
 def _get_disconnected_system(name):
     """Build Atoms object for a disconnected test structure."""
     if name.startswith('single_o'):

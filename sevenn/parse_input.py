@@ -103,6 +103,15 @@ def init_model_config(config: Dict[str, Any]) -> Dict[str, Any]:
             key, config, default, _const.MODEL_CONFIG_CONDITION
         )
 
+    if model_meta[KEY.TRAIN_SHIFT_MODALS] and (
+        model_meta[KEY.TRAIN_SHIFT] or model_meta[KEY.TRAIN_SHIFT_SCALE]
+    ):
+        raise ValueError(
+            f'{KEY.TRAIN_SHIFT_MODALS} replaces {KEY.TRAIN_SHIFT} and '
+            f'{KEY.TRAIN_SHIFT_SCALE}: set them false (use {KEY.TRAIN_SCALE} to '
+            'train the scale)'
+        )
+
     unknown_keys = [key for key in config.keys() if key not in model_meta.keys()]
     if len(unknown_keys) != 0:
         warnings.warn(

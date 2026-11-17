@@ -6,7 +6,7 @@ wrapping can be tested with an emulated lmp_data
 """
 import re
 from collections import OrderedDict
-from typing import Any, Sequence
+from typing import Any, Sequence, Tuple
 
 import torch
 import torch.nn as nn
@@ -15,7 +15,6 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 from .edge_attention import EdgeAttention
-from .isolated_anchor import fold_isolated_anchor
 from .pair_repulsion import PairRepulsion
 
 
@@ -155,9 +154,12 @@ class MLIAPWrappedIrrepsLinear(nn.Module):
     """
     onehot_to_feature_x: keep the types of all (local + ghost) atoms in
     KEY.ATOM_TYPE_ALL for per-edge type lookups, then narrow to local atoms.
+    extra_keys: further per-node keys to narrow (isolation gate: KEY.NODE_GATE,
+    a ghost row has no edges of its own, every reader of it is node-wise and
+    local, the ghost features come from the exchange).
     """
 
-    def __init__(self, linear):
+    def __init__(self, linear, extra_keys: Tuple[str, ...] = ()):
         super().__init__()
 
         self.linear = linear
@@ -166,7 +168,7 @@ class MLIAPWrappedIrrepsLinear(nn.Module):
             KEY.NODE_ATTR,
             KEY.ATOM_TYPE,
             KEY.ATOMIC_NUMBERS,
-        )
+        ) + tuple(extra_keys)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         nlocal = int(data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item())
@@ -194,11 +196,7 @@ def patch_model_for_mliap(model: nn.Module) -> nn.Module:
     KEY.ATOM_TYPE_ALL. Edge inputs computed
     once from edge_vec (edge_embedding, edge_pair_input) stay valid: ML-IAP
     back-propagates the whole model in one autograd graph.
-    Isolated-atom anchor: folded into the shift first (the virtual isolated
-    nodes would sit behind the ghost rows); the model must already be on the
-    device its kernels run on.
     """
-    fold_isolated_anchor(model)
     modules = OrderedDict()
     for k, module in model._modules.items():
         m_conv = _RE_CONV.fullmatch(k)
@@ -210,7 +208,9 @@ def patch_model_for_mliap(model: nn.Module) -> nn.Module:
                 extra.append(attn.key_gate)
             module = MLIAPWrappedConvolution(module, extra)
         elif k == 'onehot_to_feature_x':
-            module = MLIAPWrappedIrrepsLinear(module)
+            # isolation gate (sevenn/nn/isolation_gate.py): s_i of local atoms
+            extra = (KEY.NODE_GATE,) if 'node_gate' in model._modules else ()
+            module = MLIAPWrappedIrrepsLinear(module, extra)
         elif isinstance(module, (EdgeAttention, PairRepulsion)):
             module.key_atom_type = KEY.ATOM_TYPE_ALL
         modules[k] = module

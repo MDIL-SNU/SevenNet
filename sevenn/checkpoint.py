@@ -535,6 +535,10 @@ class SevenNetCheckpoint:
             KEY.CHEMICAL_SPECIES_BY_ATOMIC_NUMBER,
         ]
         dst_config.update({k: src_config[k] for k in chem_keys})
+        # and the architecture (missing in the source: the original model)
+        dst_config[KEY.ARCHITECTURE] = src_config.get(KEY.ARCHITECTURE, None) or (
+            'sevennet'
+        )
 
         if dst_config[KEY.USE_MODAL_WISE_SHIFT] and (
             KEY.SHIFT not in dst_config or not isinstance(dst_config[KEY.SHIFT], str)

@@ -2,7 +2,18 @@ import copy
 import os
 import warnings
 from collections import OrderedDict
-from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union, overload
+from typing import (
+    Any,
+    Callable,
+    Dict,
+    List,
+    Literal,
+    Optional,
+    Tuple,
+    Type,
+    Union,
+    overload,
+)
 
 from e3nn.o3 import Irreps
 
@@ -28,7 +39,7 @@ from .nn.interaction_blocks import (
     Metaformer_interaction_block,
     NequIP_interaction_block,
 )
-from .nn.isolated_anchor import AnchorSubtract, AnchorVirtualNodes
+from .nn.isolation_gate import is_isolation_gate
 from .nn.layer_readout import (
     LayerEnergyAccumulate,
     LayerEnergyPack,
@@ -249,34 +260,6 @@ def _patch_edge_attention(layers: OrderedDict, config: Dict[str, Any]) -> None:
             )
         conv.key_filter = attn.key_filter_out
         conv.denominator.data.fill_(1.0)   # attention weights already normalize
-    layers.clear()
-    layers.update(items)
-
-
-def _patch_isolated_anchor(layers: OrderedDict, config: Dict[str, Any]) -> None:
-    """
-    Isolated-atom anchor (config anchor_isolated_atoms, in place; serial
-    model only): AnchorVirtualNodes first (virtual isolated node per
-    (species, modality) of the batch), AnchorSubtract right before the
-    shift/scale (f of every atom minus f of its isolated twin), so an atom
-    without neighbours gets exactly the shift (sevenn/nn/isolated_anchor.py).
-    e3gnn/parallel segments are built without them: build_parallel_model_list
-    folds the constant into the shift instead.
-    """
-    use_modality = bool(config.get(KEY.USE_MODALITY, False))
-    items = list(layers.items())
-    names = [k for k, _ in items]
-    items.insert(
-        names.index('rescale_atomic_energy'),
-        ('anchor_subtract', AnchorSubtract(use_modality)),
-    )
-    items.insert(
-        0,
-        (
-            'anchor_virtual_nodes',
-            AnchorVirtualNodes(config[KEY.NUM_SPECIES], use_modality),
-        ),
-    )
     layers.clear()
     layers.update(items)
 
@@ -760,6 +743,42 @@ def _ghost_twin(name: str, module):
     return twin
 
 
+def _ghost_aware_modules(_layers: List[Tuple[str, Any]]) -> List[Tuple[str, Any]]:
+    """
+    e3gnn/parallel (in place): per-edge type lookups of ghost neighbours read
+    KEY.ATOM_TYPE_ALL (GhostAtomTypes first if any module needs it), edge
+    modules gathering source-node features also read x_ghost, the identity
+    residual stores a copy (see _to_parallel_model)
+    """
+    need_types = False
+    for key, module in _layers:
+        if isinstance(module, EdgeEmbedding):
+            if module.distance_transform is not None:
+                module.key_node_type = KEY.ATOM_TYPE_ALL
+                need_types = True
+        elif isinstance(module, EdgePairInput):
+            module.key_atom_type = KEY.ATOM_TYPE_ALL
+            need_types = True
+        elif isinstance(module, EdgeAttention):
+            module.key_atom_type = KEY.ATOM_TYPE_ALL
+            module.is_parallel = True
+            need_types = need_types or module.use_rb
+        elif isinstance(module, (NodeCondRadialInput, EdgeGate)):
+            module.is_parallel = True
+        elif isinstance(module, PairRepulsion):
+            module.key_atom_type = KEY.ATOM_TYPE_ALL
+            need_types = True
+        elif isinstance(module, SelfConnectionResidualIntro):
+            if key.endswith('_self_connection_intro'):
+                module.clone_identity = True
+                if module.key_full != '':  # magnitude_residual, last layer
+                    module.store_input = True  # x_in crosses in self_cont_tmp
+                    module.key_full = ''
+    if need_types:
+        _layers.insert(0, ('atom_type_all', GhostAtomTypes()))
+    return _layers
+
+
 def _to_parallel_model(
     layers: OrderedDict, config: Dict[str, Any]
 ) -> List[OrderedDict]:
@@ -796,9 +815,6 @@ def _to_parallel_model(
     - pair repulsion: moved to the head of the last segment (after its
       edge_embedding), so the term is computed from that segment's edge
       lengths and nothing position-dependent crosses a boundary
-    - isolated-atom anchor: the segments have no anchor modules (they are
-      not inserted for parallel=True); build_parallel_model_list folds the
-      isolated-atom constant into the shift of the last segment
     Communication is unchanged: one forward and one reverse exchange of the
     convolution input per layer t >= 1.
     """
@@ -835,32 +851,7 @@ def _to_parallel_model(
     )
 
     # ghost-aware edge modules
-    need_types = False
-    for key, module in _layers:
-        if isinstance(module, EdgeEmbedding):
-            if module.distance_transform is not None:
-                module.key_node_type = KEY.ATOM_TYPE_ALL
-                need_types = True
-        elif isinstance(module, EdgePairInput):
-            module.key_atom_type = KEY.ATOM_TYPE_ALL
-            need_types = True
-        elif isinstance(module, EdgeAttention):
-            module.key_atom_type = KEY.ATOM_TYPE_ALL
-            module.is_parallel = True
-            need_types = need_types or module.use_rb
-        elif isinstance(module, (NodeCondRadialInput, EdgeGate)):
-            module.is_parallel = True
-        elif isinstance(module, PairRepulsion):
-            module.key_atom_type = KEY.ATOM_TYPE_ALL
-            need_types = True
-        elif isinstance(module, SelfConnectionResidualIntro):
-            if key.endswith('_self_connection_intro'):
-                module.clone_identity = True
-                if module.key_full != '':  # magnitude_residual, last layer
-                    module.store_input = True  # x_in crosses in self_cont_tmp
-                    module.key_full = ''
-    if need_types:
-        _layers.insert(0, ('atom_type_all', GhostAtomTypes()))
+    _layers = _ghost_aware_modules(_layers)
 
     edge_embedding = layers['edge_embedding']
     pair_input = [m for _, m in _layers if isinstance(m, EdgePairInput)]
@@ -917,6 +908,37 @@ def build_E3_equivariant_model(
     PRED_STRESS: (6,),
 
     for data w/o cell volume, pred_stress has garbage values
+
+    config architecture: isolation_gate builds the isolation-gate model
+    (sevenn/model_build_gate.py); without the key (every pretrained or older
+    checkpoint) or 'sevennet', the original model below.
+    """
+    if is_isolation_gate(config):
+        from .model_build_gate import build_isolation_gate_model
+
+        return build_isolation_gate_model(config, parallel)
+
+    layers, common_args = assemble_layers(config, parallel)
+    if parallel:
+        layers_list = _to_parallel_model(layers, config)
+        return [
+            AtomGraphSequential(patch_modules(layers, config), **common_args)
+            for layers in layers_list
+        ]
+    else:
+        return AtomGraphSequential(patch_modules(layers, config), **common_args)
+
+
+def assemble_layers(
+    config: dict,
+    parallel: bool = False,
+    wrap_block: Optional[Callable[[Callable], Callable]] = None,
+) -> Tuple[OrderedDict, Dict[str, Any]]:
+    """
+    Modules of the serial model (before patch_modules and the e3gnn/parallel
+    split) and the AtomGraphSequential arguments. wrap_block: maps the
+    interaction block builder to the one used (isolation gate,
+    sevenn/model_build_gate.py); None: the builder itself.
     """
     layers = OrderedDict()
 
@@ -1037,6 +1059,8 @@ def build_E3_equivariant_model(
         )
     else:
         raise ValueError(f'Unknown interaction type: {interaction_type}')
+    if wrap_block is not None:
+        interaction_builder = wrap_block(interaction_builder)
     parallel_block = config.get(KEY.PARALLEL_BLOCK, False)  # bool or per layer
     if not isinstance(parallel_block, list):
         parallel_block = [parallel_block] * num_convolution_layer
@@ -1216,9 +1240,6 @@ def build_E3_equivariant_model(
         }
     )
 
-    if config.get(KEY.ANCHOR_ISOLATED_ATOMS, False) and not parallel:
-        _patch_isolated_anchor(layers, config)
-
     gradient_module = ForceStressOutputFromEdge()
     grad_key = gradient_module.get_grad_key()
     layers.update({'force_output': gradient_module})
@@ -1233,12 +1254,4 @@ def build_E3_equivariant_model(
         else True,
         'data_key_grad': grad_key,
     }
-
-    if parallel:
-        layers_list = _to_parallel_model(layers, config)
-        return [
-            AtomGraphSequential(patch_modules(layers, config), **common_args)
-            for layers in layers_list
-        ]
-    else:
-        return AtomGraphSequential(patch_modules(layers, config), **common_args)
+    return layers, common_args

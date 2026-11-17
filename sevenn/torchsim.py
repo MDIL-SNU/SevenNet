@@ -172,10 +172,6 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
 
         self.model = model.to(self._device)
         self.model = self.model.eval()
-        if from_checkpoint:  # isolated-atom anchor: fold into the shift
-            from sevenn.nn.isolated_anchor import fold_isolated_anchor
-
-            fold_isolated_anchor(self.model)
 
         self.implemented_properties = ['energy', 'forces', 'stress']
 

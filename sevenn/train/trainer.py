@@ -17,6 +17,19 @@ from .loss import get_loss_functions_from_config
 from .optim import optim_dict, scheduler_dict
 
 
+def _grad_mask_hook(mask: torch.Tensor):
+    cache = {'mask': mask}
+
+    def hook(grad):
+        m = cache['mask']
+        if m.device != grad.device or m.dtype != grad.dtype:
+            m = m.to(device=grad.device, dtype=grad.dtype)
+            cache['mask'] = m
+        return grad * m
+
+    return hook
+
+
 def freeze_to_modals(
     model: torch.nn.Module,
     train_only_modals: List[str],
@@ -57,18 +70,6 @@ def freeze_to_modals(
         )
     keep_idx = sorted({modal_map[m] for m in train_only_modals})
 
-    def _mask_hook(mask: torch.Tensor):
-        cache = {'mask': mask}
-
-        def hook(grad):
-            m = cache['mask']
-            if m.device != grad.device or m.dtype != grad.dtype:
-                m = m.to(device=grad.device, dtype=grad.dtype)
-                cache['mask'] = m
-            return grad * m
-
-        return hook
-
     # Snapshot trainability before freezing so train_shift/train_scale (and any
     # other intentionally-frozen params) are respected, not silently re-enabled.
     was_trainable = {p: p.requires_grad for p in model.parameters()}
@@ -90,7 +91,7 @@ def freeze_to_modals(
                 )
             modal_view[keep_idx, :] = 1.0  # writes through into `mask`
             weight.requires_grad_(True)
-            weight.register_hook(_mask_hook(mask))
+            weight.register_hook(_grad_mask_hook(mask))
             report.append(f'{name}.linear.weight (rows {keep_idx})')
         elif isinstance(module, ModalWiseRescale):
             for attr, use_mw in (
@@ -102,7 +103,7 @@ def freeze_to_modals(
                     mask = torch.zeros_like(param)
                     mask[keep_idx, :] = 1.0
                     param.requires_grad_(True)
-                    param.register_hook(_mask_hook(mask))
+                    param.register_hook(_grad_mask_hook(mask))
                     report.append(f'{name}.{attr} (rows {keep_idx})')
 
     if not report:
@@ -121,6 +122,63 @@ def freeze_to_modals(
             + '\n  '.join(report),
             flush=True,
         )
+
+
+def mask_shift_to_modals(
+    model: torch.nn.Module,
+    train_shift_modals: List[str],
+    rank: int = 0,
+) -> torch.nn.Parameter:
+    """
+    Config key 'train_shift_modals': only the listed rows of the modal-wise shift
+    train, nothing else changes (other parameters keep their requires_grad).
+
+    The shift is one Parameter of shape (num_modalities, num_species), so it gets
+    requires_grad=True here (never in the model build: inference and a checkpoint
+    with this key see a frozen shift) and a backward hook zeroes the other rows
+    before anything reads .grad: DDP reducer, clip_grad_norm_, every optimizer
+    path. No regularizer reads the shift. With a zero gradient and zero optimizer
+    state a row stays bit-identical; what can break that is weight decay (refused
+    in Trainer) and old optimizer state (refused by processing_continue).
+
+    Returns the shift parameter.
+    """
+    from sevenn.nn.scale import ModalWiseRescale
+
+    modal_map = getattr(model, 'modal_map', None)
+    if not modal_map:
+        raise ValueError(
+            'train_shift_modals is set but the model has no modal_map; '
+            'use_modality must be True with modalities defined'
+        )
+    missing = [m for m in train_shift_modals if m not in modal_map]
+    if missing:
+        raise ValueError(
+            f'train_shift_modals {missing} not found in model modal_map '
+            f'{sorted(modal_map)}'
+        )
+    rescale = model._modules['rescale_atomic_energy']
+    if not (isinstance(rescale, ModalWiseRescale) and rescale.use_modal_wise_shift):
+        raise ValueError('train_shift_modals needs use_modal_wise_shift: true')
+    shift = rescale.shift
+    if shift.requires_grad:
+        raise ValueError(
+            'train_shift_modals replaces train_shift and train_shift_scale: '
+            'set them false'
+        )
+
+    rows = sorted({modal_map[m] for m in train_shift_modals})
+    mask = torch.zeros_like(shift)
+    mask[rows, :] = 1.0
+    shift.requires_grad_(True)
+    shift.register_hook(_grad_mask_hook(mask))
+    if rank == 0:
+        print(
+            f'[train_shift_modals] {train_shift_modals} -> shift rows {rows} of '
+            f'{shift.shape[0]} train',
+            flush=True,
+        )
+    return shift
 
 
 class Trainer:
@@ -153,6 +211,7 @@ class Trainer:
         distributed: bool = False,
         distributed_backend: str = 'nccl',
         train_only_modals: Optional[List[str]] = None,
+        train_shift_modals: Optional[List[str]] = None,
     ) -> None:
         if device == 'auto':
             device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -181,6 +240,12 @@ class Trainer:
         # requires_grad) and the optimizer build (so frozen params are excluded).
         if train_only_modals is not None:
             freeze_to_modals(model, train_only_modals, rank=self.rank)
+        # Same place and reason, after the freeze (which would undo requires_grad)
+        shift_param = None
+        if train_shift_modals:
+            shift_param = mask_shift_to_modals(
+                model, train_shift_modals, rank=self.rank
+            )
 
         if distributed:
             if distributed_backend == 'nccl':
@@ -205,6 +270,17 @@ class Trainer:
         else:
             param = [p for p in self.model.parameters() if p.requires_grad]
             self.optimizer = optimizer_cls(param, **optimizer_args)
+        for group in self.optimizer.param_groups:
+            if group.get('weight_decay', 0.0) != 0.0 and any(
+                p is shift_param for p in group['params']
+            ):
+                # also pulls the trained rows to zero: an energy reference
+                raise ValueError(
+                    'train_shift_modals: weight_decay '
+                    f"{group['weight_decay']} acts on the shift and would move "
+                    'the fixed rows: set weight_decay: 0 in optim_param (AdamW '
+                    'has 0.01 by default; muon: the auxiliary adam section)'
+                )
         if scheduler_cls is not None:
             scheduler_args = scheduler_args or {}
             self.scheduler = scheduler_cls(self.optimizer, **scheduler_args)
@@ -232,6 +308,7 @@ class Trainer:
             distributed=config.get(KEY.IS_DDP, False),
             distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
             train_only_modals=config.get(KEY.TRAIN_ONLY_MODALS, None),
+            train_shift_modals=config.get(KEY.TRAIN_SHIFT_MODALS, None),
         )
         return trainer
 
@@ -264,6 +341,7 @@ class Trainer:
                 'optimizer_args': config[KEY.OPTIM_PARAM],
                 'scheduler_cls': scheduler_cls,
                 'scheduler_args': config[KEY.SCHEDULER_PARAM],
+                'train_shift_modals': config.get(KEY.TRAIN_SHIFT_MODALS, None),
             },
             cp.optimizer_state_dict,
             cp.scheduler_state_dict,

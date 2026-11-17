@@ -40,6 +40,7 @@ class ReewcTrainer(Trainer):
             device=config.get(KEY.DEVICE, 'auto'),
             distributed=config.get(KEY.IS_DDP, False),
             distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
+            train_shift_modals=config.get(KEY.TRAIN_SHIFT_MODALS, None),
             memory_loader=memory_loader,
         )
         return trainer

@@ -9,7 +9,6 @@ from tqdm import tqdm
 import sevenn._keys as KEY
 import sevenn.util as util
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.nn.isolated_anchor import fold_isolated_anchor
 from sevenn.train.graph_dataset import SevenNetGraphDataset
 from sevenn.train.modal_dataset import SevenNetMultiModalDataset
 
@@ -277,7 +276,6 @@ def inference(
     model.to(device)
     model.set_is_batch_data(True)
     model.eval()
-    fold_isolated_anchor(model)  # isolated-atom anchor: fold into the shift
 
     rec = util.get_error_recorder()
     output_list = []

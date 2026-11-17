@@ -13,6 +13,52 @@ from sevenn.scripts.convert_model_modality import (
 )
 
 
+def _check_train_shift_modals(
+    config: Dict[str, Any], config_cp: Dict[str, Any], continue_dct: Dict[str, Any]
+) -> None:
+    """
+    train_shift_modals comes from the yaml (Trainer applies it to the model
+    built from this config), the checkpoint's own value is only compared. Adam
+    moments or a momentum buffer of a row trained before would keep moving that
+    row with a zero gradient, and the set of trainable tensors may differ too,
+    so a changed selection needs a fresh optimizer.
+    """
+    new = set(config.get(KEY.TRAIN_SHIFT_MODALS) or ())
+    old = set(config_cp.get(KEY.TRAIN_SHIFT_MODALS) or ())
+    if not new and not old:
+        return
+    was_full = config_cp.get(KEY.TRAIN_SHIFT, False) or config_cp.get(
+        KEY.TRAIN_SHIFT_SCALE, False
+    )
+    if (new != old or was_full) and not continue_dct[KEY.RESET_OPTIMIZER]:
+        raise ValueError(
+            f'{KEY.TRAIN_SHIFT_MODALS} {sorted(new)} differs from the checkpoint '
+            f'(train_shift_modals {sorted(old)}, full shift trained: '
+            f'{bool(was_full)}): set {KEY.RESET_OPTIMIZER}: true in continue'
+        )
+
+
+def _keep_architecture(
+    config: Dict[str, Any], config_cp: Dict[str, Any], log: Any
+) -> None:
+    """
+    The model architecture (KEY.ARCHITECTURE) is the checkpoint's: a
+    checkpoint without the key is the original model ('sevennet'), whatever
+    the yaml says (the state dicts of both architectures load into each other,
+    so a mismatch would not fail at loading).
+    """
+    from sevenn.nn.isolation_gate import ARCH_DEFAULT
+
+    arch_cp = config_cp.get(KEY.ARCHITECTURE, None) or ARCH_DEFAULT
+    arch = config.get(KEY.ARCHITECTURE, None) or ARCH_DEFAULT
+    if arch != arch_cp:
+        log.writeline(
+            f'{KEY.ARCHITECTURE}: {arch} of the input is overwritten by the '
+            f'checkpoint ({arch_cp})'
+        )
+    config[KEY.ARCHITECTURE] = arch_cp
+
+
 # TODO: check backward compatibility
 def processing_continue_v2(config: Dict[str, Any]):
     """
@@ -31,6 +77,8 @@ def processing_continue_v2(config: Dict[str, Any]):
     model_cp = checkpoint.build_model()
     config_cp = checkpoint.config
     model_state_dict_cp = model_cp.state_dict()
+    _check_train_shift_modals(config, config_cp, continue_dct)
+    _keep_architecture(config, config_cp, log)
 
     optimizer_state_dict_cp = (
         checkpoint.optimizer_state_dict
@@ -182,6 +230,8 @@ def processing_continue(config: Dict[str, Any]):
     # it will raise error if not compatible
     check_config_compatible(config, config_cp)
     log.write('Checkpoint config is compatible\n')
+    _check_train_shift_modals(config, config_cp, continue_dct)
+    _keep_architecture(config, config_cp, log)
 
     # for backward compat.
     config.update({KEY._NORMALIZE_SPH: config_cp[KEY._NORMALIZE_SPH]})

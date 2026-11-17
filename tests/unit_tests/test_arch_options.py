@@ -1,9 +1,34 @@
 """Tests for optional architecture modules (ablation switches) of ompa-v2."""
+import pytest
 import torch
 from e3nn.o3 import Irreps
 
 import sevenn._keys as KEY
-from tests.unit_tests.test_model import get_graphs, get_model
+from tests.unit_tests.test_model import get_graphs
+from tests.unit_tests.test_model import get_model as _get_model
+
+# model build paths: the original SevenNet model (no 'architecture' key, as
+# every pretrained checkpoint) and the isolation-gate model
+# (sevenn/model_build_gate.py). Every test that builds a model runs on both.
+ARCHS = ('sevennet', 'isolation_gate')
+arch_param = pytest.mark.parametrize('arch', ARCHS)
+
+
+def gated(arch):
+    return arch == 'isolation_gate'
+
+
+def with_arch(cf, arch):
+    """cf on build path arch (original: the key left out)"""
+    cf = {k: v for k, v in cf.items() if k != KEY.ARCHITECTURE}
+    if gated(arch):
+        cf[KEY.ARCHITECTURE] = arch
+    return cf
+
+
+def get_model(arch, cf={}):
+    return _get_model(with_arch(cf, arch))
+
 
 _partial = {
     'lmax': 2,
@@ -16,9 +41,10 @@ def _convs(model):
     return {k: m for k, m in model.named_modules() if k.endswith('_convolution')}
 
 
-def test_drop_unused_tp_irreps():
-    full = get_model(_partial)
-    drop = get_model({**_partial, KEY.DROP_UNUSED_TP_IRREPS: True})
+@arch_param
+def test_drop_unused_tp_irreps(arch):
+    full = get_model(arch, _partial)
+    drop = get_model(arch, {**_partial, KEY.DROP_UNUSED_TP_IRREPS: True})
     for (k, cf), (_, cd) in zip(_convs(full).items(), _convs(drop).items()):
         used = {ir for _, ir in Irreps(cf.convolution.irreps_out)}
         out_drop = {ir for _, ir in cd.convolution.irreps_out}
@@ -59,8 +85,6 @@ def _rotated_pair(model):
     return out, out_rot, R
 
 
-import pytest  # noqa: E402
-
 
 @pytest.mark.parametrize(
     'cf',
@@ -71,8 +95,9 @@ import pytest  # noqa: E402
         {**_metaformer, 'use_final_norm': True, 'ffn_hidden_scale': 1},
     ],
 )
-def test_metaformer_equivariance(cf):
-    model = get_model(cf)
+@arch_param
+def test_metaformer_equivariance(cf, arch):
+    model = get_model(arch, cf)
     names = list(dict(model.named_children()))
     assert '1_norm_1' in names and '1_self_interaction_3' in names
     assert ('1_ffn_linear_1' in names) == cf.get('use_ffn', True)
@@ -114,10 +139,11 @@ def test_rmsnorm_and_residual_projection():
 
 @pytest.mark.parametrize('cf', [{**_partial, 'radial_pair_embedding': True},
                                 {**_metaformer, 'radial_pair_embedding': True}])
-def test_radial_pair_embedding(cf):
+@arch_param
+def test_radial_pair_embedding(cf, arch):
     from sevenn.nn.radial_pair import PairRadialMLP
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     names = list(dict(model.named_children()))
     assert names.index('edge_pair_input') > names.index('onehot_idx_to_onehot')
     convs = _convs(model)
@@ -141,17 +167,19 @@ def test_radial_pair_embedding(cf):
     assert torch.equal(w(inp), torch.zeros_like(w(inp)))
 
 
-def test_new_modules_scriptable():
+@arch_param
+def test_new_modules_scriptable(arch):
     from e3nn.util.jit import script
 
     cfs = [{**_metaformer, 'radial_pair_embedding': True, 'use_final_norm': True}]
     for cf in cfs:
-        m = get_model(cf)
+        m = get_model(arch, cf)
         m.set_is_batch_data(False)
         script(m.eval())
 
 
-def test_readout_activation_keeps_modality():
+@arch_param
+def test_readout_activation_keeps_modality(arch):
     modal = {
         'use_modality': True,
         '_number_of_modalities': 2,
@@ -163,8 +191,8 @@ def test_readout_activation_keeps_modality():
         'use_modal_wise_shift': False,
         'use_modal_wise_scale': False,
     }
-    base = get_model(modal)
-    model = get_model({**modal, 'readout_activation': 'silu'})
+    base = get_model(arch, modal)
+    model = get_model(arch, {**modal, 'readout_activation': 'silu'})
     names = list(dict(model.named_children()))
     i = names.index('reduce_hidden_activation')
     assert names[i - 1] == 'reduce_input_to_hidden'
@@ -175,10 +203,11 @@ def test_readout_activation_keeps_modality():
     assert model.reduce_input_to_hidden.num_modalities == 2
 
 
-def test_muon_routing_new_modules():
+@arch_param
+def test_muon_routing_new_modules(arch):
     from sevenn.train.muon import build_muon_param_groups
 
-    model = get_model({**_metaformer, 'radial_pair_embedding': True})
+    model = get_model(arch, {**_metaformer, 'radial_pair_embedding': True})
     groups = build_muon_param_groups(model)
     name = {id(p): n for n, p in model.named_parameters()}
     muon = {name[id(p)] for p in groups[0]['params']}
@@ -191,7 +220,8 @@ def test_muon_routing_new_modules():
     assert {'1_convolution.weight_nn.table_src', '1_norm_1.weight'} <= adam
 
 
-def test_frozen_bessel_moves_with_module():
+@arch_param
+def test_frozen_bessel_moves_with_module(arch):
     from sevenn.nn.edge_embedding import BesselBasis
 
     b = BesselBasis(6.0, 8, trainable_coeff=False)
@@ -200,7 +230,7 @@ def test_frozen_bessel_moves_with_module():
     assert b(torch.rand(3, dtype=torch.float64) + 1.0).dtype == torch.float64
     if torch.cuda.is_available():
         assert b.cuda()(torch.rand(3, device='cuda') + 1.0).is_cuda
-    model = get_model({**_partial, 'radial_basis': {
+    model = get_model(arch, {**_partial, 'radial_basis': {
         'radial_basis_name': 'bessel', 'trainable_coeff': False}})
     model(get_graphs(batched=True))
 
@@ -254,13 +284,14 @@ def _bilinear_reference(g, x):
                                  'bilinear_b': 'shared'},
                                 {**_metaformer, 'gate_type': 'bilinear',
                                  'bilinear_b': 'shared'}])
-def test_bilinear_gate(cf):
+@arch_param
+def test_bilinear_gate(cf, arch):
     from e3nn.util.jit import script
 
     from sevenn.nn.bilinear_gate import BilinearGate
     from sevenn.train.muon import build_muon_param_groups
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     gates = {
         k: m for k, m in model.named_children() if k.endswith('equivariant_gate')
     }
@@ -305,13 +336,14 @@ def test_bilinear_gate(cf):
 
 
 @pytest.mark.parametrize('paths', ['same_l', 'lmax2', 'scalar'])
-def test_bilinear_paths(paths):
+@arch_param
+def test_bilinear_paths(paths, arch):
     from sevenn.nn.bilinear_gate import BilinearGate
 
     cf = {**_partial, 'lmax': 3, 'gate_type': 'bilinear', 'irreps_manual': [
         '4x0e', '4x0e+4x1o+4x2e+4x3o', '4x0e+4x1o+4x2e+4x3o', '4x0e']}
-    full = get_model(cf)
-    model = get_model({**cf, 'bilinear_paths': paths})
+    full = get_model(arch, cf)
+    model = get_model(arch, {**cf, 'bilinear_paths': paths})
     g = dict(model.named_children())['1_equivariant_gate']
     g_full = dict(full.named_children())['1_equivariant_gate']
     assert isinstance(g, BilinearGate)
@@ -331,8 +363,9 @@ def test_bilinear_paths(paths):
     assert torch.allclose(out, _bilinear_reference(g, x), atol=1e-5)
 
 
-def test_metaformer_ffn_per_layer():
-    model = get_model({**_metaformer, 'use_ffn': [False, True, False]})
+@arch_param
+def test_metaformer_ffn_per_layer(arch):
+    model = get_model(arch, {**_metaformer, 'use_ffn': [False, True, False]})
     names = list(dict(model.named_children()))
     assert '1_ffn_linear_1' in names
     assert '0_ffn_linear_1' not in names and '2_ffn_linear_1' not in names
@@ -345,13 +378,14 @@ def test_metaformer_ffn_per_layer():
     {**_metaformer, 'ffn_type': 'swiglu', 'layer_scale_init': 0.1, 'ffn_film': True,
      'radial_pair_embedding': True},
 ])
-def test_ffn_variants(cf):
+@arch_param
+def test_ffn_variants(cf, arch):
     from e3nn.util.jit import script
 
     from sevenn.nn.ffn_variants import ElementFiLM, LayerScale, SwiGLUGate
     from sevenn.train.muon import build_muon_param_groups
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     if cf.get('ffn_type') == 'swiglu':
         assert isinstance(mods['1_ffn_gate'], SwiGLUGate)
@@ -391,12 +425,13 @@ def test_film_identity_at_init():
     {**_metaformer, 'distance_transform': 'agnesi'},
     {**_partial, 'distance_transform': 'agnesi'},
 ])
-def test_agnesi_transform(cf):
+@arch_param
+def test_agnesi_transform(cf, arch):
     from e3nn.util.jit import script
 
     from sevenn.nn.edge_embedding import AgnesiTransform
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     emb = dict(model.named_children())['edge_embedding']
     assert isinstance(emb.distance_transform, AgnesiTransform)
     # transform is monotonically decreasing in r and lies in (0, 1)
@@ -412,9 +447,10 @@ def test_agnesi_transform(cf):
     script(model.eval())
 
 
-def test_sigmoid_gate():
+@arch_param
+def test_sigmoid_gate(arch):
     cf = {**_metaformer, 'act_gate': {'e': 'sigmoid', 'o': 'tanh'}}
-    model = get_model(cf)
+    model = get_model(arch, cf)
     acts = [m.act_gates for k, m in model.named_modules()
             if k.endswith('equivariant_gate') and hasattr(m, 'act_gates')]
     out, out_rot, R = _rotated_pair(model)
@@ -425,9 +461,10 @@ def test_sigmoid_gate():
 
 
 @pytest.mark.parametrize('base', [_metaformer, _partial])
-def test_irreps_conv_narrow(base):
+@arch_param
+def test_irreps_conv_narrow(base, arch):
     conv = ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']
-    model = get_model({**base, 'irreps_conv': conv})
+    model = get_model(arch, {**base, 'irreps_conv': conv})
     mods = dict(model.named_children())
     for t, ir in enumerate(conv):
         assert Irreps(mods[f'{t}_self_interaction_1'].irreps_out) == Irreps(ir)
@@ -445,12 +482,13 @@ def test_irreps_conv_narrow(base):
      'radial_pair_embedding': True},
     {**_partial, 'conv_attention': {'null_logit': False}},
 ])
-def test_conv_attention(cf):
+@arch_param
+def test_conv_attention(cf, arch):
     from e3nn.util.jit import script
 
     from sevenn.nn.edge_attention import AttentionOutGate, EdgeAttention
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     assert isinstance(mods['1_edge_attention'], EdgeAttention)
     assert '0_edge_attention' not in mods   # first layer keeps the plain sum
@@ -481,12 +519,13 @@ def test_conv_attention(cf):
     {**_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
      'conv_attention': {}},
 ])
-def test_radial_node_cond(cf):
+@arch_param
+def test_radial_node_cond(cf, arch):
     from e3nn.util.jit import script
 
     from sevenn.nn.radial_pair import NodeCondRadialInput
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     assert isinstance(mods['1_radial_node_cond'], NodeCondRadialInput)
     assert mods['1_convolution'].key_weight_input == '1_edge_pair_input_nc'
@@ -508,14 +547,15 @@ def test_radial_node_cond(cf):
     {**_metaformer, 'ffn_moe': True, 'radial_pair_embedding': True,
      'readout_activation': 'silu', 'use_ffn': [True, False, True]},
 ])
-def test_ffn_moe(cf):
+@arch_param
+def test_ffn_moe(cf, arch):
     from e3nn.util.jit import script
 
     from sevenn.nn.moe_ffn import MoECombine, MoEDispatch, element_group
     from sevenn.train.muon import build_muon_param_groups
 
     assert [element_group(z) for z in (1, 8, 13, 26, 74, 64)] == [0, 1, 2, 3, 4, 5]
-    model = get_model(cf)
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     assert isinstance(mods['0_moe_dispatch'], MoEDispatch)
     assert isinstance(mods['0_moe_combine'], MoECombine)
@@ -636,14 +676,15 @@ def test_s2_bilinear_gate_module():
      'layer_scale_init': 0.1, 'radial_pair_embedding': True,
      'readout_activation': 'silu'},
 ])
-def test_s2_bilinear_ffn(cf):
+@arch_param
+def test_s2_bilinear_ffn(cf, arch):
     from e3nn.util.jit import script
 
     from sevenn.nn.equivariant_gate import EquivariantGate
     from sevenn.nn.ffn_variants import ElementFiLM, S2BilinearGate
     from sevenn.train.muon import build_muon_param_groups
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     gate = mods['1_ffn_gate']
     assert isinstance(gate, S2BilinearGate)
@@ -771,14 +812,15 @@ def test_s2_inv_gate_module(irreps, C):
      'readout_activation': 'silu'},
     {**_metaformer, 'ffn_type': 's2_inv', 'parallel_block': [False, True, True]},
 ])
-def test_s2_inv_ffn(cf):
+@arch_param
+def test_s2_inv_ffn(cf, arch):
     from e3nn.util.jit import script
 
     from sevenn.nn.equivariant_gate import EquivariantGate
     from sevenn.nn.ffn_variants import ElementFiLM, S2InvGate
     from sevenn.train.muon import build_muon_param_groups
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     gate = mods['1_ffn_gate']
     assert isinstance(gate, S2InvGate)
@@ -787,7 +829,7 @@ def test_s2_inv_ffn(cf):
     assert Irreps(mods['1_ffn_linear_2'].irreps_in) == gate.irreps_out
     assert isinstance(mods['2_ffn_gate'], EquivariantGate)   # scalar-only FFN
     # same FFN output side as s2_bilinear
-    ref = get_model({**cf, 'ffn_type': 's2_bilinear'})
+    ref = get_model(arch, {**cf, 'ffn_type': 's2_bilinear'})
     ref_mods = dict(ref.named_children())
     assert ref_mods['1_ffn_gate'].irreps_out == gate.irreps_out
     assert (ref_mods['1_ffn_linear_2'].linear.weight.shape
@@ -841,16 +883,17 @@ def test_s2_inv_ffn(cf):
     {**_metaformer, 'metaformer_norm': False, 'radial_pair_embedding': True,
      'readout_activation': 'silu', 'use_ffn': [True, False, True]},
 ])
-def test_metaformer_without_norm(cf):
+@arch_param
+def test_metaformer_without_norm(cf, arch):
     """metaformer_norm: false drops norm_1 / norm_2 and nothing else"""
     from e3nn.util.jit import script
 
     from sevenn.nn.normalization import EquivariantRMSNorm
 
     torch.manual_seed(0)
-    ref = get_model({**cf, 'metaformer_norm': True})
+    ref = get_model(arch, {**cf, 'metaformer_norm': True})
     torch.manual_seed(0)
-    model = get_model(cf)
+    model = get_model(arch, cf)
     names = list(dict(model.named_children()))
     assert not any(isinstance(m, EquivariantRMSNorm) for m in model.modules())
     ref_names = [k for k in dict(ref.named_children())
@@ -885,7 +928,8 @@ _modal_cf = {
     {**_metaformer, 'readout_block': {'type': 'swiglu', 'hidden_scale': 2},
      'radial_pair_embedding': True, **_modal_cf},
 ])
-def test_readout_block(cf):
+@arch_param
+def test_readout_block(cf, arch):
     """norm -> FFN -> identity residual -> modal-aware linear readout"""
     from e3nn.util.jit import script
 
@@ -894,13 +938,15 @@ def test_readout_block(cf):
     from sevenn.nn.normalization import EquivariantRMSNorm
     from sevenn.train.muon import build_muon_param_groups
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     names = list(mods)
     order = ['readout_ffn_intro', 'readout_norm', 'readout_ffn_linear_1',
              'readout_ffn_gate', 'readout_ffn_linear_2', 'readout_ffn_outro',
              'reduce_input_to_hidden', 'reduce_hidden_to_energy',
              'rescale_atomic_energy']
+    if gated(arch):  # readout on x_L - x_0
+        order.insert(order.index('reduce_input_to_hidden'), 'readout_reference')
     i = names.index('readout_ffn_intro')
     assert names[i: i + len(order)] == order
     assert 'reduce_hidden_activation' not in names
@@ -933,9 +979,10 @@ def test_readout_block(cf):
     script(model.eval())
 
 
-def test_readout_block_replaces_activation():
+@arch_param
+def test_readout_block_replaces_activation(arch):
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'readout_block': {},
+        get_model(arch, {**_metaformer, 'readout_block': {},
                    'readout_activation': 'silu'})
 
 
@@ -945,7 +992,8 @@ def test_readout_block_replaces_activation():
     {**_metaformer, 'per_layer_readout': True, 'use_ffn': [True, False, True],
      'readout_block': {}},
 ])
-def test_per_layer_readout(cf):
+@arch_param
+def test_per_layer_readout(cf, arch):
     """zero-initialized linear energy heads after every layer but the last"""
     from e3nn.util.jit import script
 
@@ -960,8 +1008,8 @@ def test_per_layer_readout(cf):
     from tests.unit_tests.test_model import get_model_config
 
     torch.manual_seed(0)
-    ref = get_model({**cf, 'per_layer_readout': False})
-    model = get_model(cf)
+    ref = get_model(arch, {**cf, 'per_layer_readout': False})
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     names = list(mods)
     for t in (0, 1):
@@ -971,11 +1019,22 @@ def test_per_layer_readout(cf):
         assert Irreps(head.irreps_out) == Irreps('1x0e')
         assert names.index(f'{t}_layer_energy_acc') == names.index(
             f'{t}_layer_readout') + 1
-        last = 'ffn_outro' if f'{t}_ffn_outro' in mods else (
-            'equivariant_gate' if f'{t}_equivariant_gate' in mods
-            and cf.get('interaction_type') != 'metaformer'
-            else 'self_connection_outro')
-        assert names.index(f'{t}_layer_readout') == names.index(f'{t}_{last}') + 1
+        if f'{t}_ffn_outro' in mods:
+            last = 'ffn_outro'
+        elif gated(arch) and f'{t}_gate_blend' in mods:
+            last = 'gate_blend'
+        elif (f'{t}_equivariant_gate' in mods
+              and cf.get('interaction_type') != 'metaformer'):
+            last = 'equivariant_gate'
+        else:
+            last = 'self_connection_outro'
+        i_last = names.index(f'{t}_{last}')
+        if gated(arch):  # head on x_t - x_0
+            assert names.index(f'{t}_layer_reference') == i_last + 1
+            assert names.index(f'{t}_layer_readout') == i_last + 2
+        else:
+            assert f'{t}_layer_reference' not in names
+            assert names.index(f'{t}_layer_readout') == i_last + 1
     assert '2_layer_readout' not in names
     assert isinstance(mods['layer_energy_to_readout'], LayerEnergyToReadout)
     assert names.index('layer_energy_to_readout') == names.index(
@@ -1007,12 +1066,13 @@ def test_per_layer_readout(cf):
     script(model.eval())
     # e3gnn/parallel segments: the energy sum crosses inside self_cont_tmp
     config = get_model_config()
-    config.update(cf)
+    config.update(with_arch(cf, arch))
     segs = build_E3_equivariant_model(config, parallel=True)
+    first = 1 if gated(arch) else 0  # gate: no energy yet at the layer-0 cut
     for i, seg in enumerate(segs):
         sm = list(seg._modules.values())
-        assert isinstance(sm[-1], LayerEnergyPack) == (i < len(segs) - 1)
-        assert any(isinstance(m, LayerEnergyUnpack) for m in sm) == (i > 0)
+        assert isinstance(sm[-1], LayerEnergyPack) == (first <= i < len(segs) - 1)
+        assert any(isinstance(m, LayerEnergyUnpack) for m in sm) == (i > first)
 
 
 @pytest.mark.parametrize('block', [
@@ -1020,7 +1080,8 @@ def test_per_layer_readout(cf):
     {'type': 'mlp', 'norm': 'layer', 'num_blocks': 2, 'hidden_scale': 1},
     {'final_norm': False},
 ])
-def test_radial_mlp_block(block):
+@arch_param
+def test_radial_mlp_block(block, arch):
     """pre-norm residual hidden stack of the pair radial MLP"""
     from e3nn.util.jit import script
 
@@ -1030,7 +1091,7 @@ def test_radial_mlp_block(block):
     cf = {**_metaformer, 'radial_pair_embedding': True,
           'radial_mlp_block': block}
     torch.manual_seed(0)
-    model = get_model(cf)
+    model = get_model(arch, cf)
     convs = _convs(model)
     w = convs['1_convolution'].weight_nn
     assert isinstance(w, PairRadialMLP) and w.use_block
@@ -1077,9 +1138,10 @@ def test_radial_mlp_block(block):
     script(model.eval())
 
 
-def test_radial_mlp_block_needs_pair_radial():
+@arch_param
+def test_radial_mlp_block_needs_pair_radial(arch):
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'radial_mlp_block': {}})
+        get_model(arch, {**_metaformer, 'radial_mlp_block': {}})
 
 
 def _inversion_check(model):
@@ -1116,7 +1178,8 @@ _full_parity = ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
      'lmax': 3, 'irreps_manual': ['4x0e', '4x0e+4x1o+4x2e+4x3o',
                                   '4x0e+4x1o+4x2e+4x3o', '4x0e']},
 ])
-def test_light_conv(cf):
+@arch_param
+def test_light_conv(cf, arch):
     """conv_gate: false (TP -> linear) and parallel_block (conv + FFN branches
     from the same pre-norm input)"""
     from e3nn.util.jit import script
@@ -1126,7 +1189,7 @@ def test_light_conv(cf):
     from sevenn.train.muon import build_muon_param_groups
     from tests.unit_tests.test_model import get_model_config
 
-    model = get_model(cf)
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     names = list(mods)
     n_layer = 3
@@ -1175,21 +1238,22 @@ def test_light_conv(cf):
     script(model.eval())
     # e3gnn/parallel: layer-0 FFN branch needs no ghost twin
     config = get_model_config()
-    config.update(cf)
+    config.update(with_arch(cf, arch))
     segs = build_E3_equivariant_model(config, parallel=True)
     names0 = list(segs[0]._modules)
     assert not any(k.startswith('ghost_0_ffn') for k in names0)
 
 
-def test_light_conv_errors():
+@arch_param
+def test_light_conv_errors(arch):
     with pytest.raises(ValueError):
-        get_model({**_partial, 'conv_gate': False})
+        get_model(arch, {**_partial, 'conv_gate': False})
     with pytest.raises(ValueError):
-        get_model({**_partial, 'parallel_block': True})
+        get_model(arch, {**_partial, 'parallel_block': True})
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'conv_gate': False, 'gate_type': 'bilinear'})
+        get_model(arch, {**_metaformer, 'conv_gate': False, 'gate_type': 'bilinear'})
     with pytest.raises(NotImplementedError):
-        get_model({**_metaformer, 'parallel_block': True, 'ffn_moe': True})
+        get_model(arch, {**_metaformer, 'parallel_block': True, 'ffn_moe': True})
 
 
 @pytest.mark.parametrize('cf', [
@@ -1198,7 +1262,8 @@ def test_light_conv_errors():
      'radial_mlp_block': {}, 'radial_short_basis': {'cutoff': 2.5,
                                                     'num_basis': 4}},
 ])
-def test_short_radial_basis(cf):
+@arch_param
+def test_short_radial_basis(cf, arch):
     """second, short-cutoff basis in the pair radial MLP input"""
     from e3nn.util.jit import script
 
@@ -1208,8 +1273,8 @@ def test_short_radial_basis(cf):
     opts = cf['radial_short_basis']
     rs, n = opts.get('cutoff', 3.0), opts.get('num_basis', 6)
     torch.manual_seed(0)
-    ref = get_model({**cf, 'radial_short_basis': None})
-    model = get_model(cf)
+    ref = get_model(arch, {**cf, 'radial_short_basis': None})
+    model = get_model(arch, cf)
     pair = dict(model.named_children())['edge_pair_input']
     assert isinstance(pair, EdgePairInput) and pair.use_short
     w = _convs(model)['1_convolution'].weight_nn
@@ -1251,11 +1316,12 @@ def test_short_radial_basis(cf):
     script(model.eval())
 
 
-def test_short_radial_basis_errors():
+@arch_param
+def test_short_radial_basis_errors(arch):
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'radial_short_basis': {}})
+        get_model(arch, {**_metaformer, 'radial_short_basis': {}})
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'radial_pair_embedding': True,
+        get_model(arch, {**_metaformer, 'radial_pair_embedding': True,
                    'radial_short_basis': {'cutoff': 4.5}})
 
 
@@ -1266,7 +1332,8 @@ def test_short_radial_basis_errors():
                                     'decay_init': [1.0, 3.0, 9.0],
                                     'param_scale': 1.0}},
 ])
-def test_pair_repulsion(cf):
+@arch_param
+def test_pair_repulsion(cf, arch):
     """learned pair repulsion added to the atomic energy after the rescale"""
     import math
 
@@ -1280,8 +1347,8 @@ def test_pair_repulsion(cf):
 
     opts = cf['pair_repulsion']
     torch.manual_seed(0)
-    ref = get_model({**cf, 'pair_repulsion': None})
-    model = get_model(cf)
+    ref = get_model(arch, {**cf, 'pair_repulsion': None})
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     names = list(mods)
     pair = mods['pair_repulsion']
@@ -1336,7 +1403,7 @@ def test_pair_repulsion(cf):
     assert 'pair_repulsion.radius' in model.state_dict()  # buffer, saved
     script(model.eval())
     config = get_model_config()
-    config.update(cf)
+    config.update(with_arch(cf, arch))
     Logger().print_model_info(model, config)
     # e3gnn/parallel: last segment, ghost types (segment 0 builds them)
     segs = build_E3_equivariant_model(config, parallel=True)
@@ -1345,16 +1412,20 @@ def test_pair_repulsion(cf):
         assert ('pair_repulsion' in sm) == (i == len(segs) - 1)
         assert ('atom_type_all' in sm) == (i == 0)
     last = list(segs[-1]._modules)  # right after the segment's edge inputs
-    head = 2 if 'edge_pair_input' in last else 1
-    assert last.index('pair_repulsion') == head
+    if gated(arch):  # ... and s_i, x_0 (unpacked from self_cont_tmp)
+        assert last.index('pair_repulsion') == last.index('reference_unpack') + 1
+    else:
+        head = 2 if 'edge_pair_input' in last else 1
+        assert last.index('pair_repulsion') == head
     assert segs[-1]._modules['pair_repulsion'].key_atom_type == KEY.ATOM_TYPE_ALL
 
 
-def test_pair_repulsion_errors():
+@arch_param
+def test_pair_repulsion_errors(arch):
     import sevenn._const as _const
 
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'pair_repulsion': {'max_cutoff': 4.5}})
+        get_model(arch, {**_metaformer, 'pair_repulsion': {'max_cutoff': 4.5}})
     cond = _const.MODEL_CONFIG_CONDITION[KEY.PAIR_REPULSION]
     assert cond(None) and cond({}) and cond({'num_terms': 3, 'param_scale': 2})
     assert not cond({'cutoff': 3.0}) and not cond({'amp_init': 0.0})
@@ -1414,7 +1485,8 @@ def test_norm_magnitude_module():
      'readout_block': {}, 'parallel_block': [False, True, True],
      'ffn_type': 's2_bilinear'},
 ])
-def test_norm_magnitude(cf):
+@arch_param
+def test_norm_magnitude(cf, arch):
     """every EquivariantRMSNorm gets the zero-initialized log-RMS feature"""
     from e3nn.util.jit import script
 
@@ -1425,8 +1497,8 @@ def test_norm_magnitude(cf):
     from tests.unit_tests.test_model import get_model_config
 
     torch.manual_seed(0)
-    ref = get_model({**cf, 'norm_magnitude': False})
-    model = get_model(cf)
+    ref = get_model(arch, {**cf, 'norm_magnitude': False})
+    model = get_model(arch, cf)
     norms = {k: m for k, m in model.named_children()
              if isinstance(m, EquivariantRMSNorm)}
     # layer-0 Norm1 reads the element embedding (constant magnitude): plain
@@ -1461,20 +1533,23 @@ def test_norm_magnitude(cf):
     assert {f'{k}.mag_weight' for k in norms} <= adam
     script(model.eval())
     config = get_model_config()
-    config.update(cf)
+    config.update(with_arch(cf, arch))
     Logger().print_model_info(model, config)
     segs = build_E3_equivariant_model(config, parallel=True)
-    twin = segs[0]._modules['ghost_0_norm_1']
-    assert twin.mag_weight is None and twin.key_x == KEY.NODE_FEATURE_GHOST
+    assert segs[0]._modules['0_norm_1'].mag_weight is None
+    if not gated(arch):  # layer-0 ghost twin (gate: x exchanged, no twins)
+        twin = segs[0]._modules['ghost_0_norm_1']
+        assert twin.mag_weight is None and twin.key_x == KEY.NODE_FEATURE_GHOST
 
 
-def test_norm_magnitude_errors():
+@arch_param
+def test_norm_magnitude_errors(arch):
     with pytest.raises(ValueError):  # no norm to take the magnitude from
-        get_model({**_partial, 'norm_magnitude': True})
+        get_model(arch, {**_partial, 'norm_magnitude': True})
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'metaformer_norm': False,
+        get_model(arch, {**_metaformer, 'metaformer_norm': False,
                    'norm_magnitude': True})
-    get_model({**_metaformer, 'metaformer_norm': False, 'use_final_norm': True,
+    get_model(arch, {**_metaformer, 'metaformer_norm': False, 'use_final_norm': True,
                'norm_magnitude': True})
 
 
@@ -1561,6 +1636,45 @@ def test_magnitude_residual_module():
         assert torch.allclose(y2, zc / r2.unsqueeze(-1), atol=1e-12)
 
 
+def test_gated_residual_outros():
+    """
+    isolation gate: the gated outros (sevenn/nn/isolation_gate.py, same state
+    as the shared class) are x <- residual + s_i * branch; s_i = 1 is the
+    shared module, s_i = 0 returns the residual bit for bit
+    """
+    from sevenn.nn.isolation_gate import (
+        GatedMagnitudeResidualOutro,
+        GatedSelfConnectionOutro,
+    )
+    from sevenn.nn.normalization import MagnitudeResidualOutro
+    from sevenn.nn.self_connection import SelfConnectionOutro
+
+    irreps = Irreps('6x0e+2x0o+4x1o+2x2e')
+    tmp, gate = KEY.SELF_CONNECTION_TEMP, KEY.NODE_GATE
+    torch.manual_seed(0)
+    x_in = torch.randn(5, irreps.dim, dtype=torch.float64) * 3.0 + 1.0
+    b = torch.randn(5, irreps.dim, dtype=torch.float64)
+    s = torch.tensor([0.0, 1.0, 0.3, 0.9, 0.0], dtype=torch.float64)
+    mag = MagnitudeResidualOutro(irreps, irreps, 'x', rho_ref=2.0).double()
+    with torch.no_grad():
+        mag.gamma.fill_(0.6)
+    gmag = GatedMagnitudeResidualOutro(irreps, irreps, 'x', rho_ref=2.0).double()
+    gmag.load_state_dict(mag.state_dict())
+    assert list(gmag.state_dict()) == list(mag.state_dict())
+    for shared, gated_m in ((SelfConnectionOutro('x'),
+                             GatedSelfConnectionOutro('x')), (mag, gmag)):
+        ref = shared({'x': b.clone(), tmp: x_in.clone()})['x']
+        out = gated_m({gate: s, 'x': b.clone(), tmp: x_in.clone()})
+        assert tmp not in out
+        out = out['x']
+        assert torch.allclose(out, x_in + s.unsqueeze(-1) * (ref - x_in),
+                              atol=1e-12)
+        assert torch.equal(out[s == 0], x_in[s == 0])
+        one = gated_m({gate: torch.ones(5, dtype=torch.float64), 'x': b.clone(),
+                       tmp: x_in.clone()})['x']
+        assert torch.allclose(one, ref, atol=1e-14)
+
+
 @pytest.mark.parametrize('cf', [
     {**_metaformer, 'radial_pair_embedding': True, 'ffn_type': 's2_bilinear',
      'magnitude_residual': True},
@@ -1571,7 +1685,8 @@ def test_magnitude_residual_module():
      'magnitude_residual': {'branches': 'conv'}, 'readout_block': {}},
     {**_metaformer, 'magnitude_residual': {'branches': 'ffn'}},
 ])
-def test_magnitude_residual(cf):
+@arch_param
+def test_magnitude_residual(cf, arch):
     """every pre-norm branch but the layer-0 conv gets the zero-init gain"""
     from e3nn.util.jit import script
 
@@ -1585,8 +1700,8 @@ def test_magnitude_residual(cf):
     from tests.unit_tests.test_model import get_model_config
 
     torch.manual_seed(0)
-    ref = get_model({**cf, 'magnitude_residual': False})
-    model = get_model(cf)
+    ref = get_model(arch, {**cf, 'magnitude_residual': False})
+    model = get_model(arch, cf)
     outs = {k: m for k, m in model.named_children()
             if isinstance(m, MagnitudeResidualOutro)}
     n_layer = sum(k.endswith('_convolution') for k, _ in model.named_children())
@@ -1644,7 +1759,7 @@ def test_magnitude_residual(cf):
     for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE):
         assert torch.allclose(out_s[k], ref_out[k], atol=1e-5), k
     config = get_model_config()
-    config.update(cf)
+    config.update(with_arch(cf, arch))
     Logger().print_model_info(model, config)
     segs = build_E3_equivariant_model(config, parallel=True)
     intros = [(k, m) for s in segs for k, m in s._modules.items()
@@ -1654,19 +1769,20 @@ def test_magnitude_residual(cf):
     assert all(m.key_full == '' for _, m in intros)
 
 
-def test_magnitude_residual_errors():
+@arch_param
+def test_magnitude_residual_errors(arch):
     import sevenn._const as _const
 
     with pytest.raises(ValueError):  # nequip block
-        get_model({**_partial, 'magnitude_residual': True})
+        get_model(arch, {**_partial, 'magnitude_residual': True})
     with pytest.raises(ValueError):  # no pre-norm
-        get_model({**_metaformer, 'metaformer_norm': False,
+        get_model(arch, {**_metaformer, 'metaformer_norm': False,
                    'magnitude_residual': True})
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'parallel_block': [False, True, True],
+        get_model(arch, {**_metaformer, 'parallel_block': [False, True, True],
                    'magnitude_residual': True})
     with pytest.raises(ValueError):  # linear residual
-        get_model({**_metaformer, 'self_connection_type': 'linear',
+        get_model(arch, {**_metaformer, 'self_connection_type': 'linear',
                    'magnitude_residual': True})
     cond = _const.MODEL_CONFIG_CONDITION[KEY.MAGNITUDE_RESIDUAL]
     assert cond(False) and cond(True) and cond(None) and cond({})
@@ -1682,7 +1798,8 @@ def test_magnitude_residual_errors():
      'radial_mlp_block': {}, 'radial_short_basis': {'num_basis': 4},
      'radial_exp_basis': {'scales': [0.3, 0.9], 'cutoff': 2.5}},
 ])
-def test_exp_radial_basis(cf):
+@arch_param
+def test_exp_radial_basis(cf, arch):
     """bounded exponential features in the pair radial MLP input"""
     from e3nn.util.jit import script
 
@@ -1697,8 +1814,8 @@ def test_exp_radial_basis(cf):
     rs, scales = opts.get('cutoff', 3.0), exp_basis_scales(opts)
     assert exp_basis_scales({}) == [0.2, 0.4, 0.8, 1.6]
     torch.manual_seed(0)
-    ref = get_model({**cf, 'radial_exp_basis': None})
-    model = get_model(cf)
+    ref = get_model(arch, {**cf, 'radial_exp_basis': None})
+    model = get_model(arch, cf)
     pair = dict(model.named_children())['edge_pair_input']
     assert isinstance(pair, EdgePairInput) and pair.use_exp
     short = cf.get('radial_short_basis') is not None
@@ -1753,13 +1870,14 @@ def test_exp_radial_basis(cf):
     script(model.eval())
 
 
-def test_exp_radial_basis_errors():
+@arch_param
+def test_exp_radial_basis_errors(arch):
     import sevenn._const as _const
 
     with pytest.raises(ValueError):  # needs the pair radial MLP
-        get_model({**_metaformer, 'radial_exp_basis': {}})
+        get_model(arch, {**_metaformer, 'radial_exp_basis': {}})
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'radial_pair_embedding': True,
+        get_model(arch, {**_metaformer, 'radial_pair_embedding': True,
                    'radial_exp_basis': {'cutoff': 4.5}})
     cond = _const.MODEL_CONFIG_CONDITION[KEY.RADIAL_EXP_BASIS]
     assert cond(None) and cond({}) and cond({'num_basis': 2})
@@ -1836,7 +1954,8 @@ def test_edge_gate_module():
      'parallel_block': [False, True, True], 'radial_mlp_block': {},
      'radial_short_basis': {'cutoff': 2.5, 'num_basis': 4}},
 ])
-def test_edge_gate(cf):
+@arch_param
+def test_edge_gate(cf, arch):
     """bounded positive gate on the pair radial weights of every convolution"""
     from e3nn.util.jit import script
 
@@ -1850,8 +1969,8 @@ def test_edge_gate(cf):
     amax = cf['edge_gate'].get('alpha_max', 0.9)
     gated = [0, 1, 2] if not cf['edge_gate'].get('skip_first', True) else [1, 2]
     torch.manual_seed(0)
-    ref = get_model({**cf, 'edge_gate': None})
-    model = get_model(cf)
+    ref = get_model(arch, {**cf, 'edge_gate': None})
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     names = list(mods)
     gates = {k: m for k, m in mods.items() if isinstance(m, EdgeGate)}
@@ -1903,7 +2022,7 @@ def test_edge_gate(cf):
     from tests.unit_tests.test_model import _graph_list
 
     config = get_model_config()
-    config.update(cf)
+    config.update(with_arch(cf, arch))
     Logger().print_model_info(model, config)
     model.set_is_batch_data(False)
     g = _graph_list[0].clone()
@@ -1920,16 +2039,17 @@ def test_edge_gate(cf):
     assert not any(m.is_parallel for m in gates.values())
 
 
-def test_edge_gate_errors():
+@arch_param
+def test_edge_gate_errors(arch):
     from sevenn._const import MODEL_CONFIG_CONDITION
 
     with pytest.raises(ValueError):  # gates the element-pair radial weights
-        get_model({**_metaformer, 'edge_gate': {}})
+        get_model(arch, {**_metaformer, 'edge_gate': {}})
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'radial_pair_embedding': True,
+        get_model(arch, {**_metaformer, 'radial_pair_embedding': True,
                    'radial_node_cond': True, 'edge_gate': {}})
     with pytest.raises(ValueError):
-        get_model({**_metaformer, 'radial_pair_embedding': True,
+        get_model(arch, {**_metaformer, 'radial_pair_embedding': True,
                    'conv_attention': {}, 'edge_gate': {}})
     ok = MODEL_CONFIG_CONDITION[KEY.EDGE_GATE]
     assert ok(None) and ok({}) and ok({'dim': 8, 'alpha_max': 0.5})
@@ -2019,7 +2139,8 @@ def test_coord_scale_module():
      'edge_gate': {'dim': 4}, 'irreps_manual': _full_parity,
      'parallel_block': [False, True, True], 'per_layer_readout': True},
 ])
-def test_coord_scale(cf):
+@arch_param
+def test_coord_scale(cf, arch):
     """coordination scaling right after every convolution"""
     from e3nn.util.jit import script
 
@@ -2031,14 +2152,15 @@ def test_coord_scale(cf):
 
     opts = cf['coord_scale']
     torch.manual_seed(0)
-    ref = get_model({**cf, 'coord_scale': None})
-    model = get_model(cf)
+    ref = get_model(arch, {**cf, 'coord_scale': None})
+    model = get_model(arch, cf)
     mods = dict(model.named_children())
     names = list(mods)
     scales = {k: m for k, m in mods.items() if isinstance(m, CoordScale)}
     convs = _convs(model)
     assert len(scales) == len(convs) == 3
     assert model.edge_embedding.save_components
+    # right after the envelope (gate: node_gate follows, both read the envelope)
     assert names.index('coord_number') == names.index('edge_embedding') + 1
     assert mods['coord_number'].c == opts.get('c', 1.0)
     for t, (k, conv) in enumerate(convs.items()):
@@ -2079,7 +2201,7 @@ def test_coord_scale(cf):
     adam = {name[id(p)] for p in groups[1]['params']}
     assert set(missing) <= adam
     config = get_model_config()
-    config.update(cf)
+    config.update(with_arch(cf, arch))
     Logger().print_model_info(model, config)
     model.set_is_batch_data(False)
     g = _graph_list[0].clone()
@@ -2104,11 +2226,12 @@ def test_coord_scale(cf):
             'coord_number') < names_s.index(f'{t}_coord_scale')
 
 
-def test_coord_scale_errors():
+@arch_param
+def test_coord_scale_errors(arch):
     from sevenn._const import MODEL_CONFIG_CONDITION
 
     with pytest.raises(ValueError):  # attention normalizes already (p = 1)
-        get_model({**_metaformer, 'conv_attention': {}, 'coord_scale': {}})
+        get_model(arch, {**_metaformer, 'conv_attention': {}, 'coord_scale': {}})
     ok = MODEL_CONFIG_CONDITION[KEY.COORD_SCALE]
     assert ok(None) and ok({}) and ok({'c': 2.0, 'p_max': 0.25})
     assert not ok({'p_max': 1.0}) and not ok({'p_max': 0.0})

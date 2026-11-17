@@ -140,6 +140,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.TRAIN_SHIFT_SCALE: False,
     KEY.TRAIN_SHIFT: False,
     KEY.TRAIN_SCALE: False,
+    KEY.TRAIN_SHIFT_MODALS: None,
     # KEY.OPTIMIZE_BY_REDUCE: True,  # deprecated, always True
     KEY.USE_BIAS_IN_LINEAR: False,
     KEY.USE_MODAL_NODE_EMBEDDING: False,
@@ -152,6 +153,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.READOUT_FCN_ACTIVATION: 'relu',
     KEY.SELF_CONNECTION_TYPE: 'nequip',
     KEY.INTERACTION_TYPE: 'nequip',
+    KEY.ARCHITECTURE: 'sevennet',  # or 'isolation_gate'
     KEY.USE_FFN: True,
     KEY.FFN_HIDDEN_SCALE: 2,
     KEY.NORM_EPS: 1e-5,
@@ -185,7 +187,6 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.MAGNITUDE_RESIDUAL: False,
     KEY.EDGE_GATE: None,
     KEY.COORD_SCALE: None,
-    KEY.ANCHOR_ISOLATED_ATOMS: False,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -219,6 +220,9 @@ MODEL_CONFIG_CONDITION = {
     KEY.TRAIN_SHIFT_SCALE: bool,
     KEY.TRAIN_SHIFT: bool,
     KEY.TRAIN_SCALE: bool,
+    KEY.TRAIN_SHIFT_MODALS: lambda x: x is None or (
+        isinstance(x, list) and len(x) > 0 and all(isinstance(i, str) for i in x)
+    ),
     KEY.TRAIN_DENOMINTAOR: bool,
     KEY.USE_BIAS_IN_LINEAR: bool,
     KEY.DROP_UNUSED_TP_IRREPS: bool,
@@ -238,6 +242,7 @@ MODEL_CONFIG_CONDITION = {
         )
     ),
     KEY.INTERACTION_TYPE: lambda x: x in IMPLEMENTED_INTERACTION_TYPE,
+    KEY.ARCHITECTURE: lambda x: x in ('sevennet', 'isolation_gate'),
     KEY.USE_FFN: lambda x: isinstance(x, bool) or (
         isinstance(x, list) and all(isinstance(v, bool) for v in x)
     ),
@@ -303,7 +308,6 @@ MODEL_CONFIG_CONDITION = {
         and float(x.get('c', 1.0)) > 0.0
         and 0.0 < float(x.get('p_max', 0.5)) < 1.0
     ),
-    KEY.ANCHOR_ISOLATED_ATOMS: lambda x: isinstance(x, bool),
     KEY.PAIR_REPULSION: lambda x: x is None or (
         isinstance(x, dict)
         and set(x) <= {
