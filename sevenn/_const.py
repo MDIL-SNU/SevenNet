@@ -185,6 +185,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.MAGNITUDE_RESIDUAL: False,
     KEY.EDGE_GATE: None,
     KEY.COORD_SCALE: None,
+    KEY.ANCHOR_ISOLATED_ATOMS: False,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -302,6 +303,7 @@ MODEL_CONFIG_CONDITION = {
         and float(x.get('c', 1.0)) > 0.0
         and 0.0 < float(x.get('p_max', 0.5)) < 1.0
     ),
+    KEY.ANCHOR_ISOLATED_ATOMS: lambda x: isinstance(x, bool),
     KEY.PAIR_REPULSION: lambda x: x is None or (
         isinstance(x, dict)
         and set(x) <= {

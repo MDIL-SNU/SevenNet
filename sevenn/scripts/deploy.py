@@ -10,6 +10,11 @@ from ase.data import chemical_symbols
 import sevenn._keys as KEY
 from sevenn import __version__
 from sevenn.model_build import build_E3_equivariant_model
+from sevenn.nn.isolated_anchor import (
+    fold_into_rescale,
+    fold_isolated_anchor,
+    isolated_scaled_energy,
+)
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.util import load_checkpoint, warn_no_tp_accelerator
 
@@ -35,6 +40,8 @@ def deploy(
         cp.config,
     )
 
+    # isolated-atom anchor: constant folded into the shift (plain model)
+    fold_isolated_anchor(model)
     if 'force_output' in model._modules:
         model.delete_module_by_key('force_output')
     if hasattr(model, 'eval_type_map'):
@@ -83,6 +90,7 @@ def build_parallel_model_list(
     modal: Optional[str] = None,
     use_flash: bool = False,
     use_oeq: bool = False,
+    isolated_f0: Optional[torch.Tensor] = None,
 ) -> List[AtomGraphSequential]:
     """
     Segments of a LAMMPS e3gnn/parallel model (in memory, eager) from the
@@ -90,6 +98,12 @@ def build_parallel_model_list(
     them (before TorchScript). Every 'ghost_<key>' entry (layer-0 twins acting
     on the ghost atoms, model_build._to_parallel_model) gets the weights of
     <key>.
+    Isolated-atom anchor (config anchor_isolated_atoms): the segments carry no
+    anchor modules; the constant scale * f(h0) is folded into the shift of
+    the last segment. isolated_f0: isolated_scaled_energy of the serial model
+    with these weights; if None it is computed from a serial model built from
+    the config and state dict (dtype of the weights, CPU, same TP backend
+    flags).
     """
     config = dict(config)
     config[KEY.CUEQUIVARIANCE_CONFIG] = {'use': False}
@@ -117,6 +131,24 @@ def build_parallel_model_list(
             setattr(model_part, 'eval_type_map', False)
         # Ensure all values are inserted
         assert len(missing) == 0 or use_flash or use_oeq, missing
+
+    if config.get(KEY.ANCHOR_ISOLATED_ATOMS, False):
+        if isolated_f0 is None:
+            serial = build_E3_equivariant_model(config)
+            dtype = next(  # weights' dtype (deploy: float32; tests: float64)
+                v.dtype for k, v in model_state_dct.items()
+                if torch.is_tensor(v) and v.is_floating_point()
+                and not k.startswith('rescale_atomic_energy')
+            )
+            serial.to(dtype)
+            missing, _ = serial.load_state_dict(model_state_dct, strict=False)
+            assert len(missing) == 0 or use_flash or use_oeq, missing
+            isolated_f0 = isolated_scaled_energy(serial)
+        last = model_list[-1]
+        rescale = last._modules['rescale_atomic_energy']
+        folded = fold_into_rescale(rescale, isolated_f0)
+        if folded is not rescale:
+            last._modules['rescale_atomic_energy'] = folded
 
     modal_map = model_list[0].modal_map
     if modal:
@@ -150,7 +182,11 @@ def deploy_parallel(
         cp.config,
     )
     model_list = build_parallel_model_list(
-        model.state_dict(), config, modal, use_flash, use_oeq
+        model.state_dict(), config, modal, use_flash, use_oeq,
+        isolated_f0=(
+            isolated_scaled_energy(model)
+            if config.get(KEY.ANCHOR_ISOLATED_ATOMS, False) else None
+        ),
     )
 
     # prepare some extra information for MD

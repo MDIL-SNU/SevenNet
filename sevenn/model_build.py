@@ -28,6 +28,7 @@ from .nn.interaction_blocks import (
     Metaformer_interaction_block,
     NequIP_interaction_block,
 )
+from .nn.isolated_anchor import AnchorSubtract, AnchorVirtualNodes
 from .nn.layer_readout import (
     LayerEnergyAccumulate,
     LayerEnergyPack,
@@ -248,6 +249,34 @@ def _patch_edge_attention(layers: OrderedDict, config: Dict[str, Any]) -> None:
             )
         conv.key_filter = attn.key_filter_out
         conv.denominator.data.fill_(1.0)   # attention weights already normalize
+    layers.clear()
+    layers.update(items)
+
+
+def _patch_isolated_anchor(layers: OrderedDict, config: Dict[str, Any]) -> None:
+    """
+    Isolated-atom anchor (config anchor_isolated_atoms, in place; serial
+    model only): AnchorVirtualNodes first (virtual isolated node per
+    (species, modality) of the batch), AnchorSubtract right before the
+    shift/scale (f of every atom minus f of its isolated twin), so an atom
+    without neighbours gets exactly the shift (sevenn/nn/isolated_anchor.py).
+    e3gnn/parallel segments are built without them: build_parallel_model_list
+    folds the constant into the shift instead.
+    """
+    use_modality = bool(config.get(KEY.USE_MODALITY, False))
+    items = list(layers.items())
+    names = [k for k, _ in items]
+    items.insert(
+        names.index('rescale_atomic_energy'),
+        ('anchor_subtract', AnchorSubtract(use_modality)),
+    )
+    items.insert(
+        0,
+        (
+            'anchor_virtual_nodes',
+            AnchorVirtualNodes(config[KEY.NUM_SPECIES], use_modality),
+        ),
+    )
     layers.clear()
     layers.update(items)
 
@@ -767,6 +796,9 @@ def _to_parallel_model(
     - pair repulsion: moved to the head of the last segment (after its
       edge_embedding), so the term is computed from that segment's edge
       lengths and nothing position-dependent crosses a boundary
+    - isolated-atom anchor: the segments have no anchor modules (they are
+      not inserted for parallel=True); build_parallel_model_list folds the
+      isolated-atom constant into the shift of the last segment
     Communication is unchanged: one forward and one reverse exchange of the
     convolution input per layer t >= 1.
     """
@@ -1183,6 +1215,9 @@ def build_E3_equivariant_model(
             ),
         }
     )
+
+    if config.get(KEY.ANCHOR_ISOLATED_ATOMS, False) and not parallel:
+        _patch_isolated_anchor(layers, config)
 
     gradient_module = ForceStressOutputFromEdge()
     grad_key = gradient_module.get_grad_key()

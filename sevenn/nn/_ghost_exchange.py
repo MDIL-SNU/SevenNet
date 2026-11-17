@@ -15,6 +15,7 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 from .edge_attention import EdgeAttention
+from .isolated_anchor import fold_isolated_anchor
 from .pair_repulsion import PairRepulsion
 
 
@@ -193,7 +194,11 @@ def patch_model_for_mliap(model: nn.Module) -> nn.Module:
     KEY.ATOM_TYPE_ALL. Edge inputs computed
     once from edge_vec (edge_embedding, edge_pair_input) stay valid: ML-IAP
     back-propagates the whole model in one autograd graph.
+    Isolated-atom anchor: folded into the shift first (the virtual isolated
+    nodes would sit behind the ghost rows); the model must already be on the
+    device its kernels run on.
     """
+    fold_isolated_anchor(model)
     modules = OrderedDict()
     for k, module in model._modules.items():
         m_conv = _RE_CONV.fullmatch(k)

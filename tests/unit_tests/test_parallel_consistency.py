@@ -187,6 +187,19 @@ CONFIGS = {
     'coord_scale_nequip': {**_A0, 'coord_scale': {'p_max': 0.9}},
     'edge_gate_coord_scale': {**_A4, 'ffn_type': 's2_bilinear', 'edge_gate': {},
                               'coord_scale': {}, 'per_layer_readout': True},
+    # isolated-atom anchor: serial = unfolded (virtual isolated nodes),
+    # e3gnn/parallel and ML-IAP = folded into the shift
+    'anchor': {**_A4, 'ffn_type': 's2_bilinear', 'anchor_isolated_atoms': True},
+    'anchor_full': {
+        **_A4, 'ffn_type': 's2_bilinear', 'ffn_film': True,
+        'magnitude_residual': True, 'radial_exp_basis': {},
+        'edge_gate': {'dim': 4}, 'coord_scale': {}, 'per_layer_readout': True,
+        'pair_repulsion': {'cutoff_scale': 1.4, 'amp_init': 1.0},
+        'anchor_isolated_atoms': True},
+    'anchor_nequip': {**_A0, 'anchor_isolated_atoms': True},
+    'anchor_species_shift': {  # folding makes the shift modal-wise
+        **_A4, 'use_modal_wise_shift': False, 'shift': -2.0,
+        'anchor_isolated_atoms': True},
     'mf_ext_sink': {
         **_A4, 'readout_activation': None, 'readout_block': {'type': 'swiglu'},
         'per_layer_readout': True, 'radial_mlp_block': {},
@@ -201,7 +214,7 @@ SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
                               'light_conv', 'mf_ext_sink', 'pair_repulsion',
                               's2_inv', 'short_range_sink', 'magnitude_residual_sink',
                               'exp_radial_short_block_node_cond', 'edge_gate', 'coord_scale',
-                              'edge_gate_coord_scale')
+                              'edge_gate_coord_scale', 'anchor_full')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
@@ -209,7 +222,7 @@ GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
                            'kitchen_sink', 's2_bilinear', 'mf_ext_sink',
                            'pair_repulsion_s2', 's2_inv',
                            'norm_magnitude_s2', 'magnitude_residual', 'exp_radial',
-                           'edge_gate_s2', 'edge_gate_coord_scale')
+                           'edge_gate_s2', 'edge_gate_coord_scale', 'anchor_full')
                if n in CONFIGS]
 MODAL = 'mpa'
 
@@ -1001,6 +1014,7 @@ def test_mliap_gpu_backend(tmp_path, name, backend):
             str(cp), **{f'enable_{backend}': True}
         )
         model.set_is_batch_data(False)
+        model.to('cuda')  # before patching: it folds the isolated-atom anchor
         patch_model_for_mliap(model)
         if model.modal_map:
             model.prepare_modal_deploy(MODAL)

@@ -16,6 +16,7 @@ from ase.calculators.mixing import SumCalculator
 import sevenn._keys as KEY
 import sevenn.util as util
 from sevenn.atom_graph_data import AtomGraphData
+from sevenn.nn.isolated_anchor import fold_isolated_anchor
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.train.dataload import unlabeled_atoms_to_graph
 
@@ -359,6 +360,10 @@ class SevenNetCalculator(Calculator):
 
         self.model.to(self.device)
         self.model.eval()
+        if file_type == 'checkpoint':
+            # isolated-atom anchor: constant folded into the shift (a model
+            # instance given by the caller is left as it is, still correct)
+            fold_isolated_anchor(self.model)
 
         self.cuda_graph = cuda_graph and self.device.type == 'cuda'
         self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None

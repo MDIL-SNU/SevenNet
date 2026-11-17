@@ -946,6 +946,15 @@ MFEXT_CONFIGS = {
          'radial_node_cond': True, 'conv_gate': False,
          'parallel_block': [False, True, True]},
         ('table_', 'layer_readout', 'radial_node_cond')),
+    # isolated-atom anchor (virtual isolated nodes, non-batched here)
+    'anchor': ({'anchor_isolated_atoms': True, 'ffn_type': 's2_bilinear'},
+               ('table_',)),
+    'anchor_full': (
+        {'anchor_isolated_atoms': True, 'ffn_type': 's2_bilinear',
+         'ffn_film': True, 'magnitude_residual': True, 'radial_exp_basis': {},
+         'edge_gate': {}, 'coord_scale': {}, 'per_layer_readout': True},
+        ('table_', '_outro.gamma', 'w_exp', '_edge_gate.theta',
+         '_coord_scale.theta', 'layer_readout', 'film')),
 }
 
 

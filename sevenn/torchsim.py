@@ -142,7 +142,8 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
                 + f'received different dtype: {dtype}'
             )
 
-        if isinstance(model, (str, Path)):
+        from_checkpoint = isinstance(model, (str, Path))
+        if from_checkpoint:
             cp = load_checkpoint(model)
             model = cp.build_model(
                 enable_flash=enable_flash,
@@ -171,6 +172,10 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
 
         self.model = model.to(self._device)
         self.model = self.model.eval()
+        if from_checkpoint:  # isolated-atom anchor: fold into the shift
+            from sevenn.nn.isolated_anchor import fold_isolated_anchor
+
+            fold_isolated_anchor(self.model)
 
         self.implemented_properties = ['energy', 'forces', 'stress']
 

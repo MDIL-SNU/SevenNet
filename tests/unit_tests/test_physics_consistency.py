@@ -164,6 +164,16 @@ CONFIGS = {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
                           '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
+    # isolated-atom anchor (virtual isolated nodes, non-batched here)
+    'anchor': {**_metaformer, 'radial_pair_embedding': True,
+               'ffn_type': 's2_bilinear', 'anchor_isolated_atoms': True},
+    'anchor_full': {
+        **_metaformer, 'radial_pair_embedding': True, 'ffn_type': 's2_bilinear',
+        'ffn_film': True, 'magnitude_residual': True, 'radial_exp_basis': {},
+        'edge_gate': {'dim': 4}, 'coord_scale': {}, 'per_layer_readout': True,
+        'pair_repulsion': {'cutoff_scale': 1.4, 'amp_init': 1.0},
+        'anchor_isolated_atoms': True},
+    'anchor_nequip': {**_partial, 'anchor_isolated_atoms': True},
 }
 
 
@@ -345,7 +355,8 @@ def _dimer_tail(model, h=1e-3):
                                   'short_range_both', 'magnitude_residual', 'magnitude_residual_variants',
                                   'exp_radial', 'exp_radial_short_block_node_cond', 'edge_gate',
                                   'edge_gate_variants', 'coord_scale', 'coord_scale_variants',
-                                  'coord_scale_nequip', 'edge_gate_coord_scale'])
+                                  'coord_scale_nequip', 'edge_gate_coord_scale',
+                                  'anchor', 'anchor_full', 'anchor_nequip'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
@@ -386,7 +397,7 @@ def _trimer_tail(model, h=1e-3):
 @pytest.mark.parametrize('name', ['metaformer', 'pair_radial', 'edge_gate',
                                   'edge_gate_variants', 'coord_scale',
                                   'coord_scale_variants', 'coord_scale_nequip',
-                                  'edge_gate_coord_scale'])
+                                  'edge_gate_coord_scale', 'anchor_full'])
 def test_trimer_c2_at_cutoff(name):
     """as test_dimer_c2_at_cutoff, for a pair leaving the cutoff of a bonded
     atom (many-body terms of the crossing pair must vanish C2 as well)"""
