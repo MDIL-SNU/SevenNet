@@ -1056,3 +1056,70 @@ def test_light_conv_errors():
         get_model({**_metaformer, 'conv_gate': False, 'gate_type': 'bilinear'})
     with pytest.raises(NotImplementedError):
         get_model({**_metaformer, 'parallel_block': True, 'ffn_moe': True})
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'radial_pair_embedding': True, 'radial_short_basis': {}},
+    {**_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
+     'radial_mlp_block': {}, 'radial_short_basis': {'cutoff': 2.5,
+                                                    'num_basis': 4}},
+])
+def test_short_radial_basis(cf):
+    """second, short-cutoff basis in the pair radial MLP input"""
+    from e3nn.util.jit import script
+
+    from sevenn.nn.radial_pair import EdgePairInput, ShortRangeBasis
+    from sevenn.train.muon import build_muon_param_groups
+
+    opts = cf['radial_short_basis']
+    rs, n = opts.get('cutoff', 3.0), opts.get('num_basis', 6)
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'radial_short_basis': None})
+    model = get_model(cf)
+    pair = dict(model.named_children())['edge_pair_input']
+    assert isinstance(pair, EdgePairInput) and pair.use_short
+    w = _convs(model)['1_convolution'].weight_nn
+    assert w.num_short == n and w.w_short.abs().sum() == 0
+    # zero-initialized: identical to the model without the short basis
+    missing, unexpected = model.load_state_dict(ref.state_dict(), strict=False)
+    assert not unexpected and all(k.endswith('w_short') for k in missing)
+    ref.set_is_batch_data(True)
+    model.set_is_batch_data(True)
+    o_ref = ref(get_graphs(batched=True))
+    o = model(get_graphs(batched=True))
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE, KEY.PRED_STRESS):
+        assert torch.allclose(o_ref[k], o[k], atol=1e-7, rtol=0), k
+    # basis: zero beyond r_s, value / 1st / 2nd derivative -> 0 at r_s
+    basis = ShortRangeBasis(rs, n).double()
+    r = torch.tensor([0.5, rs - 1e-3, rs, rs + 1e-3, 3.9],
+                     dtype=torch.float64, requires_grad=True)
+    f = basis(r)
+    assert f.shape == (5, n) and f[0].abs().max() > 0.1
+    assert torch.equal(f[2:], torch.zeros_like(f[2:]))
+    (d1,) = torch.autograd.grad(f.sum(), r, create_graph=True)
+    (d2,) = torch.autograd.grad(d1.sum(), r)
+    assert f[1].abs().max() < 1e-6 and d1[1].abs() < 1e-3 and d2[1].abs() < 1.0
+    assert torch.equal(d1[2:], torch.zeros_like(d1[2:]))
+    with torch.no_grad():
+        for c in _convs(model).values():
+            c.weight_nn.w_short.normal_(0, 0.3)
+    o2 = model(get_graphs(batched=True))
+    assert (o2[KEY.PRED_FORCE] - o[KEY.PRED_FORCE]).abs().max() > 1e-4
+    out, out_rot, R = _rotated_pair(model)
+    e, e_r = out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    muon = {name[id(p)] for p in groups[0]['params']}
+    assert '1_convolution.weight_nn.w_short' in muon
+    script(model.eval())
+
+
+def test_short_radial_basis_errors():
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'radial_short_basis': {}})
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'radial_pair_embedding': True,
+                   'radial_short_basis': {'cutoff': 4.5}})

@@ -12,26 +12,71 @@ from sevenn._const import AtomGraphDataType
 
 
 @compile_mode('script')
+class ShortRangeBasis(nn.Module):
+    """
+    Second, short-range radial basis (config radial_short_basis):
+        f_n(r) = (2 / r_s) sin(n pi r / r_s) / r * u(r / r_s),  n = 1..N
+    for r < r_s and exactly 0 beyond, with frozen Bessel frequencies
+    (DimeNet, J. Gasteiger et al., arXiv:2003.03123) and the DimeNet
+    polynomial envelope u (p = 6: u, u', u'' vanish at r_s, so every f_n is
+    C2 at r_s; the switch at r_s is a branch between two functions that
+    agree there up to the second derivative).
+    """
+
+    def __init__(
+        self, cutoff: float = 3.0, num_basis: int = 6, poly_p: int = 6
+    ) -> None:
+        super().__init__()
+        self.cutoff = float(cutoff)
+        self.num_basis = int(num_basis)
+        self.prefactor = 2.0 / self.cutoff
+        p = float(poly_p)
+        self.p = p
+        self.c0 = (p + 1.0) * (p + 2.0) / 2.0
+        self.c1 = p * (p + 2.0)
+        self.c2 = p * (p + 1.0) / 2.0
+        freq = torch.tensor(
+            [n * math.pi / self.cutoff for n in range(1, self.num_basis + 1)]
+        )
+        self.register_buffer('freq', freq, persistent=False)
+
+    def forward(self, r: torch.Tensor) -> torch.Tensor:
+        x = r / self.cutoff
+        # beyond r_s: x = 1, where u(1) = 0 exactly (integer coefficients) and
+        # no gradient flows (where), so f and its derivatives are exactly 0
+        x = torch.where(x < 1.0, x, torch.ones_like(x))
+        env = 1.0 - torch.pow(x, self.p) * (self.c0 - x * (self.c1 - self.c2 * x))
+        ur = r.unsqueeze(-1)
+        f = torch.sin(self.freq.to(r.dtype) * ur) * (self.prefactor / ur)
+        return f * env.unsqueeze(-1)
+
+
+@compile_mode('script')
 class EdgePairInput(nn.Module):
     """
     Pack the input of PairRadialMLP per edge:
-        [radial basis (no envelope) | envelope | type of src | type of dst]
+        [radial basis (no envelope) (| short-range basis, if short_basis) |
+         envelope | type of src | type of dst]
     Needs EdgeEmbedding(save_components=True) and node types in KEY.ATOM_TYPE,
     so it must come after onehot_idx_to_onehot.
     Parallel MD (e3gnn/parallel): edge sources can be ghosts, so the types are
     read from KEY.ATOM_TYPE_ALL (local + ghost), and every segment rebuilds the
     input after its own edge_embedding (the rbf/envelope must depend on that
-    segment's edge vectors; see model_build._to_parallel_model).
+    segment's edge vectors; see model_build._to_parallel_model). The
+    short-range basis is computed here from that segment's KEY.EDGE_LENGTH.
     """
 
     def __init__(
         self,
         data_key_out: str = KEY.EDGE_PAIR_INPUT,
         data_key_atom_type: str = KEY.ATOM_TYPE,
+        short_basis: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__()
         self.key_out = data_key_out
         self.key_atom_type = data_key_atom_type
+        self.use_short = short_basis is not None
+        self.short = ShortRangeBasis(**(short_basis or {}))
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         rbf = data[KEY.EDGE_RBF]
@@ -39,15 +84,15 @@ class EdgePairInput(nn.Module):
         atom_type = data[self.key_atom_type].to(rbf.dtype)
         edge_src = data[KEY.EDGE_IDX][1]
         edge_dst = data[KEY.EDGE_IDX][0]
-        data[self.key_out] = torch.cat(
-            [
-                rbf,
-                env,
-                atom_type[edge_src].unsqueeze(-1),
-                atom_type[edge_dst].unsqueeze(-1),
-            ],
-            dim=-1,
-        )
+        parts = [rbf]
+        if self.use_short:  # next to rbf: one matmul in PairRadialMLP
+            parts.append(self.short(data[KEY.EDGE_LENGTH]).to(rbf.dtype))
+        parts += [
+            env,
+            atom_type[edge_src].unsqueeze(-1),
+            atom_type[edge_dst].unsqueeze(-1),
+        ]
+        data[self.key_out] = torch.cat(parts, dim=-1)
         return data
 
 
@@ -132,6 +177,15 @@ class PairRadialMLP(nn.Module):
     Tables start at zero: at init this is a distance-only radial MLP.
     Drop-in for FullyConnectedNet(hs, act) as IrrepsConvolution.weight_nn.
 
+    num_short (config radial_short_basis): N short-range basis functions
+    (ShortRangeBasis, right after rbf in the input) enter the first hidden
+    layer as + f_short @ W_short (one matmul [rbf | f_short] @ [W1; W_short]),
+    W_short zero-initialized (the MLP above at
+    init); they vanish C2 at r_s < r_c, so they only refine the weights of
+    near neighbours (multi-resolution radial input; motivation: spectral
+    bias / phonon softening of the scalar path, arXiv:2606.15892; nested
+    short/long cutoffs as in Prophet/MCSD, Kairos Materials, idea only).
+
     block (config radial_mlp_block, default None = the MLP above): the hidden
     stack becomes pre-norm residual MLP blocks (MetaFormer, W. Yu et al.,
     arXiv:2111.11418; pre-LN, R. Xiong et al., arXiv:2002.04745):
@@ -155,6 +209,7 @@ class PairRadialMLP(nn.Module):
         num_species: int,
         node_cond: int = 0,
         block: Optional[Dict[str, Any]] = None,
+        num_short: int = 0,
     ) -> None:
         super().__init__()
         assert len(hs) >= 3, 'needs at least one hidden layer'
@@ -165,6 +220,13 @@ class PairRadialMLP(nn.Module):
         self.norm_rbf = 1.0 / math.sqrt(hs[0])
         self.table_src = nn.Parameter(torch.zeros(num_species, hs[1]))
         self.table_dst = nn.Parameter(torch.zeros(num_species, hs[1]))
+        self.num_short = num_short   # > 0: short-range basis after rbf
+        if num_short > 0:
+            self.w_short = nn.Parameter(torch.zeros(num_short, hs[1]))
+            self.norm_short = 1.0 / math.sqrt(num_short)
+        else:
+            self.register_parameter('w_short', None)
+            self.norm_short = 1.0
         self.act = normalize2mom(act)
         self.use_block = block is not None
         self.blocks = nn.ModuleList()
@@ -200,17 +262,22 @@ class PairRadialMLP(nn.Module):
 
     def forward(self, inp: torch.Tensor) -> torch.Tensor:
         nb = self.num_basis
-        rbf = inp[:, :nb]
-        env = inp[:, nb : nb + 1]
-        z_src = inp[:, nb + 1].to(torch.long)
-        z_dst = inp[:, nb + 2].to(torch.long)
-        h = rbf @ (self.w1 * self.norm_rbf)
+        nr = nb + self.num_short  # [rbf | short basis] columns
+        env = inp[:, nr : nr + 1]
+        z_src = inp[:, nr + 1].to(torch.long)
+        z_dst = inp[:, nr + 2].to(torch.long)
+        w_short = self.w_short
+        if w_short is None:
+            h = inp[:, :nb] @ (self.w1 * self.norm_rbf)
+        else:   # short-range basis (EdgePairInput) in the same matmul
+            w = torch.cat([self.w1 * self.norm_rbf, w_short * self.norm_short])
+            h = inp[:, :nr] @ w
         # F.embedding: sort-based backward; table[z] backward scatters millions
         # of edges into ~100 rows with atomics (6x slower in training)
         h = h + F.embedding(z_src, self.table_src)
         h = h + F.embedding(z_dst, self.table_dst)
         if self.node_cond > 0:   # node-state terms (NodeCondRadialInput)
-            h = h + inp[:, nb + 3: nb + 3 + self.node_cond]
+            h = h + inp[:, nr + 3: nr + 3 + self.node_cond]
         if self.use_block:
             for blk in self.blocks:
                 h = blk(h)

@@ -94,15 +94,19 @@ def init_self_connection(config: Dict[str, Any]) -> List[Tuple[Type, Type]]:
 
 
 def _patch_pair_radial(
-    layers: OrderedDict, num_species: int, block: Any = None
+    layers: OrderedDict, num_species: int, block: Any = None, short: Any = None
 ) -> None:
     """
     Element-pair radial weights for every convolution (in place); block:
-    radial_mlp_block options (pre-norm residual hidden stack, PairRadialMLP).
+    radial_mlp_block options (pre-norm residual hidden stack, PairRadialMLP);
+    short: radial_short_basis options (short-range basis, ShortRangeBasis).
     """
+    pair_input = EdgePairInput() if short is None else EdgePairInput(
+        short_basis=dict(short)
+    )
     _layers = _insert_after(
         'onehot_idx_to_onehot',
-        ('edge_pair_input', EdgePairInput()),
+        ('edge_pair_input', pair_input),
         list(layers.items()),
     )
     layers.clear()
@@ -114,6 +118,8 @@ def _patch_pair_radial(
             module.weight_nn_kwargs['num_species'] = num_species
             if block is not None:
                 module.weight_nn_kwargs['block'] = dict(block)
+            if short is not None:
+                module.weight_nn_kwargs['num_short'] = pair_input.short.num_basis
 
 
 def _patch_radial_node_cond(layers: OrderedDict) -> None:
@@ -958,10 +964,19 @@ def build_E3_equivariant_model(
             )
 
     radial_block = config.get(KEY.RADIAL_MLP_BLOCK, None)
-    if radial_block is not None and not config.get(KEY.RADIAL_PAIR_EMBEDDING):
-        raise ValueError('radial_mlp_block needs radial_pair_embedding: true')
+    radial_short = config.get(KEY.RADIAL_SHORT_BASIS, None)
+    if (radial_block is not None or radial_short is not None) and not config.get(
+        KEY.RADIAL_PAIR_EMBEDDING
+    ):
+        raise ValueError(
+            'radial_mlp_block / radial_short_basis need radial_pair_embedding'
+        )
+    if radial_short is not None and float(
+        radial_short.get('cutoff', 3.0)
+    ) >= cutoff:
+        raise ValueError('radial_short_basis cutoff must be below the cutoff')
     if config.get(KEY.RADIAL_PAIR_EMBEDDING, False):
-        _patch_pair_radial(layers, num_species, radial_block)
+        _patch_pair_radial(layers, num_species, radial_block, radial_short)
         if config.get(KEY.RADIAL_NODE_COND, False):
             _patch_radial_node_cond(layers)
 

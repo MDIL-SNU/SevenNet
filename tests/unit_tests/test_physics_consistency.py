@@ -87,6 +87,12 @@ CONFIGS = {
     'parallel_block_variants': {
         **_metaformer, 'parallel_block': [False, True, True],
         'layer_scale_init': 0.1, 'ffn_film': True, 'ffn_type': 'swiglu'},
+    'short_radial': {**_metaformer, 'radial_pair_embedding': True,
+                     'radial_short_basis': {}},
+    'short_radial_block_node_cond': {
+        **_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
+        'radial_mlp_block': {}, 'radial_short_basis': {'cutoff': 3.2,
+                                                       'num_basis': 4}},
     'light_conv_full_parity': {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
@@ -119,7 +125,9 @@ def _model(cf):
                 p.normal_(0, 0.3)
             if ('edge_attention' in n and (
                 n.split('.')[-2] in ('rb', 'og') or n.endswith(('t_src', 't_dst'))
-            )) or 'radial_node_cond' in n or 'layer_readout' in n:
+            )) or 'radial_node_cond' in n or 'layer_readout' in n or (
+                'w_short' in n
+            ):
                 p.normal_(0, 0.3)   # zero-initialized radial bias / output gate
             if cf.get('radial_mlp_block') is not None and 'table_' in n:
                 p.normal_(0, 0.3)   # element-pair tables (zero-initialized)
@@ -251,7 +259,8 @@ def _dimer_tail(model, h=1e-3):
                                   'bilinear_gate_l3', 's2_bilinear',
                                   's2_bilinear_l3', 'radial_mlp_block',
                                   'radial_mlp_block_mlp_layer',
-                                  'radial_mlp_block_node_cond'])
+                                  'radial_mlp_block_node_cond', 'short_radial',
+                                  'short_radial_block_node_cond'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
@@ -294,3 +303,44 @@ def test_xplor_force_constant_jumps_at_r_on():
     far, near = _dimer_tail(_model(CONFIGS['xplor']))
     ratio = np.abs(near / far)
     assert ratio[0] < 0.2 and ratio[1] < 0.35 and ratio[2] < 0.6, ratio
+
+
+@pytest.mark.parametrize('name', ['short_radial', 'short_radial_block_node_cond'])
+def test_short_radial_c2_at_inner_cutoff(name):
+    """
+    the short-range basis term vanishes C2 at its own cutoff r_s: for a dimer,
+    dE = E - E(short weights zeroed) shrinks like (r_s - r)^3 (dE ~8x, its
+    force ~4x, its force constant ~2x when the distance to r_s halves), is
+    exactly zero beyond r_s, and the force constant is continuous across r_s
+    """
+    import copy
+
+    cf = CONFIGS[name]
+    rs = cf['radial_short_basis'].get('cutoff', 3.0)
+    model = _model(cf)
+    ref = copy.deepcopy(model)
+    with torch.no_grad():
+        for n, p in ref.named_parameters():
+            if 'w_short' in n:
+                p.zero_()
+
+    def de(x):
+        at = Atoms('NaCl', positions=[[0, 0, 0], [x, 0, 0]])
+        return _efs(model, at)[0] - _efs(ref, at)[0]
+
+    h = 1e-3
+    out = []
+    for delta in (0.02, 0.01):
+        r = rs - delta
+        out.append(np.array([
+            de(r), (de(r + h) - de(r - h)) / (2 * h),
+            (de(r + h) - 2 * de(r) + de(r - h)) / h**2,
+        ]))
+    far, near = out
+    assert abs(de(rs - 0.5)) > 1e-4  # the short term is active inside r_s
+    for i, thr in enumerate((0.2, 0.35, 0.6)):
+        assert abs(near[i]) < 1e-8 or abs(near[i]) < thr * abs(far[i]), (far, near)
+    for x in (rs + 1e-3, rs + 0.1, rs + 0.5):
+        assert de(x) == 0.0
+    s1, s2 = (_k_jump(model, rs, delta=d, h=5e-4) for d in (0.002, 0.001))
+    assert s2 < 0.7 * s1 or s2 < 1e-6, (s1, s2)

@@ -134,6 +134,10 @@ CONFIGS = {
     'conv_gate_off': {**_A4, 'conv_gate': False},
     'parallel_block': {**_A4, 'parallel_block': True},
     'light_conv': {**_A4, 'conv_gate': False, 'parallel_block': True},
+    'short_radial': {**_A4, 'radial_short_basis': {}},
+    'short_radial_block_node_cond': {
+        **_A4, 'radial_short_basis': {'num_basis': 4}, 'radial_mlp_block': {},
+        'radial_node_cond': True},
     'mf_ext_sink': {
         **_A4, 'readout_activation': None, 'readout_block': {'type': 'swiglu'},
         'per_layer_readout': True, 'radial_mlp_block': {},

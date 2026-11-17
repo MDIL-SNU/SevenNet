@@ -283,6 +283,9 @@ PER_LAYER_READOUT = 'per_layer_readout'  # linear energy head after every layer
 RADIAL_MLP_BLOCK = 'radial_mlp_block'
 CONV_GATE = 'conv_gate'  # False: metaformer message branch TP -> linear (no gate)
 PARALLEL_BLOCK = 'parallel_block'  # metaformer conv + FFN from one pre-norm input
+# None | {cutoff: 3.0, num_basis: 6, poly_p: 6}: short-range basis in the pair
+# radial MLP input (ShortRangeBasis)
+RADIAL_SHORT_BASIS = 'radial_short_basis'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'
