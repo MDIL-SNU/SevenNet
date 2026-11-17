@@ -137,6 +137,18 @@ CONFIGS = {
         'radial_mlp_block': {}, 'radial_short_basis': {'cutoff': 3.2,
                                                        'num_basis': 4},
         'radial_exp_basis': {'scales': [0.3, 0.9], 'cutoff': 2.8}},
+    'edge_gate': {**_metaformer, 'radial_pair_embedding': True,
+                  'edge_gate': {'dim': 4}},
+    'edge_gate_variants': {
+        **_metaformer, 'radial_pair_embedding': True, 'ffn_type': 's2_bilinear',
+        'edge_gate': {'alpha_max': 0.5}, 'radial_mlp_block': {},
+        'radial_short_basis': {'cutoff': 2.5, 'num_basis': 4},
+        'parallel_block': [False, True, True]},
+    'edge_gate_full_parity': {
+        **_metaformer, 'radial_pair_embedding': True,
+        'edge_gate': {'skip_first': False},
+        'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
+                          '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
     'light_conv_full_parity': {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
@@ -183,6 +195,8 @@ def _model(cf):
                 p.normal_(0, 0.3)   # zero-initialized norm magnitude feature
             if n.endswith('_outro.gamma'):
                 p.uniform_(0.2, 0.9)   # magnitude residual exponent (init 0)
+            if n.endswith('_edge_gate.theta'):
+                p.normal_(0, 1.0)   # zero-initialized gate amplitude
     model.set_is_batch_data(False)
     return model
 
@@ -315,9 +329,9 @@ def _dimer_tail(model, h=1e-3):
                                   'radial_mlp_block_node_cond', 'short_radial',
                                   'short_radial_block_node_cond',
                                   'pair_repulsion', 'norm_magnitude',
-                                  'short_range_both', 'magnitude_residual',
-                                  'magnitude_residual_variants', 'exp_radial',
-                                  'exp_radial_short_block_node_cond'])
+                                  'short_range_both', 'magnitude_residual', 'magnitude_residual_variants',
+                                  'exp_radial', 'exp_radial_short_block_node_cond', 'edge_gate',
+                                  'edge_gate_variants'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
@@ -329,6 +343,40 @@ def test_dimer_c2_at_cutoff(name):
     tiny = 1e-8
     for i, thr in enumerate((0.2, 0.35, 0.6)):
         assert abs(near[i]) < tiny or abs(near[i]) < thr * abs(far[i]), (far, near)
+
+
+def _trimer_tail(model, h=1e-3):
+    """
+    (dE, dE/dx, d2E/dx2) at x = r_c - 0.02 and r_c - 0.01 of a linear
+    Na(-x)-Na(0)-Cl(2.5) trimer, dE = E(x) - E(r_c + 1): only the Na-Na pair
+    crosses the cutoff while Na-Cl stays bonded, so terms that act on the
+    other edges of an atom (edge gate, coordination) are seen too
+    """
+    def e(x):
+        at = Atoms('NaNaCl', positions=[[-x, 0, 0], [0, 0, 0], [2.5, 0, 0]])
+        return _efs(model, at)[0]
+
+    e_far = e(cutoff + 1.0)
+    assert abs(e(cutoff - 0.5) - e_far) > 1e-6  # Na-Na contributes inside r_c
+    out = []
+    for delta in (0.02, 0.01):
+        r = cutoff - delta
+        out.append(np.array([
+            e(r) - e_far,
+            (e(r + h) - e(r - h)) / (2 * h),
+            (e(r + h) - 2 * e(r) + e(r - h)) / h**2,
+        ]))
+    return out
+
+
+@pytest.mark.parametrize('name', ['metaformer', 'pair_radial', 'edge_gate',
+                                  'edge_gate_variants'])
+def test_trimer_c2_at_cutoff(name):
+    """as test_dimer_c2_at_cutoff, for a pair leaving the cutoff of a bonded
+    atom (many-body terms of the crossing pair must vanish C2 as well)"""
+    far, near = _trimer_tail(_model(CONFIGS[name]))
+    for i, thr in enumerate((0.2, 0.35, 0.6)):
+        assert abs(near[i]) < 1e-8 or abs(near[i]) < thr * abs(far[i]), (far, near)
 
 
 def _k_jump(model, r0, delta=0.002, h=1e-3):

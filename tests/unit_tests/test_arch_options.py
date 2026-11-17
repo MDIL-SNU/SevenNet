@@ -1769,3 +1769,170 @@ def test_exp_radial_basis_errors():
     assert not cond({'scales': [0.3, -0.6]}) and not cond({'scales': []})
     assert not cond({'cutoff': 0.0}) and not cond({'poly_p': 2.5})
     assert not cond({'decay': 1.0})
+
+
+
+
+def test_edge_gate_module():
+    """b_ij = 1 + alpha tanh(<P u_i, Q u_j> / sqrt(d)), u = RMSNorm(s), bounded
+    and positive; the e3gnn/parallel path (local x + exchanged ghosts) is the
+    same function"""
+    import math
+
+    from sevenn.nn.edge_gate import EdgeGate
+
+    torch.manual_seed(0)
+    irreps = Irreps('3x1o+6x0e+2x2e')  # 0e block not first
+    gate = EdgeGate(irreps, 1, dim=4, alpha_max=0.9)
+    assert (gate.s0, gate.s1) == (9, 15) and gate.key_out == '1_edge_pair_input_eg'
+    n, e = 7, 30
+    x = torch.randn(n, irreps.dim)
+    edge = torch.randint(0, n, (2, e))
+    pair = torch.randn(e, 11)
+    data = {KEY.NODE_FEATURE: x, KEY.EDGE_IDX: edge, KEY.EDGE_PAIR_INPUT: pair}
+    out = gate(dict(data))['1_edge_pair_input_eg']
+    assert torch.equal(out[:, :-1], pair)
+    assert torch.equal(out[:, -1], torch.ones(e))  # theta = 0: exactly 1
+    with torch.no_grad():
+        gate.theta.fill_(0.7)
+    s = x[:, 9:15]
+    s = s / (s.pow(2).mean(-1, keepdim=True) + 1e-5).sqrt()
+    assert gate.weight.shape == (6, 8)  # [P | Q]
+    p = s @ gate.weight[:, :4] / math.sqrt(6)
+    q = s @ gate.weight[:, 4:] / math.sqrt(6)
+    logit = (p[edge[0]] * q[edge[1]]).sum(-1) / 2.0
+    ref = 1 + 0.9 * math.tanh(0.7) * torch.tanh(logit)
+    out = gate(dict(data))['1_edge_pair_input_eg'][:, -1]
+    assert torch.allclose(out, ref, atol=1e-6)
+    # e3gnn/parallel: nodes 0..3 local, 4..6 ghosts (only sources)
+    local = edge[0] < 4
+    gate.is_parallel = True
+    dpar = {KEY.NODE_FEATURE: x[:4], KEY.NODE_FEATURE_GHOST: x[4:],
+            KEY.EDGE_IDX: edge[:, local], KEY.EDGE_PAIR_INPUT: pair[local]}
+    out_par = gate(dpar)['1_edge_pair_input_eg'][:, -1]
+    assert torch.allclose(out_par, ref[local], atol=1e-6)
+    gate.is_parallel = False
+    # bounded and positive for any parameters and features
+    for th in (-50.0, 50.0):
+        with torch.no_grad():
+            gate.theta.fill_(th)
+            gate.weight.normal_(0, 100.0)
+        d = dict(data)
+        d[KEY.NODE_FEATURE] = 1e3 * x
+        b = gate(d)['1_edge_pair_input_eg'][:, -1]
+        assert (b >= 0.1 - 1e-6).all() and (b <= 1.9 + 1e-6).all()
+        assert b.min() < 0.2 and b.max() > 1.8  # saturated at 1 -+ alpha_max
+    with pytest.raises(AssertionError):
+        EdgeGate(Irreps('4x1o'), 0)
+    with pytest.raises(AssertionError):
+        EdgeGate(irreps, 0, alpha_max=1.0)
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'radial_pair_embedding': True, 'edge_gate': {'dim': 4}},
+    {**_metaformer, 'radial_pair_embedding': True,
+     'edge_gate': {'alpha_max': 0.5, 'skip_first': False},
+     'irreps_manual': _full_parity,
+     'parallel_block': [False, True, True], 'radial_mlp_block': {},
+     'radial_short_basis': {'cutoff': 2.5, 'num_basis': 4}},
+])
+def test_edge_gate(cf):
+    """bounded positive gate on the pair radial weights of every convolution"""
+    from e3nn.util.jit import script
+
+    from sevenn.logger import Logger
+    from sevenn.model_build import build_E3_equivariant_model
+    from sevenn.nn.edge_gate import EdgeGate
+    from sevenn.nn.radial_pair import PairRadialMLP
+    from sevenn.train.muon import build_muon_param_groups
+    from tests.unit_tests.test_model import get_model_config
+
+    amax = cf['edge_gate'].get('alpha_max', 0.9)
+    gated = [0, 1, 2] if not cf['edge_gate'].get('skip_first', True) else [1, 2]
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'edge_gate': None})
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    names = list(mods)
+    gates = {k: m for k, m in mods.items() if isinstance(m, EdgeGate)}
+    convs = _convs(model)
+    assert len(convs) == 3 and sorted(gates) == [f'{t}_edge_gate' for t in gated]
+    for t, (k, conv) in enumerate(convs.items()):
+        if t not in gated:  # layer 0: input depends on the element only
+            assert conv.key_weight_input == KEY.EDGE_PAIR_INPUT
+            assert not conv.weight_nn.edge_gate
+            continue
+        i_gate = names.index(f'{t}_edge_gate')
+        assert names.index(f'{t}_self_interaction_1') < i_gate < names.index(k)
+        assert conv.key_weight_input == f'{t}_edge_pair_input_eg'
+        assert isinstance(conv.weight_nn, PairRadialMLP) and conv.weight_nn.edge_gate
+        assert gates[f'{t}_edge_gate'].key_pair == KEY.EDGE_PAIR_INPUT
+        assert gates[f'{t}_edge_gate'].theta.item() == 0.0
+    # init (theta = 0): bitwise the model without the gate, same weights
+    missing, unexpected = model.load_state_dict(ref.state_dict(), strict=False)
+    assert not unexpected and sorted(missing) == sorted(
+        f'{k}.{p}' for k in gates for p in ('weight', 'theta'))
+    ref.set_is_batch_data(True)
+    model.set_is_batch_data(True)
+    o_ref = ref(get_graphs(batched=True))
+    o = model(get_graphs(batched=True))
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE, KEY.PRED_STRESS):
+        assert torch.equal(o_ref[k], o[k]), k
+    o[KEY.PRED_TOTAL_ENERGY].sum().backward()
+    assert all(m.theta.grad.abs().sum() > 0 for m in gates.values())
+    # non-trivial gate: output changes, factor stays in [1 - amax, 1 + amax]
+    with torch.no_grad():
+        for m in gates.values():
+            m.theta.fill_(1.5)
+    o2 = model(get_graphs(batched=True))
+    assert (o2[KEY.PRED_FORCE] - o[KEY.PRED_FORCE]).abs().max() > 1e-4
+    for t in gated:
+        b = o2[f'{t}_edge_pair_input_eg'][:, -1]
+        assert (b >= 1 - amax).all() and (b <= 1 + amax).all()
+        assert b.std() > 0.01, (t, b)
+    out, out_rot, R = _rotated_pair(model)
+    e, e_r = out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    _inversion_check(model)
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert set(missing) <= adam
+    from tests.unit_tests.test_model import _graph_list
+
+    config = get_model_config()
+    config.update(cf)
+    Logger().print_model_info(model, config)
+    model.set_is_batch_data(False)
+    g = _graph_list[0].clone()
+    ref_out = model.eval()(g.clone())   # before scripting (in place)
+    inp = {k: v for k, v in g.to_dict().items() if isinstance(v, torch.Tensor)}
+    inp[KEY.NODE_FEATURE] = model._atomic_numbers_to_onehot(inp[KEY.ATOMIC_NUMBERS])
+    model.eval_type_map = False  # as sevenn deploy
+    out = torch.jit.freeze(script(model))(inp)
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE):
+        assert torch.allclose(out[k], ref_out[k], atol=1e-5), k
+    segs = build_E3_equivariant_model(config, parallel=True)
+    seg_gates = [m for s in segs for m in s.modules() if isinstance(m, EdgeGate)]
+    assert len(seg_gates) == len(gated) and all(m.is_parallel for m in seg_gates)
+    assert not any(m.is_parallel for m in gates.values())
+
+
+def test_edge_gate_errors():
+    from sevenn._const import MODEL_CONFIG_CONDITION
+
+    with pytest.raises(ValueError):  # gates the element-pair radial weights
+        get_model({**_metaformer, 'edge_gate': {}})
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'radial_pair_embedding': True,
+                   'radial_node_cond': True, 'edge_gate': {}})
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'radial_pair_embedding': True,
+                   'conv_attention': {}, 'edge_gate': {}})
+    ok = MODEL_CONFIG_CONDITION[KEY.EDGE_GATE]
+    assert ok(None) and ok({}) and ok({'dim': 8, 'alpha_max': 0.5})
+    assert ok({'skip_first': False}) and not ok({'skip_first': 1})
+    assert not ok({'alpha_max': 1.0}) and not ok({'dim': 0})
+    assert not ok({'bias': True}) and not ok(True)

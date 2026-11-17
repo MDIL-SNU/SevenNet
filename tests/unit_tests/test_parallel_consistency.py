@@ -176,6 +176,11 @@ CONFIGS = {
         'norm_magnitude': True, 'use_final_norm': True,
         'irreps_conv': _irreps_conv,
     },
+    # bounded positive edge gate on the pair radial weights (reads x_ghost)
+    'edge_gate': {**_A4, 'edge_gate': {'dim': 4}},
+    'edge_gate_s2': {**_A4, 'ffn_type': 's2_bilinear',
+                     'edge_gate': {'skip_first': False},  # layer 0: ghost twins
+                     'parallel_block': [False, True, True]},
     'mf_ext_sink': {
         **_A4, 'readout_activation': None, 'readout_block': {'type': 'swiglu'},
         'per_layer_readout': True, 'radial_mlp_block': {},
@@ -188,17 +193,16 @@ CONFIGS = {
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
                               'kitchen_sink', 'per_layer_readout',
                               'light_conv', 'mf_ext_sink', 'pair_repulsion',
-                              's2_inv', 'short_range_sink',
-                              'magnitude_residual_sink',
-                              'exp_radial_short_block_node_cond')
+                              's2_inv', 'short_range_sink', 'magnitude_residual_sink',
+                              'exp_radial_short_block_node_cond', 'edge_gate')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
 GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
                            'kitchen_sink', 's2_bilinear', 'mf_ext_sink',
                            'pair_repulsion_s2', 's2_inv',
-                           'norm_magnitude_s2', 'magnitude_residual',
-                           'exp_radial')
+                           'norm_magnitude_s2', 'magnitude_residual', 'exp_radial',
+                           'edge_gate_s2')
                if n in CONFIGS]
 MODAL = 'mpa'
 
@@ -541,6 +545,7 @@ def test_parallel_segments_structure(name):
     """ghost twins, per-segment edge inputs, ghost-aware edge modules"""
     from sevenn.nn.edge_attention import EdgeAttention
     from sevenn.nn.edge_embedding import EdgeEmbedding
+    from sevenn.nn.edge_gate import EdgeGate
     from sevenn.nn.normalization import SelfConnectionResidualIntro
     from sevenn.nn.pair_repulsion import PairRepulsion
     from sevenn.nn.radial_pair import EdgePairInput, NodeCondRadialInput
@@ -582,7 +587,7 @@ def test_parallel_segments_structure(name):
             if isinstance(m, EdgeAttention):
                 assert m.is_parallel and m.key_atom_type == KEY.ATOM_TYPE_ALL
                 need_types = need_types or m.use_rb
-            if isinstance(m, NodeCondRadialInput):
+            if isinstance(m, (NodeCondRadialInput, EdgeGate)):
                 assert m.is_parallel
             if isinstance(m, PairRepulsion):  # from the last segment's edges
                 assert m.key_atom_type == KEY.ATOM_TYPE_ALL and seg is segs[-1]

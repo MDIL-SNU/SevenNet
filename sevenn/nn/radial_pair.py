@@ -304,6 +304,10 @@ class PairRadialMLP(nn.Module):
     'mlp'), norm ('rms' | 'layer'), final_norm (True), eps (1e-5). The
     element-pair tables, node terms and the envelope on the last hidden layer
     are unchanged, all hidden widths must be equal.
+
+    edge_gate (config edge_gate): the last input column is a per-edge factor
+    (EdgeGate, sevenn/nn/edge_gate.py) that multiplies the envelope, i.e. all
+    output weights of the edge.
     """
 
     def __init__(
@@ -315,6 +319,7 @@ class PairRadialMLP(nn.Module):
         block: Optional[Dict[str, Any]] = None,
         num_short: int = 0,
         num_exp: int = 0,
+        edge_gate: bool = False,
     ) -> None:
         super().__init__()
         assert len(hs) >= 3, 'needs at least one hidden layer'
@@ -326,6 +331,7 @@ class PairRadialMLP(nn.Module):
         self.table_src = nn.Parameter(torch.zeros(num_species, hs[1]))
         self.table_dst = nn.Parameter(torch.zeros(num_species, hs[1]))
         self.num_short = num_short   # > 0: short-range basis after rbf
+        self.edge_gate = edge_gate   # True: last input column = edge factor
         if num_short > 0:
             self.w_short = nn.Parameter(torch.zeros(num_short, hs[1]))
             self.norm_short = 1.0 / math.sqrt(num_short)
@@ -377,6 +383,8 @@ class PairRadialMLP(nn.Module):
         ns = nb + self.num_short  # [rbf | short basis] columns
         nr = ns + self.num_exp  # [rbf | short basis | exp basis] columns
         env = inp[:, nr : nr + 1]
+        if self.edge_gate:   # EdgeGate factor (last column) scales all weights
+            env = env * inp[:, -1:]
         z_src = inp[:, nr + 1].to(torch.long)
         z_dst = inp[:, nr + 2].to(torch.long)
         w_short = self.w_short

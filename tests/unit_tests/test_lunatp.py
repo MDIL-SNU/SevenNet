@@ -933,6 +933,8 @@ MFEXT_CONFIGS = {
          'readout_activation': None, 'readout_block': {},
          'norm_magnitude': True},
         ('table_', '_outro.gamma', 'mag_weight', 'readout_norm')),
+    'edge_gate': ({'edge_gate': {}, 'ffn_type': 's2_bilinear'},
+                  ('table_', '_edge_gate.theta')),
     'mf_ext_sink': (
         {'readout_activation': None, 'readout_block': {'type': 'swiglu'},
          'per_layer_readout': True, 'radial_mlp_block': {},

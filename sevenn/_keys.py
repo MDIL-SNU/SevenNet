@@ -302,6 +302,10 @@ NORM_MAGNITUDE = 'norm_magnitude'
 # pre-norm residual branch is scaled by (rho / rho_ref)^gamma, rho = the RMS its
 # norm divides out (sevenn/nn/normalization.py MagnitudeResidualOutro)
 MAGNITUDE_RESIDUAL = 'magnitude_residual'
+# None | {dim: 16, alpha_max: 0.9, skip_first: True}: bounded positive gate on
+# the pair radial weights of every edge from both atoms' scalars
+# (sevenn/nn/edge_gate.py)
+EDGE_GATE = 'edge_gate'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

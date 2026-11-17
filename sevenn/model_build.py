@@ -44,6 +44,7 @@ from .nn.normalization import (
 from .nn.pair_repulsion import PairRepulsion, PairRepulsionToEnergy
 from .nn.radial_pair import EdgePairInput, NodeCondRadialInput, PairRadialMLP
 from .nn.edge_attention import AttentionOutGate, EdgeAttention
+from .nn.edge_gate import EdgeGate
 from .nn.moe_ffn import type_to_expert_table
 from .nn.scale import ModalWiseRescale, Rescale, SpeciesWiseRescale
 from .nn.self_connection import (
@@ -165,6 +166,34 @@ def _patch_radial_node_cond(layers: OrderedDict) -> None:
         )
         conv.key_weight_input = mod.key_out
         conv.weight_nn_kwargs['node_cond'] = hidden
+    layers.clear()
+    layers.update(items)
+
+
+def _patch_edge_gate(layers: OrderedDict, opts: Dict[str, Any]) -> None:
+    """
+    Bounded positive edge gate (EdgeGate) on the element-pair radial weights of
+    every convolution (in place): computed from the convolution input after
+    {t}_self_interaction_1 and appended to the radial MLP input. skip_first
+    (default True): layer 0 keeps the plain radial weights (its convolution
+    input depends on the element only).
+    """
+    opts = dict(opts)
+    skip_first = opts.pop('skip_first', True)
+    items = list(layers.items())
+    for k, conv in [(k, m) for k, m in items if isinstance(m, IrrepsConvolution)]:
+        t = int(k.split('_')[0])
+        if skip_first and t == 0:
+            continue
+        gate = EdgeGate(
+            conv.convolution_kwargs['irreps_in1'], t,
+            data_key_pair=conv.key_weight_input, **opts,
+        )
+        items = _insert_after(
+            f'{t}_self_interaction_1', (f'{t}_edge_gate', gate), items
+        )
+        conv.key_weight_input = gate.key_out
+        conv.weight_nn_kwargs['edge_gate'] = True
     layers.clear()
     layers.update(items)
 
@@ -700,7 +729,7 @@ def _to_parallel_model(
       repulsion) of ghost neighbours read KEY.ATOM_TYPE_ALL (local + ghost
       types, segment 0)
     - edge modules gathering source-node features (attention keys,
-      node-conditioned radial MLP) also read x_ghost
+      node-conditioned radial MLP, edge gate) also read x_ghost
     - self_cont_tmp must not be an ancestor of x at a segment boundary
       (identity residual: store a copy)
     - magnitude_residual: the conv outro after the cut reads rho from
@@ -761,7 +790,7 @@ def _to_parallel_model(
             module.key_atom_type = KEY.ATOM_TYPE_ALL
             module.is_parallel = True
             need_types = need_types or module.use_rb
-        elif isinstance(module, NodeCondRadialInput):
+        elif isinstance(module, (NodeCondRadialInput, EdgeGate)):
             module.is_parallel = True
         elif isinstance(module, PairRepulsion):
             module.key_atom_type = KEY.ATOM_TYPE_ALL
@@ -1069,6 +1098,20 @@ def build_E3_equivariant_model(
 
     if config.get(KEY.CONV_ATTENTION, None) is not None:
         _patch_edge_attention(layers, config)
+
+    edge_gate = config.get(KEY.EDGE_GATE, None)
+    if edge_gate is not None:
+        if not config.get(KEY.RADIAL_PAIR_EMBEDDING, False):
+            raise ValueError('edge_gate needs radial_pair_embedding')
+        if config.get(KEY.RADIAL_NODE_COND, False) or config.get(
+            KEY.CONV_ATTENTION, None
+        ) is not None:
+            # edge_gate is the bounded replacement of both
+            raise ValueError(
+                'edge_gate cannot be combined with radial_node_cond / '
+                'conv_attention'
+            )
+        _patch_edge_gate(layers, dict(edge_gate))
 
     if config.get(KEY.USE_FINAL_NORM, False):
         layers['final_norm'] = EquivariantRMSNorm(
