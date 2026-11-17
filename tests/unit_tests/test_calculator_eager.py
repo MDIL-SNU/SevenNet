@@ -93,3 +93,27 @@ def test_eager_topology_reuse(monkeypatch, deterministic):
             assert np.asarray(got[k]).dtype == np.asarray(ref[k]).dtype, k
             assert np.array_equal(got[k], ref[k]), (i, k)
 
+
+@pytest.mark.parametrize('edge_gate', [False, True])
+def test_radial_mlp_folded_eval(edge_gate):
+    """eval PairRadialMLP (activation constant folded into the frozen next
+    weights) == training-mode forward up to rounding, values and gradients"""
+    import torch.nn.functional as F
+
+    from sevenn.nn.radial_pair import PairRadialMLP
+
+    torch.manual_seed(0)
+    mlp = PairRadialMLP([8, 64, 64, 256], F.silu, 3, edge_gate=edge_gate)
+    torch.nn.init.normal_(mlp.table_src)
+    torch.nn.init.normal_(mlp.table_dst)
+    mlp.requires_grad_(False)
+    cols = [torch.rand(64, 8), torch.rand(64, 1), torch.randint(0, 3, (64, 2))]
+    cols += [torch.rand(64, 1)] if edge_gate else []
+    inp = torch.cat([c.float() for c in cols], 1).requires_grad_(True)
+    ref = mlp.train()(inp)
+    got = mlp.eval()(inp)
+    g = torch.randn_like(ref)
+    (g_ref,) = torch.autograd.grad(ref, inp, g)
+    (g_got,) = torch.autograd.grad(got, inp, g)
+    assert (got - ref).abs().max() < 1e-6 * ref.abs().max()
+    assert (g_got - g_ref).abs().max() < 1e-5 * g_ref.abs().max()

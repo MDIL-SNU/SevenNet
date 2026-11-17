@@ -8,7 +8,7 @@ from e3nn.util.jit import compile_mode
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
-from .util import frozen_product
+from .util import frozen_product, frozen_tanh
 
 
 @compile_mode('script')
@@ -117,9 +117,12 @@ class EdgeGate(nn.Module):
         src = data[KEY.EDGE_IDX][1]
         logit = (p.index_select(1, dst) * q.index_select(1, src)).sum(0)
         # 1 + alpha_max tanh(theta) tanh(logit)
+        if torch.jit.is_scripting():
+            tanh_theta = torch.tanh(self.theta)
+        else:
+            tanh_theta = frozen_tanh(self.theta)
         gate = torch.addcmul(
-            self.one, torch.tanh(self.theta), torch.tanh(logit),
-            value=self.alpha_max,
+            self.one, tanh_theta, torch.tanh(logit), value=self.alpha_max
         )
         pair = data[self.key_pair]
         data[self.key_out] = torch.cat(

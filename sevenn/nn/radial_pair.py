@@ -421,10 +421,27 @@ class PairRadialMLP(nn.Module):
                 h = blk(h)
             h = self.final_norm(h)
         else:
+            if not torch.jit.is_scripting() and not self.training:
+                return self._mlp_folded(h, env)
             h = self.act(h)
             for layer in self.hidden:
                 h = self.act(layer(h))
         return self.out(h * env)
+
+    @torch.jit.unused
+    def _mlp_folded(self, h: torch.Tensor, env: torch.Tensor) -> torch.Tensor:
+        """
+        Eval: act = f(.) * c (normalize2mom) with c folded into the weights of
+        the next matmul, f(h) @ (W * (norm * c)), kept while the weights are
+        frozen: one kernel fewer per activation in the forward and in the
+        backward (the same function; fp32 rounding differs).
+        """
+        f = self.act.f
+        c = 1.0 if self.act._is_id else self.act.cst  # as normalize2mom
+        h = f(h)
+        for layer in self.hidden:
+            h = f(h @ frozen_product(layer.weight, layer.norm * c))
+        return (h * env) @ frozen_product(self.out.weight, self.out.norm * c)
 
 
 @compile_mode('script')

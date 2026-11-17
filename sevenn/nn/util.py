@@ -30,10 +30,21 @@ def frozen_product(w: torch.Tensor, scale: float) -> torch.Tensor:
     """
     if w.requires_grad or torch.is_inference_mode_enabled():
         return w * scale
-    key = (w.data_ptr(), w._version, scale)
-    cached = getattr(w, '_sevenn_frozen_product', None)
-    if cached is not None and cached[0] == key:
-        return cached[1]
-    out = w * scale
-    w._sevenn_frozen_product = (key, out)
-    return out
+    return _frozen(w, ('mul', scale), lambda: w * scale)
+
+
+@torch.jit.unused
+def frozen_tanh(w: torch.Tensor) -> torch.Tensor:
+    """torch.tanh(w), kept on a frozen w as frozen_product does"""
+    if w.requires_grad or torch.is_inference_mode_enabled():
+        return torch.tanh(w)
+    return _frozen(w, ('tanh',), lambda: torch.tanh(w))
+
+
+def _frozen(w, op, compute):
+    key = (w.data_ptr(), w._version)
+    cache = w.__dict__.setdefault('_sevenn_frozen', {})
+    cached = cache.get(op)
+    if cached is None or cached[0] != key:
+        cached = cache[op] = (key, compute())
+    return cached[1]
