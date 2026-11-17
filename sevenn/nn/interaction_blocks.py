@@ -1,5 +1,5 @@
 import os
-from typing import Callable, Dict, List, Tuple
+from typing import Callable, Dict, List, Optional, Tuple
 
 from e3nn.o3 import Irreps
 from torch.nn import Module
@@ -8,7 +8,7 @@ import sevenn._keys as KEY
 
 from .convolution import IrrepsConvolution
 from .equivariant_gate import EquivariantGate
-from .ffn_variants import SwiGLUGate
+from .ffn_variants import LayerScale, SwiGLUGate
 from .linear import IrrepsLinear
 
 
@@ -98,6 +98,7 @@ def Metaformer_interaction_block(
     ffn_hidden_scale: int = 2,
     norm_eps: float = 1e-5,
     ffn_type: str = 'gate',
+    layer_scale_init: Optional[float] = None,
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -156,6 +157,10 @@ def Metaformer_interaction_block(
         data_key_in=data_key_x,
         biases=bias_in_linear,
     )
+    if layer_scale_init is not None:
+        block[f'{t}_layer_scale_1'] = LayerScale(
+            irreps_out, layer_scale_init, data_key_x
+        )
     block[f'{t}_self_connection_outro'] = sc_outro()
 
     if use_ffn:
@@ -188,6 +193,10 @@ def Metaformer_interaction_block(
             data_key_in=data_key_x,
             biases=bias_in_linear,
         )
+        if layer_scale_init is not None:
+            block[f'{t}_layer_scale_2'] = LayerScale(
+                irreps_out, layer_scale_init, data_key_x
+            )
         block[f'{t}_ffn_outro'] = SelfConnectionOutro(data_key_x)
 
     return block

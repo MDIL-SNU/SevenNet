@@ -37,6 +37,7 @@ CONFIGS = {
     'pair_radial': {**_metaformer, 'radial_pair_embedding': True},
     'silu_readout': {**_metaformer, 'readout_activation': 'silu'},
     'swiglu': {**_metaformer, 'ffn_type': 'swiglu'},
+    'layer_scale': {**_metaformer, 'layer_scale_init': 0.1},
 }
 
 

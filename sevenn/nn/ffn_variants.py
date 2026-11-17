@@ -4,6 +4,8 @@ all off by default):
 - SwiGLUGate: equivariant GLU nonlinearity. Scalars: silu(b) * a (Shazeer,
   GLU Variants Improve Transformer, arXiv:2002.05202); l>0 channels keep the
   gated form v * silu(g) of the e3nn Gate.
+- LayerScale: learnable per-channel scale of a residual branch (Touvron et
+  al., Going deeper with Image Transformers, arXiv:2103.17239).
 """
 
 from typing import Callable, Dict
@@ -70,4 +72,22 @@ class SwiGLUGate(nn.Module):
             g = g.index_select(1, self.gated_channel_idx)   # index_add backward
             s = torch.cat([s, x[:, n1:] * g], dim=-1)
         data[self.key_x] = s
+        return data
+
+
+@compile_mode('script')
+class LayerScale(nn.Module):
+    """x <- gamma[channel] * x, gamma initialized to `init`"""
+
+    def __init__(
+        self, irreps: Irreps, init: float, data_key_x: str = KEY.NODE_FEATURE
+    ) -> None:
+        super().__init__()
+        irreps = Irreps(irreps)
+        self.key_x = data_key_x
+        self.gamma = nn.Parameter(torch.full((irreps.num_irreps,), float(init)))
+        self.register_buffer('channel_idx', _channel_index(irreps))
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        data[self.key_x] = data[self.key_x] * self.gamma[self.channel_idx]
         return data
