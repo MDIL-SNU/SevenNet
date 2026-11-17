@@ -175,6 +175,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.METAFORMER_NORM: True,
     KEY.READOUT_BLOCK: None,
     KEY.PER_LAYER_READOUT: False,
+    KEY.RADIAL_MLP_BLOCK: None,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -251,6 +252,14 @@ MODEL_CONFIG_CONDITION = {
     KEY.READOUT_ACTIVATION: lambda x: x is None or x in ACTIVATION,
     KEY.METAFORMER_NORM: bool,
     KEY.PER_LAYER_READOUT: bool,
+    KEY.RADIAL_MLP_BLOCK: lambda x: x is None or (
+        isinstance(x, dict)
+        and set(x) <= {
+            'num_blocks', 'hidden_scale', 'type', 'norm', 'final_norm', 'eps'
+        }
+        and x.get('type', 'swiglu') in ('swiglu', 'mlp')
+        and x.get('norm', 'rms') in ('rms', 'layer')
+    ),
     KEY.READOUT_BLOCK: lambda x: x is None or (
         isinstance(x, dict)
         and set(x) <= {'hidden_scale', 'type'}

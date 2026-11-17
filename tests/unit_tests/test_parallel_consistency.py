@@ -127,6 +127,10 @@ CONFIGS = {
                            'readout_block': {}},
     'per_layer_readout': {**_A4, 'per_layer_readout': True},
     'per_layer_readout_nequip': {**_A0, 'per_layer_readout': True},
+    'radial_mlp_block': {**_A4, 'radial_mlp_block': {}},
+    'radial_mlp_block_node_cond': {
+        **_A4, 'radial_node_cond': True,
+        'radial_mlp_block': {'type': 'mlp', 'norm': 'layer'}},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',

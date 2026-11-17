@@ -92,8 +92,13 @@ def init_self_connection(config: Dict[str, Any]) -> List[Tuple[Type, Type]]:
     return io_pair_list
 
 
-def _patch_pair_radial(layers: OrderedDict, num_species: int) -> None:
-    """Element-pair radial weights for every convolution (in place)."""
+def _patch_pair_radial(
+    layers: OrderedDict, num_species: int, block: Any = None
+) -> None:
+    """
+    Element-pair radial weights for every convolution (in place); block:
+    radial_mlp_block options (pre-norm residual hidden stack, PairRadialMLP).
+    """
     _layers = _insert_after(
         'onehot_idx_to_onehot',
         ('edge_pair_input', EdgePairInput()),
@@ -106,6 +111,8 @@ def _patch_pair_radial(layers: OrderedDict, num_species: int) -> None:
             module.key_weight_input = KEY.EDGE_PAIR_INPUT
             module.weight_nn_cls = PairRadialMLP
             module.weight_nn_kwargs['num_species'] = num_species
+            if block is not None:
+                module.weight_nn_kwargs['block'] = dict(block)
 
 
 def _patch_radial_node_cond(layers: OrderedDict) -> None:
@@ -920,8 +927,11 @@ def build_E3_equivariant_model(
                 f'{t}_layer_energy', first=t == 0
             )
 
+    radial_block = config.get(KEY.RADIAL_MLP_BLOCK, None)
+    if radial_block is not None and not config.get(KEY.RADIAL_PAIR_EMBEDDING):
+        raise ValueError('radial_mlp_block needs radial_pair_embedding: true')
     if config.get(KEY.RADIAL_PAIR_EMBEDDING, False):
-        _patch_pair_radial(layers, num_species)
+        _patch_pair_radial(layers, num_species, radial_block)
         if config.get(KEY.RADIAL_NODE_COND, False):
             _patch_radial_node_cond(layers)
 

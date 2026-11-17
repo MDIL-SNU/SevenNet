@@ -1,5 +1,5 @@
 import math
-from typing import Callable, List
+from typing import Any, Callable, Dict, List, Optional
 
 import torch
 import torch.nn as nn
@@ -65,6 +65,59 @@ class _ScaledLinear(nn.Module):
 
 
 @compile_mode('script')
+class _EdgeRMSNorm(nn.Module):
+    """
+    RMS norm of the hidden vector of every edge with a per-channel weight
+    (centering=True: layer norm, mean removed first, plus a bias):
+    h / sqrt(mean(h^2) + eps) * w. PyTorch's fused rms_norm / layer_norm
+    (twice differentiable, also the fused CUDA kernels: gradgradcheck);
+    eps keeps it smooth at h = 0.
+    """
+
+    def __init__(self, dim: int, centering: bool, eps: float) -> None:
+        super().__init__()
+        self.dim = dim
+        self.centering = centering
+        self.eps = eps
+        self.weight = nn.Parameter(torch.ones(dim))
+        if centering:
+            self.bias = nn.Parameter(torch.zeros(dim))
+        else:
+            self.register_parameter('bias', None)
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        if self.centering:
+            return F.layer_norm(h, [self.dim], self.weight, self.bias, self.eps)
+        return torch.rms_norm(h, [self.dim], self.weight, self.eps)
+
+
+@compile_mode('script')
+class _RadialMLPBlock(nn.Module):
+    """h + Down(Act(Up(Norm(h)))), Act = SwiGLU (a * act(b)) or act"""
+
+    def __init__(
+        self, dim: int, hidden: int, swiglu: bool, act: Callable,
+        centering: bool, eps: float,
+    ) -> None:
+        super().__init__()
+        self.norm = _EdgeRMSNorm(dim, centering, eps)
+        self.swiglu = swiglu
+        self.hidden = hidden
+        self.up = _ScaledLinear(dim, 2 * hidden if swiglu else hidden)
+        self.down = _ScaledLinear(hidden, dim)
+        self.act = act
+
+    def forward(self, h: torch.Tensor) -> torch.Tensor:
+        u = self.up(self.norm(h))
+        if self.swiglu:
+            a, b = torch.split(u, [self.hidden, self.hidden], dim=-1)
+            u = a * self.act(b)
+        else:
+            u = self.act(u)
+        return h + self.down(u)
+
+
+@compile_mode('script')
 class PairRadialMLP(nn.Module):
     """
     Radial weights depending on distance and on the element pair (eSEN,
@@ -78,6 +131,21 @@ class PairRadialMLP(nn.Module):
     weight_numel-size tensors.
     Tables start at zero: at init this is a distance-only radial MLP.
     Drop-in for FullyConnectedNet(hs, act) as IrrepsConvolution.weight_nn.
+
+    block (config radial_mlp_block, default None = the MLP above): the hidden
+    stack becomes pre-norm residual MLP blocks (MetaFormer, W. Yu et al.,
+    arXiv:2111.11418; pre-LN, R. Xiong et al., arXiv:2002.04745):
+        h = rbf @ W1 + T_src[z_src] + T_dst[z_dst] (+ node terms)
+        h = h + Down(Act(Up(Norm(h))))       (num_blocks times)
+        weights = Out(Norm_f(h) * envelope)
+    Act = SwiGLU, a * act(b) (N. Shazeer, arXiv:2002.05202), or act (the
+    radial activation, SiLU in our runs); Norm = RMS norm or layer norm of
+    the hidden vector of every edge (eps-guarded, so smooth also where h -> 0)
+    with a per-channel weight. Keys: num_blocks (default len(hs) - 3, at
+    least 1), hidden_scale (2: Up width = 2 x hidden), type ('swiglu' |
+    'mlp'), norm ('rms' | 'layer'), final_norm (True), eps (1e-5). The
+    element-pair tables, node terms and the envelope on the last hidden layer
+    are unchanged, all hidden widths must be equal.
     """
 
     def __init__(
@@ -86,6 +154,7 @@ class PairRadialMLP(nn.Module):
         act: Callable,
         num_species: int,
         node_cond: int = 0,
+        block: Optional[Dict[str, Any]] = None,
     ) -> None:
         super().__init__()
         assert len(hs) >= 3, 'needs at least one hidden layer'
@@ -97,9 +166,36 @@ class PairRadialMLP(nn.Module):
         self.table_src = nn.Parameter(torch.zeros(num_species, hs[1]))
         self.table_dst = nn.Parameter(torch.zeros(num_species, hs[1]))
         self.act = normalize2mom(act)
-        self.hidden = nn.ModuleList(
-            [_ScaledLinear(hs[i], hs[i + 1]) for i in range(1, len(hs) - 2)]
-        )
+        self.use_block = block is not None
+        self.blocks = nn.ModuleList()
+        self.final_norm = nn.Identity()
+        if block is None:
+            self.hidden = nn.ModuleList(
+                [_ScaledLinear(hs[i], hs[i + 1]) for i in range(1, len(hs) - 2)]
+            )
+        else:
+            dim = hs[1]
+            assert all(h == dim for h in hs[1:-1]), 'radial_mlp_block: equal widths'
+            unknown = set(block) - {
+                'num_blocks', 'hidden_scale', 'type', 'norm', 'final_norm', 'eps'
+            }
+            assert not unknown, f'radial_mlp_block: unknown keys {unknown}'
+            n_blocks = int(block.get('num_blocks', max(1, len(hs) - 3)))
+            hidden = int(dim * block.get('hidden_scale', 2))
+            kind = block.get('type', 'swiglu')
+            norm = block.get('norm', 'rms')
+            eps = float(block.get('eps', 1e-5))
+            assert kind in ('swiglu', 'mlp') and norm in ('rms', 'layer')
+            centering = norm == 'layer'
+            self.hidden = nn.ModuleList()
+            self.blocks = nn.ModuleList([
+                _RadialMLPBlock(
+                    dim, hidden, kind == 'swiglu', self.act, centering, eps
+                )
+                for _ in range(n_blocks)
+            ])
+            if block.get('final_norm', True):
+                self.final_norm = _EdgeRMSNorm(dim, centering, eps)
         self.out = _ScaledLinear(hs[-2], hs[-1])
 
     def forward(self, inp: torch.Tensor) -> torch.Tensor:
@@ -115,9 +211,14 @@ class PairRadialMLP(nn.Module):
         h = h + F.embedding(z_dst, self.table_dst)
         if self.node_cond > 0:   # node-state terms (NodeCondRadialInput)
             h = h + inp[:, nb + 3: nb + 3 + self.node_cond]
-        h = self.act(h)
-        for layer in self.hidden:
-            h = self.act(layer(h))
+        if self.use_block:
+            for blk in self.blocks:
+                h = blk(h)
+            h = self.final_norm(h)
+        else:
+            h = self.act(h)
+            for layer in self.hidden:
+                h = self.act(layer(h))
         return self.out(h * env)
 
 

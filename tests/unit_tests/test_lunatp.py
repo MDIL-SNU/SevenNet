@@ -883,6 +883,11 @@ MFEXT_CONFIGS = {
                            ('table_', 'readout_norm')),
     'per_layer_readout': ({'per_layer_readout': True},
                           ('table_', 'layer_readout')),
+    'radial_mlp_block': ({'radial_mlp_block': {}}, ('table_',)),
+    'radial_mlp_block_layer': (
+        {'radial_node_cond': True,
+         'radial_mlp_block': {'type': 'mlp', 'norm': 'layer'}},
+        ('table_', 'radial_node_cond')),
 }
 
 

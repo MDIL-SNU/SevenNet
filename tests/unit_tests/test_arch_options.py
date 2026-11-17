@@ -879,3 +879,70 @@ def test_per_layer_readout(cf):
         sm = list(seg._modules.values())
         assert isinstance(sm[-1], LayerEnergyPack) == (i < len(segs) - 1)
         assert any(isinstance(m, LayerEnergyUnpack) for m in sm) == (i > 0)
+
+
+@pytest.mark.parametrize('block', [
+    {},
+    {'type': 'mlp', 'norm': 'layer', 'num_blocks': 2, 'hidden_scale': 1},
+    {'final_norm': False},
+])
+def test_radial_mlp_block(block):
+    """pre-norm residual hidden stack of the pair radial MLP"""
+    from e3nn.util.jit import script
+
+    from sevenn.nn.radial_pair import PairRadialMLP
+    from sevenn.train.muon import build_muon_param_groups
+
+    cf = {**_metaformer, 'radial_pair_embedding': True,
+          'radial_mlp_block': block}
+    torch.manual_seed(0)
+    model = get_model(cf)
+    convs = _convs(model)
+    w = convs['1_convolution'].weight_nn
+    assert isinstance(w, PairRadialMLP) and w.use_block
+    assert len(w.hidden) == 0
+    assert len(w.blocks) == block.get('num_blocks', 1)  # hs = [8, 64, 64, .]
+    hidden = 64 * block.get('hidden_scale', 2)
+    swiglu = block.get('type', 'swiglu') == 'swiglu'
+    up = w.blocks[0].up.weight
+    assert tuple(up.shape) == (64, 2 * hidden if swiglu else hidden)
+    assert (w.blocks[0].norm.bias is not None) == (block.get('norm') == 'layer')
+    with torch.no_grad():  # fp32 rotation noise grows with the table scale
+        for c in convs.values():
+            c.weight_nn.table_src.normal_(0, 0.3)
+            c.weight_nn.table_dst.normal_(0, 0.3)
+    # envelope zero -> weights exactly zero; smooth (finite 2nd derivative)
+    # also where the hidden vector vanishes (rbf = 0, zero tables)
+    nb = w.num_basis
+    inp = torch.randn(6, nb + 3)
+    inp[:, nb] = 0.0
+    inp[:, nb + 1:] = torch.randint(0, w.table_src.shape[0], (6, 2)).float()
+    assert torch.equal(w(inp), torch.zeros_like(w(inp)))
+    w0 = PairRadialMLP([nb, 64, 64, 10], torch.nn.functional.silu, 3,
+                       block=block)
+    x = torch.zeros(2, nb + 3, dtype=torch.float64)
+    x[:, nb] = 0.5
+    w0 = w0.double()
+    xr = x.clone().requires_grad_(True)
+    (g,) = torch.autograd.grad(w0(xr).square().sum(), xr, create_graph=True)
+    (h,) = torch.autograd.grad(g[:, :nb].sum(), xr)
+    assert torch.isfinite(g).all() and torch.isfinite(h).all()
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    assert torch.isfinite(f).all() and f.abs().sum() > 0
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    muon = {name[id(p)] for p in groups[0]['params']}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert {'1_convolution.weight_nn.blocks.0.up.weight',
+            '1_convolution.weight_nn.blocks.0.down.weight'} <= muon
+    assert '1_convolution.weight_nn.blocks.0.norm.weight' in adam
+    script(model.eval())
+
+
+def test_radial_mlp_block_needs_pair_radial():
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'radial_mlp_block': {}})

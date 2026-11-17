@@ -279,6 +279,8 @@ METAFORMER_NORM = 'metaformer_norm'  # False: blocks without norm_1 / norm_2
 # final features before a linear (modal-aware) readout
 READOUT_BLOCK = 'readout_block'
 PER_LAYER_READOUT = 'per_layer_readout'  # linear energy head after every layer
+# None | dict: pre-norm residual blocks in the pair radial MLP (PairRadialMLP)
+RADIAL_MLP_BLOCK = 'radial_mlp_block'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

@@ -72,6 +72,14 @@ CONFIGS = {
     'per_layer_readout': {**_metaformer, 'radial_pair_embedding': True,
                           'per_layer_readout': True},
     'per_layer_readout_nequip': {**_partial, 'per_layer_readout': True},
+    'radial_mlp_block': {**_metaformer, 'radial_pair_embedding': True,
+                         'radial_mlp_block': {}},
+    'radial_mlp_block_mlp_layer': {
+        **_metaformer, 'radial_pair_embedding': True,
+        'radial_mlp_block': {'type': 'mlp', 'norm': 'layer', 'num_blocks': 2}},
+    'radial_mlp_block_node_cond': {
+        **_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
+        'radial_mlp_block': {'final_norm': False}},
 }
 
 
@@ -102,6 +110,8 @@ def _model(cf):
                 n.split('.')[-2] in ('rb', 'og') or n.endswith(('t_src', 't_dst'))
             )) or 'radial_node_cond' in n or 'layer_readout' in n:
                 p.normal_(0, 0.3)   # zero-initialized radial bias / output gate
+            if cf.get('radial_mlp_block') is not None and 'table_' in n:
+                p.normal_(0, 0.3)   # element-pair tables (zero-initialized)
     model.set_is_batch_data(False)
     return model
 
@@ -228,7 +238,9 @@ def _dimer_tail(model, h=1e-3):
                                   'radial_node_cond',
                                   'swiglu', 'film', 'bilinear_gate',
                                   'bilinear_gate_l3', 's2_bilinear',
-                                  's2_bilinear_l3'])
+                                  's2_bilinear_l3', 'radial_mlp_block',
+                                  'radial_mlp_block_mlp_layer',
+                                  'radial_mlp_block_node_cond'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
