@@ -340,12 +340,43 @@ class GatedIrrepsLinear(IrrepsLinear):
             batch_modality_onehot = batch_modality_onehot.type(x.dtype)
             modality_onehot = batch_modality_onehot[data[KEY.BATCH]]
         else:
+            if not torch.jit.is_scripting() and not self.training:
+                gated = _shared_gated_modal(data, self.key_modal_attr, x)
+                data[self.key_input] = torch.cat([x, gated], dim=1)
+                return data
             modality_onehot = data[self.key_modal_attr].expand(len(x), -1)
             modality_onehot = modality_onehot.type(x.dtype)
         data[self.key_input] = torch.cat(
             [x, modality_onehot * _gate(data, x)], dim=1
         )
         return data
+
+
+_KEY_GATED_MODAL = '_gated_modal'
+_KEY_GATED_MODAL_GATE = '_gated_modal_gate'  # the KEY.NODE_GATE it belongs to
+
+
+@torch.jit.unused
+def _shared_gated_modal(
+    data: AtomGraphDataType, key_modal_attr: str, x: torch.Tensor
+) -> torch.Tensor:
+    """
+    s_i * modal one-hot of a single structure, computed by the first modal
+    linear of a forward and reused by the others (eval): one product and one
+    backward instead of one per layer (~30 kernels fewer per call). Same
+    values; the gradient of s_i sums the layers' modal-column gradients before
+    the product instead of after (fp32 summation order only).
+    """
+    gate = data[KEY.NODE_GATE]
+    if _KEY_GATED_MODAL_GATE in data and data[_KEY_GATED_MODAL_GATE] is gate:
+        gated = data[_KEY_GATED_MODAL]
+        if gated.shape[0] == x.shape[0] and gated.dtype == x.dtype:
+            return gated
+    onehot = data[key_modal_attr].expand(len(x), -1).type(x.dtype)
+    gated = onehot * _gate(data, x)
+    data[_KEY_GATED_MODAL] = gated
+    data[_KEY_GATED_MODAL_GATE] = gate
+    return gated
 
 
 # shared class -> gated subclass (model_build_gate swaps the class of every

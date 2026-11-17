@@ -8,6 +8,8 @@ from e3nn.util.jit import compile_mode
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
+from .util import frozen_product
+
 
 @compile_mode('script')
 class EdgeGate(nn.Module):
@@ -104,11 +106,16 @@ class EdgeGate(nn.Module):
         u = torch.rms_norm(s, [self.n], None, self.eps)
         # [2d, rows]: gathering columns of the transposed projection is ~5x
         # faster than gathering rows of [rows, d] (index_select, d >= 4)
-        pq = (self.weight * self.scale).t() @ u.t()
-        d = self.dim
+        if torch.jit.is_scripting():
+            w = self.weight * self.scale
+        else:
+            w = frozen_product(self.weight, self.scale)
+        pq = w.t() @ u.t()
+        # split, not slices: one cat in the backward (same values)
+        p, q = torch.split(pq, self.dim)
         dst = data[KEY.EDGE_IDX][0]
         src = data[KEY.EDGE_IDX][1]
-        logit = (pq[:d].index_select(1, dst) * pq[d:].index_select(1, src)).sum(0)
+        logit = (p.index_select(1, dst) * q.index_select(1, src)).sum(0)
         # 1 + alpha_max tanh(theta) tanh(logit)
         gate = torch.addcmul(
             self.one, torch.tanh(self.theta), torch.tanh(logit),

@@ -10,6 +10,8 @@ from e3nn.util.jit import compile_mode
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
+from .util import frozen_product
+
 
 @compile_mode('script')
 class ShortRangeBasis(nn.Module):
@@ -203,7 +205,9 @@ class _ScaledLinear(nn.Module):
         self.norm = 1.0 / math.sqrt(h_in)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        return x @ (self.weight * self.norm)  # scale the small matrix
+        if torch.jit.is_scripting():
+            return x @ (self.weight * self.norm)  # scale the small matrix
+        return x @ frozen_product(self.weight, self.norm)
 
 
 @compile_mode('script')
@@ -382,26 +386,36 @@ class PairRadialMLP(nn.Module):
         nb = self.num_basis
         ns = nb + self.num_short  # [rbf | short basis] columns
         nr = ns + self.num_exp  # [rbf | short basis | exp basis] columns
-        env = inp[:, nr : nr + 1]
+        # columns by one split, not slices: the backward is one cat instead of
+        # a zero-filled full-width gradient per slice, added up (same values)
+        parts = torch.split(
+            inp, [ns, self.num_exp, 1, 1, 1, inp.shape[1] - nr - 3], dim=1
+        )
+        env = parts[2]
+        rest = parts[5]  # [node terms | edge factor]
         if self.edge_gate:   # EdgeGate factor (last column) scales all weights
-            env = env * inp[:, -1:]
-        z_src = inp[:, nr + 1].to(torch.long)
-        z_dst = inp[:, nr + 2].to(torch.long)
+            env = env * (rest if rest.shape[1] == 1 else rest[:, -1:])
+        z_src = parts[3].squeeze(1).to(torch.long)
+        z_dst = parts[4].squeeze(1).to(torch.long)
         w_short = self.w_short
         if w_short is None:
-            h = inp[:, :nb] @ (self.w1 * self.norm_rbf)
+            if torch.jit.is_scripting():
+                w1 = self.w1 * self.norm_rbf
+            else:
+                w1 = frozen_product(self.w1, self.norm_rbf)
+            h = parts[0] @ w1
         else:   # short-range basis (EdgePairInput) in the same matmul
             w = torch.cat([self.w1 * self.norm_rbf, w_short * self.norm_short])
-            h = inp[:, :ns] @ w
+            h = parts[0] @ w
         w_exp = self.w_exp
         if w_exp is not None:   # exactly + 0 at init (zero W_exp)
-            h = torch.addmm(h, inp[:, ns:nr], w_exp * self.norm_exp)
+            h = torch.addmm(h, parts[1], w_exp * self.norm_exp)
         # F.embedding: sort-based backward; table[z] backward scatters millions
         # of edges into ~100 rows with atomics (6x slower in training)
         h = h + F.embedding(z_src, self.table_src)
         h = h + F.embedding(z_dst, self.table_dst)
         if self.node_cond > 0:   # node-state terms (NodeCondRadialInput)
-            h = h + inp[:, nr + 3: nr + 3 + self.node_cond]
+            h = h + rest[:, : self.node_cond]
         if self.use_block:
             for blk in self.blocks:
                 h = blk(h)
