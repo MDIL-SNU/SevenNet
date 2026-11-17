@@ -80,6 +80,17 @@ CONFIGS = {
     'radial_mlp_block_node_cond': {
         **_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
         'radial_mlp_block': {'final_norm': False}},
+    'conv_gate_off': {**_metaformer, 'conv_gate': False},
+    'parallel_block': {**_metaformer, 'parallel_block': True},
+    'light_conv': {**_metaformer, 'conv_gate': False, 'parallel_block': True,
+                   'radial_pair_embedding': True},
+    'parallel_block_variants': {
+        **_metaformer, 'parallel_block': [False, True, True],
+        'layer_scale_init': 0.1, 'ffn_film': True, 'ffn_type': 'swiglu'},
+    'light_conv_full_parity': {
+        **_metaformer, 'conv_gate': False, 'parallel_block': True,
+        'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
+                          '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
 }
 
 

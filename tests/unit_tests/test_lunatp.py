@@ -888,6 +888,15 @@ MFEXT_CONFIGS = {
         {'radial_node_cond': True,
          'radial_mlp_block': {'type': 'mlp', 'norm': 'layer'}},
         ('table_', 'radial_node_cond')),
+    'conv_gate_off': ({'conv_gate': False}, ('table_',)),
+    'parallel_block': ({'parallel_block': True}, ('table_',)),
+    'light_conv': ({'conv_gate': False, 'parallel_block': True}, ('table_',)),
+    'mf_ext_sink': (
+        {'readout_activation': None, 'readout_block': {'type': 'swiglu'},
+         'per_layer_readout': True, 'radial_mlp_block': {},
+         'radial_node_cond': True, 'conv_gate': False,
+         'parallel_block': [False, True, True]},
+        ('table_', 'layer_readout', 'radial_node_cond')),
 }
 
 

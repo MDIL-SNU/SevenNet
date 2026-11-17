@@ -281,6 +281,8 @@ READOUT_BLOCK = 'readout_block'
 PER_LAYER_READOUT = 'per_layer_readout'  # linear energy head after every layer
 # None | dict: pre-norm residual blocks in the pair radial MLP (PairRadialMLP)
 RADIAL_MLP_BLOCK = 'radial_mlp_block'
+CONV_GATE = 'conv_gate'  # False: metaformer message branch TP -> linear (no gate)
+PARALLEL_BLOCK = 'parallel_block'  # metaformer conv + FFN from one pre-norm input
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

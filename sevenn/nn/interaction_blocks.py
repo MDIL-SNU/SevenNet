@@ -126,6 +126,8 @@ def Metaformer_interaction_block(
     ffn_moe_table: Optional[torch.Tensor] = None,
     ffn_s2_channels: Optional[int] = None,
     use_norm: bool = True,
+    conv_gate: bool = True,
+    parallel_block: bool = False,
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -141,17 +143,40 @@ def Metaformer_interaction_block(
     Module names self_interaction_1/2 are kept for modality patching.
     use_norm=False (config metaformer_norm: false, ablation): Norm1 and Norm2
     are left out (identity), everything else is unchanged.
+    conv_gate=False (config conv_gate: false): the message branch is
+    TP -> linear, Lin2(Conv(Lin1(Norm1(x)))) with Lin2 (self_interaction_2)
+    mapping straight to the node irreps; no gate and no self_interaction_3,
+    the node-wise nonlinearity is left to the FFN (token mixer + channel
+    MLP split of MetaFormer / PoolFormer, W. Yu et al., arXiv:2111.11418).
+    Linear maps only connect equal irreps, so parity is untouched (the
+    gate's extra 0e gate scalars just disappear).
+    parallel_block=True (config parallel_block): conv and FFN branches read
+    the same pre-norm input and are added (GPT-J, B. Wang and A. Komatsuzaki,
+    github.com/kingoflolz/mesh-transformer-jax (2021); PaLM, A. Chowdhery et
+    al., arXiv:2204.02311, Sec. 2):
+        x = R(x) + FFN(Norm1(x)) + Lin3(Gate(Lin2(Conv(Lin1(Norm1(x))))))
+    The FFN branch (hidden irreps: those of the layer output also present in
+    its input) runs before self_interaction_1 on its own data key and is
+    added into the residual self_cont_tmp (AddToResidual), so in LAMMPS
+    e3gnn/parallel, whose segments are cut after self_interaction_1, it
+    crosses the boundary inside self_cont_tmp with its gradient; the
+    convolution output is added after the cut by self_connection_outro.
     """
-    from .normalization import EquivariantRMSNorm
+    from .ffn_variants import AddToResidual
+    from .normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
+    from .self_connection import SelfConnectionOutro
 
     block = {}
     irreps_node_attr = Irreps(f'{num_species}x0e')
     sc_intro, sc_outro = self_connection_pair
 
-    gate_layer = _gate(
-        irreps_out, act_scalar, act_gate, gate_type, bilinear_paths, bilinear_b
-    )
-    irreps_for_gate_in = gate_layer.get_gate_irreps_in()
+    gate_layer = None
+    irreps_for_gate_in = irreps_out
+    if conv_gate:
+        gate_layer = _gate(
+            irreps_out, act_scalar, act_gate, gate_type, bilinear_paths, bilinear_b
+        )
+        irreps_for_gate_in = gate_layer.get_gate_irreps_in()
 
     block[f'{t}_self_connection_intro'] = sc_intro(
         irreps_x,
@@ -162,6 +187,7 @@ def Metaformer_interaction_block(
         block[f'{t}_norm_1'] = EquivariantRMSNorm(
             irreps_x, data_key_x, eps=norm_eps
         )
+    n_pre = len(block)  # a parallel FFN branch goes here (reads Norm1(x))
     # convolution may run on narrower irreps than the node features (MACE-MH-1)
     irreps_conv = irreps_x if irreps_conv is None else Irreps(irreps_conv)
     block[f'{t}_self_interaction_1'] = IrrepsLinear(
@@ -187,12 +213,13 @@ def Metaformer_interaction_block(
         data_key_in=data_key_x,
         biases=bias_in_linear,
     )
-    block[f'{t}_equivariant_gate'] = gate_layer
-    block[f'{t}_self_interaction_3'] = IrrepsLinear(
-        irreps_out, irreps_out,
-        data_key_in=data_key_x,
-        biases=bias_in_linear,
-    )
+    if gate_layer is not None:
+        block[f'{t}_equivariant_gate'] = gate_layer
+        block[f'{t}_self_interaction_3'] = IrrepsLinear(
+            irreps_out, irreps_out,
+            data_key_in=data_key_x,
+            biases=bias_in_linear,
+        )
     if layer_scale_init is not None:
         block[f'{t}_layer_scale_1'] = LayerScale(
             irreps_out, layer_scale_init, data_key_x
@@ -203,49 +230,59 @@ def Metaformer_interaction_block(
         # ffn_moe_table (type -> expert): shared FFN + one element-group expert,
         # each with half of the dense hidden width (sevenn/nn/moe_ffn.py)
         moe = ffn_moe_table is not None
+        if moe and parallel_block:
+            raise NotImplementedError('parallel_block with ffn_moe')
         scale = ffn_hidden_scale / 2 if moe else ffn_hidden_scale
+        # parallel branch: FFN input = layer input (irreps_x), output added
+        # to the residual (irreps_out)
+        irreps_ffn_in = Irreps(irreps_x) if parallel_block else irreps_out
+        key_ffn = f'{t}_ffn_x' if parallel_block else data_key_x
         irreps_hidden = Irreps(
-            [(int(mul * scale), ir) for mul, ir in irreps_out]
+            [(int(mul * scale), ir) for mul, ir in irreps_out
+             if not parallel_block or ir in irreps_ffn_in]
         )
         irreps_gate_out = irreps_hidden
         if ffn_type == 'swiglu' and all(
             ir.p == 1 for _, ir in irreps_hidden if ir.l == 0
         ):
-            ffn_gate = SwiGLUGate(irreps_hidden, act_scalar, act_gate)
+            ffn_gate = SwiGLUGate(irreps_hidden, act_scalar, act_gate, key_ffn)
         elif ffn_type == 's2_bilinear' and any(
             ir.l > 0 for _, ir in irreps_hidden
         ):
             # scalar-only FFNs (last layer) keep the gate
-            ffn_gate = S2BilinearGate(irreps_hidden, act_scalar, ffn_s2_channels)
+            ffn_gate = S2BilinearGate(
+                irreps_hidden, act_scalar, ffn_s2_channels, key_ffn
+            )
             irreps_gate_out = ffn_gate.irreps_out
         else:
-            ffn_gate = EquivariantGate(irreps_hidden, act_scalar, act_gate)
-        from .normalization import SelfConnectionResidualIntro
-        from .self_connection import SelfConnectionOutro
+            ffn_gate = EquivariantGate(irreps_hidden, act_scalar, act_gate, key_ffn)
 
-        block[f'{t}_ffn_intro'] = SelfConnectionResidualIntro(
-            irreps_out, irreps_out, data_key_x
-        )
-        if use_norm:
-            block[f'{t}_norm_2'] = EquivariantRMSNorm(
-                irreps_out, data_key_x, eps=norm_eps
+        ffn = {}
+        if not parallel_block:
+            ffn[f'{t}_ffn_intro'] = SelfConnectionResidualIntro(
+                irreps_out, irreps_out, data_key_x
             )
+            if use_norm:
+                ffn[f'{t}_norm_2'] = EquivariantRMSNorm(
+                    irreps_out, data_key_x, eps=norm_eps
+                )
         if moe:
             from .moe_ffn import MoEDispatch
-            block[f'{t}_moe_dispatch'] = MoEDispatch(ffn_moe_table, t, data_key_x)
-        block[f'{t}_ffn_linear_1'] = IrrepsLinear(
-            irreps_out, ffn_gate.get_gate_irreps_in(),
+            ffn[f'{t}_moe_dispatch'] = MoEDispatch(ffn_moe_table, t, data_key_x)
+        ffn[f'{t}_ffn_linear_1'] = IrrepsLinear(
+            irreps_ffn_in, ffn_gate.get_gate_irreps_in(),
             data_key_in=data_key_x,
+            data_key_out=key_ffn if parallel_block else None,
             biases=bias_in_linear,
         )
-        block[f'{t}_ffn_gate'] = ffn_gate
+        ffn[f'{t}_ffn_gate'] = ffn_gate
         if ffn_film:
-            block[f'{t}_ffn_film'] = ElementFiLM(
-                irreps_gate_out, num_species, data_key_x
+            ffn[f'{t}_ffn_film'] = ElementFiLM(
+                irreps_gate_out, num_species, key_ffn
             )
-        block[f'{t}_ffn_linear_2'] = IrrepsLinear(
+        ffn[f'{t}_ffn_linear_2'] = IrrepsLinear(
             irreps_gate_out, irreps_out,
-            data_key_in=data_key_x,
+            data_key_in=key_ffn,
             biases=bias_in_linear,
         )
         if moe:
@@ -254,20 +291,26 @@ def Metaformer_interaction_block(
             for k in range(n_exp):
                 key = f'{t}_moe_x{k}'
                 gate_k = EquivariantGate(irreps_hidden, act_scalar, act_gate, key)
-                block[f'{t}_ffn_linear_1_e{k}'] = IrrepsLinear(
+                ffn[f'{t}_ffn_linear_1_e{k}'] = IrrepsLinear(
                     irreps_out, gate_k.get_gate_irreps_in(),
                     data_key_in=key, biases=bias_in_linear,
                 )
-                block[f'{t}_ffn_gate_e{k}'] = gate_k
-                block[f'{t}_ffn_linear_2_e{k}'] = IrrepsLinear(
+                ffn[f'{t}_ffn_gate_e{k}'] = gate_k
+                ffn[f'{t}_ffn_linear_2_e{k}'] = IrrepsLinear(
                     irreps_hidden, irreps_out,
                     data_key_in=key, biases=bias_in_linear,
                 )
-            block[f'{t}_moe_combine'] = MoECombine(n_exp, t, data_key_x)
+            ffn[f'{t}_moe_combine'] = MoECombine(n_exp, t, data_key_x)
         if layer_scale_init is not None:
-            block[f'{t}_layer_scale_2'] = LayerScale(
-                irreps_out, layer_scale_init, data_key_x
+            ffn[f'{t}_layer_scale_2'] = LayerScale(
+                irreps_out, layer_scale_init, key_ffn
             )
-        block[f'{t}_ffn_outro'] = SelfConnectionOutro(data_key_x)
+        if parallel_block:
+            ffn[f'{t}_ffn_to_residual'] = AddToResidual(key_ffn)
+            items = list(block.items())
+            block = dict(items[:n_pre] + list(ffn.items()) + items[n_pre:])
+        else:
+            ffn[f'{t}_ffn_outro'] = SelfConnectionOutro(data_key_x)
+            block.update(ffn)
 
     return block

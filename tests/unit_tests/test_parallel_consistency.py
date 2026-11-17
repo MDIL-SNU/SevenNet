@@ -131,15 +131,27 @@ CONFIGS = {
     'radial_mlp_block_node_cond': {
         **_A4, 'radial_node_cond': True,
         'radial_mlp_block': {'type': 'mlp', 'norm': 'layer'}},
+    'conv_gate_off': {**_A4, 'conv_gate': False},
+    'parallel_block': {**_A4, 'parallel_block': True},
+    'light_conv': {**_A4, 'conv_gate': False, 'parallel_block': True},
+    'mf_ext_sink': {
+        **_A4, 'readout_activation': None, 'readout_block': {'type': 'swiglu'},
+        'per_layer_readout': True, 'radial_mlp_block': {},
+        'radial_node_cond': True, 'conv_attention': {'skip_first': False},
+        'conv_gate': False, 'parallel_block': [False, True, True],
+        'layer_scale_init': 0.1, 'ffn_film': True, 'ffn_type': 'swiglu',
+    },
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
-                              'kitchen_sink', 'per_layer_readout')
+                              'kitchen_sink', 'per_layer_readout',
+                              'light_conv', 'mf_ext_sink')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
 GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
-                           'kitchen_sink', 's2_bilinear') if n in CONFIGS]
+                           'kitchen_sink', 's2_bilinear', 'mf_ext_sink')
+               if n in CONFIGS]
 MODAL = 'mpa'
 
 # (supercell, grid): 2 ranks along a (a ghost tag is reached through both
@@ -492,7 +504,8 @@ def test_parallel_segments_structure(name):
     for k in names0[i0: i1 + 1]:
         if k.startswith('ghost_') or k == 'one_hot_ghost':
             continue
-        if k.endswith('_self_connection_intro'):
+        if k.endswith('_self_connection_intro') or k.startswith('0_ffn_'):
+            # residual of local atoms (parallel_block: the FFN branch too)
             assert f'ghost_{k}' not in names0
             continue
         assert names0.index(f'ghost_{k}') > names0.index(k)
@@ -546,6 +559,51 @@ def test_per_layer_readout_needs_the_residual_path():
     for s in segs:
         s.delete_module_by_key('layer_energy_pack')
         s.delete_module_by_key('layer_energy_unpack')
+    (e, f, _), _ = _e3gnn_parallel(segs, atoms, _config(cf), (2, 1, 1))
+    assert abs(e - ser[0]) < 1e-10 * max(1.0, abs(ser[0]))
+    assert np.abs(f - ser[1]).max() > 1e-3
+
+
+class _SkipModule(torch.nn.Module):
+    def forward(self, data):
+        return data
+
+
+class _AddToX(torch.nn.Module):
+    def __init__(self, key):
+        super().__init__()
+        self.key = key
+
+    def forward(self, data):
+        data[KEY.NODE_FEATURE] = data[KEY.NODE_FEATURE] + data[self.key]
+        return data
+
+
+def test_parallel_block_needs_the_residual_path():
+    """
+    parallel_block: the FFN branch output joins self_cont_tmp before the
+    segment cut; added to x only after the cut (same serial math, the branch
+    carried as a separate tensor) its force contribution is lost
+    """
+    cf = CONFIGS['parallel_block']
+    model = _serial(cf)
+    segs = _segments(model, cf)
+    atoms = _atoms((2, 2, 2))
+    ser = _serial_efs(model, atoms)
+    moved = 0
+    for seg in segs:
+        items = []
+        for k, m in seg._modules.items():
+            t = k.split('_')[0]
+            if k.endswith('_ffn_to_residual') and t != '0':
+                m = _SkipModule()
+                moved += 1
+            items.append((k, m))
+            if k.endswith('_self_connection_outro') and t != '0':
+                items.append((f'{t}_ffn_add_late', _AddToX(f'{t}_ffn_x')))
+        seg._modules.clear()
+        seg._modules.update(items)
+    assert moved == len(segs) - 1
     (e, f, _), _ = _e3gnn_parallel(segs, atoms, _config(cf), (2, 1, 1))
     assert abs(e - ser[0]) < 1e-10 * max(1.0, abs(ser[0]))
     assert np.abs(f - ser[1]).max() > 1e-3

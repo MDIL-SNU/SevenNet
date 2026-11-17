@@ -21,6 +21,7 @@ from .nn.edge_embedding import (
 )
 from .nn.bilinear_gate import BilinearGate
 from .nn.equivariant_gate import EquivariantGate
+from .nn.ffn_variants import AddToResidual
 from .nn.force_output import ForceStressOutputFromEdge
 from .nn.interaction_blocks import (
     Metaformer_interaction_block,
@@ -579,6 +580,18 @@ _SELF_CONNECTION_INTROS = (
 )
 
 
+def _residual_branch(module) -> bool:
+    """
+    module of a parallel_block FFN branch: it reads the node features but only
+    writes its own key / self_cont_tmp (local residual), so ghost atoms need
+    no twin of it
+    """
+    if isinstance(module, AddToResidual):
+        return True
+    key = getattr(module, 'key_output', getattr(module, 'key_x', None))
+    return isinstance(key, str) and key != KEY.NODE_FEATURE
+
+
 def _ghost_twin(name: str, module):
     """
     Copy of a node-wise layer-0 module acting on the ghost features
@@ -645,7 +658,7 @@ def _to_parallel_model(
     names = [key for key, _ in _layers]
     i0, i1 = names.index('onehot_to_feature_x'), names.index('0_self_interaction_1')
     for key, module in list(_layers[i0 : i1 + 1]):
-        if isinstance(module, _SELF_CONNECTION_INTROS):
+        if isinstance(module, _SELF_CONNECTION_INTROS) or _residual_branch(module):
             continue  # residual of local atoms only
         _layers = _insert_after(
             key, (f'ghost_{key}', _ghost_twin(key, module)), _layers
@@ -838,6 +851,7 @@ def build_E3_equivariant_model(
                 'ffn_hidden_scale': config.get(KEY.FFN_HIDDEN_SCALE, 2),
                 'norm_eps': config.get(KEY.NORM_EPS, 1e-5),
                 'use_norm': config.get(KEY.METAFORMER_NORM, True),
+                'conv_gate': config.get(KEY.CONV_GATE, True),
                 'ffn_type': config.get(KEY.FFN_TYPE, 'gate'),
                 'ffn_s2_channels': config.get(KEY.FFN_S2_CHANNELS, None),
                 'layer_scale_init': config.get(KEY.LAYER_SCALE_INIT, None),
@@ -850,6 +864,18 @@ def build_E3_equivariant_model(
         )
     else:
         raise ValueError(f'Unknown interaction type: {interaction_type}')
+    parallel_block = config.get(KEY.PARALLEL_BLOCK, False)  # bool or per layer
+    if not isinstance(parallel_block, list):
+        parallel_block = [parallel_block] * num_convolution_layer
+    assert len(parallel_block) == num_convolution_layer, 'parallel_block per layer'
+    if interaction_type != 'metaformer' and (
+        any(parallel_block) or not config.get(KEY.CONV_GATE, True)
+    ):
+        raise ValueError('conv_gate / parallel_block need metaformer blocks')
+    if not config.get(KEY.CONV_GATE, True) and (
+        config.get(KEY.GATE_TYPE, 'gate') == 'bilinear'
+    ):
+        raise ValueError('gate_type bilinear has no gate with conv_gate: false')
 
     irreps_conv_list = config.get(KEY.IRREPS_CONV, None)  # None or per layer
     if irreps_conv_list:
@@ -870,6 +896,10 @@ def build_E3_equivariant_model(
         )
         if interaction_type == 'metaformer':
             param_interaction_block['use_ffn'] = bool(use_ffn[t])
+            if parallel_block[t]:  # default path: key absent (block default)
+                param_interaction_block['parallel_block'] = True
+            else:
+                param_interaction_block.pop('parallel_block', None)
         if interaction_type in ['nequip', 'metaformer']:
             parity_mode = 'full'
             fix_multiplicity = False

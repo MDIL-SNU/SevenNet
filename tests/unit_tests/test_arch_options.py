@@ -946,3 +946,113 @@ def test_radial_mlp_block(block):
 def test_radial_mlp_block_needs_pair_radial():
     with pytest.raises(ValueError):
         get_model({**_metaformer, 'radial_mlp_block': {}})
+
+
+def _inversion_check(model):
+    """E invariant and F odd under inversion (parity of the 0o/1e/2o paths)"""
+    from tests.unit_tests.test_model import _graph_list
+
+    model.set_is_batch_data(False)
+    g = _graph_list[0].clone()
+    g_inv = g.clone()
+    g_inv[KEY.POS] = -g[KEY.POS]
+    if KEY.CELL in g:
+        g_inv[KEY.CELL] = -g[KEY.CELL]
+    if KEY.EDGE_VEC in g:
+        g_inv[KEY.EDGE_VEC] = -g[KEY.EDGE_VEC]
+    o, o_i = model(g.clone()), model(g_inv)
+    assert torch.allclose(o_i[KEY.PRED_TOTAL_ENERGY], o[KEY.PRED_TOTAL_ENERGY],
+                          atol=1e-4)
+    assert torch.allclose(o_i[KEY.PRED_FORCE], -o[KEY.PRED_FORCE], atol=1e-4)
+
+
+_full_parity = ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
+                '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'conv_gate': False},
+    {**_metaformer, 'conv_gate': False, 'irreps_manual': _full_parity},
+    {**_metaformer, 'parallel_block': True},
+    {**_metaformer, 'conv_gate': False, 'parallel_block': True,
+     'radial_pair_embedding': True, 'irreps_manual': _full_parity},
+    {**_metaformer, 'parallel_block': [False, True, True], 'ffn_type': 'swiglu',
+     'layer_scale_init': 0.1, 'ffn_film': True, 'per_layer_readout': True},
+    {**_metaformer, 'parallel_block': True, 'ffn_type': 's2_bilinear',
+     'lmax': 3, 'irreps_manual': ['4x0e', '4x0e+4x1o+4x2e+4x3o',
+                                  '4x0e+4x1o+4x2e+4x3o', '4x0e']},
+])
+def test_light_conv(cf):
+    """conv_gate: false (TP -> linear) and parallel_block (conv + FFN branches
+    from the same pre-norm input)"""
+    from e3nn.util.jit import script
+
+    from sevenn.model_build import build_E3_equivariant_model
+    from sevenn.nn.ffn_variants import AddToResidual, ElementFiLM
+    from sevenn.train.muon import build_muon_param_groups
+    from tests.unit_tests.test_model import get_model_config
+
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    names = list(mods)
+    n_layer = 3
+    pb = cf.get('parallel_block', False)
+    pb = pb if isinstance(pb, list) else [pb] * n_layer
+    irreps = cf['irreps_manual']
+    for t in range(n_layer):
+        si2 = mods[f'{t}_self_interaction_2']
+        if not cf.get('conv_gate', True):
+            assert f'{t}_equivariant_gate' not in mods
+            assert f'{t}_self_interaction_3' not in mods
+            assert Irreps(si2.irreps_out) == Irreps(irreps[t + 1])
+        else:
+            assert f'{t}_self_interaction_3' in mods
+        if pb[t]:
+            assert f'{t}_norm_2' not in mods and f'{t}_ffn_intro' not in mods
+            add = mods[f'{t}_ffn_to_residual']
+            assert isinstance(add, AddToResidual)
+            i_si1 = names.index(f'{t}_self_interaction_1')
+            assert names.index(f'{t}_norm_1') < names.index(f'{t}_ffn_linear_1')
+            assert names.index(f'{t}_ffn_to_residual') == i_si1 - 1
+            lin1 = mods[f'{t}_ffn_linear_1']
+            assert lin1.key_input == KEY.NODE_FEATURE
+            assert lin1.key_output == add.key_in != KEY.NODE_FEATURE
+            assert Irreps(lin1.irreps_in) == Irreps(irreps[t])
+            assert Irreps(mods[f'{t}_ffn_linear_2'].irreps_out) == Irreps(
+                irreps[t + 1])
+        else:
+            assert f'{t}_ffn_outro' in mods and f'{t}_norm_2' in mods
+    with torch.no_grad():
+        for m in mods.values():
+            if isinstance(m, ElementFiLM):
+                m.gamma.normal_(0, 0.3)
+                m.beta.normal_(0, 0.3)
+        for n, p in model.named_parameters():
+            if 'layer_readout' in n:
+                p.normal_(0, 0.3)
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    assert torch.isfinite(f).all() and f.abs().sum() > 0
+    _inversion_check(model)
+    build_muon_param_groups(model)
+    script(model.eval())
+    # e3gnn/parallel: layer-0 FFN branch needs no ghost twin
+    config = get_model_config()
+    config.update(cf)
+    segs = build_E3_equivariant_model(config, parallel=True)
+    names0 = list(segs[0]._modules)
+    assert not any(k.startswith('ghost_0_ffn') for k in names0)
+
+
+def test_light_conv_errors():
+    with pytest.raises(ValueError):
+        get_model({**_partial, 'conv_gate': False})
+    with pytest.raises(ValueError):
+        get_model({**_partial, 'parallel_block': True})
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'conv_gate': False, 'gate_type': 'bilinear'})
+    with pytest.raises(NotImplementedError):
+        get_model({**_metaformer, 'parallel_block': True, 'ffn_moe': True})

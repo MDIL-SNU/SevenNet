@@ -327,10 +327,13 @@ class Logger(metaclass=Singleton):
                 model.get_irreps_in(f'{i}_self_interaction_1'),
             )
         i = config[KEY.NUM_CONVOLUTION] - 1
-        kv_write(
-            'readout irreps',
-            model.get_irreps_in(f'{i}_equivariant_gate', 'irreps_out'),
-        )
+        # the gate is absent with conv_gate: false; fall back to the last linear
+        readout_irreps = None
+        for name in (f'{i}_equivariant_gate', f'{i}_self_interaction_3'):
+            if name in model._modules:
+                readout_irreps = model.get_irreps_in(name, 'irreps_out')
+                break
+        kv_write('readout irreps', readout_irreps)
 
         num_weights = sum(p.numel() for p in model.parameters() if p.requires_grad)
         self.writeline(f'# learnable parameters: {num_weights}\n')

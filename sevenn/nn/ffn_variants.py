@@ -11,6 +11,8 @@ all off by default):
 - S2BilinearGate: exactly equivariant bilinear product of two hidden
   features on a spherical quadrature grid (Gaunt tensor product), plus a
   SwiGLU scalar branch (ffn_type 's2_bilinear', see the class docstring).
+- AddToResidual: adds a branch output to the saved residual self_cont_tmp
+  (parallel_block: conv and FFN branches from the same pre-norm input).
 """
 
 import math
@@ -306,5 +308,24 @@ class S2BilinearGate(nn.Module):
         z = torch.matmul(ga * gb, self.from_grid).view(n, -1)  # [N, C*K]
         data[self.key_x] = torch.cat(
             [self.act(s), z.index_select(1, self.perm_out)], dim=-1
+        )
+        return data
+
+
+@compile_mode('script')
+class AddToResidual(nn.Module):
+    """
+    self_cont_tmp <- self_cont_tmp + data[key] (metaformer parallel_block:
+    the FFN branch output joins the residual before self_interaction_1, so
+    that it crosses the LAMMPS e3gnn/parallel segment cut with its gradient)
+    """
+
+    def __init__(self, data_key_in: str) -> None:
+        super().__init__()
+        self.key_in = data_key_in
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        data[KEY.SELF_CONNECTION_TEMP] = (
+            data[KEY.SELF_CONNECTION_TEMP] + data[self.key_in]
         )
         return data
