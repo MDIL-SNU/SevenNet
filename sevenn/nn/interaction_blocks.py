@@ -8,6 +8,7 @@ import sevenn._keys as KEY
 
 from .convolution import IrrepsConvolution
 from .equivariant_gate import EquivariantGate
+from .ffn_variants import SwiGLUGate
 from .linear import IrrepsLinear
 
 
@@ -96,6 +97,7 @@ def Metaformer_interaction_block(
     use_ffn: bool = True,
     ffn_hidden_scale: int = 2,
     norm_eps: float = 1e-5,
+    ffn_type: str = 'gate',
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -160,7 +162,12 @@ def Metaformer_interaction_block(
         irreps_hidden = Irreps(
             [(mul * ffn_hidden_scale, ir) for mul, ir in irreps_out]
         )
-        ffn_gate = EquivariantGate(irreps_hidden, act_scalar, act_gate)
+        if ffn_type == 'swiglu' and all(
+            ir.p == 1 for _, ir in irreps_hidden if ir.l == 0
+        ):
+            ffn_gate = SwiGLUGate(irreps_hidden, act_scalar, act_gate)
+        else:
+            ffn_gate = EquivariantGate(irreps_hidden, act_scalar, act_gate)
         from .normalization import SelfConnectionResidualIntro
         from .self_connection import SelfConnectionOutro
 

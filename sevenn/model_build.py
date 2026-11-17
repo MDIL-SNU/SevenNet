@@ -676,6 +676,7 @@ def build_E3_equivariant_model(
                 'use_ffn': True,  # set per layer below
                 'ffn_hidden_scale': config.get(KEY.FFN_HIDDEN_SCALE, 2),
                 'norm_eps': config.get(KEY.NORM_EPS, 1e-5),
+                'ffn_type': config.get(KEY.FFN_TYPE, 'gate'),
             }
         )
     else:

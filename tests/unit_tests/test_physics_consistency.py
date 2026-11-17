@@ -36,6 +36,7 @@ CONFIGS = {
         'trainable_coeff': False}},
     'pair_radial': {**_metaformer, 'radial_pair_embedding': True},
     'silu_readout': {**_metaformer, 'readout_activation': 'silu'},
+    'swiglu': {**_metaformer, 'ffn_type': 'swiglu'},
 }
 
 
@@ -180,7 +181,7 @@ def _dimer_tail(model, h=1e-3):
     return out
 
 
-@pytest.mark.parametrize('name', ['metaformer', 'pair_radial'])
+@pytest.mark.parametrize('name', ['metaformer', 'pair_radial', 'swiglu'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must

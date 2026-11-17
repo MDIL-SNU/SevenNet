@@ -257,6 +257,7 @@ FFN_HIDDEN_SCALE = 'ffn_hidden_scale'
 NORM_EPS = 'norm_eps'
 USE_FINAL_NORM = 'use_final_norm'
 RADIAL_PAIR_EMBEDDING = 'radial_pair_embedding'
+FFN_TYPE = 'ffn_type'  # metaformer FFN nonlinearity: 'gate' | 'swiglu'
 READOUT_ACTIVATION = 'readout_activation'  # act between the two readout linears
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 

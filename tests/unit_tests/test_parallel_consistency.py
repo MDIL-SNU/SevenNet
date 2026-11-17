@@ -80,6 +80,7 @@ CONFIGS = {
     'A0_nequip_linear_sc': _A0,
     # metaformer block, node-local FFN / gate / residual variants
     'A2_metaformer': _A2,
+    'swiglu': {**_A2, 'ffn_type': 'swiglu'},
     'ffn_hidden_scale_4': {**_A2, 'ffn_hidden_scale': 4},
     'final_norm_no_ffn': {**_A2, 'use_final_norm': True, 'use_ffn': False},
     'linear_residual': {**_A2, 'self_connection_type': 'linear'},

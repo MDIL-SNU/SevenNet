@@ -210,3 +210,29 @@ def test_metaformer_ffn_per_layer():
     names = list(dict(model.named_children()))
     assert '1_ffn_linear_1' in names
     assert '0_ffn_linear_1' not in names and '2_ffn_linear_1' not in names
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'ffn_type': 'swiglu'},
+])
+def test_ffn_variants(cf):
+    from e3nn.util.jit import script
+
+    from sevenn.nn.ffn_variants import SwiGLUGate
+    from sevenn.train.muon import build_muon_param_groups
+
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    if cf.get('ffn_type') == 'swiglu':
+        assert isinstance(mods['1_ffn_gate'], SwiGLUGate)
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert all(('film' in n or 'layer_scale' in n) <= (n in adam)
+               for n in name.values())
+    script(model.eval())
