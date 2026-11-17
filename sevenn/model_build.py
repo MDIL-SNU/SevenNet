@@ -647,6 +647,12 @@ def build_E3_equivariant_model(
                 parity_mode,
                 fix_multiplicity,
             )
+            if config.get(KEY.DROP_UNUSED_TP_IRREPS, False):
+                # self_interaction_2 cannot map irreps absent in irreps_out
+                used = {ir for _, ir in Irreps(irreps_out)}
+                irreps_out_tp = Irreps(
+                    [(mul, ir) for mul, ir in irreps_out_tp if ir in used]
+                )
         else:
             raise ValueError(f'Unknown interaction type: {interaction_type}')
         param_interaction_block.update(
