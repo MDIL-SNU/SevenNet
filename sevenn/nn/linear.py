@@ -2,6 +2,7 @@ from typing import Callable, List, Optional
 
 import torch
 import torch.nn as nn
+from e3nn.math import normalize2mom
 from e3nn.nn import FullyConnectedNet
 from e3nn.o3 import Irreps, Linear
 from e3nn.util.jit import compile_mode
@@ -177,4 +178,18 @@ class FCN_e3nn(nn.Module):
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         data[self.key_output] = self.fcn(data[self.key_input])
+        return data
+
+
+@compile_mode('script')
+class ScalarActivation(nn.Module):
+    """Second-moment normalized activation on scalar node features."""
+
+    def __init__(self, act: Callable, data_key_x: str = KEY.NODE_FEATURE) -> None:
+        super().__init__()
+        self.act = normalize2mom(act)
+        self.key_x = data_key_x
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        data[self.key_x] = self.act(data[self.key_x])
         return data

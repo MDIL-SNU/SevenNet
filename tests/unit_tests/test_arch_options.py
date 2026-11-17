@@ -151,6 +151,30 @@ def test_new_modules_scriptable():
         script(m.eval())
 
 
+def test_readout_activation_keeps_modality():
+    modal = {
+        'use_modality': True,
+        '_number_of_modalities': 2,
+        '_modal_map': {'x1': 0, 'x2': 1},
+        'use_modal_node_embedding': False,
+        'use_modal_self_inter_intro': False,
+        'use_modal_self_inter_outro': False,
+        'use_modal_output_block': True,
+        'use_modal_wise_shift': False,
+        'use_modal_wise_scale': False,
+    }
+    base = get_model(modal)
+    model = get_model({**modal, 'readout_activation': 'silu'})
+    names = list(dict(model.named_children()))
+    i = names.index('reduce_hidden_activation')
+    assert names[i - 1] == 'reduce_input_to_hidden'
+    assert names[i + 1] == 'reduce_hidden_to_energy'
+    # modal output block (extra modal one-hot inputs) is still there
+    n_base = sum(p.numel() for p in base.parameters())
+    assert sum(p.numel() for p in model.parameters()) == n_base
+    assert model.reduce_input_to_hidden.num_modalities == 2
+
+
 def test_muon_routing_new_modules():
     from sevenn.train.muon import build_muon_param_groups
 

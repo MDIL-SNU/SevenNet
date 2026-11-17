@@ -35,6 +35,7 @@ CONFIGS = {
         'radial_basis_name': 'bessel', 'bessel_basis_num': 8,
         'trainable_coeff': False}},
     'pair_radial': {**_metaformer, 'radial_pair_embedding': True},
+    'silu_readout': {**_metaformer, 'readout_activation': 'silu'},
 }
 
 

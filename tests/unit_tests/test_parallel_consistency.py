@@ -73,6 +73,7 @@ _modal = {  # as our runs and 7net-omni (deployed with a modal)
 _A0 = {**_partial, **_xplor, **_modal}  # nequip block, linear residual
 _A2 = {**_metaformer, **_xplor, **_modal}  # metaformer, identity residual
 _A3 = {**_A2, 'radial_pair_embedding': True}
+_A4 = {**_A3, 'readout_activation': 'silu'}
 CONFIGS = {
     # nequip block (original SevenNet path)
     'nequip_sc': {},
@@ -84,6 +85,12 @@ CONFIGS = {
     'linear_residual': {**_A2, 'self_connection_type': 'linear'},
     # element-pair radial MLP and the edge-embedding options it reads
     'A3_pair_radial': _A3,
+    'A4_silu_readout': _A4,
+    'poly_envelope': {**_A4, 'cutoff_function': {
+        'cutoff_function_name': 'poly_cut', 'poly_cut_p_value': 6}},
+    'frozen_bessel': {**_A4, 'radial_basis': {
+        'radial_basis_name': 'bessel', 'bessel_basis_num': 8,
+        'trainable_coeff': False}},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',

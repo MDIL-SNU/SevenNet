@@ -257,6 +257,7 @@ FFN_HIDDEN_SCALE = 'ffn_hidden_scale'
 NORM_EPS = 'norm_eps'
 USE_FINAL_NORM = 'use_final_norm'
 RADIAL_PAIR_EMBEDDING = 'radial_pair_embedding'
+READOUT_ACTIVATION = 'readout_activation'  # act between the two readout linears
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

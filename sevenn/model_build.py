@@ -24,7 +24,7 @@ from .nn.interaction_blocks import (
     Metaformer_interaction_block,
     NequIP_interaction_block,
 )
-from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
+from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear, ScalarActivation
 from .nn.node_embedding import GhostAtomTypes, OnehotEmbedding
 from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
 from .nn.radial_pair import EdgePairInput, PairRadialMLP
@@ -143,6 +143,16 @@ def init_feature_reduce(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict
                     data_key_in=KEY.NODE_FEATURE,
                     biases=config[KEY.USE_BIAS_IN_LINEAR],
                 ),
+            }
+        )
+        # optional nonlinearity keeps the modal-aware reduce_input_to_hidden
+        readout_act = config.get(KEY.READOUT_ACTIVATION, None)
+        if readout_act is not None:
+            layers['reduce_hidden_activation'] = ScalarActivation(
+                _const.ACTIVATION[readout_act]
+            )
+        layers.update(
+            {
                 'reduce_hidden_to_energy': IrrepsLinear(
                     hidden_irreps,
                     Irreps([(1, (0, 1))]),
