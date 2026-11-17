@@ -1,4 +1,5 @@
 import math
+from typing import Optional
 
 import torch
 import torch.nn as nn
@@ -178,6 +179,106 @@ class CosineAnnealingWarmupRestarts(_LRScheduler):
             param_group['lr'] = lr
 
 
+class WarmupStableDecayLR(_LRScheduler):
+    """
+    Warmup-stable-decay (WSD) learning-rate schedule, stepped every batch.
+
+    Per optimizer group with peak ``max_lr``: linear warmup from
+    ``max_lr / div_factor`` to ``max_lr`` over the first ``pct_warmup`` of
+    ``total_steps``, constant ``max_lr`` until ``pct_stable_end``, then
+    cosine decay to ``max_lr / (div_factor * final_div_factor)`` at the last
+    step (held there afterwards).  Initial/peak/final learning rates and the
+    phase-boundary convention (``end_step = pct * total_steps - 1``) follow
+    torch ``OneCycleLR``, so swapping ``onecyclelr`` for ``wsd`` with the same
+    ``max_lr``/``div_factor``/``final_div_factor`` only changes the shape.
+
+    Sources (idea only, own implementation):
+      - MiniCPM, Hu et al. 2024, arXiv:2404.06395 (Sec. 4, WSD scheduler).
+      - DPA-4, arXiv:2606.02419 (Table S-16: warmup/stable/decay settings).
+
+    Args:
+        optimizer: wrapped optimizer.
+        max_lr: peak learning rate, float or one value per param group.
+        total_steps: total number of scheduler steps; or give ``epochs`` and
+            ``steps_per_epoch`` (``total_steps`` wins when both are given).
+        pct_warmup: fraction of steps spent in linear warmup.
+        pct_stable_end: fraction of steps at which the cosine decay starts.
+        div_factor: initial lr = max_lr / div_factor.
+        final_div_factor: final lr = initial lr / final_div_factor.
+        last_epoch: index of the last step (-1 for a fresh schedule).
+    """
+
+    def __init__(
+        self,
+        optimizer: torch.optim.Optimizer,
+        max_lr,
+        total_steps: Optional[int] = None,
+        epochs: Optional[float] = None,
+        steps_per_epoch: Optional[int] = None,
+        pct_warmup: float = 0.01,
+        pct_stable_end: float = 0.35,
+        div_factor: float = 25.0,
+        final_div_factor: float = 4.0,
+        last_epoch: int = -1,
+    ) -> None:
+        if total_steps is None:
+            if epochs is None or steps_per_epoch is None:
+                raise ValueError(
+                    'wsd: give total_steps, or epochs and steps_per_epoch'
+                )
+            total_steps = math.ceil(epochs * steps_per_epoch)
+        total_steps = int(total_steps)
+        if total_steps <= 0:
+            raise ValueError(f'wsd: total_steps must be > 0, got {total_steps}')
+        if not 0.0 <= pct_warmup <= pct_stable_end <= 1.0:
+            raise ValueError(
+                'wsd: need 0 <= pct_warmup <= pct_stable_end <= 1, got '
+                f'{pct_warmup}, {pct_stable_end}'
+            )
+        n_group = len(optimizer.param_groups)
+        if isinstance(max_lr, (list, tuple)):
+            if len(max_lr) != n_group:
+                raise ValueError(
+                    f'wsd: expected {n_group} max_lr values, got {len(max_lr)}'
+                )
+            max_lrs = [float(v) for v in max_lr]
+        else:
+            max_lrs = [float(max_lr)] * n_group
+
+        self.total_steps = total_steps
+        self.pct_warmup = float(pct_warmup)
+        self.pct_stable_end = float(pct_stable_end)
+        self.max_lrs = max_lrs
+        self.initial_lrs = [v / div_factor for v in max_lrs]
+        self.min_lrs = [v / final_div_factor for v in self.initial_lrs]
+        # phase ends in step units, OneCycleLR convention
+        self.warmup_end = self.pct_warmup * total_steps - 1
+        self.stable_end = self.pct_stable_end * total_steps - 1
+        self.decay_end = float(total_steps - 1)
+        if last_epoch == -1:
+            for group, lr in zip(optimizer.param_groups, self.initial_lrs):
+                group['initial_lr'] = lr
+        super().__init__(optimizer, last_epoch)
+
+    def _lr_at(self, step: float, idx: int) -> float:
+        lr0 = self.initial_lrs[idx]
+        lr_max = self.max_lrs[idx]
+        lr_min = self.min_lrs[idx]
+        if self.warmup_end > 0 and step <= self.warmup_end:
+            return lr0 + (lr_max - lr0) * step / self.warmup_end
+        if step <= self.stable_end:
+            return lr_max
+        if step >= self.decay_end:
+            return lr_min
+        start = max(self.stable_end, self.warmup_end, 0.0)
+        pct = (step - start) / (self.decay_end - start)
+        return lr_min + (lr_max - lr_min) * 0.5 * (1.0 + math.cos(math.pi * pct))
+
+    def get_lr(self):
+        step = self.last_epoch
+        return [self._lr_at(step, i) for i in range(len(self.max_lrs))]
+
+
 scheduler_dict = {
     'steplr': scheduler.StepLR,
     'multisteplr': scheduler.MultiStepLR,
@@ -187,6 +288,7 @@ scheduler_dict = {
     'reducelronplateau': scheduler.ReduceLROnPlateau,
     'linearlr': scheduler.LinearLR,
     'onecyclelr': scheduler.OneCycleLR,
+    'wsd': WarmupStableDecayLR,
 }
 
 loss_dict = {

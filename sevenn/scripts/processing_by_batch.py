@@ -34,7 +34,8 @@ def update_config_for_batch_training(config: Dict[str, Any], loaders) -> None:
         KEY.SCHEDULER_BATCH_MODE, False
     )
 
-    if scheduler_type == 'onecyclelr':  # special case, always batch mode
+    # special case, always batch mode
+    if scheduler_type in ('onecyclelr', 'wsd'):
         total_steps = scheduler_param.get('total_steps', None)
         if total_steps is None:
             # total_steps not given, automatically calculated
