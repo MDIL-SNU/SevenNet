@@ -1476,3 +1476,201 @@ def test_norm_magnitude_errors():
                    'norm_magnitude': True})
     get_model({**_metaformer, 'metaformer_norm': False, 'use_final_norm': True,
                'norm_magnitude': True})
+
+
+def test_magnitude_residual_module():
+    """
+    MagnitudeResidualOutro: gamma = 0 is SelfConnectionOutro (bitwise);
+    log rho is the log of the RMS EquivariantRMSNorm divides by; the gain is
+    (c rho / rho_ref)^gamma for an input scaled by c; gamma is clipped to
+    [0, gamma_max] with a straight-through gradient; the gain is invariant
+    (rotation, parity: 0o channels are not centered)
+    """
+    import math
+
+    from e3nn.o3 import rand_matrix
+
+    from sevenn.nn.normalization import (
+        EquivariantRMSNorm,
+        MagnitudeResidualOutro,
+    )
+    from sevenn.nn.self_connection import SelfConnectionOutro
+
+    irreps = Irreps('6x0e+2x0o+4x1o+2x2e')
+    tmp = KEY.SELF_CONNECTION_TEMP
+    torch.manual_seed(0)
+    x_in = torch.randn(5, irreps.dim, dtype=torch.float64) * 3.0 + 1.0
+    b = torch.randn(5, irreps.dim, dtype=torch.float64)
+    mod = MagnitudeResidualOutro(irreps, irreps, 'x', rho_ref=2.0).double()
+    assert list(mod.state_dict()) == ['gamma'] and mod.gamma.item() == 0.0
+    plain = SelfConnectionOutro('x')
+    out = mod({'x': b.clone(), tmp: x_in.clone()})
+    assert torch.equal(out['x'], plain({'x': b.clone(), tmp: x_in.clone()})['x'])
+    assert tmp not in out
+    # rho = 1 / inv_rms of the norm (centered over 0e, balanced, eps)
+    norm = EquivariantRMSNorm(irreps, 'x', affine=False).double()
+    y = norm({'x': x_in.clone()})['x']
+    mask = norm.scalar_mask
+    xc = x_in - (x_in * mask).sum(-1, keepdim=True) / 6 * mask
+    rho = torch.sqrt((xc ** 2 * norm.balance).sum(-1) + norm.eps)
+    assert torch.allclose(mod.log_rho(x_in), rho.log(), atol=1e-12)
+    assert torch.allclose(y, xc / rho.unsqueeze(-1), atol=1e-12)
+    for theta, g_eff in ((0.6, 0.6), (-0.5, 0.0), (2.0, 1.0)):
+        with torch.no_grad():
+            mod.gamma.fill_(theta)
+        assert mod.effective_gamma().item() == g_eff
+        for c in (1.0, 7.0):
+            out = mod({'x': b.clone(), tmp: c * x_in})['x']
+            gain = ((c * c * (rho ** 2 - norm.eps) + norm.eps).sqrt() / 2.0) ** g_eff
+            assert torch.allclose(out, c * x_in + gain.unsqueeze(-1) * b,
+                                  atol=1e-10)
+        # straight-through: theta gets d loss / d gamma also when clipped
+        mod.gamma.grad = None
+        mod({'x': b.clone(), tmp: x_in.clone()})['x'].sum().backward()
+        assert mod.gamma.grad.abs().item() > 0
+    # rotation / parity: the gain is invariant, the output equivariant
+    with torch.no_grad():
+        mod.gamma.fill_(0.7)
+    out = mod({'x': b.clone(), tmp: x_in.clone()})['x']
+    for R in (rand_matrix().double(), -rand_matrix().double()):
+        D = irreps.D_from_matrix(R)
+        out_r = mod({'x': b @ D.T, tmp: x_in @ D.T})['x']
+        assert torch.allclose(out_r, out @ D.T, atol=1e-10)
+    # projection (last layer: irreps_out = the 0e channels of the input)
+    proj = MagnitudeResidualOutro(irreps, Irreps('6x0e'), 'x').double()
+    with torch.no_grad():
+        proj.gamma.fill_(1.0)
+    out = proj({'x': b[:, :6].clone(), tmp: x_in.clone()})['x']
+    assert torch.allclose(out, x_in[:, :6] + rho.unsqueeze(-1) * b[:, :6])
+    assert math.isclose(proj.log_rho_ref, 0.0)
+    assert math.isclose(mod.log_rho_ref, math.log(2.0))
+    # several 0e blocks (centered together) and no 0e (no centering): rho of
+    # the norm as well
+    for irr in ('3x0e+2x1o+5x0e', '4x1o+2x2e'):
+        irr = Irreps(irr)
+        m2 = MagnitudeResidualOutro(irr, irr, 'x').double()
+        n2 = EquivariantRMSNorm(irr, 'x', affine=False).double()
+        z = torch.randn(5, irr.dim, dtype=torch.float64) * 2.0 + 0.5
+        y2 = n2({'x': z.clone()})['x']
+        r2 = torch.exp(m2.log_rho(z))
+        zc = z
+        if n2.centering:
+            zc = z - (z * n2.scalar_mask).sum(-1, keepdim=True) / n2.num_scalars * (
+                n2.scalar_mask)
+        assert m2.centering == n2.centering
+        assert torch.allclose(y2, zc / r2.unsqueeze(-1), atol=1e-12)
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'radial_pair_embedding': True, 'ffn_type': 's2_bilinear',
+     'magnitude_residual': True},
+    {**_metaformer, 'magnitude_residual': {'gamma_max': 0.8, 'rho_ref': 1.5},
+     'readout_block': {}, 'per_layer_readout': True, 'conv_gate': False,
+     'layer_scale_init': 0.1, 'norm_magnitude': True, 'use_final_norm': True},
+    {**_metaformer, 'radial_pair_embedding': True,
+     'magnitude_residual': {'branches': 'conv'}, 'readout_block': {}},
+    {**_metaformer, 'magnitude_residual': {'branches': 'ffn'}},
+])
+def test_magnitude_residual(cf):
+    """every pre-norm branch but the layer-0 conv gets the zero-init gain"""
+    from e3nn.util.jit import script
+
+    from sevenn.logger import Logger
+    from sevenn.model_build import build_E3_equivariant_model
+    from sevenn.nn.normalization import (
+        MagnitudeResidualOutro,
+        SelfConnectionResidualIntro,
+    )
+    from sevenn.train.muon import build_muon_param_groups
+    from tests.unit_tests.test_model import get_model_config
+
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'magnitude_residual': False})
+    model = get_model(cf)
+    outs = {k: m for k, m in model.named_children()
+            if isinstance(m, MagnitudeResidualOutro)}
+    n_layer = sum(k.endswith('_convolution') for k, _ in model.named_children())
+    branches = cf['magnitude_residual']
+    branches = branches.get('branches', 'all') if branches is not True else 'all'
+    expect = set()
+    if branches != 'conv':
+        expect |= {f'{t}_ffn_outro' for t in range(n_layer)}
+        if cf.get('readout_block') is not None:
+            expect.add('readout_ffn_outro')
+    if branches != 'ffn':
+        expect |= {f'{t}_self_connection_outro' for t in range(1, n_layer)}
+    assert set(outs) == expect
+    assert all(m.gamma.item() == 0.0 for m in outs.values())
+    last = f'{n_layer - 1}_self_connection'
+    key_full = model._modules[f'{last}_intro'].key_full
+    assert (key_full != '') == (branches != 'ffn')
+    if branches != 'ffn':
+        assert outs[f'{last}_outro'].key_full == key_full
+    missing, unexpected = model.load_state_dict(ref.state_dict(), strict=False)
+    assert not unexpected and sorted(missing) == sorted(f'{k}.gamma' for k in outs)
+    ref.set_is_batch_data(True)
+    model.set_is_batch_data(True)
+    o_ref = ref(get_graphs(batched=True))
+    o = model(get_graphs(batched=True))
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE, KEY.PRED_STRESS):
+        assert torch.equal(o_ref[k], o[k]), k  # gamma = 0: bitwise the base
+    assert not any('magnitude_residual' in k for k in o)
+    o[KEY.PRED_TOTAL_ENERGY].sum().backward()
+    assert all(m.gamma.grad.abs().item() > 0 for m in outs.values())
+    with torch.no_grad():
+        for m in outs.values():
+            m.gamma.fill_(0.6)
+    o2 = model(get_graphs(batched=True))
+    assert (o2[KEY.PRED_FORCE] - o[KEY.PRED_FORCE]).abs().max() > 1e-4
+    out, out_rot, R = _rotated_pair(model)
+    e, e_r = out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert {f'{k}.gamma' for k in outs} <= adam
+    from tests.unit_tests.test_model import _graph_list
+
+    model.eval()
+    model.set_is_batch_data(False)
+    g = _graph_list[0].clone()
+    ref_out = model(g.clone())  # before scripting (e3nn scripts in place)
+    inp = {k: v for k, v in g.to_dict().items() if isinstance(v, torch.Tensor)}
+    inp[KEY.NODE_FEATURE] = model._atomic_numbers_to_onehot(inp[KEY.ATOMIC_NUMBERS])
+    model.eval_type_map = False  # as sevenn deploy
+    out_s = torch.jit.freeze(script(model))(inp)
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE):
+        assert torch.allclose(out_s[k], ref_out[k], atol=1e-5), k
+    config = get_model_config()
+    config.update(cf)
+    Logger().print_model_info(model, config)
+    segs = build_E3_equivariant_model(config, parallel=True)
+    intros = [(k, m) for s in segs for k, m in s._modules.items()
+              if isinstance(m, SelfConnectionResidualIntro)]
+    stored = [f'{last}_intro'] if branches != 'ffn' else []
+    assert [k for k, m in intros if m.store_input] == stored
+    assert all(m.key_full == '' for _, m in intros)
+
+
+def test_magnitude_residual_errors():
+    import sevenn._const as _const
+
+    with pytest.raises(ValueError):  # nequip block
+        get_model({**_partial, 'magnitude_residual': True})
+    with pytest.raises(ValueError):  # no pre-norm
+        get_model({**_metaformer, 'metaformer_norm': False,
+                   'magnitude_residual': True})
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'parallel_block': [False, True, True],
+                   'magnitude_residual': True})
+    with pytest.raises(ValueError):  # linear residual
+        get_model({**_metaformer, 'self_connection_type': 'linear',
+                   'magnitude_residual': True})
+    cond = _const.MODEL_CONFIG_CONDITION[KEY.MAGNITUDE_RESIDUAL]
+    assert cond(False) and cond(True) and cond(None) and cond({})
+    assert cond({'gamma_max': 0.5, 'rho_ref': 2.0})
+    assert not cond({'gamma_max': 1.5}) and not cond({'gamma_max': 0.0})
+    assert not cond({'rho_ref': 0.0}) and not cond({'gamma': 1.0})
+    assert cond({'branches': 'conv'}) and not cond({'branches': 'readout'})

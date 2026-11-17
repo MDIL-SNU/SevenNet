@@ -918,6 +918,14 @@ MFEXT_CONFIGS = {
         {'norm_magnitude': True, 'readout_activation': None,
          'readout_block': {}, 'parallel_block': [False, True, True]},
         ('table_', 'mag_weight', 'readout_norm')),
+    'magnitude_residual': (
+        {'magnitude_residual': True, 'ffn_type': 's2_bilinear'},
+        ('table_', '_outro.gamma')),
+    'magnitude_residual_readout': (
+        {'magnitude_residual': {'gamma_max': 0.8, 'rho_ref': 1.5},
+         'readout_activation': None, 'readout_block': {},
+         'norm_magnitude': True},
+        ('table_', '_outro.gamma', 'mag_weight', 'readout_norm')),
     'mf_ext_sink': (
         {'readout_activation': None, 'readout_block': {'type': 'swiglu'},
          'per_layer_readout': True, 'radial_mlp_block': {},
@@ -972,6 +980,8 @@ def _mfext_backends(name):
         for n, q in model_e3nn.named_parameters():
             if any(r in n for r in rand):
                 q.copy_(0.3 * torch.randn(q.shape, generator=gen))
+                if n.endswith('_outro.gamma'):  # active (clipped at 0)
+                    q.abs_().add_(0.1)
     model_lunatp = get_model(cf, use_lunatp=True)
     missing, unexpected = model_lunatp.load_state_dict(
         model_e3nn.state_dict(), strict=False

@@ -2,7 +2,7 @@ import copy
 import os
 import warnings
 from collections import OrderedDict
-from typing import Any, Dict, List, Literal, Tuple, Type, Union, overload
+from typing import Any, Dict, List, Literal, Optional, Tuple, Type, Union, overload
 
 from e3nn.o3 import Irreps
 
@@ -36,7 +36,11 @@ from .nn.layer_readout import (
 )
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear, ScalarActivation
 from .nn.node_embedding import GhostAtomTypes, OnehotEmbedding
-from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
+from .nn.normalization import (
+    EquivariantRMSNorm,
+    MagnitudeResidualOutro,
+    SelfConnectionResidualIntro,
+)
 from .nn.pair_repulsion import PairRepulsion, PairRepulsionToEnergy
 from .nn.radial_pair import EdgePairInput, NodeCondRadialInput, PairRadialMLP
 from .nn.edge_attention import AttentionOutGate, EdgeAttention
@@ -68,6 +72,22 @@ def _insert_after(module_name_after, key_module_pair, layers):
         return layers  # do nothing if not found
     layers.insert(idx + 1, key_module_pair)
     return layers
+
+
+def _magnitude_residual(config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    """
+    config magnitude_residual (false | true | dict) -> None or its options
+    {gamma_max, rho_ref (floats), branches ('all' | 'conv' | 'ffn')}
+    """
+    opt = config.get(KEY.MAGNITUDE_RESIDUAL, False)
+    if not isinstance(opt, dict):
+        return {} if opt else None
+    out: Dict[str, Any] = {
+        k: float(v) for k, v in opt.items() if k in ('gamma_max', 'rho_ref')
+    }
+    if 'branches' in opt:
+        out['branches'] = str(opt['branches'])
+    return out
 
 
 def init_self_connection(config: Dict[str, Any]) -> List[Tuple[Type, Type]]:
@@ -245,6 +265,9 @@ def init_readout_block(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict:
     else:
         gate = EquivariantGate(irreps_hidden, act_scalar, act_gate)
     bias = config[KEY.USE_BIAS_IN_LINEAR]
+    mag_res = _magnitude_residual(config)  # pre-norm FFN branch: same rule
+    if mag_res is not None and mag_res.pop('branches', 'all') == 'conv':
+        mag_res = None
     return OrderedDict({
         'readout_ffn_intro': SelfConnectionResidualIntro(irreps_x, irreps_x),
         'readout_norm': EquivariantRMSNorm(
@@ -259,7 +282,11 @@ def init_readout_block(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict:
         'readout_ffn_linear_2': IrrepsLinear(
             irreps_hidden, irreps_x, data_key_in=KEY.NODE_FEATURE, biases=bias,
         ),
-        'readout_ffn_outro': SelfConnectionOutro(),
+        'readout_ffn_outro': (
+            SelfConnectionOutro() if mag_res is None else MagnitudeResidualOutro(
+                irreps_x, irreps_x, eps=config.get(KEY.NORM_EPS, 1e-5), **mag_res
+            )
+        ),
     })
 
 
@@ -666,6 +693,9 @@ def _to_parallel_model(
       node-conditioned radial MLP) also read x_ghost
     - self_cont_tmp must not be an ancestor of x at a segment boundary
       (identity residual: store a copy)
+    - magnitude_residual: the conv outro after the cut reads rho from
+      self_cont_tmp, so a projecting intro (last layer) stores the full
+      layer input there (store_input) instead of under a second key
     - per-layer readout: the running sum of the layer energies crosses every
       boundary inside self_cont_tmp (LayerEnergyPack / LayerEnergyUnpack),
       so its force contribution is back-propagated with the residual
@@ -729,6 +759,9 @@ def _to_parallel_model(
         elif isinstance(module, SelfConnectionResidualIntro):
             if key.endswith('_self_connection_intro'):
                 module.clone_identity = True
+                if module.key_full != '':  # magnitude_residual, last layer
+                    module.store_input = True  # x_in crosses in self_cont_tmp
+                    module.key_full = ''
     if need_types:
         _layers.insert(0, ('atom_type_all', GhostAtomTypes()))
 
@@ -890,6 +923,7 @@ def build_E3_equivariant_model(
                 'norm_eps': config.get(KEY.NORM_EPS, 1e-5),
                 'use_norm': config.get(KEY.METAFORMER_NORM, True),
                 'norm_magnitude': config.get(KEY.NORM_MAGNITUDE, False),
+                'magnitude_residual': _magnitude_residual(config),
                 'conv_gate': config.get(KEY.CONV_GATE, True),
                 'ffn_type': config.get(KEY.FFN_TYPE, 'gate'),
                 'ffn_s2_channels': config.get(KEY.FFN_S2_CHANNELS, None),
@@ -909,8 +943,11 @@ def build_E3_equivariant_model(
     assert len(parallel_block) == num_convolution_layer, 'parallel_block per layer'
     if interaction_type != 'metaformer' and (
         any(parallel_block) or not config.get(KEY.CONV_GATE, True)
+        or _magnitude_residual(config) is not None
     ):
-        raise ValueError('conv_gate / parallel_block need metaformer blocks')
+        raise ValueError(
+            'conv_gate / parallel_block / magnitude_residual need metaformer blocks'
+        )
     if not config.get(KEY.CONV_GATE, True) and (
         config.get(KEY.GATE_TYPE, 'gate') == 'bilinear'
     ):

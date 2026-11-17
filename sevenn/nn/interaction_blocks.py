@@ -1,5 +1,5 @@
 import os
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 import torch
 from e3nn.o3 import Irreps
@@ -133,6 +133,7 @@ def Metaformer_interaction_block(
     ffn_s2_channels: Optional[int] = None,
     use_norm: bool = True,
     norm_magnitude: bool = False,
+    magnitude_residual: Optional[Dict[str, Any]] = None,
     conv_gate: bool = True,
     parallel_block: bool = False,
     data_key_x: str = KEY.NODE_FEATURE,
@@ -154,6 +155,17 @@ def Metaformer_interaction_block(
     log of the magnitude they divide out on as a 0e feature (zero-
     initialized, EquivariantRMSNorm magnitude); not Norm1 of layer 0, whose
     input (the element embedding) has a per-element constant magnitude.
+    magnitude_residual (config magnitude_residual, dict of gamma_max /
+    rho_ref / branches): every pre-norm branch (branches 'all'; 'conv' /
+    'ffn': only those) is added as (rho / rho_ref)^gamma * branch, rho the
+    RMS its norm divides out (MagnitudeResidualOutro, gamma zero-initialized:
+    the plain block at init). Not the conv branch of layer
+    0, whose Norm1 input is the element embedding (rho a per-element
+    constant: the gain would only rescale the first message per element, no
+    compression signal). Last layer (irreps_out != irreps_x): the outro
+    reads rho from the full layer input, which the intro passes on
+    (SelfConnectionResidualIntro key_full / store_input).
+    Needs identity residuals and pre-norm, not with parallel_block.
     conv_gate=False (config conv_gate: false): the message branch is
     TP -> linear, Lin2(Conv(Lin1(Norm1(x)))) with Lin2 (self_interaction_2)
     mapping straight to the node irreps; no gate and no self_interaction_3,
@@ -174,12 +186,28 @@ def Metaformer_interaction_block(
     convolution output is added after the cut by self_connection_outro.
     """
     from .ffn_variants import AddToResidual
-    from .normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
+    from .normalization import (
+        EquivariantRMSNorm,
+        MagnitudeResidualOutro,
+        SelfConnectionResidualIntro,
+    )
     from .self_connection import SelfConnectionOutro
 
     block = {}
     irreps_node_attr = Irreps(f'{num_species}x0e')
     sc_intro, sc_outro = self_connection_pair
+    mag_res = magnitude_residual is not None
+    if mag_res and (
+        parallel_block or not use_norm or sc_intro is not SelfConnectionResidualIntro
+    ):
+        raise ValueError(
+            'magnitude_residual needs pre-norm blocks with identity residuals '
+            '(metaformer_norm, self_connection_type identity), no parallel_block'
+        )
+    mag_kwargs = dict(magnitude_residual or {})
+    branches = mag_kwargs.pop('branches', 'all')
+    mag_conv = mag_res and t > 0 and branches != 'ffn'  # layer 0: embedding
+    mag_ffn = mag_res and branches != 'conv'
 
     gate_layer = None
     irreps_for_gate_in = irreps_out
@@ -194,6 +222,10 @@ def Metaformer_interaction_block(
         irreps_operand=irreps_node_attr,
         irreps_out=irreps_out,
     )
+    key_full = ''
+    if mag_conv and Irreps(irreps_x) != Irreps(irreps_out):
+        key_full = f'{t}_magnitude_residual_input'  # rho of the full input
+        block[f'{t}_self_connection_intro'].key_full = key_full
     if use_norm:
         block[f'{t}_norm_1'] = EquivariantRMSNorm(
             irreps_x, data_key_x, eps=norm_eps,
@@ -236,7 +268,13 @@ def Metaformer_interaction_block(
         block[f'{t}_layer_scale_1'] = LayerScale(
             irreps_out, layer_scale_init, data_key_x
         )
-    block[f'{t}_self_connection_outro'] = sc_outro()
+    if mag_conv:
+        block[f'{t}_self_connection_outro'] = MagnitudeResidualOutro(
+            irreps_x, irreps_out, data_key_x, eps=norm_eps, key_full=key_full,
+            **mag_kwargs,
+        )
+    else:
+        block[f'{t}_self_connection_outro'] = sc_outro()
 
     if use_ffn:
         # ffn_moe_table (type -> expert): shared FFN + one element-group expert,
@@ -328,7 +366,12 @@ def Metaformer_interaction_block(
             items = list(block.items())
             block = dict(items[:n_pre] + list(ffn.items()) + items[n_pre:])
         else:
-            ffn[f'{t}_ffn_outro'] = SelfConnectionOutro(data_key_x)
+            ffn[f'{t}_ffn_outro'] = (
+                MagnitudeResidualOutro(
+                    irreps_out, irreps_out, data_key_x, eps=norm_eps,
+                    **mag_kwargs,
+                ) if mag_ffn else SelfConnectionOutro(data_key_x)
+            )
             block.update(ffn)
 
     return block

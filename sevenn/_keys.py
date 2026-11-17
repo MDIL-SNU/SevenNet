@@ -294,6 +294,10 @@ RADIAL_SHORT_BASIS = 'radial_short_basis'
 PAIR_REPULSION = 'pair_repulsion'
 # every EquivariantRMSNorm passes its removed scale on as a 0e feature
 NORM_MAGNITUDE = 'norm_magnitude'
+# false | true | {gamma_max: 1.0, rho_ref: 1.0, branches: all|conv|ffn}: every
+# pre-norm residual branch is scaled by (rho / rho_ref)^gamma, rho = the RMS its
+# norm divides out (sevenn/nn/normalization.py MagnitudeResidualOutro)
+MAGNITUDE_RESIDUAL = 'magnitude_residual'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

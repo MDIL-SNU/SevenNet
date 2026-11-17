@@ -10,6 +10,9 @@ for each new op before it is used in training:
   their far-field values continuously) for the polynomial envelope
 - learned pair repulsion: positive, strictly decreasing, C2 at its own pair
   cutoff r_c,ij (exactly zero beyond), for random parameters
+- parameters that start at a value that switches their path off (zero
+  tables, zero weights, magnitude residual exponent 0) are randomized, so
+  every path is differentiated
 """
 import numpy as np
 import pytest
@@ -116,6 +119,17 @@ CONFIGS = {
                          'ffn_type': 's2_bilinear', 'norm_magnitude': True,
                          'pair_repulsion': {'cutoff_scale': 1.4,
                                             'amp_init': 1.0}},
+    'magnitude_residual': {**_metaformer, 'radial_pair_embedding': True,
+                           'ffn_type': 's2_bilinear',
+                           'magnitude_residual': True},
+    'magnitude_residual_conv': {**_metaformer, 'radial_pair_embedding': True,
+                                'magnitude_residual': {'branches': 'conv'}},
+    'magnitude_residual_variants': {
+        **_metaformer, 'magnitude_residual': {'gamma_max': 0.8, 'rho_ref': 1.5},
+        'readout_block': {}, 'per_layer_readout': True, 'conv_gate': False,
+        'layer_scale_init': 0.1, 'norm_magnitude': True,
+        'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
+                          '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
     'light_conv_full_parity': {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
@@ -160,6 +174,8 @@ def _model(cf):
                 p.add_(0.3 * torch.randn_like(p) / c)
             if 'mag_weight' in n:
                 p.normal_(0, 0.3)   # zero-initialized norm magnitude feature
+            if n.endswith('_outro.gamma'):
+                p.uniform_(0.2, 0.9)   # magnitude residual exponent (init 0)
     model.set_is_batch_data(False)
     return model
 
@@ -292,7 +308,8 @@ def _dimer_tail(model, h=1e-3):
                                   'radial_mlp_block_node_cond', 'short_radial',
                                   'short_radial_block_node_cond',
                                   'pair_repulsion', 'norm_magnitude',
-                                  'short_range_both'])
+                                  'short_range_both', 'magnitude_residual',
+                                  'magnitude_residual_variants'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must

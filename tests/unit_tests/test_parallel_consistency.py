@@ -159,6 +159,17 @@ CONFIGS = {
         'parallel_block': [False, True, True], 'ffn_type': 's2_bilinear',
         'pair_repulsion': {'cutoff_scale': 1.4, 'amp_init': 1.0},
     },
+    # magnitude-restoring residual (rho from self_cont_tmp after the cut;
+    # last layer: the full input crosses in self_cont_tmp)
+    'magnitude_residual': {**_A4, 'ffn_type': 's2_bilinear',
+                           'magnitude_residual': True},
+    'magnitude_residual_sink': {
+        **_A4, 'magnitude_residual': {'gamma_max': 0.8, 'rho_ref': 1.5},
+        'readout_activation': None, 'readout_block': {},
+        'per_layer_readout': True, 'conv_gate': False, 'layer_scale_init': 0.1,
+        'norm_magnitude': True, 'use_final_norm': True,
+        'irreps_conv': _irreps_conv,
+    },
     'mf_ext_sink': {
         **_A4, 'readout_activation': None, 'readout_block': {'type': 'swiglu'},
         'per_layer_readout': True, 'radial_mlp_block': {},
@@ -171,14 +182,15 @@ CONFIGS = {
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
                               'kitchen_sink', 'per_layer_readout',
                               'light_conv', 'mf_ext_sink', 'pair_repulsion',
-                              's2_inv', 'short_range_sink')
+                              's2_inv', 'short_range_sink',
+                              'magnitude_residual_sink')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
 GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
                            'kitchen_sink', 's2_bilinear', 'mf_ext_sink',
                            'pair_repulsion_s2', 's2_inv',
-                           'norm_magnitude_s2')
+                           'norm_magnitude_s2', 'magnitude_residual')
                if n in CONFIGS]
 MODAL = 'mpa'
 
@@ -241,6 +253,9 @@ def _randomize(model):
     with torch.no_grad():
         for n, p in model.named_parameters():
             if any(s in n for s in ('denominator', 'rescale', 'coeffs')):
+                continue
+            if n.endswith('_outro.gamma'):  # magnitude residual: active path
+                p.uniform_(0.2, 0.9, generator=gen)
                 continue
             if p.numel() > 0 and bool(torch.all(p == p.reshape(-1)[0])):
                 p.add_(0.3 * torch.randn(p.shape, generator=gen, dtype=p.dtype))
@@ -566,11 +581,14 @@ def test_parallel_segments_structure(name):
                 need_types = True
             if isinstance(m, SelfConnectionResidualIntro):
                 assert m.clone_identity == k.endswith('_self_connection_intro')
+                # magnitude residual: no second key across the cut
+                assert m.key_full == ''
     assert ('atom_type_all' in names0) == need_types
     # the serial model is untouched
     for m in model.modules():
         assert not getattr(m, 'is_parallel', False)
         assert not getattr(m, 'clone_identity', False)
+        assert not getattr(m, 'store_input', False)
         assert getattr(m, 'key_atom_type', KEY.ATOM_TYPE) == KEY.ATOM_TYPE
 
 
@@ -658,6 +676,31 @@ def test_parallel_block_needs_the_residual_path():
     (e, f, _), _ = _e3gnn_parallel(segs, atoms, _config(cf), (2, 1, 1))
     assert abs(e - ser[0]) < 1e-10 * max(1.0, abs(ser[0]))
     assert np.abs(f - ser[1]).max() > 1e-3
+
+
+def test_magnitude_residual_needs_the_residual_path():
+    """
+    magnitude_residual, last layer: the conv outro after the cut takes rho
+    from the full layer input, which crosses inside self_cont_tmp
+    (store_input); passed as a second dict entry (the serial layout) the
+    energy is still right but its force contribution is lost
+    """
+    from sevenn.nn.normalization import SelfConnectionResidualIntro
+
+    cf = CONFIGS['magnitude_residual']
+    model = _serial(cf)
+    segs = _segments(model, cf)
+    intros = [(k, m) for s in segs for k, m in s._modules.items()
+              if isinstance(m, SelfConnectionResidualIntro) and m.store_input]
+    assert len(intros) == 1  # last layer only (irreps_out = 0e)
+    atoms = _atoms((2, 2, 2))
+    ser = _serial_efs(model, atoms)
+    key, intro = intros[0]
+    intro.store_input = False
+    intro.key_full = f"{key.split('_')[0]}_magnitude_residual_input"
+    (e, f, _), _ = _e3gnn_parallel(segs, atoms, _config(cf), (2, 1, 1))
+    assert abs(e - ser[0]) < 1e-10 * max(1.0, abs(ser[0]))
+    assert np.abs(f - ser[1]).max() > 1e-6
 
 
 def _save_checkpoint(model_cf, path, dtype=torch.float32):

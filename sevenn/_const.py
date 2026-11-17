@@ -181,6 +181,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.RADIAL_SHORT_BASIS: None,
     KEY.PAIR_REPULSION: None,
     KEY.NORM_MAGNITUDE: False,
+    KEY.MAGNITUDE_RESIDUAL: False,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -265,6 +266,13 @@ MODEL_CONFIG_CONDITION = {
         and int(x.get('num_basis', 6)) > 0
     ),
     KEY.NORM_MAGNITUDE: bool,
+    KEY.MAGNITUDE_RESIDUAL: lambda x: x is None or isinstance(x, bool) or (
+        isinstance(x, dict)
+        and set(x) <= {'gamma_max', 'rho_ref', 'branches'}
+        and 0.0 < float(x.get('gamma_max', 1.0)) <= 1.0
+        and float(x.get('rho_ref', 1.0)) > 0
+        and x.get('branches', 'all') in ('all', 'conv', 'ffn')
+    ),
     KEY.PAIR_REPULSION: lambda x: x is None or (
         isinstance(x, dict)
         and set(x) <= {
