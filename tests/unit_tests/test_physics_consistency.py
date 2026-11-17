@@ -19,16 +19,19 @@ import sevenn._keys as KEY
 import sevenn.train.dataload as dl
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.util import dtype_correct
-from tests.unit_tests.test_arch_options import _partial
+from tests.unit_tests.test_arch_options import _metaformer, _partial
 from tests.unit_tests.test_model import cutoff, get_model
 
 CONFIGS = {
     'nequip': {},
     'partial_linear_sc': _partial,
-    'xplor': {**_partial,
+    'metaformer': _metaformer,
+    'metaformer_noffn_finalnorm': {**_metaformer, 'use_ffn': False,
+                                   'use_final_norm': True},
+    'xplor': {**_metaformer,
               'cutoff_function': {'cutoff_function_name': 'XPLOR',
                                   'cutoff_on': 3.5}},
-    'frozen_bessel': {**_partial, 'radial_basis': {
+    'frozen_bessel': {**_metaformer, 'radial_basis': {
         'radial_basis_name': 'bessel', 'bessel_basis_num': 8,
         'trainable_coeff': False}},
 }
@@ -175,7 +178,7 @@ def _dimer_tail(model, h=1e-3):
     return out
 
 
-@pytest.mark.parametrize('name', ['partial_linear_sc'])
+@pytest.mark.parametrize('name', ['metaformer'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
@@ -207,7 +210,7 @@ def test_xplor_force_constant_jumps_at_r_on():
     The polynomial envelope has no such point.
     """
     r_on = CONFIGS['xplor']['cutoff_function']['cutoff_on']
-    xplor, smooth = _model(CONFIGS['xplor']), _model(CONFIGS['partial_linear_sc'])
+    xplor, smooth = _model(CONFIGS['xplor']), _model(CONFIGS['metaformer'])
     # a discontinuity does not shrink with the step, smooth variation does
     j1, j2 = (_k_jump(xplor, r_on, delta=d) for d in (0.002, 0.001))
     assert j1 > 0.05 and j2 > 0.8 * j1, (j1, j2)

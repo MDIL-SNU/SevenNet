@@ -12,8 +12,8 @@ NUM_UNIV_ELEMENT = 119  # Z = 0 ~ 118
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 # TODO: support None. This became difficult because of parallel model
-IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
-IMPLEMENTED_INTERACTION_TYPE = ['nequip']
+IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear', 'identity']
+IMPLEMENTED_INTERACTION_TYPE = ['nequip', 'metaformer']
 
 IMPLEMENTED_MODAL_MODULE_DICT = {
     KEY.USE_MODAL_NODE_EMBEDDING: 'onehot_to_feature_x',
@@ -151,6 +151,10 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.READOUT_FCN_ACTIVATION: 'relu',
     KEY.SELF_CONNECTION_TYPE: 'nequip',
     KEY.INTERACTION_TYPE: 'nequip',
+    KEY.USE_FFN: True,
+    KEY.FFN_HIDDEN_SCALE: 2,
+    KEY.NORM_EPS: 1e-5,
+    KEY.USE_FINAL_NORM: False,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -203,6 +207,12 @@ MODEL_CONFIG_CONDITION = {
         )
     ),
     KEY.INTERACTION_TYPE: lambda x: x in IMPLEMENTED_INTERACTION_TYPE,
+    KEY.USE_FFN: lambda x: isinstance(x, bool) or (
+        isinstance(x, list) and all(isinstance(v, bool) for v in x)
+    ),
+    KEY.FFN_HIDDEN_SCALE: int,
+    KEY.NORM_EPS: float,
+    KEY.USE_FINAL_NORM: bool,
     KEY._NORMALIZE_SPH: bool,
     KEY.USE_FLASH_TP: bool,
     KEY.CUEQUIVARIANCE_CONFIG: dict,

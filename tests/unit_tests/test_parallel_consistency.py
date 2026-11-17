@@ -52,7 +52,7 @@ from sevenn._const import AtomGraphDataType
 from sevenn.nn._ghost_exchange import mliap_compute_forces, patch_model_for_mliap
 from sevenn.nn.node_embedding import OnehotEmbedding
 from sevenn.scripts.deploy import build_parallel_model_list
-from tests.unit_tests.test_arch_options import _partial
+from tests.unit_tests.test_arch_options import _metaformer, _partial
 from tests.unit_tests.test_model import cutoff, get_model, get_model_config
 from tests.unit_tests.test_physics_consistency import _graph
 
@@ -71,10 +71,16 @@ _modal = {  # as our runs and 7net-omni (deployed with a modal)
     'scale': 1.0,
 }
 _A0 = {**_partial, **_xplor, **_modal}  # nequip block, linear residual
+_A2 = {**_metaformer, **_xplor, **_modal}  # metaformer, identity residual
 CONFIGS = {
     # nequip block (original SevenNet path)
     'nequip_sc': {},
     'A0_nequip_linear_sc': _A0,
+    # metaformer block, node-local FFN / gate / residual variants
+    'A2_metaformer': _A2,
+    'ffn_hidden_scale_4': {**_A2, 'ffn_hidden_scale': 4},
+    'final_norm_no_ffn': {**_A2, 'use_final_norm': True, 'use_ffn': False},
+    'linear_residual': {**_A2, 'self_connection_type': 'linear'},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
@@ -419,6 +425,8 @@ def test_e3gnn_parallel_torchscript(name):
 @pytest.mark.parametrize('name', list(CONFIGS))
 def test_parallel_segments_structure(name):
     """ghost twins, per-segment edge inputs, ghost-aware edge modules"""
+    from sevenn.nn.normalization import SelfConnectionResidualIntro
+
     cf = CONFIGS[name]
     model = _serial(cf)
     segs = _segments(model, cf)
@@ -442,9 +450,14 @@ def test_parallel_segments_structure(name):
     head = ['edge_embedding']
     for seg in segs[1:]:
         assert list(seg._modules)[: len(head)] == head
+    for seg in segs:
+        for k, m in seg._modules.items():
+            if isinstance(m, SelfConnectionResidualIntro):
+                assert m.clone_identity == k.endswith('_self_connection_intro')
     # the serial model is untouched
     for m in model.modules():
         assert not getattr(m, 'is_parallel', False)
+        assert not getattr(m, 'clone_identity', False)
 
 
 def _save_checkpoint(model_cf, path, dtype=torch.float32):

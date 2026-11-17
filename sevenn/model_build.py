@@ -20,9 +20,13 @@ from .nn.edge_embedding import (
 )
 from .nn.equivariant_gate import EquivariantGate
 from .nn.force_output import ForceStressOutputFromEdge
-from .nn.interaction_blocks import NequIP_interaction_block
+from .nn.interaction_blocks import (
+    Metaformer_interaction_block,
+    NequIP_interaction_block,
+)
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
 from .nn.node_embedding import OnehotEmbedding
+from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
 from .nn.scale import ModalWiseRescale, Rescale, SpeciesWiseRescale
 from .nn.self_connection import (
     SelfConnectionIntro,
@@ -66,6 +70,10 @@ def init_self_connection(config: Dict[str, Any]) -> List[Tuple[Type, Type]]:
             io_pair = SelfConnectionIntro, SelfConnectionOutro
         elif sc_type == 'linear':
             io_pair = SelfConnectionLinearIntro, SelfConnectionOutro
+        elif sc_type == 'identity':
+            if config.get(KEY.INTERACTION_TYPE, 'nequip') != 'metaformer':
+                raise ValueError('identity self connection needs metaformer')
+            io_pair = SelfConnectionResidualIntro, SelfConnectionOutro
         else:
             raise ValueError(f'Unknown self_connection_type found: {sc_type}')
         io_pair_list.append(io_pair)
@@ -395,6 +403,7 @@ def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
 _SELF_CONNECTION_INTROS = (
     SelfConnectionIntro,
     SelfConnectionLinearIntro,
+    SelfConnectionResidualIntro,
 )
 
 
@@ -408,6 +417,9 @@ def _ghost_twin(name: str, module):
     if isinstance(module, IrrepsLinear):
         assert module.key_input == module.key_output == KEY.NODE_FEATURE, name
         twin.key_input = twin.key_output = KEY.NODE_FEATURE_GHOST
+    elif isinstance(module, EquivariantRMSNorm):
+        assert module.key_x == KEY.NODE_FEATURE, name
+        twin.key_x = KEY.NODE_FEATURE_GHOST
     else:
         raise NotImplementedError(
             f'e3gnn/parallel: {name} ({type(module).__name__}) transforms the '
@@ -476,6 +488,12 @@ def _to_parallel_model(
         ),
         _layers,
     )
+
+    # ghost-aware edge modules
+    for key, module in _layers:
+        if isinstance(module, SelfConnectionResidualIntro):
+            if key.endswith('_self_connection_intro'):
+                module.clone_identity = True
 
     edge_embedding = layers['edge_embedding']
     for i in range(1, num_convolution_layer):
@@ -594,7 +612,7 @@ def build_E3_equivariant_model(
 
     interaction_builder = None
 
-    if interaction_type in ['nequip']:
+    if interaction_type in ['nequip', 'metaformer']:
         act_scalar = {}
         act_gate = {}
         for k, v in config[KEY.ACTIVATION_SCARLAR].items():
@@ -610,9 +628,22 @@ def build_E3_equivariant_model(
 
     if interaction_type == 'nequip':
         interaction_builder = NequIP_interaction_block
+    elif interaction_type == 'metaformer':
+        interaction_builder = Metaformer_interaction_block
+        param_interaction_block.update(
+            {
+                'use_ffn': True,  # set per layer below
+                'ffn_hidden_scale': config.get(KEY.FFN_HIDDEN_SCALE, 2),
+                'norm_eps': config.get(KEY.NORM_EPS, 1e-5),
+            }
+        )
     else:
         raise ValueError(f'Unknown interaction type: {interaction_type}')
 
+    use_ffn = config.get(KEY.USE_FFN, True)  # bool or one bool per layer
+    if not isinstance(use_ffn, list):
+        use_ffn = [use_ffn] * num_convolution_layer
+    assert len(use_ffn) == num_convolution_layer, 'use_ffn: one entry per layer'
     for t in range(num_convolution_layer):
         param_interaction_block.update(
             {
@@ -622,7 +653,9 @@ def build_E3_equivariant_model(
                 'self_connection_pair': self_connection_pair_list[t],
             }
         )
-        if interaction_type == 'nequip':
+        if interaction_type == 'metaformer':
+            param_interaction_block['use_ffn'] = bool(use_ffn[t])
+        if interaction_type in ['nequip', 'metaformer']:
             parity_mode = 'full'
             fix_multiplicity = False
             if t == num_convolution_layer - 1:
@@ -664,6 +697,10 @@ def build_E3_equivariant_model(
         layers.update(interaction_builder(**param_interaction_block))
         irreps_x = irreps_out
 
+    if config.get(KEY.USE_FINAL_NORM, False):
+        layers['final_norm'] = EquivariantRMSNorm(
+            irreps_x, eps=config.get(KEY.NORM_EPS, 1e-5)
+        )
     layers.update(init_feature_reduce(config, irreps_x))  # type: ignore
 
     layers.update(

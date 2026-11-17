@@ -667,9 +667,9 @@ def build_muon_param_groups(
     for name, parameter in model.named_parameters():
         if not parameter.requires_grad:
             continue
-        is_hidden_e3nn = '_self_interaction_' in name and name.endswith(
-            '.linear.weight'
-        )
+        is_hidden_e3nn = (
+            '_self_interaction_' in name or '_ffn_linear_' in name
+        ) and name.endswith('.linear.weight')
         is_radial_matrix = '.weight_nn.' in name and parameter.ndim == 2
         if is_hidden_e3nn:
             module_name = name.rpartition('.')[0]

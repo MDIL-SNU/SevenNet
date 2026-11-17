@@ -248,6 +248,11 @@ TRAIN_DENOMINTAOR = 'train_denominator'
 # stay trainable; everything else (shared backbone + other modalities) is frozen
 TRAIN_ONLY_MODALS = 'train_only_modals'
 INTERACTION_TYPE = 'interaction_type'
+# metaformer (pre-norm residual) interaction options
+USE_FFN = 'use_ffn'
+FFN_HIDDEN_SCALE = 'ffn_hidden_scale'
+NORM_EPS = 'norm_eps'
+USE_FINAL_NORM = 'use_final_norm'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'
