@@ -392,28 +392,77 @@ def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     return layers
 
 
+_SELF_CONNECTION_INTROS = (
+    SelfConnectionIntro,
+    SelfConnectionLinearIntro,
+)
+
+
+def _ghost_twin(name: str, module):
+    """
+    Copy of a node-wise layer-0 module acting on the ghost features
+    (KEY.NODE_FEATURE_GHOST). deploy copies the weights of `name` into it
+    (every 'ghost_<name>' entry, sevenn/scripts/deploy.py).
+    """
+    twin = copy.deepcopy(module)
+    if isinstance(module, IrrepsLinear):
+        assert module.key_input == module.key_output == KEY.NODE_FEATURE, name
+        twin.key_input = twin.key_output = KEY.NODE_FEATURE_GHOST
+    else:
+        raise NotImplementedError(
+            f'e3gnn/parallel: {name} ({type(module).__name__}) transforms the '
+            'layer-0 node features before the first convolution, but has no '
+            'ghost twin (add it to model_build._ghost_twin)'
+        )
+    return twin
+
+
 def _to_parallel_model(
     layers: OrderedDict, config: Dict[str, Any]
 ) -> List[OrderedDict]:
+    """
+    Split the serial model into the segments of LAMMPS e3gnn/parallel
+    (sevenn/pair_e3gnn/pair_e3gnn_parallel.cpp). Segment 0 runs up to
+    1_self_interaction_1, segment t >= 1 from t_convolution up to
+    (t+1)_self_interaction_1 (the last one to the energy). Between segments
+    LAMMPS fills x_ghost with the owners' x (forward_comm), and back-propagates
+    every segment on its own w.r.t. (edge_vec, x, self_cont_tmp, x_ghost),
+    sending the ghost gradients back (reverse_comm). The same math as the
+    serial model therefore needs:
+    - layer 0: the ghost features come from the ghost types (no exchange)
+      through 'ghost_*' twins of every node-wise module from
+      onehot_to_feature_x to 0_self_interaction_1 (e.g. metaformer 0_norm_1)
+    - every position-dependent input of a segment is rebuilt from that
+      segment's edge_vec: edge_embedding and (pair radial) edge_pair_input
+      are inserted at the start of every segment; a tensor cached from an
+      earlier segment would lose its force contribution
+    - per-edge type lookups (pair radial, attention bias, Agnesi) of ghost
+      neighbours read KEY.ATOM_TYPE_ALL (local + ghost types, segment 0)
+    - edge modules gathering source-node features (attention keys,
+      node-conditioned radial MLP) also read x_ghost
+    - self_cont_tmp must not be an ancestor of x at a segment boundary
+      (identity residual: store a copy)
+    Communication is unchanged: one forward and one reverse exchange of the
+    convolution input per layer t >= 1.
+    """
     num_classes = layers['onehot_idx_to_onehot'].num_classes
-    one_hot_irreps = Irreps(f'{num_classes}x0e')
-    irreps_node_zero = layers['onehot_to_feature_x'].irreps_out
-
+    num_convolution_layer = config[KEY.NUM_CONVOLUTION]
     _layers = list(layers.items())
     layers_list = []
 
-    num_convolution_layer = config[KEY.NUM_CONVOLUTION]
-
     def slice_until_this(module_name, layers):
-        idx = -1
-        for i, (key, _) in enumerate(layers):
-            if key == module_name:
-                idx = i
-                break
-        first_to = layers[: idx + 1]
-        remain = layers[idx + 1 :]
-        return first_to, remain
+        idx = [key for key, _ in layers].index(module_name)
+        return layers[: idx + 1], layers[idx + 1 :]
 
+    # layer 0: ghost twins of the node-wise modules before the convolution
+    names = [key for key, _ in _layers]
+    i0, i1 = names.index('onehot_to_feature_x'), names.index('0_self_interaction_1')
+    for key, module in list(_layers[i0 : i1 + 1]):
+        if isinstance(module, _SELF_CONNECTION_INTROS):
+            continue  # residual of local atoms only
+        _layers = _insert_after(
+            key, (f'ghost_{key}', _ghost_twin(key, module)), _layers
+        )
     _layers = _insert_after(
         'onehot_to_feature_x',
         (
@@ -427,38 +476,14 @@ def _to_parallel_model(
         ),
         _layers,
     )
-    _layers = _insert_after(
-        'one_hot_ghost',
-        (
-            'ghost_onehot_to_feature_x',
-            IrrepsLinear(
-                irreps_in=one_hot_irreps,
-                irreps_out=irreps_node_zero,
-                data_key_in=KEY.NODE_FEATURE_GHOST,
-                biases=config[KEY.USE_BIAS_IN_LINEAR],
-            ),
-        ),
-        _layers,
-    )
-    _layers = _insert_after(
-        '0_self_interaction_1',
-        (
-            'ghost_0_self_interaction_1',
-            IrrepsLinear(
-                irreps_node_zero,
-                irreps_node_zero,
-                data_key_in=KEY.NODE_FEATURE_GHOST,
-                biases=config[KEY.USE_BIAS_IN_LINEAR],
-            ),
-        ),
-        _layers,
-    )
-    # assign modules (before first communications)
-    # initialize edge related to retain position gradients
+
+    edge_embedding = layers['edge_embedding']
     for i in range(1, num_convolution_layer):
         sliced, _layers = slice_until_this(f'{i}_self_interaction_1', _layers)
         layers_list.append(OrderedDict(sliced))
-        _layers.insert(0, ('edge_embedding', init_edge_embedding(config)))
+        # rebuild position-dependent edge inputs from this segment's edge_vec
+        head = [('edge_embedding', copy.deepcopy(edge_embedding))]
+        _layers = head + _layers
 
     layers_list.append(OrderedDict(_layers))
     del layers_list[-1]['force_output']  # done in LAMMPS

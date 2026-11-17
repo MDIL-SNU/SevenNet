@@ -37,6 +37,9 @@ EDGE_IDX: Final[str] = 'edge_index'  # (2, N_edge) PyG
 ATOM_TYPE: Final[str] = 'atom_type'  # (N) one-hot index of nodes
 NODE_FEATURE: Final[str] = 'x'  # (N, ?) PyG
 NODE_FEATURE_GHOST: Final[str] = 'x_ghost'
+# (N_local + N_ghost) type indices of all graph nodes; parallel MD only
+# (e3gnn/parallel, ML-IAP) for per-edge type lookups of ghost neighbours
+ATOM_TYPE_ALL: Final[str] = 'atom_type_all'
 NODE_ATTR: Final[str] = 'node_attr'  # (N, N_species) from one_hot
 MODAL_ATTR: Final[str] = (
     'modal_attr'  # (1, N_modalities) for handling multi-modal

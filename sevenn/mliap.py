@@ -4,7 +4,6 @@ import os
 from typing import Any
 
 import torch
-import torch.nn as nn
 from ase.data import chemical_symbols
 
 try:
@@ -18,58 +17,14 @@ except ModuleNotFoundError:
     )
 
 import sevenn._keys as KEY
-from sevenn._const import AtomGraphDataType
-from sevenn.nn._ghost_exchange import MLIAPGhostExchangeModule
+from sevenn.nn._ghost_exchange import (  # noqa: F401 (re-exported)
+    MLIAPGhostExchange,
+    MLIAPWrappedConvolution,
+    MLIAPWrappedIrrepsLinear,
+    mliap_compute_forces,
+    patch_model_for_mliap,
+)
 from sevenn.util import load_checkpoint, pretrained_name_to_path
-
-
-class MLIAPWrappedConvolution(nn.Module):
-    def __init__(self, conv):
-        super().__init__()
-
-        self.conv = conv
-        self.ghost_exchange = MLIAPGhostExchangeModule(field=KEY.NODE_FEATURE)
-        self._keys_to_narrow = (
-            KEY.NODE_FEATURE,
-            KEY.NODE_ATTR,
-            KEY.ATOM_TYPE,
-            KEY.ATOMIC_NUMBERS,
-        )
-
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        nlocal = int(data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item())
-
-        data[KEY.NODE_FEATURE] = torch.narrow(data[KEY.NODE_FEATURE], 0, 0, nlocal)
-        data = self.ghost_exchange(data)
-
-        data = self.conv(data)
-
-        for k in self._keys_to_narrow:
-            data[k] = torch.narrow(data[k], 0, 0, nlocal)
-
-        return data
-
-
-class MLIAPWrappedIrrepsLinear(nn.Module):
-    def __init__(self, linear):
-        super().__init__()
-
-        self.linear = linear
-        self._keys_to_narrow = (
-            KEY.NODE_FEATURE,
-            KEY.NODE_ATTR,
-            KEY.ATOM_TYPE,
-            KEY.ATOMIC_NUMBERS,
-        )
-
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        nlocal = int(data[KEY.MLIAP_NUM_LOCAL_GHOST][0].item())
-
-        for k in self._keys_to_narrow:
-            data[k] = torch.narrow(data[k], 0, 0, nlocal)
-
-        data = self.linear(data)
-        return data
 
 
 # Referred Nequip-MLIAP impl.
@@ -160,11 +115,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             enable_lunatp=self.use_lunatp,
         )
 
-        for k, module in model._modules.items():
-            if k.endswith('_convolution'):
-                model._modules[k] = MLIAPWrappedConvolution(module)
-            elif k == 'onehot_to_feature_x':
-                model._modules[k] = MLIAPWrappedIrrepsLinear(module)
+        # exchange ghost features after every {t}_self_interaction_1
+        patch_model_for_mliap(model)
 
         model.set_is_batch_data(False)
         if self.modal is not None:
@@ -183,72 +135,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         if lmp_data.nlocal == 0:
             return
 
-        nlocal = lmp_data.nlocal
-        ntotal = lmp_data.ntotal
-        no_pairs = lmp_data.npairs <= 1
-
-        # edge_vectors should be f32 in 7net
-        if no_pairs:
-            edge_vectors = torch.zeros(
-                (0, 3), dtype=torch.float32, device=self.device
-            )
-            edge_index = torch.zeros(
-                (2, 0), dtype=torch.int64, device=self.device
-            )
-        else:
-            edge_vectors = torch.as_tensor(
-                lmp_data.rij, dtype=torch.float32, device=self.device
-            )
-            edge_index = torch.vstack(
-                [
-                    torch.as_tensor(
-                        lmp_data.pair_i, dtype=torch.int64, device=self.device
-                    ),
-                    torch.as_tensor(
-                        lmp_data.pair_j, dtype=torch.int64, device=self.device
-                    ),
-                ]
-            )
-        edge_vectors.requires_grad_(True)
-        elems = torch.as_tensor(
-            lmp_data.elems, dtype=torch.int64, device=self.device
-        )
-        num_atoms = torch.as_tensor(nlocal, dtype=torch.int64, device=self.device)
-        mliap_num_local_ghost = torch.as_tensor(
-            [nlocal, ntotal - nlocal], dtype=torch.int64, device=self.device
-        )
-
-        # data prep
-        data = {
-            KEY.EDGE_IDX: edge_index,
-            KEY.EDGE_VEC: edge_vectors,
-            KEY.ATOMIC_NUMBERS: elems,
-            KEY.NUM_ATOMS: num_atoms,
-            KEY.MLIAP_NUM_LOCAL_GHOST: mliap_num_local_ghost,
-            KEY.LAMMPS_DATA: lmp_data,
-            KEY.USE_MLIAP: torch.as_tensor(True, dtype=torch.bool),
-        }
-
-        # infer
-        output = self.model(data)
-        pred_atomic_energies = output[KEY.ATOMIC_ENERGY].view(-1)
-        edge_forces = torch.autograd.grad(
-            torch.sum(pred_atomic_energies),
-            [edge_vectors],
-            allow_unused=True,
-        )[0]
-        if edge_forces is None:
-            edge_forces = torch.zeros_like(edge_vectors)
-        if pred_atomic_energies.size(0) != nlocal:  # why this check is necessary?
-            pred_atomic_energies = torch.narrow(pred_atomic_energies, 0, 0, nlocal)
-        pred_total_energy = torch.sum(pred_atomic_energies)
-
-        # update
-        lmp_eatoms = torch.as_tensor(lmp_data.eatoms)
-        lmp_eatoms.copy_(pred_atomic_energies)
-        lmp_data.energy = pred_total_energy.detach()
-        # upcasting edge_forces required for update_pair_forces_gpu
-        lmp_data.update_pair_forces_gpu(edge_forces.to(torch.float64))
+        mliap_compute_forces(self.model, lmp_data, self.device)
 
     def compute_descriptors(self, lmp_data):
         pass
