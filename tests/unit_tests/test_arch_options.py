@@ -731,3 +731,75 @@ def test_metaformer_without_norm(cf):
     assert torch.allclose(f @ R.T, f_r, atol=1e-4)
     assert torch.isfinite(f).all() and f.abs().sum() > 0
     script(model.eval())
+
+
+_modal_cf = {
+    'use_modality': True,
+    '_number_of_modalities': 2,
+    '_modal_map': {'x1': 0, 'x2': 1},
+    'use_modal_node_embedding': False,
+    'use_modal_self_inter_intro': True,
+    'use_modal_self_inter_outro': True,
+    'use_modal_output_block': True,
+    'use_modal_wise_shift': False,
+    'use_modal_wise_scale': False,
+}
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'readout_block': {}},
+    {**_metaformer, 'readout_block': {'type': 'swiglu', 'hidden_scale': 2},
+     'radial_pair_embedding': True, **_modal_cf},
+])
+def test_readout_block(cf):
+    """norm -> FFN -> identity residual -> modal-aware linear readout"""
+    from e3nn.util.jit import script
+
+    from sevenn.nn.equivariant_gate import EquivariantGate
+    from sevenn.nn.ffn_variants import SwiGLUGate
+    from sevenn.nn.normalization import EquivariantRMSNorm
+    from sevenn.train.muon import build_muon_param_groups
+
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    names = list(mods)
+    order = ['readout_ffn_intro', 'readout_norm', 'readout_ffn_linear_1',
+             'readout_ffn_gate', 'readout_ffn_linear_2', 'readout_ffn_outro',
+             'reduce_input_to_hidden', 'reduce_hidden_to_energy',
+             'rescale_atomic_energy']
+    i = names.index('readout_ffn_intro')
+    assert names[i: i + len(order)] == order
+    assert 'reduce_hidden_activation' not in names
+    assert isinstance(mods['readout_norm'], EquivariantRMSNorm)
+    opts = cf['readout_block']
+    scale = opts.get('hidden_scale', 4)
+    gate = mods['readout_ffn_gate']
+    assert isinstance(
+        gate, SwiGLUGate if opts.get('type') == 'swiglu' else EquivariantGate
+    )
+    assert Irreps(mods['readout_ffn_linear_2'].irreps_in) == Irreps(
+        f'{4 * scale}x0e')
+    if cf.get('use_modality'):
+        assert mods['reduce_input_to_hidden'].num_modalities == 2
+        assert mods['readout_ffn_linear_1'].num_modalities == 0
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    muon = {name[id(p)] for p in groups[0]['params']}
+    assert {'readout_ffn_linear_1.linear.weight',
+            'readout_ffn_linear_2.linear.weight'} <= muon
+    assert 'readout_norm.weight' not in muon
+    if cf.get('use_modality'):
+        return  # modal batches: covered by the parallel / LunaTP tests
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    assert torch.isfinite(f).all() and f.abs().sum() > 0
+    script(model.eval())
+
+
+def test_readout_block_replaces_activation():
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'readout_block': {},
+                   'readout_activation': 'silu'})

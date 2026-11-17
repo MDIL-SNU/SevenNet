@@ -65,6 +65,10 @@ CONFIGS = {
     'irreps_conv': {**_metaformer,
                     'irreps_conv': ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']},
     'no_prenorm': {**_metaformer, 'metaformer_norm': False},
+    'readout_block': {**_metaformer, 'readout_block': {}},
+    'readout_block_swiglu': {**_metaformer, 'radial_pair_embedding': True,
+                             'readout_block': {'type': 'swiglu',
+                                               'hidden_scale': 2}},
 }
 
 

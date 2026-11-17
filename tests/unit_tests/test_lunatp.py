@@ -877,6 +877,10 @@ _mfext = {  # A4-like: metaformer, pair radial MLP, SiLU readout, XPLOR, modal
 MFEXT_CONFIGS = {
     'a4': ({}, ('table_',)),
     'no_prenorm': ({'metaformer_norm': False}, ('table_',)),
+    'readout_block': ({'readout_activation': None,
+                       'readout_block': {'type': 'swiglu'}}, ('table_',)),
+    'readout_block_gate': ({'readout_activation': None, 'readout_block': {}},
+                           ('table_', 'readout_norm')),
 }
 
 

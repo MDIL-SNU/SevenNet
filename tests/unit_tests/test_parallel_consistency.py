@@ -121,6 +121,10 @@ CONFIGS = {
     's2_bilinear_auto': {**_A4, 'ffn_type': 's2_bilinear'},
     # metaformer extensions (dev/mf-extension)
     'no_prenorm': {**_A4, 'metaformer_norm': False},
+    'readout_block': {**_A4, 'readout_activation': None,
+                      'readout_block': {'type': 'swiglu'}},
+    'readout_block_gate': {**_A4, 'readout_activation': None,
+                           'readout_block': {}},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',

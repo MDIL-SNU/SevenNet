@@ -173,6 +173,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.BILINEAR_B: 'own',
     KEY.READOUT_ACTIVATION: None,
     KEY.METAFORMER_NORM: True,
+    KEY.READOUT_BLOCK: None,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -248,6 +249,12 @@ MODEL_CONFIG_CONDITION = {
     KEY.BILINEAR_B: lambda x: x in ['own', 'shared'],
     KEY.READOUT_ACTIVATION: lambda x: x is None or x in ACTIVATION,
     KEY.METAFORMER_NORM: bool,
+    KEY.READOUT_BLOCK: lambda x: x is None or (
+        isinstance(x, dict)
+        and set(x) <= {'hidden_scale', 'type'}
+        and x.get('type', 'gate') in ('gate', 'swiglu')
+        and int(x.get('hidden_scale', 4)) > 0
+    ),
     KEY._NORMALIZE_SPH: bool,
     KEY.USE_FLASH_TP: bool,
     KEY.CUEQUIVARIANCE_CONFIG: dict,

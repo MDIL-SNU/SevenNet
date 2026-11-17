@@ -187,9 +187,66 @@ def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
     )
 
 
+def init_readout_block(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict:
+    """
+    Metaformer readout block (config readout_block, before the linear readout):
+        x = x + Lin2(Act(Lin1(Norm(x))))
+    the metaformer FFN (pre-norm, identity residual; W. Yu et al., MetaFormer,
+    arXiv:2111.11418; pre-LN, R. Xiong et al., arXiv:2002.04745) on the
+    final node features, hidden width hidden_scale x (default 4), Act = gate
+    (SiLU on scalars, e3nn Gate) or SwiGLU (N. Shazeer, arXiv:2002.05202).
+    It replaces the SiLU between the readout linears: the readout stays the
+    existing (modal-aware, use_modal_output_block) linear
+    reduce_input_to_hidden -> reduce_hidden_to_energy without activation, so
+    the modal conversion / regularization tools see the same modules.
+    Node-local: nothing changes for parallel MD.
+    """
+    from .nn.ffn_variants import SwiGLUGate
+
+    opts = dict(config[KEY.READOUT_BLOCK])
+    scale = int(opts.get('hidden_scale', 4))
+    ffn_type = opts.get('type', 'gate')
+    if config.get(KEY.READOUT_ACTIVATION, None) is not None:
+        raise ValueError(
+            'readout_block replaces the readout activation '
+            '(set readout_activation: null)'
+        )
+    act_scalar, act_gate = {}, {}
+    for k, v in config[KEY.ACTIVATION_SCARLAR].items():
+        act_scalar[k] = _const.ACTIVATION_DICT[k][v]
+    for k, v in config[KEY.ACTIVATION_GATE].items():
+        act_gate[k] = _const.ACTIVATION_DICT[k][v]
+    irreps_x = Irreps(irreps_x)
+    irreps_hidden = Irreps([(mul * scale, ir) for mul, ir in irreps_x])
+    if ffn_type == 'swiglu':
+        gate = SwiGLUGate(irreps_hidden, act_scalar, act_gate)
+    else:
+        gate = EquivariantGate(irreps_hidden, act_scalar, act_gate)
+    bias = config[KEY.USE_BIAS_IN_LINEAR]
+    return OrderedDict({
+        'readout_ffn_intro': SelfConnectionResidualIntro(irreps_x, irreps_x),
+        'readout_norm': EquivariantRMSNorm(
+            irreps_x, eps=config.get(KEY.NORM_EPS, 1e-5)
+        ),
+        'readout_ffn_linear_1': IrrepsLinear(
+            irreps_x, gate.get_gate_irreps_in(),
+            data_key_in=KEY.NODE_FEATURE, biases=bias,
+        ),
+        'readout_ffn_gate': gate,
+        'readout_ffn_linear_2': IrrepsLinear(
+            irreps_hidden, irreps_x, data_key_in=KEY.NODE_FEATURE, biases=bias,
+        ),
+        'readout_ffn_outro': SelfConnectionOutro(),
+    })
+
+
 def init_feature_reduce(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict:
     # features per node to scalar per node
     layers = OrderedDict()
+    if config.get(KEY.READOUT_BLOCK, None) is not None:
+        if config[KEY.READOUT_AS_FCN] is not False:
+            raise ValueError('readout_block needs readout_as_fcn: false')
+        layers.update(init_readout_block(config, irreps_x))
     if config[KEY.READOUT_AS_FCN] is False:
         hidden_irreps = Irreps([(irreps_x.dim // 2, (0, 1))])
         layers.update(
