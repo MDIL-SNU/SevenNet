@@ -414,17 +414,22 @@ def _norm_passes(module, x0, v0, r, s):
 
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
 @pytest.mark.parametrize(
-    'irreps,centering,affine',
+    'irreps,centering,affine,magnitude',
     [
-        ('16x0e+8x1o+4x2e+4x3o', True, True),
-        ('3x1o+5x0e+2x2e', True, True),  # 0e block not first
-        ('16x0e', True, True),
-        ('4x1o+2x2e', True, True),  # no scalars: no centering
-        ('5x0e+3x1o', False, True),
-        ('5x0e+3x1o', True, False),
+        ('16x0e+8x1o+4x2e+4x3o', True, True, False),
+        ('3x1o+5x0e+2x2e', True, True, False),  # 0e block not first
+        ('16x0e', True, True, False),
+        ('4x1o+2x2e', True, True, False),  # no scalars: no centering
+        ('5x0e+3x1o', False, True, False),
+        ('5x0e+3x1o', True, False, False),
+        # norm_magnitude: log-RMS feature recomputed next to the fused kernel
+        ('16x0e+8x1o+4x2e+4x3o', True, True, True),
+        ('3x1o+5x0e+2x2e', True, True, True),
+        ('5x0e+3x1o', False, True, True),
+        ('5x0e+3x1o', True, False, True),
     ],
 )
-def test_fused_rmsnorm_module(irreps, centering, affine):
+def test_fused_rmsnorm_module(irreps, centering, affine, magnitude):
     from sevenn.nn.lunatp_helper import (
         LunaTPEquivariantRMSNorm,
         _run_once,
@@ -433,11 +438,16 @@ def test_fused_rmsnorm_module(irreps, centering, affine):
     from sevenn.nn.normalization import EquivariantRMSNorm
 
     torch.manual_seed(0)
-    ref = EquivariantRMSNorm(irreps, 'x', centering=centering, affine=affine).cuda()
+    ref = EquivariantRMSNorm(
+        irreps, 'x', centering=centering, affine=affine, magnitude=magnitude
+    ).cuda()
     if affine:
         with torch.no_grad():
             ref.weight.uniform_(0.5, 1.5)
             ref.bias.normal_()
+    if magnitude:
+        with torch.no_grad():
+            ref.mag_weight.normal_()
     fused = patch_rms_norm(ref)
     assert isinstance(fused, LunaTPEquivariantRMSNorm)
     assert fused.state_dict().keys() == ref.state_dict().keys()
@@ -902,6 +912,12 @@ MFEXT_CONFIGS = {
         ('table_', 'pair_repulsion.log_amp', 'pair_repulsion.decay_raw')),
     's2_bilinear': ({'ffn_type': 's2_bilinear'}, ('table_',)),
     's2_inv': ({'ffn_type': 's2_inv'}, ('table_',)),
+    'norm_magnitude': ({'norm_magnitude': True, 'ffn_type': 's2_bilinear'},
+                       ('table_', 'mag_weight')),
+    'norm_magnitude_readout': (
+        {'norm_magnitude': True, 'readout_activation': None,
+         'readout_block': {}, 'parallel_block': [False, True, True]},
+        ('table_', 'mag_weight', 'readout_norm')),
     'mf_ext_sink': (
         {'readout_activation': None, 'readout_block': {'type': 'swiglu'},
          'per_layer_readout': True, 'radial_mlp_block': {},

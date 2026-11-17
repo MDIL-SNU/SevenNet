@@ -292,6 +292,8 @@ RADIAL_SHORT_BASIS = 'radial_short_basis'
 # decay_init, poly_p: 6, param_scale: 8}: learned pair repulsion added to
 # the atomic energy (sevenn/nn/pair_repulsion.py PairRepulsion)
 PAIR_REPULSION = 'pair_repulsion'
+# every EquivariantRMSNorm passes its removed scale on as a 0e feature
+NORM_MAGNITUDE = 'norm_magnitude'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

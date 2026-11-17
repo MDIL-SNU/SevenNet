@@ -248,7 +248,8 @@ def init_readout_block(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict:
     return OrderedDict({
         'readout_ffn_intro': SelfConnectionResidualIntro(irreps_x, irreps_x),
         'readout_norm': EquivariantRMSNorm(
-            irreps_x, eps=config.get(KEY.NORM_EPS, 1e-5)
+            irreps_x, eps=config.get(KEY.NORM_EPS, 1e-5),
+            magnitude=config.get(KEY.NORM_MAGNITUDE, False),
         ),
         'readout_ffn_linear_1': IrrepsLinear(
             irreps_x, gate.get_gate_irreps_in(),
@@ -888,6 +889,7 @@ def build_E3_equivariant_model(
                 'ffn_hidden_scale': config.get(KEY.FFN_HIDDEN_SCALE, 2),
                 'norm_eps': config.get(KEY.NORM_EPS, 1e-5),
                 'use_norm': config.get(KEY.METAFORMER_NORM, True),
+                'norm_magnitude': config.get(KEY.NORM_MAGNITUDE, False),
                 'conv_gate': config.get(KEY.CONV_GATE, True),
                 'ffn_type': config.get(KEY.FFN_TYPE, 'gate'),
                 'ffn_s2_channels': config.get(KEY.FFN_S2_CHANNELS, None),
@@ -1016,9 +1018,14 @@ def build_E3_equivariant_model(
 
     if config.get(KEY.USE_FINAL_NORM, False):
         layers['final_norm'] = EquivariantRMSNorm(
-            irreps_x, eps=config.get(KEY.NORM_EPS, 1e-5)
+            irreps_x, eps=config.get(KEY.NORM_EPS, 1e-5),
+            magnitude=config.get(KEY.NORM_MAGNITUDE, False),
         )
     layers.update(init_feature_reduce(config, irreps_x))  # type: ignore
+    if config.get(KEY.NORM_MAGNITUDE, False) and not any(
+        isinstance(m, EquivariantRMSNorm) for m in layers.values()
+    ):
+        raise ValueError('norm_magnitude needs normalization layers (metaformer)')
     if per_layer_readout and num_convolution_layer > 1:
         layers['layer_energy_to_readout'] = LayerEnergyToReadout()
 

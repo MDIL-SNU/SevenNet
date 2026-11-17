@@ -105,6 +105,17 @@ CONFIGS = {
     'pair_repulsion_nequip_3terms': {
         **_partial, 'pair_repulsion': {'num_terms': 3, 'cutoff_scale': 1.4,
                                        'max_cutoff': 3.5, 'amp_init': 1.0}},
+    'norm_magnitude': {**_metaformer, 'radial_pair_embedding': True,
+                       'norm_magnitude': True},
+    'norm_magnitude_variants': {
+        **_metaformer, 'norm_magnitude': True, 'use_final_norm': True,
+        'readout_block': {}, 'parallel_block': [False, True, True],
+        'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
+                          '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
+    'short_range_both': {**_metaformer, 'radial_pair_embedding': True,
+                         'ffn_type': 's2_bilinear', 'norm_magnitude': True,
+                         'pair_repulsion': {'cutoff_scale': 1.4,
+                                            'amp_init': 1.0}},
     'light_conv_full_parity': {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
@@ -147,6 +158,8 @@ def _model(cf):
                 # element-dependent pairs; effective spread 0.3 (stored / c)
                 c = model._modules['pair_repulsion'].param_scale
                 p.add_(0.3 * torch.randn_like(p) / c)
+            if 'mag_weight' in n:
+                p.normal_(0, 0.3)   # zero-initialized norm magnitude feature
     model.set_is_batch_data(False)
     return model
 
@@ -278,7 +291,8 @@ def _dimer_tail(model, h=1e-3):
                                   'radial_mlp_block_mlp_layer',
                                   'radial_mlp_block_node_cond', 'short_radial',
                                   'short_radial_block_node_cond',
-                                  'pair_repulsion'])
+                                  'pair_repulsion', 'norm_magnitude',
+                                  'short_range_both'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must

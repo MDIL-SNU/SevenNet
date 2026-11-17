@@ -132,6 +132,7 @@ def Metaformer_interaction_block(
     ffn_moe_table: Optional[torch.Tensor] = None,
     ffn_s2_channels: Optional[int] = None,
     use_norm: bool = True,
+    norm_magnitude: bool = False,
     conv_gate: bool = True,
     parallel_block: bool = False,
     data_key_x: str = KEY.NODE_FEATURE,
@@ -149,6 +150,10 @@ def Metaformer_interaction_block(
     Module names self_interaction_1/2 are kept for modality patching.
     use_norm=False (config metaformer_norm: false, ablation): Norm1 and Norm2
     are left out (identity), everything else is unchanged.
+    norm_magnitude=True (config norm_magnitude): Norm1 / Norm2 pass the
+    log of the magnitude they divide out on as a 0e feature (zero-
+    initialized, EquivariantRMSNorm magnitude); not Norm1 of layer 0, whose
+    input (the element embedding) has a per-element constant magnitude.
     conv_gate=False (config conv_gate: false): the message branch is
     TP -> linear, Lin2(Conv(Lin1(Norm1(x)))) with Lin2 (self_interaction_2)
     mapping straight to the node irreps; no gate and no self_interaction_3,
@@ -191,7 +196,8 @@ def Metaformer_interaction_block(
     )
     if use_norm:
         block[f'{t}_norm_1'] = EquivariantRMSNorm(
-            irreps_x, data_key_x, eps=norm_eps
+            irreps_x, data_key_x, eps=norm_eps,
+            magnitude=norm_magnitude and t > 0,  # layer 0: embedding input
         )
     n_pre = len(block)  # a parallel FFN branch goes here (reads Norm1(x))
     # convolution may run on narrower irreps than the node features (MACE-MH-1)
@@ -276,7 +282,7 @@ def Metaformer_interaction_block(
             )
             if use_norm:
                 ffn[f'{t}_norm_2'] = EquivariantRMSNorm(
-                    irreps_out, data_key_x, eps=norm_eps
+                    irreps_out, data_key_x, eps=norm_eps, magnitude=norm_magnitude
                 )
         if moe:
             from .moe_ffn import MoEDispatch

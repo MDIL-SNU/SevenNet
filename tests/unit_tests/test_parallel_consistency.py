@@ -150,6 +150,15 @@ CONFIGS = {
     'pair_repulsion_s2': {**_A4, 'ffn_type': 's2_bilinear',
                           'pair_repulsion': {'cutoff_scale': 1.4,
                                              'amp_init': 1.0}},
+    # norm magnitude feature (node-wise; layer-0 ghost twin of 0_norm_1)
+    'norm_magnitude': {**_A4, 'norm_magnitude': True},
+    'norm_magnitude_s2': {**_A4, 'ffn_type': 's2_bilinear',
+                          'norm_magnitude': True},
+    'short_range_sink': {
+        **_A4, 'norm_magnitude': True, 'use_final_norm': True,
+        'parallel_block': [False, True, True], 'ffn_type': 's2_bilinear',
+        'pair_repulsion': {'cutoff_scale': 1.4, 'amp_init': 1.0},
+    },
     'mf_ext_sink': {
         **_A4, 'readout_activation': None, 'readout_block': {'type': 'swiglu'},
         'per_layer_readout': True, 'radial_mlp_block': {},
@@ -162,13 +171,14 @@ CONFIGS = {
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
                               'kitchen_sink', 'per_layer_readout',
                               'light_conv', 'mf_ext_sink', 'pair_repulsion',
-                              's2_inv')
+                              's2_inv', 'short_range_sink')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
 GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
                            'kitchen_sink', 's2_bilinear', 'mf_ext_sink',
-                           'pair_repulsion_s2', 's2_inv')
+                           'pair_repulsion_s2', 's2_inv',
+                           'norm_magnitude_s2')
                if n in CONFIGS]
 MODAL = 'mpa'
 

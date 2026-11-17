@@ -1359,3 +1359,120 @@ def test_pair_repulsion_errors():
     assert cond(None) and cond({}) and cond({'num_terms': 3, 'param_scale': 2})
     assert not cond({'cutoff': 3.0}) and not cond({'amp_init': 0.0})
     assert not cond({'param_scale': 0.0})
+
+
+def test_norm_magnitude_module():
+    """
+    the log-RMS feature: zero weights = the plain norm (bitwise); scaling the
+    input by c shifts the 0e outputs by 2 log(c) v and leaves the rest
+    unchanged (the magnitude the norm removes stays readable); rotation
+    commutes; 0o channels untouched
+    """
+    import math
+
+    from e3nn.o3 import rand_matrix
+
+    from sevenn.nn.normalization import EquivariantRMSNorm
+
+    irreps = Irreps('6x0e+2x0o+4x1o+2x2e')
+    torch.manual_seed(0)
+    plain = EquivariantRMSNorm(irreps, 'x')
+    mag = EquivariantRMSNorm(irreps, 'x', magnitude=True)
+    with torch.no_grad():
+        plain.weight.uniform_(0.5, 1.5)
+        plain.bias.normal_()
+    missing, unexpected = mag.load_state_dict(plain.state_dict(), strict=False)
+    assert missing == ['mag_weight'] and not unexpected
+    x = torch.randn(5, irreps.dim, dtype=torch.float64) * 3.0
+    plain.double()
+    mag.double()
+    assert torch.equal(plain({'x': x.clone()})['x'], mag({'x': x.clone()})['x'])
+    with torch.no_grad():
+        mag.mag_weight.normal_()
+    y1 = mag({'x': x.clone()})['x']
+    c = 50.0
+    y2 = mag({'x': c * x})['x']
+    scal = mag.scalar_mask.bool()
+    v = mag.mag_weight[scal]
+    shift = (y2 - y1)[:, scal]
+    # s = log(mean square + eps): shift 2 log(c) v (up to eps)
+    assert torch.allclose(shift, 2 * math.log(c) * v.expand_as(shift), atol=1e-5)
+    assert torch.allclose(y2[:, ~scal], y1[:, ~scal], atol=1e-6)
+    assert torch.equal(y1[:, 6:8], plain({'x': x.clone()})['x'][:, 6:8])  # 0o
+    D = irreps.D_from_matrix(rand_matrix().double())
+    assert torch.allclose(mag({'x': x @ D.T})['x'], y1 @ D.T, atol=1e-10)
+    # zero-initialized but trainable from the start: non-zero gradient
+    mag.mag_weight.data.zero_()
+    mag({'x': x.clone().requires_grad_(True)})['x'].pow(2).sum().backward()
+    assert mag.mag_weight.grad[scal].abs().min() > 0
+    assert mag.mag_weight.grad[~scal].abs().max() == 0
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'radial_pair_embedding': True, 'norm_magnitude': True},
+    {**_metaformer, 'norm_magnitude': True, 'use_final_norm': True,
+     'readout_block': {}, 'parallel_block': [False, True, True],
+     'ffn_type': 's2_bilinear'},
+])
+def test_norm_magnitude(cf):
+    """every EquivariantRMSNorm gets the zero-initialized log-RMS feature"""
+    from e3nn.util.jit import script
+
+    from sevenn.logger import Logger
+    from sevenn.model_build import build_E3_equivariant_model
+    from sevenn.nn.normalization import EquivariantRMSNorm
+    from sevenn.train.muon import build_muon_param_groups
+    from tests.unit_tests.test_model import get_model_config
+
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'norm_magnitude': False})
+    model = get_model(cf)
+    norms = {k: m for k, m in model.named_children()
+             if isinstance(m, EquivariantRMSNorm)}
+    # layer-0 Norm1 reads the element embedding (constant magnitude): plain
+    assert norms.pop('0_norm_1').mag_weight is None
+    assert len(norms) >= 4
+    assert all(m.mag_weight is not None and m.mag_weight.abs().sum() == 0
+               for m in norms.values())
+    missing, unexpected = model.load_state_dict(ref.state_dict(), strict=False)
+    assert not unexpected and sorted(missing) == sorted(
+        f'{k}.mag_weight' for k in norms)
+    ref.set_is_batch_data(True)
+    model.set_is_batch_data(True)
+    o_ref = ref(get_graphs(batched=True))
+    o = model(get_graphs(batched=True))
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE, KEY.PRED_STRESS):
+        assert torch.equal(o_ref[k], o[k]), k  # zero init: bitwise the base
+    o[KEY.PRED_TOTAL_ENERGY].sum().backward()
+    assert any(m.mag_weight.grad.abs().sum() > 0 for m in norms.values())
+    with torch.no_grad():
+        for m in norms.values():
+            m.mag_weight.normal_(0, 0.3)
+    o2 = model(get_graphs(batched=True))
+    assert (o2[KEY.PRED_FORCE] - o[KEY.PRED_FORCE]).abs().max() > 1e-4
+    out, out_rot, R = _rotated_pair(model)
+    e, e_r = out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert {f'{k}.mag_weight' for k in norms} <= adam
+    script(model.eval())
+    config = get_model_config()
+    config.update(cf)
+    Logger().print_model_info(model, config)
+    segs = build_E3_equivariant_model(config, parallel=True)
+    twin = segs[0]._modules['ghost_0_norm_1']
+    assert twin.mag_weight is None and twin.key_x == KEY.NODE_FEATURE_GHOST
+
+
+def test_norm_magnitude_errors():
+    with pytest.raises(ValueError):  # no norm to take the magnitude from
+        get_model({**_partial, 'norm_magnitude': True})
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'metaformer_norm': False,
+                   'norm_magnitude': True})
+    get_model({**_metaformer, 'metaformer_norm': False, 'use_final_norm': True,
+               'norm_magnitude': True})

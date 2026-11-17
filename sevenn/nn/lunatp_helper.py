@@ -388,6 +388,11 @@ class LunaTPEquivariantRMSNorm(EquivariantRMSNorm):
     0e channels together, so only irreps with at most one 0e block are patched
     (see patch_rms_norm).
 
+    magnitude (config norm_magnitude): the kernel's per-node statistics are
+    not differentiable outputs, so the log-magnitude feature s = log(x^2 .
+    balance + eps) is computed next to it in PyTorch (square, one GEMV, log,
+    one addcmul; same function as EquivariantRMSNorm).
+
     Sources: fused kernel = LunaEquivariance 0.1.0 EquNormOperator
     (github.com/HPC-AI-Team/LunaEquivariance, BSD-3-Clause,
     LunaEquivariance/nn/equ_norm/interface.py; docs operators/
@@ -418,7 +423,13 @@ class LunaTPEquivariantRMSNorm(EquivariantRMSNorm):
         if self.bias is not None and self.centering:
             # bias holds one entry per feature, only those of the 0e block act
             beta = self.bias.narrow(0, self.scalar_start, self.num_scalars)
-        data[self.key_x] = self.equ_norm(data[self.key_x], self.weight, beta)
+        x = data[self.key_x]
+        y = self.equ_norm(x, self.weight, beta)
+        mag = self.mag_weight
+        if mag is not None:  # same function as EquivariantRMSNorm
+            s = torch.log((x * x) @ self.balance + self.eps)
+            y = torch.addcmul(y, s.unsqueeze(-1), mag * self.scalar_mask)
+        data[self.key_x] = y
         return data
 
 
@@ -436,6 +447,7 @@ def patch_rms_norm(module: EquivariantRMSNorm):
         eps=module.eps,
         centering=module.centering,
         affine=module.affine,
+        magnitude=module.mag_weight is not None,
     )
     reference = module.balance  # floating buffer: device and dtype of the module
     fused.to(device=reference.device, dtype=reference.dtype)

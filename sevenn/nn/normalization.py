@@ -17,6 +17,32 @@ class EquivariantRMSNorm(nn.Module):
     equally regardless of its multiplicity and dimension (component
     normalization). Scalars (0e) are centered and get a bias; every channel
     gets an affine weight shared over its m components.
+
+    magnitude=True (config norm_magnitude): the magnitude of the input,
+    which the norm removes, is passed on as an invariant scalar feature,
+        s = log(sum_i balance_i x_i^2 + eps)   (per node, raw input),
+        y_0e <- y_0e + s * v,   v zero-initialized (one weight per 0e channel)
+    i.e. twice the log of the balanced RMS of the input (the RMS the norm
+    divides by, before the 0e mean is taken out; the factor 2 is absorbed by
+    v), as a log-magnitude-dependent bias
+    of the 0e outputs; the following linear (self_interaction_1 /
+    ffn_linear_1) sees s as if it were one more 0e input channel
+    (Lin(y + s v) = Lin(y) + s Lin(v)). Smooth (eps > 0, no abs/max; s >=
+    log eps), invariant (a norm, added to 0e channels only), zero at
+    init (the module is the plain norm). The uncentered RMS is one GEMV of
+    x^2 (no second centering pass next to the fused LunaTP kernel, whose
+    statistics are not differentiable outputs).
+    Purpose: a pre-norm block sees a unit-RMS input whatever the residual-
+    stream magnitude, so growth of the stream under compression (dimer stream
+    RMS 4 -> 161 between 2.6 and 0.15 A, dev/diatomics-eval/
+    short_range_coverage.txt section 4) is invisible to every block; s keeps
+    it visible, as one log-scale number per node. The
+    stream itself, the normalized directions and the training stability of
+    pre-norm (R. Xiong et al., arXiv:2002.04745) are unchanged. Related:
+    Peri-LN on the magnitude growth of pre-norm residual streams (J. Kim et
+    al., arXiv:2502.02732), magnitude-preserving layers (T. Karras et al.,
+    EDM2, arXiv:2312.02696), FiLM-style scalar conditioning (E. Perez et al.,
+    arXiv:1709.07871); own design.
     """
 
     def __init__(
@@ -26,6 +52,7 @@ class EquivariantRMSNorm(nn.Module):
         eps: float = 1e-5,
         centering: bool = True,
         affine: bool = True,
+        magnitude: bool = False,
     ) -> None:
         super().__init__()
         self.irreps = Irreps(irreps)
@@ -63,6 +90,13 @@ class EquivariantRMSNorm(nn.Module):
         else:
             self.register_parameter('weight', None)
             self.register_parameter('bias', None)
+        if magnitude:
+            if self.num_scalars == 0:
+                raise ValueError('norm magnitude feature needs 0e channels')
+            # one entry per feature (as bias), only those of 0e channels act
+            self.mag_weight = nn.Parameter(torch.zeros(dim))
+        else:
+            self.register_parameter('mag_weight', None)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         x = data[self.key_x]
@@ -77,6 +111,11 @@ class EquivariantRMSNorm(nn.Module):
             x = x * self.weight[self.channel_idx]
             if self.centering:
                 x = x + self.bias * self.scalar_mask
+        mag = self.mag_weight
+        if mag is not None:  # log RMS of the input, on the 0e channels
+            x_in = data[self.key_x]
+            s = torch.log((x_in * x_in) @ self.balance + self.eps)
+            x = torch.addcmul(x, s.unsqueeze(-1), mag * self.scalar_mask)
         data[self.key_x] = x
         return data
 
