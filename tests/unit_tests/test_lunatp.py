@@ -918,6 +918,13 @@ MFEXT_CONFIGS = {
         {'norm_magnitude': True, 'readout_activation': None,
          'readout_block': {}, 'parallel_block': [False, True, True]},
         ('table_', 'mag_weight', 'readout_norm')),
+    'exp_radial': ({'radial_exp_basis': {}, 'ffn_type': 's2_bilinear'},
+                   ('table_', 'w_exp')),
+    'exp_radial_short_block': (
+        {'radial_exp_basis': {'num_basis': 2, 'cutoff': 2.8},
+         'radial_short_basis': {'num_basis': 4}, 'radial_mlp_block': {},
+         'radial_node_cond': True},
+        ('table_', 'w_exp', 'w_short', 'radial_node_cond')),
     'magnitude_residual': (
         {'magnitude_residual': True, 'ffn_type': 's2_bilinear'},
         ('table_', '_outro.gamma')),

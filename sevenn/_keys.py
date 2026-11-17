@@ -288,6 +288,10 @@ PARALLEL_BLOCK = 'parallel_block'  # metaformer conv + FFN from one pre-norm inp
 # None | {cutoff: 3.0, num_basis: 6, poly_p: 6}: short-range basis in the pair
 # radial MLP input (ShortRangeBasis)
 RADIAL_SHORT_BASIS = 'radial_short_basis'
+# None | {num_basis: 4, scales: [0.2, 0.4, 0.8, 1.6], cutoff: 3.0, poly_p: 6}:
+# bounded exponential features exp(-r/a_k) u(r/r_s) in the pair radial MLP input
+# (ExpRadialBasis; non-zero slope at contact)
+RADIAL_EXP_BASIS = 'radial_exp_basis'
 # None | {num_terms: 2, cutoff_scale: 1.0, max_cutoff, amp_init: 1e-4,
 # decay_init, poly_p: 6, param_scale: 8}: learned pair repulsion added to
 # the atomic energy (sevenn/nn/pair_repulsion.py PairRepulsion)

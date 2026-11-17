@@ -130,6 +130,13 @@ CONFIGS = {
         'layer_scale_init': 0.1, 'norm_magnitude': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
                           '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
+    'exp_radial': {**_metaformer, 'radial_pair_embedding': True,
+                   'ffn_type': 's2_bilinear', 'radial_exp_basis': {}},
+    'exp_radial_short_block_node_cond': {
+        **_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
+        'radial_mlp_block': {}, 'radial_short_basis': {'cutoff': 3.2,
+                                                       'num_basis': 4},
+        'radial_exp_basis': {'scales': [0.3, 0.9], 'cutoff': 2.8}},
     'light_conv_full_parity': {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
@@ -163,7 +170,7 @@ def _model(cf):
             if ('edge_attention' in n and (
                 n.split('.')[-2] in ('rb', 'og') or n.endswith(('t_src', 't_dst'))
             )) or 'radial_node_cond' in n or 'layer_readout' in n or (
-                'w_short' in n
+                'w_short' in n or 'w_exp' in n
             ):
                 p.normal_(0, 0.3)   # zero-initialized radial bias / output gate
             if cf.get('radial_mlp_block') is not None and 'table_' in n:
@@ -309,7 +316,8 @@ def _dimer_tail(model, h=1e-3):
                                   'short_radial_block_node_cond',
                                   'pair_repulsion', 'norm_magnitude',
                                   'short_range_both', 'magnitude_residual',
-                                  'magnitude_residual_variants'])
+                                  'magnitude_residual_variants', 'exp_radial',
+                                  'exp_radial_short_block_node_cond'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
@@ -354,23 +362,30 @@ def test_xplor_force_constant_jumps_at_r_on():
     assert ratio[0] < 0.2 and ratio[1] < 0.35 and ratio[2] < 0.6, ratio
 
 
-@pytest.mark.parametrize('name', ['short_radial', 'short_radial_block_node_cond'])
-def test_short_radial_c2_at_inner_cutoff(name):
+@pytest.mark.parametrize('name,opt,weight', [
+    ('short_radial', 'radial_short_basis', 'w_short'),
+    ('short_radial_block_node_cond', 'radial_short_basis', 'w_short'),
+    ('exp_radial', 'radial_exp_basis', 'w_exp'),
+    ('exp_radial_short_block_node_cond', 'radial_exp_basis', 'w_exp'),
+    ('exp_radial_short_block_node_cond', 'radial_short_basis', 'w_short'),
+])
+def test_short_radial_c2_at_inner_cutoff(name, opt, weight):
     """
-    the short-range basis term vanishes C2 at its own cutoff r_s: for a dimer,
-    dE = E - E(short weights zeroed) shrinks like (r_s - r)^3 (dE ~8x, its
-    force ~4x, its force constant ~2x when the distance to r_s halves), is
-    exactly zero beyond r_s, and the force constant is continuous across r_s
+    the short-range (Bessel) and exponential basis terms vanish C2 at their
+    own cutoff r_s: for a dimer, dE = E - E(their weights zeroed) shrinks
+    like (r_s - r)^3 (dE ~8x, its force ~4x, its force constant ~2x when the
+    distance to r_s halves), is exactly zero beyond r_s, and the force
+    constant is continuous across r_s
     """
     import copy
 
     cf = CONFIGS[name]
-    rs = cf['radial_short_basis'].get('cutoff', 3.0)
+    rs = cf[opt].get('cutoff', 3.0)
     model = _model(cf)
     ref = copy.deepcopy(model)
     with torch.no_grad():
         for n, p in ref.named_parameters():
-            if 'w_short' in n:
+            if weight in n:
                 p.zero_()
 
     def de(x):
@@ -393,6 +408,36 @@ def test_short_radial_c2_at_inner_cutoff(name):
         assert de(x) == 0.0
     s1, s2 = (_k_jump(model, rs, delta=d, h=5e-4) for d in (0.002, 0.001))
     assert s2 < 0.7 * s1 or s2 < 1e-6, (s1, s2)
+
+
+def test_exp_radial_contact_slope():
+    """
+    the Bessel basis is even in r: a dimer's energy E(r) is an even analytic
+    function near r = 0, so its force -dE/dr vanishes linearly at contact
+    (halves when r halves); with the exponential basis (f_k'(0) = -1/a_k)
+    the force tends to a non-zero limit. Both energies stay finite.
+    """
+    import copy
+
+    model = _model(CONFIGS['exp_radial'])
+    base = copy.deepcopy(model)
+    with torch.no_grad():
+        for n, p in base.named_parameters():
+            if 'w_exp' in n:
+                p.zero_()
+
+    def force(m, x):
+        f = _efs(m, Atoms('NaCl', positions=[[0, 0, 0], [x, 0, 0]]))[1]
+        return f[1, 0]
+
+    fb = [force(base, x) for x in (0.004, 0.002, 0.001)]
+    fe = [force(model, x) for x in (0.004, 0.002, 0.001)]
+    assert abs(fb[2]) < 0.6 * abs(fb[1]) < 0.6**2 * abs(fb[0]), fb  # ~ r
+    assert abs(fe[2]) > 1e-3, fe
+    assert abs(fe[2] - fe[1]) < 0.1 * abs(fe[2]), fe  # finite limit
+    for x in (1e-3, 0.3):
+        at = Atoms('NaCl', positions=[[0, 0, 0], [x, 0, 0]])
+        assert np.isfinite(_efs(model, at)[0])
 
 
 def _pair_term(model, x, sym='NaCl'):

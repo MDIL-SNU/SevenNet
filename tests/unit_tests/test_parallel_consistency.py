@@ -142,6 +142,12 @@ CONFIGS = {
     'short_radial_block_node_cond': {
         **_A4, 'radial_short_basis': {'num_basis': 4}, 'radial_mlp_block': {},
         'radial_node_cond': True},
+    # exponential radial basis (per edge, rebuilt in every segment)
+    'exp_radial': {**_A4, 'ffn_type': 's2_bilinear', 'radial_exp_basis': {}},
+    'exp_radial_short_block_node_cond': {
+        **_A4, 'radial_exp_basis': {'num_basis': 2, 'cutoff': 2.8},
+        'radial_short_basis': {'num_basis': 4}, 'radial_mlp_block': {},
+        'radial_node_cond': True},
     # learned pair repulsion (per edge, last segment, ghost types)
     'pair_repulsion': {**_A4, 'pair_repulsion': {'cutoff_scale': 1.4,
                                                  'amp_init': 1.0}},
@@ -183,14 +189,16 @@ SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
                               'kitchen_sink', 'per_layer_readout',
                               'light_conv', 'mf_ext_sink', 'pair_repulsion',
                               's2_inv', 'short_range_sink',
-                              'magnitude_residual_sink')
+                              'magnitude_residual_sink',
+                              'exp_radial_short_block_node_cond')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
 GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
                            'kitchen_sink', 's2_bilinear', 'mf_ext_sink',
                            'pair_repulsion_s2', 's2_inv',
-                           'norm_magnitude_s2', 'magnitude_residual')
+                           'norm_magnitude_s2', 'magnitude_residual',
+                           'exp_radial')
                if n in CONFIGS]
 MODAL = 'mpa'
 

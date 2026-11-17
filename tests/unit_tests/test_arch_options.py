@@ -1674,3 +1674,98 @@ def test_magnitude_residual_errors():
     assert not cond({'gamma_max': 1.5}) and not cond({'gamma_max': 0.0})
     assert not cond({'rho_ref': 0.0}) and not cond({'gamma': 1.0})
     assert cond({'branches': 'conv'}) and not cond({'branches': 'readout'})
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'radial_pair_embedding': True, 'radial_exp_basis': {}},
+    {**_metaformer, 'radial_pair_embedding': True, 'radial_node_cond': True,
+     'radial_mlp_block': {}, 'radial_short_basis': {'num_basis': 4},
+     'radial_exp_basis': {'scales': [0.3, 0.9], 'cutoff': 2.5}},
+])
+def test_exp_radial_basis(cf):
+    """bounded exponential features in the pair radial MLP input"""
+    from e3nn.util.jit import script
+
+    from sevenn.nn.radial_pair import (
+        EdgePairInput,
+        ExpRadialBasis,
+        exp_basis_scales,
+    )
+    from sevenn.train.muon import build_muon_param_groups
+
+    opts = cf['radial_exp_basis']
+    rs, scales = opts.get('cutoff', 3.0), exp_basis_scales(opts)
+    assert exp_basis_scales({}) == [0.2, 0.4, 0.8, 1.6]
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'radial_exp_basis': None})
+    model = get_model(cf)
+    pair = dict(model.named_children())['edge_pair_input']
+    assert isinstance(pair, EdgePairInput) and pair.use_exp
+    short = cf.get('radial_short_basis') is not None
+    assert pair.use_short == short
+    w = _convs(model)['1_convolution'].weight_nn
+    assert w.num_exp == len(scales) and w.w_exp.abs().sum() == 0
+    # zero-initialized: bitwise the model without the exponential basis
+    missing, unexpected = model.load_state_dict(ref.state_dict(), strict=False)
+    assert not unexpected and all(k.endswith('w_exp') for k in missing)
+    ref.set_is_batch_data(True)
+    model.set_is_batch_data(True)
+    o_ref = ref(get_graphs(batched=True))
+    o = model(get_graphs(batched=True))
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE, KEY.PRED_STRESS):
+        assert torch.equal(o_ref[k], o[k]), k
+    # basis: f_k(0) = 1, f_k'(0) = -1/a_k, decreasing, 0 < f <= 1 below r_s,
+    # exactly zero beyond, value / 1st / 2nd derivative -> 0 at r_s
+    basis = ExpRadialBasis(scales, rs).double()
+    r = torch.tensor([0.0, 0.5, rs - 1e-3, rs, rs + 1e-3, 3.9],
+                     dtype=torch.float64, requires_grad=True)
+    f = basis(r)
+    assert f.shape == (6, len(scales))
+    assert torch.allclose(f[0], torch.ones_like(f[0]))
+    d1 = torch.stack([torch.autograd.grad(f[:, k].sum(), r, create_graph=True)[0]
+                      for k in range(len(scales))], -1)
+    d2 = torch.stack([torch.autograd.grad(d1[:, k].sum(), r, retain_graph=True)[0]
+                      for k in range(len(scales))], -1)
+    inv = torch.tensor([1.0 / a for a in scales], dtype=torch.float64)
+    assert torch.allclose(d1[0], -inv, atol=1e-10)
+    assert f[2].abs().max() < 1e-6 and d1[2].abs().max() < 1e-3
+    assert d2[2].abs().max() < 1.0
+    assert torch.equal(f[3:], torch.zeros_like(f[3:]))
+    assert torch.equal(d1[3:], torch.zeros_like(d1[3:]))
+    rr = torch.linspace(0.0, rs, 301, dtype=torch.float64)
+    ff = basis(rr)
+    assert (ff[1:-1] > 0).all() and (ff <= 1).all()
+    assert (ff[1:] - ff[:-1] <= 0).all()  # monotonically decreasing
+    with torch.no_grad():
+        for c in _convs(model).values():
+            c.weight_nn.w_exp.normal_(0, 0.3)
+    o2 = model(get_graphs(batched=True))
+    assert (o2[KEY.PRED_FORCE] - o[KEY.PRED_FORCE]).abs().max() > 1e-4
+    out, out_rot, R = _rotated_pair(model)
+    e, e_r = out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    muon = {name[id(p)] for p in groups[0]['params']}
+    assert '1_convolution.weight_nn.w_exp' in muon  # as w_short
+    script(model.eval())
+
+
+def test_exp_radial_basis_errors():
+    import sevenn._const as _const
+
+    with pytest.raises(ValueError):  # needs the pair radial MLP
+        get_model({**_metaformer, 'radial_exp_basis': {}})
+    with pytest.raises(ValueError):
+        get_model({**_metaformer, 'radial_pair_embedding': True,
+                   'radial_exp_basis': {'cutoff': 4.5}})
+    cond = _const.MODEL_CONFIG_CONDITION[KEY.RADIAL_EXP_BASIS]
+    assert cond(None) and cond({}) and cond({'num_basis': 2})
+    assert cond({'num_basis': 2, 'scales': [0.3, 0.6], 'cutoff': 2.5,
+                 'poly_p': 6})
+    assert not cond({'num_basis': 3, 'scales': [0.3, 0.6]})
+    assert not cond({'scales': [0.3, -0.6]}) and not cond({'scales': []})
+    assert not cond({'cutoff': 0.0}) and not cond({'poly_p': 2.5})
+    assert not cond({'decay': 1.0})

@@ -179,6 +179,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.CONV_GATE: True,
     KEY.PARALLEL_BLOCK: False,
     KEY.RADIAL_SHORT_BASIS: None,
+    KEY.RADIAL_EXP_BASIS: None,
     KEY.PAIR_REPULSION: None,
     KEY.NORM_MAGNITUDE: False,
     KEY.MAGNITUDE_RESIDUAL: False,
@@ -264,6 +265,19 @@ MODEL_CONFIG_CONDITION = {
         and set(x) <= {'cutoff', 'num_basis', 'poly_p'}
         and float(x.get('cutoff', 3.0)) > 0
         and int(x.get('num_basis', 6)) > 0
+    ),
+    KEY.RADIAL_EXP_BASIS: lambda x: x is None or (
+        isinstance(x, dict)
+        and set(x) <= {'num_basis', 'scales', 'cutoff', 'poly_p'}
+        and float(x.get('cutoff', 3.0)) > 0
+        and int(x.get('num_basis', 4)) > 0
+        and int(x.get('poly_p', 6)) == float(x.get('poly_p', 6)) >= 1
+        and (x.get('scales') is None or (
+            isinstance(x['scales'], (list, tuple))
+            and len(x['scales']) == int(x.get('num_basis', len(x['scales'])))
+            and len(x['scales']) > 0
+            and all(float(a) > 0 for a in x['scales'])
+        ))
     ),
     KEY.NORM_MAGNITUDE: bool,
     KEY.MAGNITUDE_RESIDUAL: lambda x: x is None or isinstance(x, bool) or (
