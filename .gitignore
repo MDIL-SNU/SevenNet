@@ -22,3 +22,8 @@ sevenn/pretrained_potentials/SevenNet_nano
 sevenn/pair_d3*
 *ninja*
 *libpaird3*
+
+# local env / caches (envsetup/)
+.venv/
+.uv-cache/
+.lunaeq-cache/
