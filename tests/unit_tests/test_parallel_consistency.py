@@ -72,6 +72,7 @@ _modal = {  # as our runs and 7net-omni (deployed with a modal)
 }
 _A0 = {**_partial, **_xplor, **_modal}  # nequip block, linear residual
 _A2 = {**_metaformer, **_xplor, **_modal}  # metaformer, identity residual
+_A3 = {**_A2, 'radial_pair_embedding': True}
 CONFIGS = {
     # nequip block (original SevenNet path)
     'nequip_sc': {},
@@ -81,6 +82,8 @@ CONFIGS = {
     'ffn_hidden_scale_4': {**_A2, 'ffn_hidden_scale': 4},
     'final_norm_no_ffn': {**_A2, 'use_final_norm': True, 'use_ffn': False},
     'linear_residual': {**_A2, 'self_connection_type': 'linear'},
+    # element-pair radial MLP and the edge-embedding options it reads
+    'A3_pair_radial': _A3,
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
@@ -426,6 +429,7 @@ def test_e3gnn_parallel_torchscript(name):
 def test_parallel_segments_structure(name):
     """ghost twins, per-segment edge inputs, ghost-aware edge modules"""
     from sevenn.nn.normalization import SelfConnectionResidualIntro
+    from sevenn.nn.radial_pair import EdgePairInput
 
     cf = CONFIGS[name]
     model = _serial(cf)
@@ -447,17 +451,24 @@ def test_parallel_segments_structure(name):
         assert sd.keys() == sd_g.keys()
         assert all(torch.equal(sd[p], sd_g[p]) for p in sd)
     # every segment rebuilds its position-dependent edge inputs
-    head = ['edge_embedding']
+    pair = any(isinstance(m, EdgePairInput) for m in model.modules())
+    head = ['edge_embedding'] + (['edge_pair_input'] if pair else [])
     for seg in segs[1:]:
         assert list(seg._modules)[: len(head)] == head
+    need_types = False
     for seg in segs:
         for k, m in seg._modules.items():
+            if isinstance(m, EdgePairInput):
+                assert m.key_atom_type == KEY.ATOM_TYPE_ALL
+                need_types = True
             if isinstance(m, SelfConnectionResidualIntro):
                 assert m.clone_identity == k.endswith('_self_connection_intro')
+    assert ('atom_type_all' in names0) == need_types
     # the serial model is untouched
     for m in model.modules():
         assert not getattr(m, 'is_parallel', False)
         assert not getattr(m, 'clone_identity', False)
+        assert getattr(m, 'key_atom_type', KEY.ATOM_TYPE) == KEY.ATOM_TYPE
 
 
 def _save_checkpoint(model_cf, path, dtype=torch.float32):

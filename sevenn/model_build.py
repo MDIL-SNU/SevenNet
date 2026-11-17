@@ -25,8 +25,9 @@ from .nn.interaction_blocks import (
     NequIP_interaction_block,
 )
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
-from .nn.node_embedding import OnehotEmbedding
+from .nn.node_embedding import GhostAtomTypes, OnehotEmbedding
 from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
+from .nn.radial_pair import EdgePairInput, PairRadialMLP
 from .nn.scale import ModalWiseRescale, Rescale, SpeciesWiseRescale
 from .nn.self_connection import (
     SelfConnectionIntro,
@@ -80,6 +81,22 @@ def init_self_connection(config: Dict[str, Any]) -> List[Tuple[Type, Type]]:
     return io_pair_list
 
 
+def _patch_pair_radial(layers: OrderedDict, num_species: int) -> None:
+    """Element-pair radial weights for every convolution (in place)."""
+    _layers = _insert_after(
+        'onehot_idx_to_onehot',
+        ('edge_pair_input', EdgePairInput()),
+        list(layers.items()),
+    )
+    layers.clear()
+    layers.update(_layers)
+    for k, module in layers.items():
+        if isinstance(module, IrrepsConvolution):
+            module.key_weight_input = KEY.EDGE_PAIR_INPUT
+            module.weight_nn_cls = PairRadialMLP
+            module.weight_nn_kwargs['num_species'] = num_species
+
+
 def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
     _cutoff_param = {'cutoff_length': config[KEY.CUTOFF]}
     rbf, env, sph = None, None, None
@@ -105,7 +122,12 @@ def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
     _normalize_sph = config[KEY._NORMALIZE_SPH]
     sph = SphericalEncoding(lmax_edge, parity, normalize=_normalize_sph)
 
-    return EdgeEmbedding(basis_module=rbf, cutoff_module=env, spherical_module=sph)
+    return EdgeEmbedding(
+        basis_module=rbf,
+        cutoff_module=env,
+        spherical_module=sph,
+        save_components=config.get(KEY.RADIAL_PAIR_EMBEDDING, False),
+    )
 
 
 def init_feature_reduce(config: Dict[str, Any], irreps_x: Irreps) -> OrderedDict:
@@ -490,17 +512,26 @@ def _to_parallel_model(
     )
 
     # ghost-aware edge modules
+    need_types = False
     for key, module in _layers:
-        if isinstance(module, SelfConnectionResidualIntro):
+        if isinstance(module, EdgePairInput):
+            module.key_atom_type = KEY.ATOM_TYPE_ALL
+            need_types = True
+        elif isinstance(module, SelfConnectionResidualIntro):
             if key.endswith('_self_connection_intro'):
                 module.clone_identity = True
+    if need_types:
+        _layers.insert(0, ('atom_type_all', GhostAtomTypes()))
 
     edge_embedding = layers['edge_embedding']
+    pair_input = [m for _, m in _layers if isinstance(m, EdgePairInput)]
     for i in range(1, num_convolution_layer):
         sliced, _layers = slice_until_this(f'{i}_self_interaction_1', _layers)
         layers_list.append(OrderedDict(sliced))
         # rebuild position-dependent edge inputs from this segment's edge_vec
         head = [('edge_embedding', copy.deepcopy(edge_embedding))]
+        if pair_input:
+            head.append(('edge_pair_input', copy.deepcopy(pair_input[0])))
         _layers = head + _layers
 
     layers_list.append(OrderedDict(_layers))
@@ -696,6 +727,9 @@ def build_E3_equivariant_model(
         )
         layers.update(interaction_builder(**param_interaction_block))
         irreps_x = irreps_out
+
+    if config.get(KEY.RADIAL_PAIR_EMBEDDING, False):
+        _patch_pair_radial(layers, num_species)
 
     if config.get(KEY.USE_FINAL_NORM, False):
         layers['final_norm'] = EquivariantRMSNorm(

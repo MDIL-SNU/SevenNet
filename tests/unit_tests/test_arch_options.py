@@ -112,6 +112,61 @@ def test_rmsnorm_and_residual_projection():
     assert torch.equal(down({'x': x})[KEY.SELF_CONNECTION_TEMP], x[:, :8])
 
 
+@pytest.mark.parametrize('cf', [{**_partial, 'radial_pair_embedding': True},
+                                {**_metaformer, 'radial_pair_embedding': True}])
+def test_radial_pair_embedding(cf):
+    from sevenn.nn.radial_pair import PairRadialMLP
+
+    model = get_model(cf)
+    names = list(dict(model.named_children()))
+    assert names.index('edge_pair_input') > names.index('onehot_idx_to_onehot')
+    convs = _convs(model)
+    assert all(isinstance(c.weight_nn, PairRadialMLP) for c in convs.values())
+    # make pair tables non-trivial, then check equivariance and smooth cutoff
+    with torch.no_grad():
+        for c in convs.values():
+            c.weight_nn.table_src.normal_()
+            c.weight_nn.table_dst.normal_()
+    out, out_rot, R = _rotated_pair(model)
+    assert torch.allclose(
+        out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY], atol=1e-4
+    )
+    f, f_rot = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_rot, atol=1e-4)
+    w = next(iter(convs.values())).weight_nn
+    nb = w.num_basis
+    inp = torch.randn(6, nb + 3)
+    inp[:, nb] = 0.0  # envelope zero at cutoff
+    inp[:, nb + 1 :] = torch.randint(0, w.table_src.shape[0], (6, 2)).float()
+    assert torch.equal(w(inp), torch.zeros_like(w(inp)))
+
+
+def test_new_modules_scriptable():
+    from e3nn.util.jit import script
+
+    cfs = [{**_metaformer, 'radial_pair_embedding': True, 'use_final_norm': True}]
+    for cf in cfs:
+        m = get_model(cf)
+        m.set_is_batch_data(False)
+        script(m.eval())
+
+
+def test_muon_routing_new_modules():
+    from sevenn.train.muon import build_muon_param_groups
+
+    model = get_model({**_metaformer, 'radial_pair_embedding': True})
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    muon = {name[id(p)] for p in groups[0]['params']}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert '1_convolution.weight_nn.w1' in muon
+    assert '1_ffn_linear_1.linear.weight' in muon
+    assert '1_self_interaction_3.linear.weight' in muon
+    assert '1_convolution.weight_nn.out.weight' in muon
+    assert '1_convolution.weight_nn.hidden.0.weight' in muon
+    assert {'1_convolution.weight_nn.table_src', '1_norm_1.weight'} <= adam
+
+
 def test_frozen_bessel_moves_with_module():
     from sevenn.nn.edge_embedding import BesselBasis
 

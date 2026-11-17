@@ -201,20 +201,25 @@ class EdgeEmbedding(nn.Module):
         basis_module: nn.Module,
         cutoff_module: nn.Module,
         spherical_module: nn.Module,
+        save_components: bool = False,
     ) -> None:
         super().__init__()
         self.basis_function = basis_module
         self.cutoff_function = cutoff_module
         self.spherical = spherical_module
+        self.save_components = save_components  # for PairRadialMLP
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         rvec = data[KEY.EDGE_VEC]
         r = torch.linalg.norm(data[KEY.EDGE_VEC], dim=-1)
         data[KEY.EDGE_LENGTH] = r
 
-        data[KEY.EDGE_EMBEDDING] = self.basis_function(
-            r
-        ) * self.cutoff_function(r).unsqueeze(-1)
+        rbf = self.basis_function(r)
+        env = self.cutoff_function(r)
+        data[KEY.EDGE_EMBEDDING] = rbf * env.unsqueeze(-1)
+        if self.save_components:
+            data[KEY.EDGE_RBF] = rbf
+            data[KEY.EDGE_ENVELOPE] = env
         data[KEY.EDGE_ATTR] = self.spherical(rvec)
 
         return data

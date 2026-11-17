@@ -47,6 +47,9 @@ MODAL_ATTR: Final[str] = (
 MODAL_TYPE: Final[str] = 'modal_type'  # (1) one-hot index of modal
 EDGE_ATTR: Final[str] = 'edge_attr'  # (from spherical harmonics)
 EDGE_EMBEDDING: Final[str] = 'edge_embedding'  # (from edge embedding)
+EDGE_RBF: Final[str] = 'edge_rbf'  # radial basis without envelope
+EDGE_ENVELOPE: Final[str] = 'edge_envelope'  # cutoff function value
+EDGE_PAIR_INPUT: Final[str] = 'edge_pair_input'  # input of PairRadialMLP
 
 # inputs of loss function
 ENERGY: Final[str] = 'total_energy'  # (1)
@@ -253,6 +256,7 @@ USE_FFN = 'use_ffn'
 FFN_HIDDEN_SCALE = 'ffn_hidden_scale'
 NORM_EPS = 'norm_eps'
 USE_FINAL_NORM = 'use_final_norm'
+RADIAL_PAIR_EMBEDDING = 'radial_pair_embedding'
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

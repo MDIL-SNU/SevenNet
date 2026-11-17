@@ -17,6 +17,8 @@ import torch
 import torch.distributed as dist
 from e3nn.nn import FullyConnectedNet
 
+from sevenn.nn.radial_pair import PairRadialMLP
+
 E3nnBlock = Tuple[Tuple[int, int, None], Tuple[int, int], bool]
 MatrixLayout = Literal['fan_out_fan_in', 'fan_in_fan_out']
 FAN_OUT_FAN_IN: MatrixLayout = 'fan_out_fan_in'
@@ -671,6 +673,8 @@ def build_muon_param_groups(
             '_self_interaction_' in name or '_ffn_linear_' in name
         ) and name.endswith('.linear.weight')
         is_radial_matrix = '.weight_nn.' in name and parameter.ndim == 2
+        if is_radial_matrix and name.rpartition('.')[2].startswith('table_'):
+            is_radial_matrix = False  # PairRadialMLP element tables: embeddings
         if is_hidden_e3nn:
             module_name = name.rpartition('.')[0]
             linear = modules.get(module_name)
@@ -703,7 +707,11 @@ def build_muon_param_groups(
             owner = modules.get(owner_name)
             weight_nn_name = name.split('.weight_nn.', maxsplit=1)[0] + '.weight_nn'
             weight_nn = modules.get(weight_nn_name)
-            if isinstance(weight_nn, FullyConnectedNet):
+            if isinstance(weight_nn, PairRadialMLP):
+                # all PairRadialMLP matrices are stored as (fan_in, fan_out)
+                expected_shape = tuple(parameter.shape)
+                matrix_layout = FAN_IN_FAN_OUT
+            elif isinstance(weight_nn, FullyConnectedNet):
                 if owner is None or not all(
                     hasattr(owner, attr) for attr in ('h_in', 'h_out')
                 ):

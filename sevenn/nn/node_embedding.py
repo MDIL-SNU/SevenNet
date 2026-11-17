@@ -53,6 +53,23 @@ class OnehotEmbedding(nn.Module):
         return data
 
 
+@compile_mode('script')
+class GhostAtomTypes(nn.Module):
+    """
+    First module of segment 0 of an e3gnn/parallel model: KEY.ATOM_TYPE_ALL =
+    type indices of the local atoms (x) followed by the ghost atoms (x_ghost),
+    i.e. indexed like edge_index. Must run before the one-hot embeddings
+    overwrite x / x_ghost. The dict is passed on to the later segments, so
+    every segment can look up the types of ghost neighbours.
+    """
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        data[KEY.ATOM_TYPE_ALL] = torch.cat(
+            [data[KEY.NODE_FEATURE], data[KEY.NODE_FEATURE_GHOST]]
+        )
+        return data
+
+
 def get_type_mapper_from_specie(specie_list: List[str]) -> Dict[int, int]:
     """
     from ['Hf', 'O']
