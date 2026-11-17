@@ -284,3 +284,15 @@ def test_agnesi_transform(cf):
     f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
     assert torch.allclose(f @ R.T, f_r, atol=1e-4)
     script(model.eval())
+
+
+def test_sigmoid_gate():
+    cf = {**_metaformer, 'act_gate': {'e': 'sigmoid', 'o': 'tanh'}}
+    model = get_model(cf)
+    acts = [m.act_gates for k, m in model.named_modules()
+            if k.endswith('equivariant_gate') and hasattr(m, 'act_gates')]
+    out, out_rot, R = _rotated_pair(model)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    assert torch.isfinite(f).all()
+    del acts

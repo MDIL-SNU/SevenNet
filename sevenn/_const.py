@@ -51,6 +51,7 @@ ACTIVATION = {
     'elu': torch.nn.functional.elu,
 }
 ACTIVATION_FOR_EVEN = {
+    'sigmoid': torch.sigmoid,
     'ssp': ShiftedSoftPlus,
     'silu': torch.nn.functional.silu,
 }

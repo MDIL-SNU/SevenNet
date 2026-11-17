@@ -87,6 +87,7 @@ CONFIGS = {
     'ffn_hidden_scale_4': {**_A2, 'ffn_hidden_scale': 4},
     'final_norm_no_ffn': {**_A2, 'use_final_norm': True, 'use_ffn': False},
     'linear_residual': {**_A2, 'self_connection_type': 'linear'},
+    'sigmoid_gate': {**_A2, 'act_gate': {'e': 'sigmoid', 'o': 'tanh'}},
     'agnesi_metaformer': {**_A2, 'distance_transform': 'agnesi'},
     # element-pair radial MLP and the edge-embedding options it reads
     'A3_pair_radial': _A3,

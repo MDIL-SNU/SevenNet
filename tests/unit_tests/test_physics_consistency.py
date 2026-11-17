@@ -41,6 +41,7 @@ CONFIGS = {
     'layer_scale': {**_metaformer, 'layer_scale_init': 0.1},
     'film': _film_rand,
     'agnesi': {**_metaformer, 'distance_transform': 'agnesi'},
+    'sigmoid_gate': {**_metaformer, 'act_gate': {'e': 'sigmoid', 'o': 'tanh'}},
 }
 
 
