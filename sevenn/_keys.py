@@ -89,6 +89,7 @@ TAG = 'tag'  # replace USER_LABEL
 
 # etc
 SELF_CONNECTION_TEMP: Final[str] = 'self_cont_tmp'
+LAYER_ENERGY: Final[str] = 'layer_energy'  # (N, 1) sum of per-layer readouts
 BATCH_SIZE: Final[str] = 'batch_size'
 INFO: Final[str] = 'data_info'
 
@@ -277,6 +278,7 @@ METAFORMER_NORM = 'metaformer_norm'  # False: blocks without norm_1 / norm_2
 # None | {hidden_scale: 4, type: 'gate' | 'swiglu'}: pre-norm residual FFN on the
 # final features before a linear (modal-aware) readout
 READOUT_BLOCK = 'readout_block'
+PER_LAYER_READOUT = 'per_layer_readout'  # linear energy head after every layer
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

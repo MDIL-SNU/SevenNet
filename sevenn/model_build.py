@@ -26,6 +26,13 @@ from .nn.interaction_blocks import (
     Metaformer_interaction_block,
     NequIP_interaction_block,
 )
+from .nn.layer_readout import (
+    LayerEnergyAccumulate,
+    LayerEnergyPack,
+    LayerEnergyToReadout,
+    LayerEnergyUnpack,
+    ZeroInitIrrepsLinear,
+)
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear, ScalarActivation
 from .nn.node_embedding import GhostAtomTypes, OnehotEmbedding
 from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
@@ -612,6 +619,9 @@ def _to_parallel_model(
       node-conditioned radial MLP) also read x_ghost
     - self_cont_tmp must not be an ancestor of x at a segment boundary
       (identity residual: store a copy)
+    - per-layer readout: the running sum of the layer energies crosses every
+      boundary inside self_cont_tmp (LayerEnergyPack / LayerEnergyUnpack),
+      so its force contribution is back-propagated with the residual
     Communication is unchanged: one forward and one reverse exchange of the
     convolution input per layer t >= 1.
     """
@@ -671,13 +681,18 @@ def _to_parallel_model(
 
     edge_embedding = layers['edge_embedding']
     pair_input = [m for _, m in _layers if isinstance(m, EdgePairInput)]
+    layer_energy = any(isinstance(m, LayerEnergyAccumulate) for _, m in _layers)
     for i in range(1, num_convolution_layer):
         sliced, _layers = slice_until_this(f'{i}_self_interaction_1', _layers)
+        if layer_energy:  # per-layer energies cross inside self_cont_tmp
+            sliced.append(('layer_energy_pack', LayerEnergyPack()))
         layers_list.append(OrderedDict(sliced))
         # rebuild position-dependent edge inputs from this segment's edge_vec
         head = [('edge_embedding', copy.deepcopy(edge_embedding))]
         if pair_input:
             head.append(('edge_pair_input', copy.deepcopy(pair_input[0])))
+        if layer_energy:
+            head.append(('layer_energy_unpack', LayerEnergyUnpack()))
         _layers = head + _layers
 
     layers_list.append(OrderedDict(_layers))
@@ -832,6 +847,7 @@ def build_E3_equivariant_model(
     irreps_conv_list = config.get(KEY.IRREPS_CONV, None)  # None or per layer
     if irreps_conv_list:
         assert len(irreps_conv_list) == num_convolution_layer
+    per_layer_readout = config.get(KEY.PER_LAYER_READOUT, False)
     use_ffn = config.get(KEY.USE_FFN, True)  # bool or one bool per layer
     if not isinstance(use_ffn, list):
         use_ffn = [use_ffn] * num_convolution_layer
@@ -892,6 +908,17 @@ def build_E3_equivariant_model(
         )
         layers.update(interaction_builder(**param_interaction_block))
         irreps_x = irreps_out
+        if per_layer_readout and t < num_convolution_layer - 1:
+            # zero-initialized linear energy head (sevenn/nn/layer_readout.py)
+            layers[f'{t}_layer_readout'] = ZeroInitIrrepsLinear(
+                irreps_x, Irreps('1x0e'),
+                data_key_in=KEY.NODE_FEATURE,
+                data_key_out=f'{t}_layer_energy',
+                biases=False,
+            )
+            layers[f'{t}_layer_energy_acc'] = LayerEnergyAccumulate(
+                f'{t}_layer_energy', first=t == 0
+            )
 
     if config.get(KEY.RADIAL_PAIR_EMBEDDING, False):
         _patch_pair_radial(layers, num_species)
@@ -906,6 +933,8 @@ def build_E3_equivariant_model(
             irreps_x, eps=config.get(KEY.NORM_EPS, 1e-5)
         )
     layers.update(init_feature_reduce(config, irreps_x))  # type: ignore
+    if per_layer_readout and num_convolution_layer > 1:
+        layers['layer_energy_to_readout'] = LayerEnergyToReadout()
 
     layers.update(
         {

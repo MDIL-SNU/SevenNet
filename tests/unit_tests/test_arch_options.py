@@ -803,3 +803,79 @@ def test_readout_block_replaces_activation():
     with pytest.raises(ValueError):
         get_model({**_metaformer, 'readout_block': {},
                    'readout_activation': 'silu'})
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'per_layer_readout': True, 'radial_pair_embedding': True},
+    {**_partial, 'per_layer_readout': True},
+    {**_metaformer, 'per_layer_readout': True, 'use_ffn': [True, False, True],
+     'readout_block': {}},
+])
+def test_per_layer_readout(cf):
+    """zero-initialized linear energy heads after every layer but the last"""
+    from e3nn.util.jit import script
+
+    from sevenn.model_build import build_E3_equivariant_model
+    from sevenn.nn.layer_readout import (
+        LayerEnergyPack,
+        LayerEnergyToReadout,
+        LayerEnergyUnpack,
+        ZeroInitIrrepsLinear,
+    )
+    from sevenn.train.muon import build_muon_param_groups
+    from tests.unit_tests.test_model import get_model_config
+
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'per_layer_readout': False})
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    names = list(mods)
+    for t in (0, 1):
+        head = mods[f'{t}_layer_readout']
+        assert isinstance(head, ZeroInitIrrepsLinear)
+        assert head.linear.weight.abs().sum() == 0
+        assert Irreps(head.irreps_out) == Irreps('1x0e')
+        assert names.index(f'{t}_layer_energy_acc') == names.index(
+            f'{t}_layer_readout') + 1
+        last = 'ffn_outro' if f'{t}_ffn_outro' in mods else (
+            'equivariant_gate' if f'{t}_equivariant_gate' in mods
+            and cf.get('interaction_type') != 'metaformer'
+            else 'self_connection_outro')
+        assert names.index(f'{t}_layer_readout') == names.index(f'{t}_{last}') + 1
+    assert '2_layer_readout' not in names
+    assert isinstance(mods['layer_energy_to_readout'], LayerEnergyToReadout)
+    assert names.index('layer_energy_to_readout') == names.index(
+        'rescale_atomic_energy') - 1
+    # zero heads: identical to the model without them
+    missing, unexpected = model.load_state_dict(ref.state_dict(), strict=False)
+    assert not unexpected and all('layer_readout' in k for k in missing)
+    ref.set_is_batch_data(True)
+    model.set_is_batch_data(True)
+    o_ref = ref(get_graphs(batched=True))
+    o = model(get_graphs(batched=True))
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE, KEY.PRED_STRESS):
+        assert torch.allclose(o_ref[k], o[k], atol=1e-7, rtol=0), k
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert '0_layer_readout.linear.weight' in adam
+    with torch.no_grad():
+        for n, p in model.named_parameters():
+            if 'layer_readout' in n:
+                p.normal_(0, 0.3)
+    o2 = model(get_graphs(batched=True))
+    assert (o2[KEY.PRED_TOTAL_ENERGY] - o[KEY.PRED_TOTAL_ENERGY]).abs().max() > 1e-3
+    out, out_rot, R = _rotated_pair(model)
+    e, e_r = out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    script(model.eval())
+    # e3gnn/parallel segments: the energy sum crosses inside self_cont_tmp
+    config = get_model_config()
+    config.update(cf)
+    segs = build_E3_equivariant_model(config, parallel=True)
+    for i, seg in enumerate(segs):
+        sm = list(seg._modules.values())
+        assert isinstance(sm[-1], LayerEnergyPack) == (i < len(segs) - 1)
+        assert any(isinstance(m, LayerEnergyUnpack) for m in sm) == (i > 0)

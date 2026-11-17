@@ -125,10 +125,13 @@ CONFIGS = {
                       'readout_block': {'type': 'swiglu'}},
     'readout_block_gate': {**_A4, 'readout_activation': None,
                            'readout_block': {}},
+    'per_layer_readout': {**_A4, 'per_layer_readout': True},
+    'per_layer_readout_nequip': {**_A0, 'per_layer_readout': True},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
-                              'kitchen_sink') if n in CONFIGS]
+                              'kitchen_sink', 'per_layer_readout')
+                  if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
 GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
@@ -520,6 +523,28 @@ def test_parallel_segments_structure(name):
         assert not getattr(m, 'is_parallel', False)
         assert not getattr(m, 'clone_identity', False)
         assert getattr(m, 'key_atom_type', KEY.ATOM_TYPE) == KEY.ATOM_TYPE
+
+
+def test_per_layer_readout_needs_the_residual_path():
+    """
+    the per-layer energies cross the segment boundaries inside self_cont_tmp;
+    carried as a separate tensor (pack/unpack removed) the energy is still
+    right but their force contribution is lost in e3gnn/parallel
+    """
+    cf = CONFIGS['per_layer_readout']
+    model = _serial(cf)
+    segs = _segments(model, cf)
+    n_pack = sum('layer_energy_pack' in s._modules for s in segs)
+    n_unpack = sum('layer_energy_unpack' in s._modules for s in segs)
+    assert n_pack == n_unpack == len(segs) - 1
+    atoms = _atoms((2, 2, 2))
+    ser = _serial_efs(model, atoms)
+    for s in segs:
+        s.delete_module_by_key('layer_energy_pack')
+        s.delete_module_by_key('layer_energy_unpack')
+    (e, f, _), _ = _e3gnn_parallel(segs, atoms, _config(cf), (2, 1, 1))
+    assert abs(e - ser[0]) < 1e-10 * max(1.0, abs(ser[0]))
+    assert np.abs(f - ser[1]).max() > 1e-3
 
 
 def _save_checkpoint(model_cf, path, dtype=torch.float32):

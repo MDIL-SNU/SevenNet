@@ -69,6 +69,9 @@ CONFIGS = {
     'readout_block_swiglu': {**_metaformer, 'radial_pair_embedding': True,
                              'readout_block': {'type': 'swiglu',
                                                'hidden_scale': 2}},
+    'per_layer_readout': {**_metaformer, 'radial_pair_embedding': True,
+                          'per_layer_readout': True},
+    'per_layer_readout_nequip': {**_partial, 'per_layer_readout': True},
 }
 
 
@@ -97,7 +100,7 @@ def _model(cf):
                 p.normal_(0, 0.3)
             if ('edge_attention' in n and (
                 n.split('.')[-2] in ('rb', 'og') or n.endswith(('t_src', 't_dst'))
-            )) or 'radial_node_cond' in n:
+            )) or 'radial_node_cond' in n or 'layer_readout' in n:
                 p.normal_(0, 0.3)   # zero-initialized radial bias / output gate
     model.set_is_batch_data(False)
     return model

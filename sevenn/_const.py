@@ -174,6 +174,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.READOUT_ACTIVATION: None,
     KEY.METAFORMER_NORM: True,
     KEY.READOUT_BLOCK: None,
+    KEY.PER_LAYER_READOUT: False,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -249,6 +250,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.BILINEAR_B: lambda x: x in ['own', 'shared'],
     KEY.READOUT_ACTIVATION: lambda x: x is None or x in ACTIVATION,
     KEY.METAFORMER_NORM: bool,
+    KEY.PER_LAYER_READOUT: bool,
     KEY.READOUT_BLOCK: lambda x: x is None or (
         isinstance(x, dict)
         and set(x) <= {'hidden_scale', 'type'}

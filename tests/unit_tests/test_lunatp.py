@@ -881,6 +881,8 @@ MFEXT_CONFIGS = {
                        'readout_block': {'type': 'swiglu'}}, ('table_',)),
     'readout_block_gate': ({'readout_activation': None, 'readout_block': {}},
                            ('table_', 'readout_norm')),
+    'per_layer_readout': ({'per_layer_readout': True},
+                          ('table_', 'layer_readout')),
 }
 
 
