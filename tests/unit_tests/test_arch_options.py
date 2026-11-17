@@ -31,3 +31,17 @@ def test_drop_unused_tp_irreps():
     }
     out = drop(get_graphs(batched=True))
     assert torch.isfinite(out[KEY.PRED_FORCE]).all()
+
+
+def test_frozen_bessel_moves_with_module():
+    from sevenn.nn.edge_embedding import BesselBasis
+
+    b = BesselBasis(6.0, 8, trainable_coeff=False)
+    assert 'coeffs' not in b.state_dict()  # old checkpoints still load
+    b = b.to(torch.float64)
+    assert b(torch.rand(3, dtype=torch.float64) + 1.0).dtype == torch.float64
+    if torch.cuda.is_available():
+        assert b.cuda()(torch.rand(3, device='cuda') + 1.0).is_cuda
+    model = get_model({**_partial, 'radial_basis': {
+        'radial_basis_name': 'bessel', 'trainable_coeff': False}})
+    model(get_graphs(batched=True))

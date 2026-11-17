@@ -92,11 +92,14 @@ class BesselBasis(nn.Module):
         super().__init__()
         self.num_basis = bessel_basis_num
         self.prefactor = 2.0 / cutoff_length
-        self.coeffs = torch.FloatTensor([
+        coeffs = torch.FloatTensor([
             n * math.pi / cutoff_length for n in range(1, bessel_basis_num + 1)
         ])
         if trainable_coeff:
-            self.coeffs = nn.Parameter(self.coeffs)
+            self.coeffs = nn.Parameter(coeffs)
+        else:
+            # buffer (not in state_dict) so that .to(device) moves it
+            self.register_buffer('coeffs', coeffs, persistent=False)
 
     def forward(self, r: torch.Tensor) -> torch.Tensor:
         ur = r.unsqueeze(-1)  # to fit dimension
