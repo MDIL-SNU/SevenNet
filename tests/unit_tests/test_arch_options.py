@@ -533,3 +533,170 @@ def test_ffn_moe(cf):
     out = model(get_graphs(batched=True))   # some experts empty in some graphs
     assert torch.isfinite(out[KEY.PRED_FORCE]).all()
     script(model.eval())
+
+
+def test_s2_grid_quadrature():
+    """Lebedev-38 rule == scipy's; Proj Y = I; exact up to degree 9."""
+    import numpy as np
+
+    from sevenn.nn.ffn_variants import lebedev_38, s2_grid_matrices
+
+    grid = lebedev_38()
+    assert grid.shape == (38, 4) and abs(grid[:, 3].sum() - 1) < 1e-15
+    assert np.allclose((grid[:, :3] ** 2).sum(1), 1.0, atol=1e-15)
+    try:
+        from scipy.integrate import lebedev_rule
+    except ImportError:
+        lebedev_rule = None
+    if lebedev_rule is not None:
+        x, w = lebedev_rule(9)
+        ref = np.concatenate([x.T, (w / w.sum())[:, None]], 1)
+        dist = np.abs(ref[:, None, :] - grid[None, :, :]).max(-1)
+        assert dist.min(0).max() < 1e-14 and dist.min(1).max() < 1e-14
+    to_grid, from_grid = s2_grid_matrices(3)
+    assert torch.allclose(to_grid @ from_grid, torch.eye(16, dtype=torch.float64),
+                          atol=1e-14)
+    # triple products Y_i Y_j Y_k (degree <= 9) integrate exactly: compare
+    # with a Gauss-Legendre x uniform-phi product rule (exact to degree 19)
+    from e3nn.o3 import spherical_harmonics
+
+    ct, wt = np.polynomial.legendre.leggauss(10)
+    phi = np.arange(20) * 2 * np.pi / 20
+    st = np.sqrt(1 - ct**2)
+    pts = np.stack([np.outer(st, np.cos(phi)), np.outer(st, np.sin(phi)),
+                    np.outer(ct, np.ones_like(phi))], -1).reshape(-1, 3)
+    wf = torch.from_numpy(np.outer(wt / 2, np.full(20, 1 / 20)).reshape(-1))
+    yf = spherical_harmonics([0, 1, 2, 3], torch.from_numpy(pts), True,
+                             normalization='component')
+    g_ref = torch.einsum('p,pi,pj,pk->ijk', wf, yf, yf, yf)
+    g_leb = torch.einsum('ip,jp,pk->ijk', to_grid, to_grid, from_grid)
+    assert torch.allclose(g_leb, g_ref, atol=1e-13)
+
+
+def test_s2_bilinear_gate_module():
+    """exact O(3) equivariance (incl. inversion), Gaunt reference, moments"""
+    import torch.nn.functional as F
+    from e3nn.o3 import rand_matrix
+
+    from sevenn.nn.ffn_variants import S2BilinearGate, s2_grid_matrices
+
+    old = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        irreps = Irreps('8x0e+12x1o+6x2e+6x3o')
+        gate = S2BilinearGate(irreps, {'e': F.silu}, data_key_x='x')
+        n0, C = 8, 6   # C = widest l > 0 block // 2
+        assert gate.C == C and gate.n0 == n0
+        assert gate.get_gate_irreps_in() == Irreps('8x0e+12x0e+12x1o+12x2e+12x3o')
+        assert gate.irreps_out == Irreps('8x0e+6x0e+6x1o+6x2e+6x3o')
+        assert S2BilinearGate(irreps, {'e': F.silu}, 4).C == 4
+        torch.manual_seed(0)
+        x = gate.irreps_in.randn(4000, -1)
+        out = gate({'x': x.clone()})['x']
+        for sl in gate.irreps_out.slices():   # ~unit second moment at init
+            assert 0.75 < out[:, sl].pow(2).mean().item() < 1.3
+        x = x[:20]
+        out = out[:20]
+        for R in (rand_matrix(), -rand_matrix(), -torch.eye(3)):
+            d_in = gate.irreps_in.D_from_matrix(R)
+            d_out = gate.irreps_out.D_from_matrix(R)
+            out_r = gate({'x': x @ d_in.T})['x']
+            assert torch.allclose(out_r, out @ d_out.T, atol=1e-12)
+        # reference: Gaunt coefficients from the grid matrices, plain loops
+        to_grid, from_grid = s2_grid_matrices(3)
+        gaunt = torch.einsum('ip,jp,pk->ijk', to_grid, to_grid, from_grid)
+        a = torch.zeros(20, C, 16)
+        b = torch.zeros(20, C, 16)
+        off = n0   # A|B region starts after the scalars s
+        for l in range(4):
+            d = 2 * l + 1
+            blk = x[:, off: off + 2 * C * d].reshape(20, 2, C, d)
+            a[..., l * l: (l + 1) ** 2] = blk[:, 0]
+            b[..., l * l: (l + 1) ** 2] = blk[:, 1]
+            off += 2 * C * d
+        z = torch.einsum('nci,ncj,ijk->nck', a, b, gaunt)
+        var = gaunt.pow(2).sum((0, 1))
+        ref = [gate.act(x[:, :n0])]
+        for l in range(4):
+            sl = slice(l * l, (l + 1) ** 2)
+            ref.append((z[..., sl] * var[sl].mean().rsqrt()).reshape(20, -1))
+        assert torch.allclose(out, torch.cat(ref, -1), atol=1e-12)
+        with pytest.raises(ValueError):   # pseudo-tensors are not allowed
+            S2BilinearGate(Irreps('4x0e+2x1e'), {'e': F.silu})
+    finally:
+        torch.set_default_dtype(old)
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'ffn_type': 's2_bilinear'},
+    {**_metaformer, 'ffn_type': 's2_bilinear', 'ffn_s2_channels': 2,
+     'lmax': 3, 'irreps_manual': ['4x0e', '4x0e+4x1o+4x2e+4x3o',
+                                  '4x0e+4x1o+4x2e+4x3o', '4x0e']},
+    {**_metaformer, 'ffn_type': 's2_bilinear', 'ffn_film': True,
+     'layer_scale_init': 0.1, 'radial_pair_embedding': True,
+     'readout_activation': 'silu'},
+])
+def test_s2_bilinear_ffn(cf):
+    from e3nn.util.jit import script
+
+    from sevenn.nn.equivariant_gate import EquivariantGate
+    from sevenn.nn.ffn_variants import ElementFiLM, S2BilinearGate
+    from sevenn.train.muon import build_muon_param_groups
+
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    gate = mods['1_ffn_gate']
+    assert isinstance(gate, S2BilinearGate)
+    assert gate.C == cf.get('ffn_s2_channels', 4)   # hidden 8x1o // 2
+    assert Irreps(mods['1_ffn_linear_1'].irreps_out) == gate.get_gate_irreps_in()
+    assert Irreps(mods['1_ffn_linear_2'].irreps_in) == gate.irreps_out
+    assert isinstance(mods['2_ffn_gate'], EquivariantGate)   # scalar-only FFN
+    if cf.get('ffn_film'):
+        with torch.no_grad():
+            for m in mods.values():
+                if isinstance(m, ElementFiLM):
+                    m.gamma.normal_(0, 0.3)
+                    m.beta.normal_(0, 0.3)
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    assert torch.isfinite(f).all() and f.abs().sum() > 0
+    # inversion: E invariant, F odd
+    from tests.unit_tests.test_model import _graph_list
+
+    g = _graph_list[0].clone()
+    g_inv = g.clone()
+    g_inv[KEY.POS] = -g[KEY.POS]
+    if KEY.CELL in g:
+        g_inv[KEY.CELL] = -g[KEY.CELL]
+    if KEY.EDGE_VEC in g:
+        g_inv[KEY.EDGE_VEC] = -g[KEY.EDGE_VEC]
+    o_i = model(g_inv)
+    assert torch.allclose(o_i[KEY.PRED_TOTAL_ENERGY], e, atol=1e-4)
+    assert torch.allclose(o_i[KEY.PRED_FORCE], -f, atol=1e-4)
+    # grid buffers are not parameters; FFN linears stay on Muon
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    muon = {name[id(p)] for p in groups[0]['params']}
+    assert any('1_ffn_linear_1' in n for n in muon)
+    assert not any('to_grid' in n or 'from_grid' in n for n in name.values())
+    model.set_is_batch_data(True)
+    out = model(get_graphs(batched=True))
+    assert torch.isfinite(out[KEY.PRED_FORCE]).all()
+    # node-local and scriptable; grid matrices are buffers (deploy: script +
+    # freeze, as for LAMMPS / ML-IAP)
+    assert {'to_grid', 'from_grid', 'perm_in', 'perm_out'} <= {
+        n for n, _ in gate.named_buffers()
+    }
+    model.set_is_batch_data(False)
+    g = _graph_list[0].clone()
+    ref = model.eval()(g.clone())   # before scripting (e3nn scripts in place)
+    inp = {k: v for k, v in g.to_dict().items() if isinstance(v, torch.Tensor)}
+    inp[KEY.NODE_FEATURE] = model._atomic_numbers_to_onehot(inp[KEY.ATOMIC_NUMBERS])
+    model.eval_type_map = False  # as sevenn deploy
+    out = torch.jit.freeze(script(model))(inp)
+    assert torch.allclose(out[KEY.PRED_TOTAL_ENERGY], ref[KEY.PRED_TOTAL_ENERGY],
+                          atol=1e-5)
+    assert torch.allclose(out[KEY.PRED_FORCE], ref[KEY.PRED_FORCE], atol=1e-5)

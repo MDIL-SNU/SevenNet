@@ -10,7 +10,7 @@ import sevenn._keys as KEY
 from .convolution import IrrepsConvolution
 from .bilinear_gate import BilinearGate
 from .equivariant_gate import EquivariantGate
-from .ffn_variants import ElementFiLM, LayerScale, SwiGLUGate
+from .ffn_variants import ElementFiLM, LayerScale, S2BilinearGate, SwiGLUGate
 from .linear import IrrepsLinear
 
 
@@ -124,6 +124,7 @@ def Metaformer_interaction_block(
     bilinear_paths: str = 'all',
     bilinear_b: str = 'own',
     ffn_moe_table: Optional[torch.Tensor] = None,
+    ffn_s2_channels: Optional[int] = None,
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -200,10 +201,17 @@ def Metaformer_interaction_block(
         irreps_hidden = Irreps(
             [(int(mul * scale), ir) for mul, ir in irreps_out]
         )
+        irreps_gate_out = irreps_hidden
         if ffn_type == 'swiglu' and all(
             ir.p == 1 for _, ir in irreps_hidden if ir.l == 0
         ):
             ffn_gate = SwiGLUGate(irreps_hidden, act_scalar, act_gate)
+        elif ffn_type == 's2_bilinear' and any(
+            ir.l > 0 for _, ir in irreps_hidden
+        ):
+            # scalar-only FFNs (last layer) keep the gate
+            ffn_gate = S2BilinearGate(irreps_hidden, act_scalar, ffn_s2_channels)
+            irreps_gate_out = ffn_gate.irreps_out
         else:
             ffn_gate = EquivariantGate(irreps_hidden, act_scalar, act_gate)
         from .normalization import SelfConnectionResidualIntro
@@ -226,10 +234,10 @@ def Metaformer_interaction_block(
         block[f'{t}_ffn_gate'] = ffn_gate
         if ffn_film:
             block[f'{t}_ffn_film'] = ElementFiLM(
-                irreps_hidden, num_species, data_key_x
+                irreps_gate_out, num_species, data_key_x
             )
         block[f'{t}_ffn_linear_2'] = IrrepsLinear(
-            irreps_hidden, irreps_out,
+            irreps_gate_out, irreps_out,
             data_key_in=data_key_x,
             biases=bias_in_linear,
         )

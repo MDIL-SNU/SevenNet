@@ -116,6 +116,9 @@ CONFIGS = {
         'layer_scale_init': 0.1, 'use_final_norm': True,
         'irreps_conv': _irreps_conv,
     },
+    # S2-grid bilinear FFN
+    's2_bilinear': {**_A4, 'ffn_type': 's2_bilinear', 'ffn_s2_channels': 64},
+    's2_bilinear_auto': {**_A4, 'ffn_type': 's2_bilinear'},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',

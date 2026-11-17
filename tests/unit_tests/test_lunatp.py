@@ -689,6 +689,54 @@ def test_bilinear_gate_double_backward(b):
     assert torch.autograd.gradgradcheck(f(luna), (xx,), nondet_tol=1e-12)
 
 
+_s2ffn = {
+    'interaction_type': 'metaformer',
+    'self_connection_type': 'identity',
+    'lmax': 3,
+    'irreps_manual': ['16x0e', '16x0e+8x1o+4x2e+4x3o', '16x0e+8x1o+4x2e+4x3o',
+                      '16x0e'],
+    'ffn_type': 's2_bilinear',
+}
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_s2_bilinear_ffn_lunatp():
+    """S2 grid FFN on the LunaTP model (patched linears around the plain-torch
+    grid GEMMs): E/F/S and the force-loss parameter gradients equal e3nn's"""
+    from sevenn.nn.ffn_variants import S2BilinearGate
+
+    torch.manual_seed(777)
+    model_e3nn = get_model(_s2ffn)
+    model_lunatp = get_model(_s2ffn, use_lunatp=True)
+    missing, unexpected = model_lunatp.load_state_dict(
+        model_e3nn.state_dict(), strict=False
+    )
+    assert all(k.endswith('tp_conv.tp.weight') for k in missing), missing
+    assert all('_convolution.convolution.' in k for k in unexpected), unexpected
+    assert isinstance(model_lunatp._modules['1_ffn_gate'], S2BilinearGate)
+
+    def run(model):
+        model.train()
+        model.set_is_batch_data(True)
+        model.zero_grad(set_to_none=True)
+        out = model(get_graphs(batched=True))
+        e, f, s = (
+            out.inferred_total_energy, out.inferred_force, out.inferred_stress
+        )
+        (e.square().sum() + f.square().sum() + s.square().sum()).backward()
+        grads = {n: q.grad for n, q in model.named_parameters() if 'ffn' in n}
+        return e.detach(), f.detach(), s.detach(), grads
+
+    e1, f1, s1, g1 = run(model_e3nn)
+    e2, f2, s2, g2 = run(model_lunatp)
+    assert torch.allclose(e1, e2, rtol=1e-5, atol=2e-5)
+    assert torch.allclose(f1, f2, atol=1e-5)
+    assert torch.allclose(s1, s2, atol=1e-5)
+    assert g1 and g1.keys() == g2.keys()
+    for n, g in g1.items():
+        assert (g - g2[n]).norm() <= 1e-4 * g.norm() + 1e-8, n
+
+
 def _attention_models(opts):
     """e3nn, new LunaTP (default) and old LunaTP (lunatp_fast_attention False)
     attention models with the same random weights (zero-initialized radial

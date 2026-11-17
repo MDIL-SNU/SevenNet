@@ -58,6 +58,10 @@ CONFIGS = {
     'radial_node_cond': {**_metaformer, 'radial_pair_embedding': True,
                          'radial_node_cond': True},
     'moe': {**_metaformer, 'ffn_moe': True},
+    's2_bilinear': {**_metaformer, 'ffn_type': 's2_bilinear'},
+    's2_bilinear_l3': {**_metaformer, 'ffn_type': 's2_bilinear', 'lmax': 3,
+                       'irreps_manual': ['4x0e', '4x0e+4x1o+4x2e+4x3o',
+                                         '4x0e+4x1o+4x2e+4x3o', '4x0e']},
     'irreps_conv': {**_metaformer,
                     'irreps_conv': ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']},
 }
@@ -212,9 +216,11 @@ def _dimer_tail(model, h=1e-3):
     return out
 
 
-@pytest.mark.parametrize('name', ['metaformer', 'agnesi', 'pair_radial',
-                                  'attention', 'radial_node_cond', 'swiglu', 'film',
-                                  'bilinear_gate', 'bilinear_gate_l3'])
+@pytest.mark.parametrize('name', ['metaformer', 'agnesi', 'pair_radial', 'attention',
+                                  'radial_node_cond',
+                                  'swiglu', 'film', 'bilinear_gate',
+                                  'bilinear_gate_l3', 's2_bilinear',
+                                  's2_bilinear_l3'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
