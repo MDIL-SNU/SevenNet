@@ -306,6 +306,11 @@ MAGNITUDE_RESIDUAL = 'magnitude_residual'
 # the pair radial weights of every edge from both atoms' scalars
 # (sevenn/nn/edge_gate.py)
 EDGE_GATE = 'edge_gate'
+# None | {c: 1.0, p_max: 0.5}: aggregated message x ((c + N) / (c + n_i))^p,
+# n_i = smooth coordination, p learned per channel in [0, p_max]
+# (sevenn/nn/coord_scale.py)
+COORD_SCALE = 'coord_scale'
+NODE_COORD_LOG1P = 'coord_log1p'  # log(1 + n_i / c) per node (CoordNumber)
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'

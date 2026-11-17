@@ -11,6 +11,7 @@ import sevenn._keys as KEY
 import sevenn.util as util
 
 from .nn.convolution import IrrepsConvolution
+from .nn.coord_scale import CoordNumber, CoordScale
 from .nn.edge_embedding import (
     AgnesiTransform,
     BesselBasis,
@@ -198,6 +199,29 @@ def _patch_edge_gate(layers: OrderedDict, opts: Dict[str, Any]) -> None:
     layers.update(items)
 
 
+def _patch_coord_scale(layers: OrderedDict, opts: Dict[str, Any]) -> None:
+    """
+    Sublinear coordination scaling (CoordScale) of the aggregated message of
+    every convolution (in place), right after it; the reference coordination
+    is the convolution's fixed denominator. The coordination itself is
+    computed once, by CoordNumber right after edge_embedding.
+    """
+    items = _insert_after(
+        'edge_embedding',
+        ('coord_number', CoordNumber(float(opts.get('c', 1.0)))),
+        list(layers.items()),
+    )
+    for k, conv in [(k, m) for k, m in items if isinstance(m, IrrepsConvolution)]:
+        t = int(k.split('_')[0])
+        scale = CoordScale(
+            conv.convolution_kwargs['irreps_out'],
+            float(conv.denominator.item()), **opts,
+        )
+        items = _insert_after(k, (f'{t}_coord_scale', scale), items)
+    layers.clear()
+    layers.update(items)
+
+
 def _patch_edge_attention(layers: OrderedDict, config: Dict[str, Any]) -> None:
     """Envelope-gated neighbour attention for every convolution (in place)."""
     opts = dict(config[KEY.CONV_ATTENTION])
@@ -263,6 +287,7 @@ def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
         save_components=bool(
             config.get(KEY.RADIAL_PAIR_EMBEDDING, False)
             or config.get(KEY.CONV_ATTENTION, None) is not None
+            or config.get(KEY.COORD_SCALE, None) is not None
         ),
         distance_transform=transform,
     )
@@ -724,7 +749,8 @@ def _to_parallel_model(
     - every position-dependent input of a segment is rebuilt from that
       segment's edge_vec: edge_embedding and (pair radial) edge_pair_input
       are inserted at the start of every segment; a tensor cached from an
-      earlier segment would lose its force contribution
+      earlier segment would lose its force contribution (coordination
+      scaling: coord_number rebuilt as well)
     - per-edge type lookups (pair radial, attention bias, Agnesi, pair
       repulsion) of ghost neighbours read KEY.ATOM_TYPE_ALL (local + ghost
       types, segment 0)
@@ -806,6 +832,7 @@ def _to_parallel_model(
 
     edge_embedding = layers['edge_embedding']
     pair_input = [m for _, m in _layers if isinstance(m, EdgePairInput)]
+    coord = [m for _, m in _layers if isinstance(m, CoordNumber)]
     layer_energy = any(isinstance(m, LayerEnergyAccumulate) for _, m in _layers)
     pair_rep = [(k, m) for k, m in _layers if isinstance(m, PairRepulsion)]
     if pair_rep and num_convolution_layer > 1:  # -> head of the last segment
@@ -819,6 +846,8 @@ def _to_parallel_model(
         head = [('edge_embedding', copy.deepcopy(edge_embedding))]
         if pair_input:
             head.append(('edge_pair_input', copy.deepcopy(pair_input[0])))
+        if coord:
+            head.append(('coord_number', copy.deepcopy(coord[0])))
         if layer_energy:
             head.append(('layer_energy_unpack', LayerEnergyUnpack()))
         if pair_rep and i == num_convolution_layer - 1:
@@ -1112,6 +1141,13 @@ def build_E3_equivariant_model(
                 'conv_attention'
             )
         _patch_edge_gate(layers, dict(edge_gate))
+
+    coord_scale = config.get(KEY.COORD_SCALE, None)
+    if coord_scale is not None:
+        if config.get(KEY.CONV_ATTENTION, None) is not None:
+            # attention already normalizes over the neighbours (p = 1)
+            raise ValueError('coord_scale cannot be combined with conv_attention')
+        _patch_coord_scale(layers, dict(coord_scale))
 
     if config.get(KEY.USE_FINAL_NORM, False):
         layers['final_norm'] = EquivariantRMSNorm(

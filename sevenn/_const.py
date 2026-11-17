@@ -184,6 +184,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.NORM_MAGNITUDE: False,
     KEY.MAGNITUDE_RESIDUAL: False,
     KEY.EDGE_GATE: None,
+    KEY.COORD_SCALE: None,
     KEY._NORMALIZE_SPH: True,
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
@@ -294,6 +295,12 @@ MODEL_CONFIG_CONDITION = {
         and isinstance(x.get('skip_first', True), bool)
         and int(x.get('dim', 16)) > 0
         and 0.0 < float(x.get('alpha_max', 0.9)) < 1.0
+    ),
+    KEY.COORD_SCALE: lambda x: x is None or (
+        isinstance(x, dict)
+        and set(x) <= {'c', 'p_max'}
+        and float(x.get('c', 1.0)) > 0.0
+        and 0.0 < float(x.get('p_max', 0.5)) < 1.0
     ),
     KEY.PAIR_REPULSION: lambda x: x is None or (
         isinstance(x, dict)

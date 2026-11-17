@@ -149,6 +149,17 @@ CONFIGS = {
         'edge_gate': {'skip_first': False},
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
                           '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
+    'coord_scale': {**_metaformer, 'coord_scale': {}},
+    'coord_scale_variants': {
+        **_metaformer, 'radial_pair_embedding': True, 'ffn_type': 's2_bilinear',
+        'coord_scale': {'c': 0.5, 'p_max': 0.9},
+        'parallel_block': [False, True, True], 'per_layer_readout': True},
+    'coord_scale_nequip': {**_partial, 'coord_scale': {}},
+    'edge_gate_coord_scale': {
+        **_metaformer, 'radial_pair_embedding': True, 'edge_gate': {},
+        'coord_scale': {},
+        'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
+                          '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o', '4x0e']},
     'light_conv_full_parity': {
         **_metaformer, 'conv_gate': False, 'parallel_block': True,
         'irreps_manual': ['4x0e', '4x0e+2x0o+4x1o+2x1e+4x2e+2x2o',
@@ -197,6 +208,8 @@ def _model(cf):
                 p.uniform_(0.2, 0.9)   # magnitude residual exponent (init 0)
             if n.endswith('_edge_gate.theta'):
                 p.normal_(0, 1.0)   # zero-initialized gate amplitude
+            if n.endswith('_coord_scale.theta'):
+                p.uniform_(0.05, 0.45)   # zero-initialized exponents, in the box
     model.set_is_batch_data(False)
     return model
 
@@ -331,7 +344,8 @@ def _dimer_tail(model, h=1e-3):
                                   'pair_repulsion', 'norm_magnitude',
                                   'short_range_both', 'magnitude_residual', 'magnitude_residual_variants',
                                   'exp_radial', 'exp_radial_short_block_node_cond', 'edge_gate',
-                                  'edge_gate_variants'])
+                                  'edge_gate_variants', 'coord_scale', 'coord_scale_variants',
+                                  'coord_scale_nequip', 'edge_gate_coord_scale'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
@@ -370,7 +384,9 @@ def _trimer_tail(model, h=1e-3):
 
 
 @pytest.mark.parametrize('name', ['metaformer', 'pair_radial', 'edge_gate',
-                                  'edge_gate_variants'])
+                                  'edge_gate_variants', 'coord_scale',
+                                  'coord_scale_variants', 'coord_scale_nequip',
+                                  'edge_gate_coord_scale'])
 def test_trimer_c2_at_cutoff(name):
     """as test_dimer_c2_at_cutoff, for a pair leaving the cutoff of a bonded
     atom (many-body terms of the crossing pair must vanish C2 as well)"""
@@ -408,6 +424,26 @@ def test_xplor_force_constant_jumps_at_r_on():
     far, near = _dimer_tail(_model(CONFIGS['xplor']))
     ratio = np.abs(near / far)
     assert ratio[0] < 0.2 and ratio[1] < 0.35 and ratio[2] < 0.6, ratio
+
+
+def test_coord_scale_inherits_xplor_order():
+    """
+    n_i = sum_j f_cut(r_ij) is exactly as smooth as the cutoff function: with
+    XPLOR (S ~ (r_c - r)^2 at r_c, C1) the coordination of the trimer's centre
+    atom makes E - E_far shrink like (r_c - x)^2 (force constant does not
+    vanish at r_c), while the same model without it is C2 there (the Bessel
+    factor of the message adds one order when the pair tables are zero). With
+    a C2 envelope (poly_cut) it is C2 (test_trimer_c2_at_cutoff).
+    """
+    xplor = CONFIGS['xplor']
+    base = _model(xplor)
+    far, near = _trimer_tail(base)
+    assert abs(near[2]) < 0.6 * abs(far[2]), (far, near)
+    model = _model({**xplor, 'coord_scale': {}})
+    far, near = _trimer_tail(model)
+    ratio = np.abs(near / far)
+    assert 0.15 < ratio[0] < 0.35 and 0.35 < ratio[1] < 0.65, ratio
+    assert ratio[2] > 0.8, ratio  # k(r_c^-) != 0: C1
 
 
 @pytest.mark.parametrize('name,opt,weight', [

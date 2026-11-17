@@ -935,6 +935,11 @@ MFEXT_CONFIGS = {
         ('table_', '_outro.gamma', 'mag_weight', 'readout_norm')),
     'edge_gate': ({'edge_gate': {}, 'ffn_type': 's2_bilinear'},
                   ('table_', '_edge_gate.theta')),
+    'coord_scale': ({'coord_scale': {}, 'ffn_type': 's2_bilinear'},
+                    ('table_', '_coord_scale.theta')),
+    'edge_gate_coord_scale': (
+        {'edge_gate': {}, 'coord_scale': {}, 'parallel_block': [False, True, True]},
+        ('table_', '_edge_gate.theta', '_coord_scale.theta')),
     'mf_ext_sink': (
         {'readout_activation': None, 'readout_block': {'type': 'swiglu'},
          'per_layer_readout': True, 'radial_mlp_block': {},

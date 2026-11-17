@@ -1936,3 +1936,180 @@ def test_edge_gate_errors():
     assert ok({'skip_first': False}) and not ok({'skip_first': 1})
     assert not ok({'alpha_max': 1.0}) and not ok({'dim': 0})
     assert not ok({'bias': True}) and not ok(True)
+
+
+def test_coord_scale_module():
+    """m_i,c ((c + N) / (c + n_i))^p_c, n_i = sum of the envelopes of i's
+    edges (CoordNumber, once per forward), p_c = clamp(theta_c, 0, p_max)
+    with a straight-through gradient"""
+    from e3nn.o3 import rand_matrix
+
+    from sevenn.nn.coord_scale import CoordNumber, CoordScale
+
+    def run(module, d, c=1.0):
+        return module(CoordNumber(c)(dict(d)))[KEY.NODE_FEATURE]
+
+    torch.manual_seed(0)
+    irreps = Irreps('3x1o+2x0e+2x2e')
+    mod = CoordScale(irreps, avg_num_neigh=10.0, c=1.0, p_max=0.5)
+    assert mod.num_channels == 7 and mod.theta.shape == (7,)
+    assert 'channel_index' not in mod.state_dict()
+    expect = [0, 0, 0, 1, 1, 1, 2, 2, 2, 3, 4] + [5] * 5 + [6] * 5
+    assert mod.channel_index.tolist() == expect
+    n_node, e = 5, 16
+    x = torch.randn(n_node, irreps.dim)
+    dst = torch.tensor([0] * 9 + [1] * 4 + [2] * 3)  # nodes 3, 4: no edges
+    edge = torch.stack([dst, torch.randint(0, n_node, (e,))])
+    env = torch.rand(e)
+    data = {KEY.NODE_FEATURE: x, KEY.EDGE_IDX: edge, KEY.EDGE_ENVELOPE: env}
+    lg = CoordNumber(2.0)(dict(data))[KEY.NODE_COORD_LOG1P]
+    n = torch.zeros(n_node).index_add(0, dst, env)
+    assert torch.allclose(lg, torch.log1p(n / 2.0)) and (lg[3:] == 0).all()
+    assert torch.equal(run(mod, data), x)  # p = 0: identity
+    theta = torch.tensor([-0.3, 0.1, 0.2, 0.7, 0.45, 0.0, 0.3])
+    with torch.no_grad():
+        mod.theta.copy_(theta)
+    p = theta.clamp(0.0, 0.5)
+    ratio = (1.0 + 10.0) / (1.0 + n)
+    ref = x * ratio[:, None] ** p[expect][None, :]
+    out = run(mod, data)
+    assert torch.allclose(out, ref, atol=1e-6)
+    assert torch.equal(out[:, 0:3], x[:, 0:3])  # theta < 0: exactly p = 0
+    assert torch.allclose(out[:, 9], x[:, 9] * ratio ** 0.5)  # capped
+    # straight-through: the clamped channels still get the gradient of p
+    out.sum().backward()
+    assert (mod.theta.grad.abs() > 0).all()
+    # equivariant: one factor per channel for all 2l+1 components
+    D = irreps.D_from_matrix(rand_matrix())
+    d_rot = dict(data)
+    d_rot[KEY.NODE_FEATURE] = x @ D.T
+    assert torch.allclose(run(mod, d_rot), out.detach() @ D.T, atol=1e-5)
+    # c != 1 and fewer rows than the coordination (ML-IAP: ghost rows after
+    # the local ones are not read)
+    m2 = CoordScale(irreps, avg_num_neigh=10.0, c=0.5)
+    with torch.no_grad():
+        m2.theta.copy_(theta)
+    d2 = CoordNumber(0.5)(dict(data))
+    d2[KEY.NODE_FEATURE] = x[:3]
+    ref2 = x[:3] * ((0.5 + 10.0) / (0.5 + n[:3]))[:, None] ** p[expect][None, :]
+    assert torch.allclose(m2(d2)[KEY.NODE_FEATURE], ref2, atol=1e-6)
+    # frozen exponents (no straight-through branch): same values
+    mod.theta.requires_grad_(False)
+    assert torch.equal(run(mod, data), out.detach())
+    # sublinear growth: n equal neighbours give n^(1-p) x (one neighbour)
+    m1 = CoordScale(Irreps('1x0e'), avg_num_neigh=10.0, c=1.0)
+    with torch.no_grad():
+        m1.theta.fill_(0.5)
+    tot = []
+    for k in (1, 4, 16, 64):
+        d = {KEY.NODE_FEATURE: torch.full((1, 1), float(k)),  # sum of k ones
+             KEY.EDGE_IDX: torch.zeros(2, k, dtype=torch.long),
+             KEY.EDGE_ENVELOPE: torch.ones(k)}
+        tot.append(run(m1, d).item())
+    assert all(b > a for a, b in zip(tot, tot[1:]))  # keeps growing
+    assert abs(tot[3] / tot[2] - (65 / 17) ** 0.5 * 4 / (65 / 17)) < 1e-5
+    with pytest.raises(AssertionError):
+        CoordScale(irreps, 10.0, p_max=1.0)
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'coord_scale': {}},
+    {**_partial, 'coord_scale': {'c': 0.5, 'p_max': 0.9}},
+    {**_metaformer, 'radial_pair_embedding': True, 'coord_scale': {},
+     'edge_gate': {'dim': 4}, 'irreps_manual': _full_parity,
+     'parallel_block': [False, True, True], 'per_layer_readout': True},
+])
+def test_coord_scale(cf):
+    """coordination scaling right after every convolution"""
+    from e3nn.util.jit import script
+
+    from sevenn.logger import Logger
+    from sevenn.model_build import build_E3_equivariant_model
+    from sevenn.nn.coord_scale import CoordScale
+    from sevenn.train.muon import build_muon_param_groups
+    from tests.unit_tests.test_model import _graph_list, get_model_config
+
+    opts = cf['coord_scale']
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'coord_scale': None})
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    names = list(mods)
+    scales = {k: m for k, m in mods.items() if isinstance(m, CoordScale)}
+    convs = _convs(model)
+    assert len(scales) == len(convs) == 3
+    assert model.edge_embedding.save_components
+    assert names.index('coord_number') == names.index('edge_embedding') + 1
+    assert mods['coord_number'].c == opts.get('c', 1.0)
+    for t, (k, conv) in enumerate(convs.items()):
+        assert names.index(f'{t}_coord_scale') == names.index(k) + 1
+        m = scales[f'{t}_coord_scale']
+        assert m.avg_num_neigh == conv.denominator.item() == 30.0
+        assert m.num_channels == sum(
+            mul for mul, _ in conv.convolution_kwargs['irreps_out'])
+        assert m.p_max == opts.get('p_max', 0.5) and m.c == opts.get('c', 1.0)
+    # init (theta = 0): bitwise the model without it, same weights
+    missing, unexpected = model.load_state_dict(ref.state_dict(), strict=False)
+    assert not unexpected and sorted(missing) == sorted(
+        f'{k}.theta' for k in scales)
+    ref.set_is_batch_data(True)
+    model.set_is_batch_data(True)
+    o_ref = ref(get_graphs(batched=True))
+    o = model(get_graphs(batched=True))
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE, KEY.PRED_STRESS):
+        assert torch.equal(o_ref[k], o[k]), k
+    o[KEY.PRED_TOTAL_ENERGY].sum().backward()
+    assert all(m.theta.grad.abs().sum() > 0 for m in scales.values())
+    with torch.no_grad():
+        for n, p in model.named_parameters():
+            if n.endswith('_coord_scale.theta'):
+                p.uniform_(0.0, 1.0)
+            if 'layer_readout' in n or n.endswith('_edge_gate.theta'):
+                p.normal_(0, 0.5)
+    o2 = model(get_graphs(batched=True))
+    assert (o2[KEY.PRED_FORCE] - o[KEY.PRED_FORCE]).abs().max() > 1e-4
+    out, out_rot, R = _rotated_pair(model)
+    e, e_r = out[KEY.PRED_TOTAL_ENERGY], out_rot[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    _inversion_check(model)
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    adam = {name[id(p)] for p in groups[1]['params']}
+    assert set(missing) <= adam
+    config = get_model_config()
+    config.update(cf)
+    Logger().print_model_info(model, config)
+    model.set_is_batch_data(False)
+    g = _graph_list[0].clone()
+    ref_out = model.eval()(g.clone())   # before scripting (in place)
+    inp = {k: v for k, v in g.to_dict().items() if isinstance(v, torch.Tensor)}
+    inp[KEY.NODE_FEATURE] = model._atomic_numbers_to_onehot(inp[KEY.ATOMIC_NUMBERS])
+    model.eval_type_map = False  # as sevenn deploy
+    out = torch.jit.freeze(script(model))(inp)
+    for k in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE):
+        assert torch.allclose(out[k], ref_out[k], atol=1e-5), k
+    # e3gnn/parallel: in the segment of its convolution, whose head rebuilds
+    # the envelope from that segment's edge_vec
+    segs = build_E3_equivariant_model(config, parallel=True)
+    for t in range(3):
+        seg = [s for s in segs if f'{t}_convolution' in s._modules][0]
+        names_s = list(seg._modules)
+        assert names_s.index(f'{t}_coord_scale') == names_s.index(
+            f'{t}_convolution') + 1
+        assert seg._modules['edge_embedding'].save_components
+        # coordination rebuilt from this segment's envelope, before its use
+        assert names_s.index('edge_embedding') < names_s.index(
+            'coord_number') < names_s.index(f'{t}_coord_scale')
+
+
+def test_coord_scale_errors():
+    from sevenn._const import MODEL_CONFIG_CONDITION
+
+    with pytest.raises(ValueError):  # attention normalizes already (p = 1)
+        get_model({**_metaformer, 'conv_attention': {}, 'coord_scale': {}})
+    ok = MODEL_CONFIG_CONDITION[KEY.COORD_SCALE]
+    assert ok(None) and ok({}) and ok({'c': 2.0, 'p_max': 0.25})
+    assert not ok({'p_max': 1.0}) and not ok({'p_max': 0.0})
+    assert not ok({'c': 0.0}) and not ok({'n_ref': 40.0}) and not ok(True)
