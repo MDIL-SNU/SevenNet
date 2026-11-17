@@ -16,6 +16,66 @@ from sevenn.atom_graph_data import AtomGraphData
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.train.dataload import unlabeled_atoms_to_graph
 
+_OUTPUT_KEYS = (
+    KEY.PRED_TOTAL_ENERGY,
+    KEY.ATOMIC_ENERGY,
+    KEY.PRED_FORCE,
+    KEY.PRED_STRESS,
+    KEY.PRED_ATOMIC_VIRIAL,  # only with compute_atomic_virial
+)
+
+
+def _to_device_packed(data, device):
+    """
+    Moves the tensors of data to device with one pinned buffer and one
+    non-blocking host-to-device copy per dtype (the tensors become views of
+    it): two copies instead of one per tensor, same values.
+    """
+    groups: Dict[torch.dtype, list] = {}
+    for k, v in data.items():
+        if isinstance(v, torch.Tensor):
+            groups.setdefault(v.dtype, []).append(k)
+    for keys in groups.values():
+        flat = torch.cat([data[k].reshape(-1) for k in keys])
+        dev = flat.pin_memory().to(device, non_blocking=True)
+        offset = 0
+        for k in keys:
+            n = data[k].numel()
+            data[k] = dev[offset:offset + n].view(data[k].shape)
+            offset += n
+
+
+def _pack_outputs(output):
+    """The calculator outputs as one flat tensor (one device-to-host copy)
+    and their (key, shape, dtype)"""
+    keys = [k for k in _OUTPUT_KEYS if k in output]
+    tensors = [output[k].detach() for k in keys]
+    flat = torch.cat([t.reshape(-1) for t in tensors])
+    return flat, [(k, t.shape, t.dtype) for k, t in zip(keys, tensors)]
+
+
+def _unpack_outputs(flat: np.ndarray, meta, num_atoms: int, num_edges: int):
+    out = {}
+    offset = 0
+    for k, shape, dtype in meta:
+        n = shape.numel()
+        np_dtype = torch.empty(0, dtype=dtype).numpy().dtype
+        out[k] = flat[offset:offset + n].astype(np_dtype).reshape(shape)
+        offset += n
+    energy = out[KEY.PRED_TOTAL_ENERGY].reshape(-1)[0].item()
+    results: Dict[str, Any] = {
+        'free_energy': energy,
+        'energy': energy,
+        'energies': out[KEY.ATOMIC_ENERGY].flatten(),
+        'forces': out[KEY.PRED_FORCE][:num_atoms, :],
+        'stress': -out[KEY.PRED_STRESS][[0, 1, 2, 4, 5, 3]],  # as voigt notation
+        'num_edges': num_edges,
+    }
+    if KEY.PRED_ATOMIC_VIRIAL in out:
+        results['stresses'] = out[KEY.PRED_ATOMIC_VIRIAL][:num_atoms, :]
+    return results
+
+
 
 class SevenNetCalculator(Calculator):
     """Supporting properties:
@@ -206,30 +266,13 @@ class SevenNetCalculator(Calculator):
                 )
 
     def output_to_results(self, output: Dict[str, torch.Tensor]) -> Dict[str, Any]:
-        energy = output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item()
-        num_atoms = output['num_atoms'].item()
-        atomic_energies = output[KEY.ATOMIC_ENERGY].detach().cpu().numpy().flatten()
-        forces = output[KEY.PRED_FORCE].detach().cpu().numpy()[:num_atoms, :]
-        stress = np.array(
-            (-output[KEY.PRED_STRESS])
-            .detach()
-            .cpu()
-            .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
+        flat, meta = _pack_outputs(output)
+        return _unpack_outputs(
+            flat.cpu().numpy(),
+            meta,
+            output[KEY.ATOMIC_NUMBERS].shape[0],  # = num_atoms, no device read
+            output[KEY.EDGE_IDX].shape[1],
         )
-        results: Dict[str, Any] = {
-            'free_energy': energy,
-            'energy': energy,
-            'energies': atomic_energies,
-            'forces': forces,
-            'stress': stress,
-            'num_edges': output[KEY.EDGE_IDX].shape[1],
-        }
-        if KEY.PRED_ATOMIC_VIRIAL in output:
-            virial = (
-                output[KEY.PRED_ATOMIC_VIRIAL].detach().cpu().numpy()[:num_atoms, :]
-            )
-            results['stresses'] = virial
-        return results
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes
@@ -242,7 +285,10 @@ class SevenNetCalculator(Calculator):
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
 
-        data.to(self.device)  # type: ignore
+        if self.device.type == 'cuda':
+            _to_device_packed(data, self.device)
+        else:
+            data.to(self.device)  # type: ignore
 
         output = self.model(data)
         self.results = self.output_to_results(output)
