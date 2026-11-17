@@ -31,6 +31,7 @@ from .nn.node_embedding import GhostAtomTypes, OnehotEmbedding
 from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
 from .nn.radial_pair import EdgePairInput, NodeCondRadialInput, PairRadialMLP
 from .nn.edge_attention import AttentionOutGate, EdgeAttention
+from .nn.moe_ffn import type_to_expert_table
 from .nn.scale import ModalWiseRescale, Rescale, SpeciesWiseRescale
 from .nn.self_connection import (
     SelfConnectionIntro,
@@ -760,6 +761,10 @@ def build_E3_equivariant_model(
                 'ffn_type': config.get(KEY.FFN_TYPE, 'gate'),
                 'layer_scale_init': config.get(KEY.LAYER_SCALE_INIT, None),
                 'ffn_film': config.get(KEY.FFN_FILM, False),
+                'ffn_moe_table': (
+                    type_to_expert_table(config[KEY.TYPE_MAP], num_species)
+                    if config.get(KEY.FFN_MOE, False) else None
+                ),
             }
         )
     else:

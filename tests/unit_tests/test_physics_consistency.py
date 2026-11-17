@@ -57,6 +57,7 @@ CONFIGS = {
                        'radial_pair_embedding': True},
     'radial_node_cond': {**_metaformer, 'radial_pair_embedding': True,
                          'radial_node_cond': True},
+    'moe': {**_metaformer, 'ffn_moe': True},
     'irreps_conv': {**_metaformer,
                     'irreps_conv': ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']},
 }

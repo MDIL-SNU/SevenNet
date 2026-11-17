@@ -501,3 +501,35 @@ def test_radial_node_cond(cf):
     f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
     assert torch.allclose(f @ R.T, f_r, atol=1e-4)
     script(model.eval())
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'ffn_moe': True},
+    {**_metaformer, 'ffn_moe': True, 'radial_pair_embedding': True,
+     'readout_activation': 'silu', 'use_ffn': [True, False, True]},
+])
+def test_ffn_moe(cf):
+    from e3nn.util.jit import script
+
+    from sevenn.nn.moe_ffn import MoECombine, MoEDispatch, element_group
+    from sevenn.train.muon import build_muon_param_groups
+
+    assert [element_group(z) for z in (1, 8, 13, 26, 74, 64)] == [0, 1, 2, 3, 4, 5]
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    assert isinstance(mods['0_moe_dispatch'], MoEDispatch)
+    assert isinstance(mods['0_moe_combine'], MoECombine)
+    assert '0_ffn_linear_1_e0' in mods and '0_ffn_linear_2_e1' in mods
+    groups = build_muon_param_groups(model)
+    name = {id(p): n for n, p in model.named_parameters()}
+    muon = {name[id(p)] for p in groups[0]['params']}
+    assert any('_ffn_linear_1_e' in n for n in muon)
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    model.set_is_batch_data(True)
+    out = model(get_graphs(batched=True))   # some experts empty in some graphs
+    assert torch.isfinite(out[KEY.PRED_FORCE]).all()
+    script(model.eval())

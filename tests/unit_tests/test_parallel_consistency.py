@@ -87,6 +87,7 @@ CONFIGS = {
     'ffn_film': {**_A2, 'ffn_film': True},
     'ffn_hidden_scale_4': {**_A2, 'ffn_hidden_scale': 4},
     'final_norm_no_ffn': {**_A2, 'use_final_norm': True, 'use_ffn': False},
+    'moe': {**_A2, 'ffn_moe': True},
     'linear_residual': {**_A2, 'self_connection_type': 'linear'},
     'irreps_conv': {**_A2, 'irreps_conv': _irreps_conv},
     'bilinear_gate': {**_A2, 'gate_type': 'bilinear'},

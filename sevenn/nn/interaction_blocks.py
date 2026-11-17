@@ -1,6 +1,7 @@
 import os
 from typing import Callable, Dict, List, Optional, Tuple
 
+import torch
 from e3nn.o3 import Irreps
 from torch.nn import Module
 
@@ -122,6 +123,7 @@ def Metaformer_interaction_block(
     irreps_conv: Optional[Irreps] = None,
     bilinear_paths: str = 'all',
     bilinear_b: str = 'own',
+    ffn_moe_table: Optional[torch.Tensor] = None,
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -191,8 +193,12 @@ def Metaformer_interaction_block(
     block[f'{t}_self_connection_outro'] = sc_outro()
 
     if use_ffn:
+        # ffn_moe_table (type -> expert): shared FFN + one element-group expert,
+        # each with half of the dense hidden width (sevenn/nn/moe_ffn.py)
+        moe = ffn_moe_table is not None
+        scale = ffn_hidden_scale / 2 if moe else ffn_hidden_scale
         irreps_hidden = Irreps(
-            [(mul * ffn_hidden_scale, ir) for mul, ir in irreps_out]
+            [(int(mul * scale), ir) for mul, ir in irreps_out]
         )
         if ffn_type == 'swiglu' and all(
             ir.p == 1 for _, ir in irreps_hidden if ir.l == 0
@@ -209,6 +215,9 @@ def Metaformer_interaction_block(
         block[f'{t}_norm_2'] = EquivariantRMSNorm(
             irreps_out, data_key_x, eps=norm_eps
         )
+        if moe:
+            from .moe_ffn import MoEDispatch
+            block[f'{t}_moe_dispatch'] = MoEDispatch(ffn_moe_table, t, data_key_x)
         block[f'{t}_ffn_linear_1'] = IrrepsLinear(
             irreps_out, ffn_gate.get_gate_irreps_in(),
             data_key_in=data_key_x,
@@ -224,6 +233,22 @@ def Metaformer_interaction_block(
             data_key_in=data_key_x,
             biases=bias_in_linear,
         )
+        if moe:
+            from .moe_ffn import MoECombine
+            n_exp = int(ffn_moe_table.max().item()) + 1
+            for k in range(n_exp):
+                key = f'{t}_moe_x{k}'
+                gate_k = EquivariantGate(irreps_hidden, act_scalar, act_gate, key)
+                block[f'{t}_ffn_linear_1_e{k}'] = IrrepsLinear(
+                    irreps_out, gate_k.get_gate_irreps_in(),
+                    data_key_in=key, biases=bias_in_linear,
+                )
+                block[f'{t}_ffn_gate_e{k}'] = gate_k
+                block[f'{t}_ffn_linear_2_e{k}'] = IrrepsLinear(
+                    irreps_hidden, irreps_out,
+                    data_key_in=key, biases=bias_in_linear,
+                )
+            block[f'{t}_moe_combine'] = MoECombine(n_exp, t, data_key_x)
         if layer_scale_init is not None:
             block[f'{t}_layer_scale_2'] = LayerScale(
                 irreps_out, layer_scale_init, data_key_x
