@@ -259,3 +259,28 @@ def test_film_identity_at_init():
     x = torch.randn(5, 10)
     out = film({'x': x.clone(), KEY.ATOM_TYPE: torch.tensor([0, 1, 2, 1, 0])})
     assert torch.equal(out['x'], x)
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'distance_transform': 'agnesi'},
+    {**_partial, 'distance_transform': 'agnesi'},
+])
+def test_agnesi_transform(cf):
+    from e3nn.util.jit import script
+
+    from sevenn.nn.edge_embedding import AgnesiTransform
+
+    model = get_model(cf)
+    emb = dict(model.named_children())['edge_embedding']
+    assert isinstance(emb.distance_transform, AgnesiTransform)
+    # transform is monotonically decreasing in r and lies in (0, 1)
+    r = torch.linspace(0.5, 6.0, 50)
+    t = emb.distance_transform(r, torch.zeros(2, 50, dtype=torch.long),
+                               torch.zeros(1, dtype=torch.long))
+    assert (t.diff() < 0).all() and (t > 0).all() and (t < 1).all()
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    script(model.eval())

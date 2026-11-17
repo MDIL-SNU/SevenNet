@@ -75,9 +75,10 @@ _A2 = {**_metaformer, **_xplor, **_modal}  # metaformer, identity residual
 _A3 = {**_A2, 'radial_pair_embedding': True}
 _A4 = {**_A3, 'readout_activation': 'silu'}
 CONFIGS = {
-    # nequip block (original SevenNet path)
+    # nequip block (original SevenNet path), ghost types (Agnesi transform)
     'nequip_sc': {},
     'A0_nequip_linear_sc': _A0,
+    'agnesi_nequip': {**_A0, 'distance_transform': 'agnesi'},
     # metaformer block, node-local FFN / gate / residual variants
     'A2_metaformer': _A2,
     'swiglu': {**_A2, 'ffn_type': 'swiglu'},
@@ -86,6 +87,7 @@ CONFIGS = {
     'ffn_hidden_scale_4': {**_A2, 'ffn_hidden_scale': 4},
     'final_norm_no_ffn': {**_A2, 'use_final_norm': True, 'use_ffn': False},
     'linear_residual': {**_A2, 'self_connection_type': 'linear'},
+    'agnesi_metaformer': {**_A2, 'distance_transform': 'agnesi'},
     # element-pair radial MLP and the edge-embedding options it reads
     'A3_pair_radial': _A3,
     'A4_silu_readout': _A4,
@@ -94,6 +96,7 @@ CONFIGS = {
     'frozen_bessel': {**_A4, 'radial_basis': {
         'radial_basis_name': 'bessel', 'bessel_basis_num': 8,
         'trainable_coeff': False}},
+    'agnesi_pair': {**_A4, 'distance_transform': 'agnesi'},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
@@ -438,6 +441,7 @@ def test_e3gnn_parallel_torchscript(name):
 @pytest.mark.parametrize('name', list(CONFIGS))
 def test_parallel_segments_structure(name):
     """ghost twins, per-segment edge inputs, ghost-aware edge modules"""
+    from sevenn.nn.edge_embedding import EdgeEmbedding
     from sevenn.nn.normalization import SelfConnectionResidualIntro
     from sevenn.nn.radial_pair import EdgePairInput
 
@@ -468,6 +472,9 @@ def test_parallel_segments_structure(name):
     need_types = False
     for seg in segs:
         for k, m in seg._modules.items():
+            if isinstance(m, EdgeEmbedding) and m.distance_transform is not None:
+                assert m.key_node_type == KEY.ATOM_TYPE_ALL
+                need_types = True
             if isinstance(m, EdgePairInput):
                 assert m.key_atom_type == KEY.ATOM_TYPE_ALL
                 need_types = True

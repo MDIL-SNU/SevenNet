@@ -12,6 +12,7 @@ import sevenn.util as util
 
 from .nn.convolution import IrrepsConvolution
 from .nn.edge_embedding import (
+    AgnesiTransform,
     BesselBasis,
     EdgeEmbedding,
     PolynomialCutoff,
@@ -122,11 +123,15 @@ def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
     _normalize_sph = config[KEY._NORMALIZE_SPH]
     sph = SphericalEncoding(lmax_edge, parity, normalize=_normalize_sph)
 
+    transform = None
+    if config.get(KEY.DISTANCE_TRANSFORM, None) == 'agnesi':
+        transform = AgnesiTransform(config[KEY.TYPE_MAP])
     return EdgeEmbedding(
         basis_module=rbf,
         cutoff_module=env,
         spherical_module=sph,
         save_components=config.get(KEY.RADIAL_PAIR_EMBEDDING, False),
+        distance_transform=transform,
     )
 
 
@@ -524,7 +529,11 @@ def _to_parallel_model(
     # ghost-aware edge modules
     need_types = False
     for key, module in _layers:
-        if isinstance(module, EdgePairInput):
+        if isinstance(module, EdgeEmbedding):
+            if module.distance_transform is not None:
+                module.key_node_type = KEY.ATOM_TYPE_ALL
+                need_types = True
+        elif isinstance(module, EdgePairInput):
             module.key_atom_type = KEY.ATOM_TYPE_ALL
             need_types = True
         elif isinstance(module, SelfConnectionResidualIntro):

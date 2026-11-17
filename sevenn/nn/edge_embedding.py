@@ -1,4 +1,5 @@
 import math
+from typing import Dict, Optional
 
 import torch
 import torch.nn as nn
@@ -189,6 +190,44 @@ class SphericalEncoding(nn.Module):
 
 
 @compile_mode('script')
+class AgnesiTransform(nn.Module):
+    """
+    Agnesi distance transform applied before the radial basis:
+        x' = 1 / (1 + a (r/r0)^q / (1 + (r/r0)^(q - p))),
+    r0 = mean covalent radius of the edge's two elements (ASE table).
+    From ACEpotentials.jl (Witt et al., J. Chem. Phys. 159, 164101 (2023),
+    doi:10.1063/5.0158783), as used by MACE (mace/modules/radial.py
+    AgnesiTransform; MACE-MH-1 config distance_transform: Agnesi).
+    The cutoff envelope stays a function of r (smooth at the cutoff).
+    """
+
+    def __init__(
+        self,
+        type_map: Dict[int, int],
+        q: float = 0.9183,
+        p: float = 4.5791,
+        a: float = 1.0805,
+    ) -> None:
+        super().__init__()
+        from ase.data import covalent_radii
+
+        n_type = max(type_map.values()) + 1
+        radius = torch.zeros(n_type)
+        for z, idx in type_map.items():
+            radius[idx] = float(covalent_radii[z])
+        self.register_buffer('radius', radius)
+        self.q, self.p, self.a = q, p, a
+
+    def forward(
+        self, r: torch.Tensor, edge_idx: torch.Tensor, node_type: torch.Tensor
+    ) -> torch.Tensor:
+        r0 = 0.5 * (self.radius[node_type[edge_idx[0]]]
+                    + self.radius[node_type[edge_idx[1]]])
+        x = r / r0
+        return 1.0 / (1.0 + self.a * x.pow(self.q) / (1.0 + x.pow(self.q - self.p)))
+
+
+@compile_mode('script')
 class EdgeEmbedding(nn.Module):
     """
     embedding layer of |r| by
@@ -202,20 +241,33 @@ class EdgeEmbedding(nn.Module):
         cutoff_module: nn.Module,
         spherical_module: nn.Module,
         save_components: bool = False,
+        distance_transform: Optional[nn.Module] = None,
     ) -> None:
         super().__init__()
         self.basis_function = basis_module
         self.cutoff_function = cutoff_module
         self.spherical = spherical_module
         self.save_components = save_components  # for PairRadialMLP
+        self.distance_transform = distance_transform
+        # node type indices for distance_transform: the node features before
+        # one-hot (serial, ML-IAP); KEY.ATOM_TYPE_ALL (local + ghost) in the
+        # e3gnn/parallel segments, where x is local only / already features
+        self.key_node_type = KEY.NODE_FEATURE
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         rvec = data[KEY.EDGE_VEC]
         r = torch.linalg.norm(data[KEY.EDGE_VEC], dim=-1)
         data[KEY.EDGE_LENGTH] = r
 
-        rbf = self.basis_function(r)
         env = self.cutoff_function(r)
+        if self.distance_transform is not None:
+            # node features still hold the type indices (before one-hot)
+            r_in = self.distance_transform(
+                r, data[KEY.EDGE_IDX], data[self.key_node_type]
+            )
+            rbf = self.basis_function(r_in)
+        else:
+            rbf = self.basis_function(r)
         data[KEY.EDGE_EMBEDDING] = rbf * env.unsqueeze(-1)
         if self.save_components:
             data[KEY.EDGE_RBF] = rbf

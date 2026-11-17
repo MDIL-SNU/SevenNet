@@ -40,6 +40,7 @@ CONFIGS = {
     'swiglu': {**_metaformer, 'ffn_type': 'swiglu'},
     'layer_scale': {**_metaformer, 'layer_scale_init': 0.1},
     'film': _film_rand,
+    'agnesi': {**_metaformer, 'distance_transform': 'agnesi'},
 }
 
 
@@ -188,7 +189,8 @@ def _dimer_tail(model, h=1e-3):
     return out
 
 
-@pytest.mark.parametrize('name', ['metaformer', 'pair_radial', 'swiglu', 'film'])
+@pytest.mark.parametrize('name', ['metaformer', 'agnesi', 'pair_radial', 'swiglu',
+                                  'film'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must

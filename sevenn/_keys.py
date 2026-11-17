@@ -260,6 +260,7 @@ RADIAL_PAIR_EMBEDDING = 'radial_pair_embedding'
 FFN_TYPE = 'ffn_type'  # metaformer FFN nonlinearity: 'gate' | 'swiglu'
 LAYER_SCALE_INIT = 'layer_scale_init'  # None or float: LayerScale init
 FFN_FILM = 'ffn_film'  # element-conditioned FFN hidden features
+DISTANCE_TRANSFORM = 'distance_transform'  # None | 'agnesi'
 READOUT_ACTIVATION = 'readout_activation'  # act between the two readout linears
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
