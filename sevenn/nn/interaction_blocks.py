@@ -8,7 +8,7 @@ import sevenn._keys as KEY
 
 from .convolution import IrrepsConvolution
 from .equivariant_gate import EquivariantGate
-from .ffn_variants import LayerScale, SwiGLUGate
+from .ffn_variants import ElementFiLM, LayerScale, SwiGLUGate
 from .linear import IrrepsLinear
 
 
@@ -99,6 +99,7 @@ def Metaformer_interaction_block(
     norm_eps: float = 1e-5,
     ffn_type: str = 'gate',
     layer_scale_init: Optional[float] = None,
+    ffn_film: bool = False,
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -188,6 +189,10 @@ def Metaformer_interaction_block(
             biases=bias_in_linear,
         )
         block[f'{t}_ffn_gate'] = ffn_gate
+        if ffn_film:
+            block[f'{t}_ffn_film'] = ElementFiLM(
+                irreps_hidden, num_species, data_key_x
+            )
         block[f'{t}_ffn_linear_2'] = IrrepsLinear(
             irreps_hidden, irreps_out,
             data_key_in=data_key_x,

@@ -22,6 +22,7 @@ from sevenn.util import dtype_correct
 from tests.unit_tests.test_arch_options import _metaformer, _partial
 from tests.unit_tests.test_model import cutoff, get_model
 
+_film_rand = {**_metaformer, 'ffn_film': True}
 CONFIGS = {
     'nequip': {},
     'partial_linear_sc': _partial,
@@ -38,6 +39,7 @@ CONFIGS = {
     'silu_readout': {**_metaformer, 'readout_activation': 'silu'},
     'swiglu': {**_metaformer, 'ffn_type': 'swiglu'},
     'layer_scale': {**_metaformer, 'layer_scale_init': 0.1},
+    'film': _film_rand,
 }
 
 
@@ -60,6 +62,10 @@ def _model(cf):
     torch.manual_seed(0)
     model = get_model(cf).double()
     model.onehot_idx_to_onehot.register_forward_hook(_to_double_hook)
+    with torch.no_grad():  # zero-initialized tables would hide their derivatives
+        for n, p in model.named_parameters():
+            if 'film' in n:
+                p.normal_(0, 0.3)
     model.set_is_batch_data(False)
     return model
 
@@ -182,7 +188,7 @@ def _dimer_tail(model, h=1e-3):
     return out
 
 
-@pytest.mark.parametrize('name', ['metaformer', 'pair_radial', 'swiglu'])
+@pytest.mark.parametrize('name', ['metaformer', 'pair_radial', 'swiglu', 'film'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must

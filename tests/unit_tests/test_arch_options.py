@@ -215,11 +215,14 @@ def test_metaformer_ffn_per_layer():
 @pytest.mark.parametrize('cf', [
     {**_metaformer, 'ffn_type': 'swiglu'},
     {**_metaformer, 'layer_scale_init': 0.1},
+    {**_metaformer, 'ffn_film': True},
+    {**_metaformer, 'ffn_type': 'swiglu', 'layer_scale_init': 0.1, 'ffn_film': True,
+     'radial_pair_embedding': True},
 ])
 def test_ffn_variants(cf):
     from e3nn.util.jit import script
 
-    from sevenn.nn.ffn_variants import LayerScale, SwiGLUGate
+    from sevenn.nn.ffn_variants import ElementFiLM, LayerScale, SwiGLUGate
     from sevenn.train.muon import build_muon_param_groups
 
     model = get_model(cf)
@@ -229,6 +232,13 @@ def test_ffn_variants(cf):
     if cf.get('layer_scale_init'):
         assert isinstance(mods['1_layer_scale_1'], LayerScale)
         assert isinstance(mods['1_layer_scale_2'], LayerScale)
+    if cf.get('ffn_film'):
+        assert isinstance(mods['1_ffn_film'], ElementFiLM)
+        with torch.no_grad():  # make FiLM non-trivial before the checks
+            for k, m in mods.items():
+                if isinstance(m, ElementFiLM):
+                    m.gamma.normal_(0, 0.3)
+                    m.beta.normal_(0, 0.3)
     o, o_r, R = _rotated_pair(model)
     e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
     assert torch.allclose(e, e_r, atol=1e-4)
@@ -240,3 +250,12 @@ def test_ffn_variants(cf):
     assert all(('film' in n or 'layer_scale' in n) <= (n in adam)
                for n in name.values())
     script(model.eval())
+
+
+def test_film_identity_at_init():
+    from sevenn.nn.ffn_variants import ElementFiLM
+
+    film = ElementFiLM(Irreps('4x0e+2x1o'), num_species=3, data_key_x='x')
+    x = torch.randn(5, 10)
+    out = film({'x': x.clone(), KEY.ATOM_TYPE: torch.tensor([0, 1, 2, 1, 0])})
+    assert torch.equal(out['x'], x)

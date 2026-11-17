@@ -6,12 +6,15 @@ all off by default):
   gated form v * silu(g) of the e3nn Gate.
 - LayerScale: learnable per-channel scale of a residual branch (Touvron et
   al., Going deeper with Image Transformers, arXiv:2103.17239).
+- ElementFiLM: element-dependent per-channel scale (all irreps) and shift
+  (scalars) of hidden features (Perez et al., FiLM, arXiv:1709.07871).
 """
 
 from typing import Callable, Dict
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from e3nn.math import normalize2mom
 from e3nn.o3 import Irreps
 from e3nn.util.jit import compile_mode
@@ -90,4 +93,41 @@ class LayerScale(nn.Module):
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         data[self.key_x] = data[self.key_x] * self.gamma[self.channel_idx]
+        return data
+
+
+@compile_mode('script')
+class ElementFiLM(nn.Module):
+    """
+    x <- x * (1 + gamma[Z, channel]) + beta[Z] (beta on 0e components only).
+    Tables start at zero (identity). Node types from KEY.ATOM_TYPE.
+    """
+
+    def __init__(
+        self, irreps: Irreps, num_species: int, data_key_x: str = KEY.NODE_FEATURE
+    ) -> None:
+        super().__init__()
+        irreps = Irreps(irreps)
+        self.key_x = data_key_x
+        self.gamma = nn.Parameter(torch.zeros(num_species, irreps.num_irreps))
+        self.register_buffer('channel_idx', _channel_index(irreps))
+        sidx, start = [], 0
+        for mul, ir in irreps:
+            end = start + mul * ir.dim
+            if ir.l == 0 and ir.p == 1:
+                sidx.append(torch.arange(start, end))
+            start = end
+        scalar_idx = torch.cat(sidx) if sidx else torch.zeros(0, dtype=torch.long)
+        self.register_buffer('scalar_idx', scalar_idx)
+        self.beta = nn.Parameter(torch.zeros(num_species, len(scalar_idx)))
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        z = data[KEY.ATOM_TYPE]
+        x = data[self.key_x]
+        # expand the small [species, .] tables first, then one gather per table
+        scale = 1.0 + self.gamma[:, self.channel_idx]
+        shift = torch.zeros_like(scale).index_copy(1, self.scalar_idx, self.beta)
+        data[self.key_x] = torch.addcmul(
+            F.embedding(z, shift), x, F.embedding(z, scale)
+        )
         return data
