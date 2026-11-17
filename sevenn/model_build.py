@@ -30,6 +30,7 @@ from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear, ScalarActivation
 from .nn.node_embedding import GhostAtomTypes, OnehotEmbedding
 from .nn.normalization import EquivariantRMSNorm, SelfConnectionResidualIntro
 from .nn.radial_pair import EdgePairInput, PairRadialMLP
+from .nn.edge_attention import AttentionOutGate, EdgeAttention
 from .nn.scale import ModalWiseRescale, Rescale, SpeciesWiseRescale
 from .nn.self_connection import (
     SelfConnectionIntro,
@@ -99,6 +100,36 @@ def _patch_pair_radial(layers: OrderedDict, num_species: int) -> None:
             module.weight_nn_kwargs['num_species'] = num_species
 
 
+def _patch_edge_attention(layers: OrderedDict, config: Dict[str, Any]) -> None:
+    """Envelope-gated neighbour attention for every convolution (in place)."""
+    opts = dict(config[KEY.CONV_ATTENTION])
+    skip_first = opts.pop('skip_first', True)   # layer 0 keeps the plain sum
+    num_radial = config[KEY.RADIAL_BASIS].get(KEY.BESSEL_BASIS_NUM, 8)
+    items = list(layers.items())
+    convs = [(k, m) for k, m in items if isinstance(m, IrrepsConvolution)]
+    for k, conv in convs:
+        t = int(k.split('_')[0])
+        if skip_first and t == 0:
+            continue
+        irreps_x = conv.convolution_kwargs['irreps_in1']
+        irreps_msg = conv.convolution_kwargs['irreps_out']
+        attn = EdgeAttention(
+            irreps_x, irreps_msg, num_radial, config[KEY.CUTOFF],
+            config[KEY.NUM_SPECIES], t, **opts,
+        )
+        items = _insert_after(
+            f'{t}_self_interaction_1', (f'{t}_edge_attention', attn), items
+        )
+        if attn.use_gate:
+            items = _insert_after(
+                k, (f'{t}_attn_out_gate', AttentionOutGate(irreps_msg, t)), items
+            )
+        conv.key_filter = attn.key_filter_out
+        conv.denominator.data.fill_(1.0)   # attention weights already normalize
+    layers.clear()
+    layers.update(items)
+
+
 def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
     _cutoff_param = {'cutoff_length': config[KEY.CUTOFF]}
     rbf, env, sph = None, None, None
@@ -131,7 +162,10 @@ def init_edge_embedding(config: Dict[str, Any]) -> EdgeEmbedding:
         basis_module=rbf,
         cutoff_module=env,
         spherical_module=sph,
-        save_components=config.get(KEY.RADIAL_PAIR_EMBEDDING, False),
+        save_components=bool(
+            config.get(KEY.RADIAL_PAIR_EMBEDDING, False)
+            or config.get(KEY.CONV_ATTENTION, None) is not None
+        ),
         distance_transform=transform,
     )
 
@@ -414,10 +448,15 @@ def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         return layers
 
     # raises ImportError if LunaTP is not available, no fallback to e3nn
+    # edge attention: one LunaTP graph and one attention envelope per forward
+    # (same function, see lunatp_helper); False: per-layer graph and envelope
+    fast_attn = config.get(KEY.LUNATP_FAST_ATTENTION, True)
     updates = {}
     for k, module in layers.items():
         if isinstance(module, IrrepsConvolution):
-            updates[k] = lunatp_helper.patch_convolution(module)
+            updates[k] = lunatp_helper.patch_convolution(module, fast_attn)
+        elif isinstance(module, EdgeAttention) and fast_attn:
+            updates[k] = lunatp_helper.patch_edge_attention(module)
         elif isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
             updates[k] = lunatp_helper.patch_linear(module)
         elif isinstance(module, SelfConnectionIntro):
@@ -544,6 +583,10 @@ def _to_parallel_model(
         elif isinstance(module, EdgePairInput):
             module.key_atom_type = KEY.ATOM_TYPE_ALL
             need_types = True
+        elif isinstance(module, EdgeAttention):
+            module.key_atom_type = KEY.ATOM_TYPE_ALL
+            module.is_parallel = True
+            need_types = need_types or module.use_rb
         elif isinstance(module, SelfConnectionResidualIntro):
             if key.endswith('_self_connection_intro'):
                 module.clone_identity = True
@@ -770,6 +813,9 @@ def build_E3_equivariant_model(
 
     if config.get(KEY.RADIAL_PAIR_EMBEDDING, False):
         _patch_pair_radial(layers, num_species)
+
+    if config.get(KEY.CONV_ATTENTION, None) is not None:
+        _patch_edge_attention(layers, config)
 
     if config.get(KEY.USE_FINAL_NORM, False):
         layers['final_norm'] = EquivariantRMSNorm(

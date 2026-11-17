@@ -687,3 +687,115 @@ def test_bilinear_gate_double_backward(b):
     # atomic accumulation (index_select backward) is not bitwise reproducible
     assert torch.autograd.gradcheck(f(luna), (xx,), nondet_tol=1e-12)
     assert torch.autograd.gradgradcheck(f(luna), (xx,), nondet_tol=1e-12)
+
+
+def _attention_models(opts):
+    """e3nn, new LunaTP (default) and old LunaTP (lunatp_fast_attention False)
+    attention models with the same random weights (zero-initialized radial
+    bias, type biases and output gate randomized)"""
+    cf = {**_metaformer, 'conv_attention': opts}
+    torch.manual_seed(777)
+    model_e3nn = get_model(cf)
+    with torch.no_grad():
+        for n, p in model_e3nn.named_parameters():
+            if 'edge_attention' in n and (
+                n.split('.')[-2] in ('rb', 'og') or n.endswith(('t_src', 't_dst'))
+            ):
+                p.normal_(0, 0.3)
+    models = {'e3nn': model_e3nn}
+    for name, fast in (('new', True), ('old', False)):
+        model = get_model({**cf, 'lunatp_fast_attention': fast}, use_lunatp=True)
+        missing, _ = model.load_state_dict(model_e3nn.state_dict(), strict=False)
+        assert all(k.endswith('tp_conv.tp.weight') for k in missing), missing
+        models[name] = model
+    return models
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize(
+    'opts', [{}, {'skip_first': False, 'null_logit': False, 'out_gate': False}]
+)
+def test_attention_lunatp_shared_graph(opts, monkeypatch):
+    """
+    LunaTP attention (default): one LunaTP graph per forward (the old path
+    rebuilt it in every attention layer) and one attention envelope; E/F/S
+    and the force-loss parameter gradients equal the old LunaTP path and e3nn
+    """
+    import sevenn.nn.lunatp_helper as lunatp_helper
+    from sevenn.nn.convolution import IrrepsScatterGatterFusedConvolution
+    from sevenn.nn.edge_attention import EdgeAttention
+
+    models = _attention_models(opts)
+    new, old = models['new'], models['old']
+    n_attn = sum(isinstance(m, EdgeAttention) for m in new.modules())
+    assert n_attn == (3 if opts else 2)
+    assert all(
+        isinstance(m, lunatp_helper.LunaTPEdgeAttention)
+        for m in new.modules() if isinstance(m, EdgeAttention)
+    )
+    shared = lunatp_helper.LunaTPSharedGraphConvolution
+    assert isinstance(new._modules['1_convolution'], shared)
+    assert isinstance(new._modules['0_convolution'], shared)  # also w/o attention
+    assert type(old._modules['1_edge_attention']) is EdgeAttention
+    assert type(old._modules['1_convolution']) is IrrepsScatterGatterFusedConvolution
+
+    calls = []
+    make_graph = lunatp_helper.make_graph
+    monkeypatch.setattr(
+        lunatp_helper, 'make_graph',
+        lambda *a, **k: calls.append(1) or make_graph(*a, **k),
+    )
+
+    def run(model):
+        model.train()
+        model.set_is_batch_data(True)
+        model.zero_grad(set_to_none=True)
+        out = model(get_graphs(batched=True))
+        e, f, s = (
+            out.inferred_total_energy, out.inferred_force, out.inferred_stress
+        )
+        (e.square().sum() + f.square().sum() + s.square().sum()).backward()
+        grads = {
+            n: q.grad for n, q in model.named_parameters() if q.grad is not None
+        }
+        return e.detach(), f.detach(), s.detach(), grads
+
+    results = {}
+    for name, model in models.items():
+        calls.clear()
+        results[name] = run(model)
+        if name == 'new':
+            assert len(calls) == 1
+        elif name == 'old':  # + layer 0 if it has no attention
+            assert len(calls) == n_attn + (0 if opts else 1)
+    for name in ('old', 'e3nn'):  # fp32 atomics: run-to-run noise ~1e-6
+        e1, f1, s1, g1 = results[name]
+        e2, f2, s2, g2 = results['new']
+        assert torch.allclose(e1, e2, rtol=1e-5, atol=2e-5), name
+        assert torch.allclose(f1, f2, atol=1e-5), name
+        assert torch.allclose(s1, s2, atol=1e-5), name
+        assert g1 and g1.keys() == g2.keys()
+        # the old path alone repeats the type-bias gradients only to ~1e-4
+        # (fp32 atomics, sums with cancellation)
+        for n, g in g1.items():
+            assert (g - g2[n]).norm() <= 1e-3 * g.norm() + 1e-8, (name, n)
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_attention_lunatp_envelope_not_stale():
+    """a second forward on the same (moved) data recomputes the envelope"""
+    model = _attention_models({})['new']
+    model.eval()
+    model.set_is_batch_data(False)
+    graph = _graph.clone().to('cuda')
+    model(graph)
+    assert 'attn_env2' in graph
+    graph.edge_vec = graph.edge_vec.detach() * 1.02  # same data object
+    out = model(graph)
+    ref = _graph.clone().to('cuda')
+    ref.edge_vec = ref.edge_vec * 1.02
+    ref_out = model(ref)
+    assert torch.allclose(
+        out.inferred_total_energy, ref_out.inferred_total_energy, rtol=1e-6
+    )
+    assert torch.allclose(out.inferred_force, ref_out.inferred_force, atol=1e-6)

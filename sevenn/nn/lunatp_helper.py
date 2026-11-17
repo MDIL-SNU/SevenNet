@@ -7,6 +7,7 @@ import warnings
 from typing import Optional, Union
 
 import torch
+import torch.nn.functional as F
 from e3nn.o3 import FullyConnectedTensorProduct
 
 import sevenn._keys as KEY
@@ -14,6 +15,7 @@ from sevenn._const import AtomGraphDataType
 
 from .bilinear_gate import BilinearGate
 from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
+from .edge_attention import EdgeAttention
 from .equivariant_gate import EquivariantGate
 from .linear import IrrepsLinear
 from .normalization import EquivariantRMSNorm
@@ -253,17 +255,92 @@ class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
         return data
 
 
-@lunatp_needed
-def patch_convolution(irreps_convolution: IrrepsConvolution):
+class LunaTPEdgeAttention(EdgeAttention):
     """
-    LunaTPSharedGraphConvolution: every layer keys the LunaTP graph cache on
-    the forward's input edge index, so the layers of a forward share one graph
-    and a caller that passes the same edge index again reuses it.
+    EdgeAttention on the LunaTP backend: the attention envelope s5(r)^2
+    depends on the edge lengths only, so it is computed by the first attention
+    layer of a forward and reused by the others (stored in the data dict next
+    to the KEY.EDGE_LENGTH tensor it was computed from; recomputed whenever
+    that tensor is a different one, e.g. a new forward on the same data).
+    Same forward values (bitwise); the gradients of the envelope of all layers
+    are summed before its backward instead of after (round-off only).
+    Everything else is EdgeAttention.forward unchanged.
+    LunaTP models are not TorchScript-compiled (LunaTP is ML-IAP / Python
+    only), the TorchScript EdgeAttention of the other backends is untouched.
+    """
+
+    _KEY_ENV2 = 'attn_env2'
+    _KEY_ENV2_R = 'attn_env2_r'  # the KEY.EDGE_LENGTH tensor env2 belongs to
+
+    def _envelope2(self, data: AtomGraphDataType) -> torch.Tensor:
+        r = data[KEY.EDGE_LENGTH]
+        if self._KEY_ENV2_R in data and data[self._KEY_ENV2_R] is r:
+            return data[self._KEY_ENV2]
+        x = r * self.inv_cutoff
+        poly = 1.0 + x * (4.0 + x * (10.0 + x * (20.0 + 35.0 * x)))
+        s5 = (1.0 - x).pow(4) * poly
+        env2 = s5 * s5
+        data[self._KEY_ENV2] = env2
+        data[self._KEY_ENV2_R] = r
+        return env2
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        # EdgeAttention.forward with the shared envelope (keep in sync)
+        s = data[self.key_x][:, self.s0: self.s1]
+        s_src = s
+        if self.is_parallel:
+            g = data[KEY.NODE_FEATURE_GHOST][:, self.s0: self.s1]
+            s_src = torch.cat([s, g])
+        q = self._rms(self.q(s), self.gq)
+        k = self._rms(self.k(s_src), self.gk)
+        dst = data[KEY.EDGE_IDX][0]
+        src = data[KEY.EDGE_IDX][1]
+        qk = q.index_select(0, dst) * k.index_select(0, src)
+        logit = qk.sum(-1) * self.scale
+        if self.use_rb:
+            z = data[self.key_atom_type]
+            logit = logit + self.rb(data[KEY.EDGE_RBF]).squeeze(-1)
+            t_src = F.embedding(z, self.t_src).squeeze(-1)
+            t_dst = F.embedding(z, self.t_dst).squeeze(-1)
+            logit = logit + t_src.index_select(0, src) + t_dst.index_select(0, dst)
+        logit = self.cap * torch.tanh(logit / self.cap)
+        a = self._envelope2(data) * torch.exp(logit)
+        den = torch.zeros(s.shape[0], dtype=a.dtype, device=a.device)
+        den = den.index_add(0, dst, a)
+        if self.use_null:
+            den = den + F.softplus(self.zeta)
+        else:
+            den = den + self.eps
+        w = a / den.index_select(0, dst)
+        data[self.key_filter_out] = data[KEY.EDGE_ATTR] * w.unsqueeze(-1)
+        if self.use_gate:
+            data[self.key_gate] = 2.0 * torch.sigmoid(self.og(s))
+        return data
+
+
+@lunatp_needed
+def patch_edge_attention(module: EdgeAttention) -> EdgeAttention:
+    """LunaTPEdgeAttention in place (same parameters, buffers, state dict)"""
+    module.__class__ = LunaTPEdgeAttention
+    return module
+
+
+@lunatp_needed
+def patch_convolution(
+    irreps_convolution: IrrepsConvolution, share_graph: bool = True
+):
+    """
+    share_graph: every layer keys the LunaTP graph cache on the forward's
+    edge index (LunaTPSharedGraphConvolution); False keeps the per-filter key
+    (one graph per attention layer).
     """
     assert not irreps_convolution.layer_instantiated, (
         'Convolution layer already instantiated; cannot patch'
     )
-    ret = LunaTPSharedGraphConvolution.from_irreps_convolution(irreps_convolution)
+    cls = IrrepsScatterGatterFusedConvolution
+    if share_graph:
+        cls = LunaTPSharedGraphConvolution
+    ret = cls.from_irreps_convolution(irreps_convolution)
     ret.convolution_cls = LunaTPConvolution
     return ret
 

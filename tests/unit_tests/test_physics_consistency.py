@@ -52,6 +52,9 @@ CONFIGS = {
     'film': _film_rand,
     'agnesi': {**_metaformer, 'distance_transform': 'agnesi'},
     'sigmoid_gate': {**_metaformer, 'act_gate': {'e': 'sigmoid', 'o': 'tanh'}},
+    'attention': {**_metaformer, 'conv_attention': {}},
+    'attention_pair': {**_metaformer, 'conv_attention': {},
+                       'radial_pair_embedding': True},
     'irreps_conv': {**_metaformer,
                     'irreps_conv': ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']},
 }
@@ -80,6 +83,10 @@ def _model(cf):
         for n, p in model.named_parameters():
             if 'film' in n or 'equivariant_gate.linear' in n:  # bilinear term
                 p.normal_(0, 0.3)
+            if 'edge_attention' in n and (
+                n.split('.')[-2] in ('rb', 'og') or n.endswith(('t_src', 't_dst'))
+            ):
+                p.normal_(0, 0.3)   # zero-initialized radial bias / output gate
     model.set_is_batch_data(False)
     return model
 
@@ -202,17 +209,20 @@ def _dimer_tail(model, h=1e-3):
     return out
 
 
-@pytest.mark.parametrize('name', ['metaformer', 'agnesi', 'pair_radial', 'swiglu',
-                                  'film', 'bilinear_gate', 'bilinear_gate_l3'])
+@pytest.mark.parametrize('name', ['metaformer', 'agnesi', 'pair_radial',
+                                  'attention', 'swiglu', 'film', 'bilinear_gate',
+                                  'bilinear_gate_l3'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
     shrink E - E_far ~8x, the force ~4x and the force constant ~2x (C2).
     """
     far, near = _dimer_tail(_model(CONFIGS[name]))
-    assert np.all(np.abs(far) > 0)
-    ratio = np.abs(near / far)
-    assert ratio[0] < 0.2 and ratio[1] < 0.35 and ratio[2] < 0.6, ratio
+    # components already ~0 at r_c - 0.02 (e.g. env^2-weighted attention: higher
+    # order than C2) pass; the others must shrink as (r_c - r)^3, ^2, ^1
+    tiny = 1e-8
+    for i, thr in enumerate((0.2, 0.35, 0.6)):
+        assert abs(near[i]) < tiny or abs(near[i]) < thr * abs(far[i]), (far, near)
 
 
 def _k_jump(model, r0, delta=0.002, h=1e-3):

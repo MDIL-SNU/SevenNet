@@ -437,3 +437,40 @@ def test_irreps_conv_narrow(base):
     out, out_rot, R = _rotated_pair(model)
     f, f_r = out[KEY.PRED_FORCE], out_rot[KEY.PRED_FORCE]
     assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'conv_attention': {}},
+    {**_metaformer, 'conv_attention': {'qk_dim': 8, 'out_gate': False},
+     'radial_pair_embedding': True},
+    {**_partial, 'conv_attention': {'null_logit': False}},
+])
+def test_conv_attention(cf):
+    from e3nn.util.jit import script
+
+    from sevenn.nn.edge_attention import AttentionOutGate, EdgeAttention
+
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    assert isinstance(mods['1_edge_attention'], EdgeAttention)
+    assert '0_edge_attention' not in mods   # first layer keeps the plain sum
+    names = list(mods)
+    assert names.index('1_edge_attention') < names.index('1_convolution')
+    if cf['conv_attention'].get('out_gate', True):
+        assert isinstance(mods['1_attn_out_gate'], AttentionOutGate)
+        assert names.index('1_attn_out_gate') == names.index('1_convolution') + 1
+    assert float(mods['1_convolution'].denominator) == 1.0
+    with torch.no_grad():  # make the attention non-trivial before the checks
+        for m in mods.values():
+            if isinstance(m, EdgeAttention):
+                m.rb.weight.normal_(0, 0.3)
+                m.og.weight.normal_(0, 0.3)
+                m.t_src.normal_(0, 0.3)
+                m.t_dst.normal_(0, 0.3)
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    assert torch.isfinite(f).all()
+    script(model.eval())

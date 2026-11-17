@@ -264,6 +264,9 @@ FFN_FILM = 'ffn_film'  # element-conditioned FFN hidden features
 DISTANCE_TRANSFORM = 'distance_transform'  # None | 'agnesi'
 IRREPS_CONV = 'irreps_conv'  # per-layer conv irreps (narrower than node irreps)
 LUNATP_FUSED_NORM = 'lunatp_fused_norm'  # LunaEq fused EquivariantRMSNorm
+CONV_ATTENTION = 'conv_attention'  # None | dict: envelope-gated neighbour attention
+# LunaTP only: conv_attention layers share the LunaTP graph and the envelope
+LUNATP_FAST_ATTENTION = 'lunatp_fast_attention'
 BILINEAR_PATHS = 'bilinear_paths'  # 'all' | 'same_l' | 'lmax2' | 'scalar'
 BILINEAR_B = 'bilinear_b'  # 'own' (B from self_interaction_2) | 'shared' (B = A)
 READOUT_ACTIVATION = 'readout_activation'  # act between the two readout linears

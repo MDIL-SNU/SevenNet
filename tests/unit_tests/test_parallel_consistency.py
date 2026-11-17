@@ -101,6 +101,9 @@ CONFIGS = {
         'radial_basis_name': 'bessel', 'bessel_basis_num': 8,
         'trainable_coeff': False}},
     'agnesi_pair': {**_A4, 'distance_transform': 'agnesi'},
+    # edge attention
+    'a05_attention': {**_A4, 'conv_attention': {}},
+    'attention_no_pair': {**_A2, 'conv_attention': {'skip_first': False}},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
@@ -445,6 +448,7 @@ def test_e3gnn_parallel_torchscript(name):
 @pytest.mark.parametrize('name', list(CONFIGS))
 def test_parallel_segments_structure(name):
     """ghost twins, per-segment edge inputs, ghost-aware edge modules"""
+    from sevenn.nn.edge_attention import EdgeAttention
     from sevenn.nn.edge_embedding import EdgeEmbedding
     from sevenn.nn.normalization import SelfConnectionResidualIntro
     from sevenn.nn.radial_pair import EdgePairInput
@@ -482,6 +486,9 @@ def test_parallel_segments_structure(name):
             if isinstance(m, EdgePairInput):
                 assert m.key_atom_type == KEY.ATOM_TYPE_ALL
                 need_types = True
+            if isinstance(m, EdgeAttention):
+                assert m.is_parallel and m.key_atom_type == KEY.ATOM_TYPE_ALL
+                need_types = need_types or m.use_rb
             if isinstance(m, SelfConnectionResidualIntro):
                 assert m.clone_identity == k.endswith('_self_connection_intro')
     assert ('atom_type_all' in names0) == need_types

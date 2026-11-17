@@ -14,6 +14,8 @@ import torch.nn as nn
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
+from .edge_attention import EdgeAttention
+
 
 class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
     """Custom autograd function for LAMMPS ML-IAP ghost exchange."""
@@ -194,9 +196,16 @@ def patch_model_for_mliap(model: nn.Module) -> nn.Module:
     for k, module in model._modules.items():
         m_conv = _RE_CONV.fullmatch(k)
         if m_conv:
-            module = MLIAPWrappedConvolution(module)
+            t = m_conv.group(1)
+            attn = model._modules.get(f'{t}_edge_attention', None)
+            extra = []
+            if isinstance(attn, EdgeAttention) and attn.use_gate:
+                extra.append(attn.key_gate)
+            module = MLIAPWrappedConvolution(module, extra)
         elif k == 'onehot_to_feature_x':
             module = MLIAPWrappedIrrepsLinear(module)
+        elif isinstance(module, EdgeAttention):
+            module.key_atom_type = KEY.ATOM_TYPE_ALL
         modules[k] = module
         m_si1 = _RE_SI1.fullmatch(k)
         if m_si1:
