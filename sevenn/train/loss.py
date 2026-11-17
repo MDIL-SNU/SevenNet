@@ -256,18 +256,95 @@ class L2Regularization(LossDefinition):
         return ret
 
 
+def _group_centroid_l2(
+    weight_view: torch.Tensor,
+    group_indices: List[List[int]],
+) -> torch.Tensor:
+    out = weight_view.new_zeros(())
+    for idx in group_indices:
+        if len(idx) < 2:
+            continue
+        sub = weight_view[idx]
+        centroid = sub.mean(dim=0, keepdim=True)
+        out = out + torch.sum(torch.pow(sub - centroid, 2))
+    return out
+
+
+class ModalityGroupAlign(LossDefinition):
+    """
+    Centroid-L2 alignment of task-specific modal parameters within groups.
+    """
+
+    def __init__(
+        self,
+        name: str,
+        module_keys: List[str],
+        groups: Dict[str, List[str]],
+    ):
+        super().__init__(
+            name=name,
+            unit=None,
+            criterion=None,
+            ref_key=None,
+            pred_key=None,
+        )
+        self.module_keys = module_keys
+        self.groups = groups
+        self._group_indices: Optional[List[List[int]]] = None
+
+    def _resolve_group_indices(self, model: Callable) -> List[List[int]]:
+        modal_map = getattr(model, 'modal_map', None)
+        if not modal_map:
+            raise ValueError(
+                'modal_group_alignment is set but the model has no modal_map; '
+                'use_modality must be True with modalities defined'
+            )
+        missing = [
+            m
+            for names in self.groups.values()
+            for m in names
+            if m not in modal_map
+        ]
+        if missing:
+            raise ValueError(
+                'modal_group_alignment groups reference unknown modalities '
+                f'{missing} not in model modal_map {sorted(modal_map)}'
+            )
+        return [
+            [modal_map[m] for m in names] for names in self.groups.values()
+        ]
+
+    def get_loss(
+        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
+    ):
+        if model is None:
+            raise ValueError('ModalityGroupAlign requires the model.')
+        device = batch_data['x'].device
+        if self._group_indices is None:
+            self._group_indices = self._resolve_group_indices(model)
+        ret = torch.zeros(1, device=device)
+        for module_key in self.module_keys:
+            module = model._modules[module_key]  # type: ignore
+            reg_params = list(module._modules['linear'].weight_views())[-1]
+            ret = ret + _group_centroid_l2(reg_params, self._group_indices)
+        return 0.5 * ret
+
+
 def get_modal_regularization(
     config: Dict[str, Any],
     model: Optional[torch.nn.Module] = None,
-) -> Optional[Tuple[LossDefinition, float]]:
+) -> List[Tuple[LossDefinition, float]]:
     reg_params = config.get(KEY.REG_PARAM, {})
+    reg_functions: List[Tuple[LossDefinition, float]] = []
 
     modal_param = reg_params.get('modal', {})
-    if not modal_param or not config.get(KEY.USE_MODALITY, False):
-        return None
+    align_param = reg_params.get('modal_group_alignment', {})
+    groups = align_param.get('groups', {}) if align_param else {}
+    if not config.get(KEY.USE_MODALITY, False) or (not modal_param and not groups):
+        return reg_functions
 
     if not model:
-        raise ValueError('modal reg is requested but model is not given.')
+        raise ValueError('modal regularization is requested but model is not given.')
 
     module_keys_to_reg = []
     for module_key in list(model._modules.keys()):
@@ -284,10 +361,27 @@ def get_modal_regularization(
                 continue
             module_keys_to_reg.append(module_key)
 
-    return (
-        L2Regularization('L2_modal', module_keys_to_reg, reg_modal_only=True),
-        float(modal_param.get(KEY.REG_WEIGHT, 1e-5)),
-    )
+    if modal_param:
+        reg_functions.append((
+            L2Regularization(
+                'L2_modal', module_keys_to_reg, reg_modal_only=True
+            ),
+            float(modal_param.get(KEY.REG_WEIGHT, 1e-5)),
+        ))
+
+    if groups:
+        align_weight = float(align_param.get('alignment_weight', 1e-5))
+        for group_name, members in groups.items():
+            reg_functions.append((
+                ModalityGroupAlign(
+                    f'Align_modal_{group_name}',
+                    module_keys_to_reg,
+                    {group_name: members},
+                ),
+                align_weight,
+            ))
+
+    return reg_functions
 
 
 def make_loss_info_dict_from_config(config: Dict[str, Any]):
@@ -356,7 +450,7 @@ def get_loss_functions_from_config(
 
     if addi_loss := get_ewc_loss(config):
         loss_functions.append(addi_loss)
-    if addi_loss := get_modal_regularization(config, model):
-        loss_functions.append(addi_loss)
+    if addi_losses := get_modal_regularization(config, model):
+        loss_functions.extend(addi_losses)
 
     return loss_functions

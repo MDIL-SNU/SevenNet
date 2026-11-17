@@ -72,6 +72,12 @@ _ERROR_TYPES = {
         'pred_key': None,
         'unit': None,
     },
+    'Align_modal': {
+        'name': 'Align_modal',
+        'ref_key': None,
+        'pred_key': None,
+        'unit': None,
+    },
     'TotalLoss': {
         'name': 'TotalLoss',
         'unit': None,
@@ -80,6 +86,9 @@ _ERROR_TYPES = {
 
 
 def get_err_type(name: str) -> Dict[str, Any]:
+    if name.startswith('Align_modal') and name not in _ERROR_TYPES:
+        # per-group alignment monitors: Align_modal_<group>
+        return {'name': name, 'ref_key': None, 'pred_key': None, 'unit': None}
     return deepcopy(_ERROR_TYPES[name])
 
 
@@ -524,9 +533,12 @@ class ErrorRecorder:
                 metric_kwargs.pop('unit', None)
                 err_metrics.append(metric_cls(**metric_kwargs))
                 continue
-            elif err_type == 'L2_modal':  # special case
+            elif err_type == 'L2_modal' or err_type.startswith('Align_modal'):
+                # L2_modal and per-group Align_modal_<group> regularizers: log
+                # the raw penalty (2 * get_loss), undoing the 1/2 convention
+                # folded into get_loss.
                 metric_kwargs['loss_def'], _ = _get_loss_function_from_name(
-                    loss_functions, 'L2_modal'
+                    loss_functions, metric_kwargs['name']
                 )
                 metric_kwargs.pop('unit', None)
                 metric_kwargs['name'] += f'_{metric_name}'

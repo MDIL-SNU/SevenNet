@@ -35,6 +35,7 @@ SUPPORTING_ERROR_TYPES = [
     'TotalLoss',
     'L2_modal',
     'Modal_cos',
+    'Align_modal',
 ]
 
 IMPLEMENTED_MODEL = ['E3_equivariant_model']
@@ -100,7 +101,9 @@ def error_record_condition(x):
     for v in x:
         if type(v) is not list or len(v) != 2:
             return False
-        if v[0] not in SUPPORTING_ERROR_TYPES:
+        if v[0] not in SUPPORTING_ERROR_TYPES and not v[0].startswith(
+            'Align_modal'
+        ):
             return False
         if v[0] == 'TotalLoss':
             continue
