@@ -138,6 +138,24 @@ def _patch_data_info(
         info_dict.update({k: '' for k in keys if k not in info_dict})
 
 
+def _is_aselmdb(target: str) -> bool:
+    """True if target is an aselmdb/lmdb file or a dir holding such shards.
+
+    AseDBDataset accepts both .aselmdb and plain .lmdb stores (e.g. the wbm
+    validset is a single wbm_unique.lmdb), so detect both extensions.
+    """
+    import glob as _glob
+    _exts = ('.aselmdb', '.lmdb')
+    if target.endswith(_exts):
+        return True
+    if not os.path.isdir(target):
+        return False
+    return any(
+        _glob.glob(os.path.join(target, '**', '*' + ext), recursive=True)
+        for ext in _exts
+    )
+
+
 def inference(
     checkpoint: str,
     targets: Union[str, List[str]],
@@ -152,6 +170,7 @@ def inference(
     enable_flash: bool = False,
     enable_oeq: bool = False,
     enable_lunatp: bool = False,
+    sequence: Optional[str] = None,
     **data_kwargs,
 ) -> None:
     """
@@ -199,7 +218,28 @@ def inference(
         targets = [targets]
 
     full_file_list = []
-    if save_graph:
+    aselmdb_targets = [t for t in targets if _is_aselmdb(t)]
+    if aselmdb_targets:
+        # .aselmdb: one dataset over sorted targets, optional --sequence subsample
+        if len(aselmdb_targets) != len(targets):
+            raise ValueError('Cannot mix .aselmdb targets with other formats')
+        from sevenn.train.aselmdb_dataset import SevenNetASElmdbDataset
+        files = sorted(os.path.abspath(t) for t in targets)
+        adb = SevenNetASElmdbDataset(
+            cutoff=cutoff, files=files, is_auto_mode=False
+        )
+        if sequence is not None:
+            idxs = np.load(sequence).astype('int64')
+        else:
+            idxs = np.arange(len(adb))
+        print(
+            f'[inference] aselmdb: {len(adb)} structures, evaluating {len(idxs)}'
+            + (f' (subsampled via {sequence})' if sequence else ''),
+            flush=True,
+        )
+        dataset = [adb[int(i)] for i in tqdm(idxs, desc='read aselmdb')]
+        full_file_list = [files[0]] * len(dataset)
+    elif save_graph:
         dataset = SevenNetGraphDataset(
             cutoff=cutoff,
             root=output_dir,

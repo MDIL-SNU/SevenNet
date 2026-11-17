@@ -54,7 +54,11 @@ class Trainer:
 
         if distributed:
             local_rank = int(os.environ['LOCAL_RANK'])
-            self.rank = local_rank
+            # global rank: gates checkpoint writing and rank-0 prints. Using
+            # LOCAL_RANK here made local rank 0 of EVERY node write the same
+            # checkpoint file concurrently on multi-node runs.
+            self.rank = dist.get_rank() if dist.is_initialized() else local_rank
+            self.local_rank = local_rank
             if distributed_backend == 'nccl':
                 device = torch.device('cuda', local_rank)
                 self.model = DDP(model.to(device), device_ids=[device])
@@ -68,6 +72,7 @@ class Trainer:
             self.model = model.to(device)
             self.model.set_is_batch_data(True)
             self.rank = 0
+            self.local_rank = 0
 
         self.device = torch.device(device)
         self.distributed = distributed

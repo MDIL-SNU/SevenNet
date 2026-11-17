@@ -53,6 +53,15 @@ def loader_from_config(
 
     if (loader_kwargs := config.get(KEY.LOADER_KWARGS, None)) is not None:
         loader_args.update(**loader_kwargs)
+    # validation loaders: e.g. no persistent workers, which every validset would
+    # otherwise keep alive for the whole run (num_workers per rank per validset)
+    if dataset_key != 'trainset' and (
+        valid_kwargs := config.get(KEY.VALID_LOADER_KWARGS, None)
+    ) is not None:
+        loader_args.update(**valid_kwargs)
+        if not loader_args.get('num_workers', 0):
+            loader_args.pop('persistent_workers', None)
+            loader_args.pop('prefetch_factor', None)
 
     world_size, rank = 1, 0
     if config[KEY.IS_DDP]:

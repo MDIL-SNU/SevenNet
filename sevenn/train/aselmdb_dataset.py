@@ -367,9 +367,11 @@ class LMDBDatabase(Database):
             self.deleted_ids = orjson.loads(zlib.decompress(deleted_ids_data))
 
         # Reconstruct the full id list
-        self.ids = [
-            i for i in range(1, self._nextid) if i not in set(self.deleted_ids)
-        ]
+        deleted = set(self.deleted_ids)
+        ids = [i for i in range(1, self._nextid) if i not in deleted]
+        # Readonly (training): numpy array instead of a python list, so forked
+        # DataLoader workers do not copy it page by page on refcount updates
+        self.ids = np.asarray(ids, dtype=np.int64) if self.readonly else ids
 
 
 class AseDBDataset:
@@ -412,15 +414,17 @@ class AseDBDataset:
         self.db_ids = []
         for db in self.dbs:
             if hasattr(db, 'ids'):
-                self.db_ids.append(db.ids)
+                self.db_ids.append(np.asarray(db.ids, dtype=np.int64))
             else:
                 # this is the slow alternative
-                self.db_ids.append([row.id for row in db.select()])
+                self.db_ids.append(
+                    np.asarray([row.id for row in db.select()], dtype=np.int64)
+                )
 
         idlens = [len(ids) for ids in self.db_ids]
         self._idlen_cumulative = np.cumsum(idlens).tolist()
 
-        self.ids = list(range(sum(idlens)))
+        self.ids = range(sum(idlens))
         self.num_samples = len(self.ids)
 
         if self.num_samples == 0:
@@ -443,7 +447,7 @@ class AseDBDataset:
             el_idx = idx - self._idlen_cumulative[db_idx - 1]
         assert el_idx >= 0
 
-        atoms_row = self.dbs[db_idx]._get_row(self.db_ids[db_idx][el_idx])
+        atoms_row = self.dbs[db_idx]._get_row(int(self.db_ids[db_idx][el_idx]))
         atoms = atoms_row.toatoms()
 
         if isinstance(atoms_row.data, dict):
@@ -634,6 +638,84 @@ class SevenNetASElmdbDataset(SevenNetAtomsDataset):
             }
         )
         self._scanned = True
+
+
+def _collect_lmdb_files(datasets) -> List[str]:
+    """lmdb file paths behind (wrapped / concatenated) aselmdb datasets"""
+    files: List[str] = []
+    stack = list(datasets) if isinstance(datasets, (list, tuple)) else [datasets]
+    seen = set()
+    while stack:
+        ds = stack.pop()
+        if id(ds) in seen:
+            continue
+        seen.add(id(ds))
+        inner = getattr(ds, '_dataset', None)
+        if isinstance(inner, AseDBDataset):
+            for db in inner.dbs:
+                files.append(str(db.filename))
+            continue
+        if hasattr(ds, 'datasets'):  # ConcatDataset and subclasses
+            stack.extend(ds.datasets)
+        if 'dataset' in getattr(ds, '__dict__', {}):  # Repeat/Weighted wrappers
+            stack.append(ds.__dict__['dataset'])
+    return sorted(set(files))
+
+
+def preload_node_local(
+    datasets,
+    local_rank: Optional[int] = None,
+    local_world_size: Optional[int] = None,
+    chunk_mb: int = 16,
+) -> Dict[str, float]:
+    """
+    Warm the page cache of THIS node with every lmdb file behind `datasets`.
+    Call it on every rank: files are split over the node-local ranks
+    (LOCAL_RANK / LOCAL_WORLD_SIZE, set by torchrun or the srun mapping), so
+    each node reads the whole dataset once, in parallel, with large sequential
+    read() calls (same page cache that the lmdb mmap later hits).
+
+    The page cache is per node: warming only on global rank 0 (the old
+    dataset.py) leaves every other node to fault pages in from Lustre lazily.
+    """
+    if local_rank is None:
+        local_rank = int(os.environ.get('LOCAL_RANK', 0))
+    if local_world_size is None:
+        local_world_size = int(os.environ.get('LOCAL_WORLD_SIZE', 1))
+    files = _collect_lmdb_files(datasets)
+    sizes = {f: os.path.getsize(f) for f in files}
+    # greedy size balancing, deterministic on every rank
+    loads = [0] * local_world_size
+    mine = []
+    for f in sorted(files, key=lambda x: (-sizes[x], x)):
+        r = loads.index(min(loads))
+        loads[r] += sizes[f]
+        if r == local_rank:
+            mine.append(f)
+    buf = bytearray(chunk_mb * 1024 * 1024)
+    view = memoryview(buf)
+    nbytes = 0
+    end = time.time()
+    for f in mine:
+        fd = os.open(f, os.O_RDONLY)
+        try:
+            os.posix_fadvise(fd, 0, 0, os.POSIX_FADV_SEQUENTIAL)
+            while True:
+                n = os.readv(fd, [view])
+                if n <= 0:
+                    break
+                nbytes += n
+        finally:
+            os.close(fd)
+    elapsed = time.time() - end
+    gb = nbytes / 1e9
+    print(
+        f'[preload_node_local] local_rank {local_rank}/{local_world_size}: '
+        f'{len(mine)}/{len(files)} files, {gb:.2f} GB in {elapsed:.1f} s '
+        f'({gb / max(elapsed, 1e-9):.2f} GB/s)',
+        flush=True,
+    )
+    return {'files': len(mine), 'GB': gb, 'sec': elapsed}
 
 
 def _get_keys_from_config(config, start, end):

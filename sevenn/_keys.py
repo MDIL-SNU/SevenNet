@@ -230,6 +230,7 @@ CONV_DENOMINATOR = 'conv_denominator'
 SHIFT = 'shift'
 SCALE = 'scale'
 LOADER_KWARGS = 'loader_kwargs'
+VALID_LOADER_KWARGS = 'valid_loader_kwargs'  # applied over loader_kwargs, every loader but trainset
 
 USE_SPECIES_WISE_SHIFT_SCALE = 'use_species_wise_shift_scale'
 USE_MODAL_WISE_SHIFT = 'use_modal_wise_shift'

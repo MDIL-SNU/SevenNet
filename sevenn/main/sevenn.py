@@ -92,8 +92,20 @@ def run(args):
         else:
             raise ValueError(f'Unknown distributed backend: {distributed_backend}')
 
+        if distributed_backend == 'nccl':
+            # bind the NCCL communicator to this rank's GPU from the start
+            torch.cuda.set_device(torch.device('cuda', local_rank))
+        # Collective timeout (NCCL watchdog). The torch default for NCCL is
+        # 10 min, which the first dist.barrier() can exceed while dataset.py
+        # preloads ~280 GB of lmdb into the page cache.
+        from datetime import timedelta
+
+        timeout_min = float(os.environ.get('SEVENN_DIST_TIMEOUT_MIN', '30'))
         dist.init_process_group(
-            backend=distributed_backend, world_size=world_size, rank=rank
+            backend=distributed_backend,
+            world_size=world_size,
+            rank=rank,
+            timeout=timedelta(minutes=timeout_min),
         )
     else:
         local_rank, rank, world_size = 0, 0, 1
