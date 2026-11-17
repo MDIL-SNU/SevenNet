@@ -10,7 +10,13 @@ import sevenn._keys as KEY
 from .convolution import IrrepsConvolution
 from .bilinear_gate import BilinearGate
 from .equivariant_gate import EquivariantGate
-from .ffn_variants import ElementFiLM, LayerScale, S2BilinearGate, SwiGLUGate
+from .ffn_variants import (
+    ElementFiLM,
+    LayerScale,
+    S2BilinearGate,
+    S2InvGate,
+    SwiGLUGate,
+)
 from .linear import IrrepsLinear
 
 
@@ -252,6 +258,12 @@ def Metaformer_interaction_block(
             # scalar-only FFNs (last layer) keep the gate
             ffn_gate = S2BilinearGate(
                 irreps_hidden, act_scalar, ffn_s2_channels, key_ffn
+            )
+            irreps_gate_out = ffn_gate.irreps_out
+        elif ffn_type == 's2_inv' and any(ir.l > 0 for _, ir in irreps_hidden):
+            # invariant bilinear output + gated l > 0 (same output irreps)
+            ffn_gate = S2InvGate(
+                irreps_hidden, act_scalar, act_gate, ffn_s2_channels, key_ffn
             )
             irreps_gate_out = ffn_gate.irreps_out
         else:

@@ -119,6 +119,10 @@ CONFIGS = {
     # S2-grid bilinear FFN
     's2_bilinear': {**_A4, 'ffn_type': 's2_bilinear', 'ffn_s2_channels': 64},
     's2_bilinear_auto': {**_A4, 'ffn_type': 's2_bilinear'},
+    # S2 FFN with gated l > 0 outputs (invariant bilinear output only)
+    's2_inv': {**_A4, 'ffn_type': 's2_inv', 'ffn_s2_channels': 64},
+    's2_inv_auto_parallel_block': {**_A4, 'ffn_type': 's2_inv',
+                                   'parallel_block': [False, True, True]},
     # metaformer extensions (dev/mf-extension)
     'no_prenorm': {**_A4, 'metaformer_norm': False},
     'readout_block': {**_A4, 'readout_activation': None,
@@ -157,13 +161,14 @@ CONFIGS = {
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',
                               'kitchen_sink', 'per_layer_readout',
-                              'light_conv', 'mf_ext_sink', 'pair_repulsion')
+                              'light_conv', 'mf_ext_sink', 'pair_repulsion',
+                              's2_inv')
                   if n in CONFIGS]
 FILE_CONFIG = [n for n in ('kitchen_sink', 'A0_nequip_linear_sc')
                if n in CONFIGS][0]
 GPU_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'moe', 'bilinear_gate',
                            'kitchen_sink', 's2_bilinear', 'mf_ext_sink',
-                           'pair_repulsion_s2')
+                           'pair_repulsion_s2', 's2_inv')
                if n in CONFIGS]
 MODAL = 'mpa'
 

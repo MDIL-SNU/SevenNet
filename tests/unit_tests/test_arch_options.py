@@ -702,6 +702,140 @@ def test_s2_bilinear_ffn(cf):
     assert torch.allclose(out[KEY.PRED_FORCE], ref[KEY.PRED_FORCE], atol=1e-5)
 
 
+@pytest.mark.parametrize('irreps, C', [
+    ('8x0e+12x1o+6x2e+6x3o', None), ('16x0e+8x1o+4x2e+4x3o', 3),
+    ('8x0e+12x1o+6x2e', None),
+])
+def test_s2_inv_gate_module(irreps, C):
+    """
+    s2_inv: act(s) and the l = 0 output equal S2BilinearGate's for the same
+    s, A, B (incl. its degree-0 output scale); l > 0 outputs equal the e3nn
+    Gate of A_l>0 with gates g; exact O(3) equivariance; unit second
+    moments; same output irreps
+    """
+    import torch.nn.functional as F
+    from e3nn.nn import Gate
+    from e3nn.o3 import rand_matrix
+
+    from sevenn.nn.ffn_variants import S2BilinearGate, S2InvGate
+
+    old = torch.get_default_dtype()
+    torch.set_default_dtype(torch.float64)
+    try:
+        irreps = Irreps(irreps)
+        act = {'e': F.silu, 'o': torch.tanh}
+        s2 = S2BilinearGate(irreps, act, C, data_key_x='x')
+        gate = S2InvGate(irreps, act, act, C, data_key_x='x')
+        n0, C, L = gate.n0, gate.C, gate.lmax
+        degrees = Irreps([(C, (l, (-1) ** l)) for l in range(L + 1)])
+        assert C == s2.C and gate.n_g == L * C
+        assert gate.irreps_out == s2.irreps_out
+        assert gate.get_gate_irreps_in() == Irreps(
+            [(n0, (0, 1)), (L * C, (0, 1))]) + degrees + degrees
+        torch.manual_seed(0)
+        n = 4000
+        sc, g = torch.randn(n, n0), torch.randn(n, L * C)
+        a, b = degrees.randn(n, -1), degrees.randn(n, -1)
+        x = torch.cat([sc, g, a, b], 1)
+        x2 = [sc]   # S2BilinearGate layout: [s | (A_l, B_l) per degree]
+        for sl in degrees.slices():
+            x2 += [a[:, sl], b[:, sl]]
+        out = gate({'x': x.clone()})['x']
+        ref = s2({'x': torch.cat(x2, 1)})['x']
+        assert torch.equal(out[:, :n0], ref[:, :n0])
+        assert torch.allclose(out[:, n0: n0 + C], ref[:, n0: n0 + C], atol=1e-12)
+        e3gate = Gate('', [], f'{L * C}x0e', [F.silu], degrees[1:])
+        ref_v = e3gate(torch.cat([g, a[:, C:]], 1))
+        assert torch.allclose(out[:, n0 + C:], ref_v, atol=1e-12)
+        for sl in gate.irreps_out.slices():   # ~unit second moment at init
+            assert 0.85 < out[:, sl].pow(2).mean().item() < 1.15
+        x, out = x[:20], out[:20]
+        for R in (rand_matrix(), -rand_matrix(), -torch.eye(3)):
+            out_r = gate({'x': x @ gate.irreps_in.D_from_matrix(R).T})['x']
+            assert torch.allclose(
+                out_r, out @ gate.irreps_out.D_from_matrix(R).T, atol=1e-11
+            )
+        with pytest.raises(ValueError):   # pseudo-tensors are not allowed
+            S2InvGate(Irreps('4x0e+2x1e'), act, act)
+    finally:
+        torch.set_default_dtype(old)
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'ffn_type': 's2_inv'},
+    {**_metaformer, 'ffn_type': 's2_inv', 'ffn_s2_channels': 2,
+     'lmax': 3, 'irreps_manual': ['4x0e', '4x0e+4x1o+4x2e+4x3o',
+                                  '4x0e+4x1o+4x2e+4x3o', '4x0e']},
+    {**_metaformer, 'ffn_type': 's2_inv', 'ffn_film': True,
+     'layer_scale_init': 0.1, 'radial_pair_embedding': True,
+     'readout_activation': 'silu'},
+    {**_metaformer, 'ffn_type': 's2_inv', 'parallel_block': [False, True, True]},
+])
+def test_s2_inv_ffn(cf):
+    from e3nn.util.jit import script
+
+    from sevenn.nn.equivariant_gate import EquivariantGate
+    from sevenn.nn.ffn_variants import ElementFiLM, S2InvGate
+    from sevenn.train.muon import build_muon_param_groups
+
+    model = get_model(cf)
+    mods = dict(model.named_children())
+    gate = mods['1_ffn_gate']
+    assert isinstance(gate, S2InvGate)
+    assert gate.C == cf.get('ffn_s2_channels', 4)   # hidden 8x1o // 2
+    assert Irreps(mods['1_ffn_linear_1'].irreps_out) == gate.get_gate_irreps_in()
+    assert Irreps(mods['1_ffn_linear_2'].irreps_in) == gate.irreps_out
+    assert isinstance(mods['2_ffn_gate'], EquivariantGate)   # scalar-only FFN
+    # same FFN output side as s2_bilinear
+    ref = get_model({**cf, 'ffn_type': 's2_bilinear'})
+    ref_mods = dict(ref.named_children())
+    assert ref_mods['1_ffn_gate'].irreps_out == gate.irreps_out
+    assert (ref_mods['1_ffn_linear_2'].linear.weight.shape
+            == mods['1_ffn_linear_2'].linear.weight.shape)
+    if cf.get('ffn_film'):
+        with torch.no_grad():
+            for m in mods.values():
+                if isinstance(m, ElementFiLM):
+                    m.gamma.normal_(0, 0.3)
+                    m.beta.normal_(0, 0.3)
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    assert torch.isfinite(f).all() and f.abs().sum() > 0
+    from tests.unit_tests.test_model import _graph_list
+
+    g = _graph_list[0].clone()   # inversion: E invariant, F odd
+    g_inv = g.clone()
+    g_inv[KEY.POS] = -g[KEY.POS]
+    if KEY.CELL in g:
+        g_inv[KEY.CELL] = -g[KEY.CELL]
+    if KEY.EDGE_VEC in g:
+        g_inv[KEY.EDGE_VEC] = -g[KEY.EDGE_VEC]
+    o_i = model(g_inv)
+    assert torch.allclose(o_i[KEY.PRED_TOTAL_ENERGY], e, atol=1e-4)
+    assert torch.allclose(o_i[KEY.PRED_FORCE], -f, atol=1e-4)
+    groups = build_muon_param_groups(model)   # FFN linears stay on Muon
+    name = {id(p): n for n, p in model.named_parameters()}
+    muon = {name[id(p)] for p in groups[0]['params']}
+    assert any('1_ffn_linear_1' in n for n in muon)
+    assert not any('1_ffn_gate' in n for n in name.values())   # no parameters
+    model.set_is_batch_data(True)
+    out = model(get_graphs(batched=True))
+    assert torch.isfinite(out[KEY.PRED_FORCE]).all()
+    model.set_is_batch_data(False)   # deploy: script + freeze (LAMMPS / ML-IAP)
+    g = _graph_list[0].clone()
+    ref = model.eval()(g.clone())   # before scripting (e3nn scripts in place)
+    inp = {k: v for k, v in g.to_dict().items() if isinstance(v, torch.Tensor)}
+    inp[KEY.NODE_FEATURE] = model._atomic_numbers_to_onehot(inp[KEY.ATOMIC_NUMBERS])
+    model.eval_type_map = False  # as sevenn deploy
+    out = torch.jit.freeze(script(model))(inp)
+    assert torch.allclose(out[KEY.PRED_TOTAL_ENERGY], ref[KEY.PRED_TOTAL_ENERGY],
+                          atol=1e-5)
+    assert torch.allclose(out[KEY.PRED_FORCE], ref[KEY.PRED_FORCE], atol=1e-5)
+
+
 @pytest.mark.parametrize('cf', [
     {**_metaformer, 'metaformer_norm': False},
     {**_metaformer, 'metaformer_norm': False, 'radial_pair_embedding': True,

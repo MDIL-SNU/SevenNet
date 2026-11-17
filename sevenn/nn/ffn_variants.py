@@ -11,6 +11,8 @@ all off by default):
 - S2BilinearGate: exactly equivariant bilinear product of two hidden
   features on a spherical quadrature grid (Gaunt tensor product), plus a
   SwiGLU scalar branch (ffn_type 's2_bilinear', see the class docstring).
+- S2InvGate: S2BilinearGate keeping only the invariant (l = 0) output of the
+  bilinear product; l > 0 outputs from an e3nn gate (ffn_type 's2_inv').
 - AddToResidual: adds a branch output to the saved residual self_cont_tmp
   (parallel_block: conv and FFN branches from the same pre-norm input).
 """
@@ -309,6 +311,129 @@ class S2BilinearGate(nn.Module):
         data[self.key_x] = torch.cat(
             [self.act(s), z.index_select(1, self.perm_out)], dim=-1
         )
+        return data
+
+
+@compile_mode('script')
+class S2InvGate(nn.Module):
+    """
+    FFN nonlinearity 'ffn_type: s2_inv' (metaformer block): S2BilinearGate
+    ('s2_bilinear') with the direction-dependent l > 0 outputs of the
+    bilinear product replaced by an ordinary e3nn gate; the scalar branch and
+    the invariant (l = 0) bilinear output are kept.
+
+    Input  [s: n0 x 0e | g: L*C x 0e | A: C x l, l = 0..L | B: C x l, l = 0..L]
+           (g = one gate per channel of A_l, l > 0, in (l, c) order)
+    Output [act(s): n0 x 0e | inv: C x 0e | A_l * act_gate(g_l): C x l, l > 0]
+           = S2BilinearGate.irreps_out (the FFN output linear is unchanged)
+
+    inv_c = K^-1/2 sum_{l,m} A_c,lm B_c,lm with K = (L+1)^2 is exactly the
+    l = 0 output block of S2BilinearGate for the same A, B: the Gaunt
+    coefficient G[i, j, 00] = mean_S2(Y_i Y_j) = delta_ij ('component'
+    normalization, Y_00 = 1) and S2BilinearGate's output scale of degree 0 is
+    (sum_ij G_ij,00^2)^-1/2 = K^-1/2. Computed directly (no grid, any L):
+    A_0 B_0 plus one GEMM of the l > 0 products with a fixed channel-sum
+    matrix. The l > 0 outputs are the e3nn Gate (NequIP): v * act_gate(g)
+    with the normalize2mom'ed even gate activation of the model
+    (act_gate['e']), one gate scalar per gated channel.
+    Gated features = A_l (l > 0) themselves (no separate block): the FFN
+    input linear only grows by the L*C gate scalars (a08, C = 64, L = 3:
+    +192 of 2432 components, +192 x 192 weights per layer) instead of the
+    C*(K-1) = 960 components of an extra l > 0 block, and the output irreps
+    are those of s2_bilinear, so the FFN output linear (and FiLM) see the
+    same input. Like the plain gate FFN, every l > 0 output is (linear in
+    the FFN input) times an invariant, i.e. the S2 product's l > 0 paths
+    (A_l1 x B_l2 -> l, e.g. A_00 B_lm and the l1, l2 > 0 couplings) are gone.
+    A and B are the same channels as S2BilinearGate's A|B (2C x l blocks),
+    only ordered A-block then B-block so that the forward needs no
+    permutation (the linear in front maps to any order).
+    Motivation: an inference-only probe of the trained a08
+    (dev/equflashv2-dimer-review, a08_path_probe.txt) removed all short-range
+    dimer-wall turnovers by zeroing only those l > 0 outputs, and changed
+    the fitted range least.
+    Every block has unit second moment for unit-variance independent inputs
+    (act, act_gate normalize2mom'ed; inv: K terms scaled by K^-1/2).
+    Polynomials and smooth activations only: smooth, node-local.
+
+    Sources (ideas only, own implementation):
+      - Gaunt tensor product: S. Luo, T. Chen, A. S. Krishnapriyan,
+        "Enabling Efficient Equivariant Operations in the Fourier Basis via
+        Gaunt Tensor Products", ICLR 2024, arXiv:2401.10216.
+      - DPA4 "WBN" bilinear FFN, arXiv:2606.02419 Eq. 28-32 (deepmd-kit
+        LGPL-3.0: no code reused).
+      - EquiformerV3 SwiGLU-S2 FFN, arXiv:2604.09130.
+      - Gate nonlinearity: S. Batzner et al., NequIP, Nat. Commun. 13, 2453
+        (2022), arXiv:2101.03164; e3nn.nn.Gate (M. Geiger, T. Smidt,
+        arXiv:2207.09453).
+    """
+
+    def __init__(
+        self,
+        irreps_x: Irreps,
+        act_scalar_dict: Dict[str, Callable],
+        act_gate_dict: Dict[str, Callable],
+        channels: Optional[int] = None,
+        data_key_x: str = KEY.NODE_FEATURE,
+    ) -> None:
+        super().__init__()
+        self.key_x = data_key_x
+        irreps_x = Irreps(irreps_x)
+        for _, ir in irreps_x:
+            if ir.p != (-1) ** ir.l:
+                raise ValueError(
+                    f's2_inv needs natural-parity irreps, got {irreps_x}'
+                )
+        lmax = max(ir.l for _, ir in irreps_x)
+        if lmax < 1:
+            raise ValueError('s2_inv needs l > 0 irreps')
+        n0 = sum(mul for mul, ir in irreps_x if ir.l == 0)
+        if channels is None:
+            channels = max(mul for mul, ir in irreps_x if ir.l > 0) // 2
+        C = int(channels)
+        assert C > 0
+        K = (lmax + 1) ** 2
+        self.n0, self.C, self.K, self.lmax = n0, C, K, lmax
+        self.n_g = lmax * C
+        self.inv_scale = 1.0 / math.sqrt(K)
+        self.act = normalize2mom(act_scalar_dict['e'])
+        self.gate_act = normalize2mom(act_gate_dict['e'])
+        # x = [s | g | A_0 | A_l>0 | B_0 | B_l>0]
+        n1 = C * (K - 1)
+        self.sizes = [n0, self.n_g, C, n1, C, n1]
+
+        degrees = [(l, (-1) ** l) for l in range(lmax + 1)]
+        ab = [(C, ir) for ir in degrees]
+        self.irreps_in = Irreps([(n0, (0, 1)), (self.n_g, (0, 1))] + ab + ab)
+        self.irreps_out = Irreps([(n0, (0, 1))] + ab)
+
+        # e3nn layout of A_l>0 ([C, 2l+1] per degree): channel-sum matrix
+        # (entries K^-1/2) and the gate of every component
+        sum_mat = torch.zeros(n1, C, dtype=torch.float64)
+        gate_idx: List[int] = []
+        off = 0
+        for l in range(1, lmax + 1):
+            d = 2 * l + 1
+            for c in range(C):
+                sum_mat[off: off + d, c] = self.inv_scale
+                gate_idx += [(l - 1) * C + c] * d
+                off += d
+        dtype = torch.get_default_dtype()
+        # derived constants: not in the state dict
+        self.register_buffer('sum_mat', sum_mat.to(dtype), persistent=False)
+        self.register_buffer(
+            'gate_idx', torch.tensor(gate_idx, dtype=torch.long), persistent=False
+        )
+
+    def get_gate_irreps_in(self) -> Irreps:
+        return self.irreps_in
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        x = data[self.key_x]
+        # split (not slicing): one cat in the backward
+        s, g, a0, a1, b0, b1 = torch.split(x, self.sizes, dim=1)
+        inv = torch.addmm(a0 * b0, a1 * b1, self.sum_mat, beta=self.inv_scale)
+        gates = self.gate_act(g).index_select(1, self.gate_idx)  # index_add bwd
+        data[self.key_x] = torch.cat([self.act(s), inv, a1 * gates], dim=-1)
         return data
 
 

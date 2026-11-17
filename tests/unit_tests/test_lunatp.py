@@ -900,6 +900,8 @@ MFEXT_CONFIGS = {
         {'pair_repulsion': {'cutoff_scale': 1.4, 'param_scale': 1.0},
          'ffn_type': 's2_bilinear'},
         ('table_', 'pair_repulsion.log_amp', 'pair_repulsion.decay_raw')),
+    's2_bilinear': ({'ffn_type': 's2_bilinear'}, ('table_',)),
+    's2_inv': ({'ffn_type': 's2_inv'}, ('table_',)),
     'mf_ext_sink': (
         {'readout_activation': None, 'readout_block': {'type': 'swiglu'},
          'per_layer_readout': True, 'radial_mlp_block': {},

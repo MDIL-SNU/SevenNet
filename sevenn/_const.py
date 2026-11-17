@@ -240,7 +240,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.USE_FINAL_NORM: bool,
     KEY.RADIAL_PAIR_EMBEDDING: bool,
     KEY.GATE_TYPE: lambda x: x in ['gate', 'bilinear'],
-    KEY.FFN_TYPE: lambda x: x in ['gate', 'swiglu', 's2_bilinear'],
+    KEY.FFN_TYPE: lambda x: x in ['gate', 'swiglu', 's2_bilinear', 's2_inv'],
     KEY.FFN_S2_CHANNELS: lambda x: x is None or (isinstance(x, int) and x > 0),
     KEY.LAYER_SCALE_INIT: lambda x: x is None or isinstance(x, (int, float)),
     KEY.FFN_FILM: bool,
