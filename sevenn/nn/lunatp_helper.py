@@ -23,6 +23,42 @@ try:
         TensorProductConv,
         make_graph,
     )
+    from LunaEquivariance.utils import jit as _lunaeq_jit
+    from torch.utils import cpp_extension as _cpp_extension
+
+    class _DigestVersionedCppExtension:
+        """
+        torch.utils.cpp_extension as LunaEquivariance.utils.jit sees it, with a
+        JIT_EXTENSION_VERSIONER that numbers a kernel library by its build
+        digest. Every other attribute is torch.utils.cpp_extension's.
+
+        LunaEquivariance 0.2.0 ("Release LunaEquivariance 0.2.0", unchanged by
+        "Fix cuda13.x compatibility (#3)") stores a kernel library as
+        <LUNAEQ_CACHE_DIR>/<digest>/<name>_v<version>.so, with the version of
+        torch's process-wide JIT_EXTENSION_VERSIONER: the number of libraries
+        of the same base name that this process loaded before (no suffix for
+        version 0). A process that loads the kernels in another order looks
+        for another file name and compiles an identical kernel again
+        (sevenn lunatp_precompile workers each load a share of the modules).
+        Here the version is the digest as an integer: one name per digest in
+        every process, and kernels of one base name with different digests
+        keep different module names in one process (the pybind11 module name
+        is the library name). Only LunaEquivariance's jit module sees this
+        object; torch's versioner and its other callers are unchanged.
+        LunaEquivariance 0.1.0 names a library <name>_<digest> without the
+        versioner and is left as is.
+        """
+
+        class JIT_EXTENSION_VERSIONER:
+            @staticmethod
+            def bump_version_if_changed(name, build_arguments, **_):
+                return int(build_arguments[0][0], 16)  # ((digest,),)
+
+        def __getattr__(self, attr):
+            return getattr(_cpp_extension, attr)
+
+    if 'JIT_EXTENSION_VERSIONER' in _lunaeq_jit.load_extension.__code__.co_names:
+        _lunaeq_jit.cpp_extension = _DigestVersionedCppExtension()
 
     class LunaTPFullyConnectedTensorProduct(TensorProduct):
         """
@@ -156,6 +192,11 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
     # Forward and backward on two nodes (and two edges) build the module's kernels.
     # LunaEquivariance compiles a variant per set of tensors that require grad, so
     # every combination of inputs and parameters (frozen or trainable) runs once.
+    # The combination without grad runs first: after a differentiable call,
+    # LunaEqLinear serves later no-grad calls from the fused forward+backward
+    # library (o3/linear/kernels/utils.py, run_kernel; LunaEquivariance 0.1.0 and
+    # a045a88), while a calculator whose first call of a frozen linear is no-grad
+    # (the atom-type embedding) builds the forward-only library linear_fwd.
     # order 2 also differentiates first derivatives once more, as a force loss
     # does, with an output gradient that does and does not require grad.
     if isinstance(module, LunaTPConvolution):
@@ -171,15 +212,23 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
     else:  # LunaEqLinear, LunaEqGate
         dims = [module.irreps_in.dim]
         extra = []
+    # LunaEqLinear selects its second and third derivative kernels by the number
+    # of rows (n <= 64 or not, run_kernel; 0.1.0: fp32 and fp64, a045a88: fp64
+    # only), so order 2 also runs 65 rows (force training of a batch above 64
+    # atoms). No other a045a88 library used here depends on the number of rows
+    # or edges: the 64-bit index variant for large counts is in the same library
+    # as the 32-bit one, and the uvw forward selected by 1024 rows is that of
+    # per-row weights (the self-connection weights are shared).
+    sizes = (2, 65) if order >= 2 and isinstance(module, LunaEqLinear) else (2,)
     params = [p for p in module.parameters() if p.numel() > 0]
     trainable = [p.requires_grad for p in params]
-    flag_sets = itertools.product((True, False), repeat=len(dims) + len(params[:1]))
+    flag_sets = itertools.product((False, True), repeat=len(dims) + len(params[:1]))
     try:
-        for flags in flag_sets:
+        for flags, n in itertools.product(flag_sets, sizes):
             for p in params:
                 p.requires_grad_(flags[-1])
             inputs = [
-                torch.randn(2, d, device=device, dtype=dtype, requires_grad=f)
+                torch.randn(n, d, device=device, dtype=dtype, requires_grad=f)
                 for d, f in zip(dims, flags)
             ]
             wrt = [t for t in inputs + params if t.requires_grad]
@@ -217,6 +266,17 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
 def _precompile_worker(checkpoint_path: str, rank: str, size: str, order: str):
     from sevenn.util import load_checkpoint
 
+    # LunaEquivariance a045a88 compiles the forward kernel of a convolution when
+    # the convolution is built (lunatp/uvu_conv/kernels/utils.py,
+    # configure_uvu_conv), so in build_model every worker waits for each of these
+    # compiles in turn. Each worker first builds its share of them alone, from
+    # the e3nn model (build_model changes the checkpoint's config: one each).
+    convolutions = [
+        m for m in load_checkpoint(checkpoint_path).build_model().modules()
+        if isinstance(m, IrrepsConvolution)
+    ]
+    for conv in convolutions[int(rank) :: int(size)]:
+        LunaTPConvolution(**conv.convolution_kwargs)
     model = load_checkpoint(checkpoint_path).build_model(enable_lunatp=True)
     model.to('cuda')
     param = next(model.parameters())
@@ -255,16 +315,22 @@ def precompile(
         '_precompile_worker(*sys.argv[1:])'
     )
     with tempfile.TemporaryDirectory() as tmp:
-        procs = []
-        for rank in range(workers):
-            log = open(os.path.join(tmp, f'{rank}.log'), 'w')
-            cmd = [sys.executable, '-c', code, checkpoint_path, str(rank)]
-            cmd += [str(workers), str(order)]
-            procs.append(
-                subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
-            )
-            log.close()
-        failed = [rank for rank, proc in enumerate(procs) if proc.wait() != 0]
+
+        def run(ranks):
+            procs = {}
+            for rank in ranks:
+                log = open(os.path.join(tmp, f'{rank}.log'), 'w')
+                cmd = [sys.executable, '-c', code, checkpoint_path, str(rank)]
+                cmd += [str(workers), str(order)]
+                procs[rank] = subprocess.Popen(
+                    cmd, stdout=log, stderr=subprocess.STDOUT, env=env
+                )
+                log.close()
+            return [rank for rank, proc in procs.items() if proc.wait() != 0]
+
+        failed = run(range(workers))
+        if failed:  # once more: a shared GPU can be out of memory for a moment
+            failed = run(failed)
         if failed:
             with open(os.path.join(tmp, f'{failed[0]}.log')) as f:
                 tail = f.read()[-2000:]

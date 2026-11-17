@@ -118,7 +118,7 @@ LunaTP (LunaEquivariance package) replaces the tensor product convolution with a
 ### Requirements
 - Python >= 3.10, PyTorch >= 2.8
 - NVIDIA GPU with compute capability 8.0 or later, CUDA toolkit with `nvcc`
-- LunaEquivariance
+- LunaEquivariance 0.2.0 at GitHub commit a045a88 (pinned; the PyPI 0.2.0 wheel is the earlier release commit, whose graph kernel does not compile with CUDA 13). SevenNet names each LunaEquivariance 0.2.0 kernel library by its build digest instead of the number of libraries of the same name that the process loaded before, so every process finds a library that another process compiled, whatever order it loads the kernels in.
 
 ### Installation
 ```bash

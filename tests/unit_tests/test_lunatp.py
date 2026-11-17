@@ -1,6 +1,9 @@
 # TODO: add gradient test from total loss after double precision.
 #       so far, it is empirically checked by seeing learning curves
 import copy
+import os
+import subprocess
+import sys
 
 import numpy as np
 import pytest
@@ -259,6 +262,92 @@ def test_calculator(tmp_path):
     atoms2.calc = calc2
 
     assert_atoms(atoms, atoms2)
+
+
+_CALCULATOR_CALLS = """
+import sys
+from ase import Atoms
+from ase.build import bulk
+from sevenn.calculator import SevenNetCalculator
+
+for cuda_graph in (False, True):
+    calc = SevenNetCalculator(sys.argv[1], enable_lunatp=True, cuda_graph=cuda_graph)
+    dimer = Atoms('NaCl', positions=[[0, 0, 0], [0, 0, 2.4]])
+    for atoms in (dimer, bulk('NaCl', 'rocksalt', a=4.0)):
+        for _ in range(3):  # cuda_graph: eager, capture, replay
+            atoms.calc = calc
+            atoms.get_potential_energy()
+            atoms.get_forces()
+            calc.results['stress']
+"""
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.skipif(
+    os.environ.get('SEVENNET_TEST_PRECOMPILE') != '1',
+    reason='compiles 44 kernels (7-15 min); set SEVENNET_TEST_PRECOMPILE=1',
+)
+def test_precompile_covers_calculator(tmp_path, monkeypatch):
+    """
+    After precompile into an empty kernel cache, a new process running
+    SevenNetCalculator (frozen weights; eager and cuda_graph; energy, forces,
+    stress) adds no LunaEquivariance kernel library to the cache.
+    """
+    from sevenn.nn.lunatp_helper import precompile
+
+    # set first: a045a88 compiles the convolution forward kernels in build_model
+    cache = tmp_path / 'lunaeq'
+    monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(cache))
+    cfg = get_model_config()
+    cfg.update({
+        'channel': 4, 'lmax': 1, 'num_convolution_layer': 2,
+        'use_lunatp': True, 'version': sevenn.__version__,
+    })
+    model = build_E3_equivariant_model(cfg, parallel=False)
+    cp_path = str(tmp_path / 'cp.pth')
+    torch.save({'model_state_dict': model.state_dict(), 'config': cfg}, cp_path)
+
+    precompile(cp_path)
+    built = {str(p) for p in cache.rglob('*.so')}  # 0.2.0: <digest>/<name>_v*.so
+    assert built
+    subprocess.run(
+        [sys.executable, '-c', _CALCULATOR_CALLS, cp_path], check=True
+    )
+    added = {str(p) for p in cache.rglob('*.so')} - built
+    assert not added, f'kernels built after precompile: {sorted(added)}'
+
+
+_LOAD_EQU_NORM = """
+import sys
+import torch
+from e3nn.o3 import Irreps
+import sevenn.nn.lunatp_helper
+from LunaEquivariance.nn.equ_norm import EquNormOperator
+
+for irreps in sys.argv[1:]:
+    EquNormOperator(irreps)(torch.randn(2, Irreps(irreps).dim, device='cuda'))
+"""
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_kernel_cache_independent_of_load_order(tmp_path):
+    """
+    A process loads two kernel libraries of one base name (equ_norm) in the
+    order (X, Y) into an empty cache; a second process loads them in the
+    order (Y, X) and compiles nothing (LunaEquivariance 0.2.0 names them by
+    the per-process load count, see _DigestVersionedCppExtension).
+    """
+    env = {**os.environ, 'LUNAEQ_CACHE_DIR': str(tmp_path)}
+    configs = ['2x0e+1x1o', '3x0e+1x1o']
+
+    def libraries_after(irreps):
+        cmd = [sys.executable, '-c', _LOAD_EQU_NORM, *irreps]
+        subprocess.run(cmd, check=True, env=env)
+        return sorted(str(p) for p in tmp_path.rglob('*.so'))
+
+    built = libraries_after(configs)
+    assert len(built) == 2
+    assert libraries_after(configs[::-1]) == built
 
 
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')

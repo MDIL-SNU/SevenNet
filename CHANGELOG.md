@@ -12,9 +12,12 @@ All notable changes to this project will be documented in this file.
 ### Changed
 - The default dtype of the rescale layer is changed to double precision. Use the `SEVENN_SHIFT_SCALE_DTYPE` environment variable for backward single-precision compatibility.
 - The recommended LAMMPS ML-IAP version is bumped to `stable_22Jul2025_update4`.
+- LunaTP: LunaEquivariance is pinned to GitHub commit a045a88 (0.2.0 with the CUDA 13 fix; the PyPI 0.2.0 wheel is the earlier release commit, whose graph kernel does not compile with CUDA 13)
+- `sevenn lunatp_precompile` builds the forward-only kernel of a linear whose input and weights do not require grad (the calculator's atom-type embedding), which the calculator otherwise compiled at its first call: after a differentiable call, LunaEquivariance serves a no-grad linear call from the fused forward+backward kernel, so the precompile runs the no-grad combination first. `--train` also runs the linears on 65 rows (LunaEquivariance selects the second-derivative kernel of a small linear by the number of rows: 0.1.0 always, a045a88 in fp64). The convolution forward kernels, which a045a88 compiles when a convolution is built, are built in parallel (a share per worker). A failed precompile worker (CUDA out of memory on a shared GPU) runs once more.
 
 ### Fixed
 - `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
+- LunaEquivariance 0.2.0 kernel libraries are named by their build digest (`<digest>/<name>_v<digest as integer>.so`) instead of torch's per-process extension version, which counts the libraries of the same name loaded before, so a process that loads the kernels in another order (a `sevenn lunatp_precompile` worker, a calculator after the precompile) no longer compiles an identical kernel again; libraries in a cache written by 0.2.0 without this change are compiled once more.
 
 
 ## [0.13.0]
