@@ -119,6 +119,8 @@ CONFIGS = {
     # S2-grid bilinear FFN
     's2_bilinear': {**_A4, 'ffn_type': 's2_bilinear', 'ffn_s2_channels': 64},
     's2_bilinear_auto': {**_A4, 'ffn_type': 's2_bilinear'},
+    # metaformer extensions (dev/mf-extension)
+    'no_prenorm': {**_A4, 'metaformer_norm': False},
 }
 # subsets for the slower tests (scripted segments, checkpoint files, GPU)
 SCRIPT_CONFIGS = [n for n in ('A0_nequip_linear_sc', 'a06_radial_node_cond',

@@ -125,6 +125,7 @@ def Metaformer_interaction_block(
     bilinear_b: str = 'own',
     ffn_moe_table: Optional[torch.Tensor] = None,
     ffn_s2_channels: Optional[int] = None,
+    use_norm: bool = True,
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -138,6 +139,8 @@ def Metaformer_interaction_block(
         x = x + FFN(Norm2(x)),  FFN = Lin(Gate(Lin(.)))  (if use_ffn)
     R is the residual of self_connection_pair (identity or linear).
     Module names self_interaction_1/2 are kept for modality patching.
+    use_norm=False (config metaformer_norm: false, ablation): Norm1 and Norm2
+    are left out (identity), everything else is unchanged.
     """
     from .normalization import EquivariantRMSNorm
 
@@ -155,7 +158,10 @@ def Metaformer_interaction_block(
         irreps_operand=irreps_node_attr,
         irreps_out=irreps_out,
     )
-    block[f'{t}_norm_1'] = EquivariantRMSNorm(irreps_x, data_key_x, eps=norm_eps)
+    if use_norm:
+        block[f'{t}_norm_1'] = EquivariantRMSNorm(
+            irreps_x, data_key_x, eps=norm_eps
+        )
     # convolution may run on narrower irreps than the node features (MACE-MH-1)
     irreps_conv = irreps_x if irreps_conv is None else Irreps(irreps_conv)
     block[f'{t}_self_interaction_1'] = IrrepsLinear(
@@ -220,9 +226,10 @@ def Metaformer_interaction_block(
         block[f'{t}_ffn_intro'] = SelfConnectionResidualIntro(
             irreps_out, irreps_out, data_key_x
         )
-        block[f'{t}_norm_2'] = EquivariantRMSNorm(
-            irreps_out, data_key_x, eps=norm_eps
-        )
+        if use_norm:
+            block[f'{t}_norm_2'] = EquivariantRMSNorm(
+                irreps_out, data_key_x, eps=norm_eps
+            )
         if moe:
             from .moe_ffn import MoEDispatch
             block[f'{t}_moe_dispatch'] = MoEDispatch(ffn_moe_table, t, data_key_x)

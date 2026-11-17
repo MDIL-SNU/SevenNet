@@ -700,3 +700,34 @@ def test_s2_bilinear_ffn(cf):
     assert torch.allclose(out[KEY.PRED_TOTAL_ENERGY], ref[KEY.PRED_TOTAL_ENERGY],
                           atol=1e-5)
     assert torch.allclose(out[KEY.PRED_FORCE], ref[KEY.PRED_FORCE], atol=1e-5)
+
+
+@pytest.mark.parametrize('cf', [
+    {**_metaformer, 'metaformer_norm': False},
+    {**_metaformer, 'metaformer_norm': False, 'radial_pair_embedding': True,
+     'readout_activation': 'silu', 'use_ffn': [True, False, True]},
+])
+def test_metaformer_without_norm(cf):
+    """metaformer_norm: false drops norm_1 / norm_2 and nothing else"""
+    from e3nn.util.jit import script
+
+    from sevenn.nn.normalization import EquivariantRMSNorm
+
+    torch.manual_seed(0)
+    ref = get_model({**cf, 'metaformer_norm': True})
+    torch.manual_seed(0)
+    model = get_model(cf)
+    names = list(dict(model.named_children()))
+    assert not any(isinstance(m, EquivariantRMSNorm) for m in model.modules())
+    ref_names = [k for k in dict(ref.named_children())
+                 if not k.endswith(('_norm_1', '_norm_2'))]
+    assert names == ref_names
+    sd, sd_ref = model.state_dict(), ref.state_dict()
+    assert set(sd) == {k for k in sd_ref if '_norm_' not in k}
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    assert torch.isfinite(f).all() and f.abs().sum() > 0
+    script(model.eval())

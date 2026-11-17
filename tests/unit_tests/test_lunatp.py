@@ -847,3 +847,139 @@ def test_attention_lunatp_envelope_not_stale():
         out.inferred_total_energy, ref_out.inferred_total_energy, rtol=1e-6
     )
     assert torch.allclose(out.inferred_force, ref_out.inferred_force, atol=1e-6)
+
+
+# ------------------------------------------- metaformer extensions (mf-ext)
+_mfext = {  # A4-like: metaformer, pair radial MLP, SiLU readout, XPLOR, modal
+    'interaction_type': 'metaformer',
+    'self_connection_type': 'identity',
+    'lmax': 3,
+    'irreps_manual': ['16x0e', '16x0e+8x1o+4x2e+4x3o', '16x0e+8x1o+4x2e+4x3o',
+                      '16x0e'],
+    'drop_unused_tp_irreps': True,
+    'radial_pair_embedding': True,
+    'readout_activation': 'silu',
+    'cutoff_function': {'cutoff_function_name': 'XPLOR', 'cutoff_on': 3.5},
+    'use_modality': True,
+    KEY.NUM_MODALITIES: 2,
+    KEY.MODAL_MAP: {'mpa': 0, 'omat24': 1},
+    'use_modal_node_embedding': False,
+    'use_modal_self_inter_intro': True,
+    'use_modal_self_inter_outro': True,
+    'use_modal_output_block': True,
+    'use_modal_wise_shift': True,
+    'use_modal_wise_scale': False,
+    'shift': [-1.5, -2.5],
+    'scale': 1.0,
+}
+# config name -> (overrides of _mfext, substrings of zero-initialized
+# parameters to randomize before the comparison)
+MFEXT_CONFIGS = {
+    'a4': ({}, ('table_',)),
+    'no_prenorm': ({'metaformer_norm': False}, ('table_',)),
+}
+
+
+def _mfext_run(model, v, dtype=torch.float32):
+    """E, F, S, Hessian-vector product -d(F.v)/dpos (double backward, as the
+    force loss) and the parameter gradients of a loss of all of them"""
+    model.train()
+    model.zero_grad(set_to_none=True)
+    g = _graph.clone().to('cuda')
+    for k, t in g.items():
+        if torch.is_tensor(t) and t.is_floating_point():
+            g[k] = t.to(dtype)
+    pos = g[KEY.POS].clone().requires_grad_(True)
+    src, dst = g[KEY.EDGE_IDX]
+    shift = (g[KEY.EDGE_VEC] - (g[KEY.POS][dst] - g[KEY.POS][src])).detach()
+    g[KEY.EDGE_VEC] = pos[dst] - pos[src] + shift
+    out = model(g)
+    e = out[KEY.PRED_TOTAL_ENERGY]
+    f = out[KEY.PRED_FORCE]
+    s = out[KEY.PRED_STRESS]
+    (hv,) = torch.autograd.grad((f * v.to(dtype)).sum(), pos, create_graph=True)
+    loss = e.square().sum() + f.square().sum() + s.square().sum()
+    (loss + hv.square().sum()).backward()
+    grads = {
+        n: q.grad.double() for n, q in model.named_parameters()
+        if q.grad is not None
+    }
+    return [t.detach().double() for t in (e, f, s, -hv)], grads
+
+
+def _to_double_hook(module, inputs, data):
+    for k in (KEY.NODE_FEATURE, KEY.NODE_ATTR):  # one-hot is float32
+        if k in data and data[k].is_floating_point():
+            data[k] = data[k].double()
+    return data
+
+
+def _mfext_backends(name):
+    """e3nn fp32, LunaTP fp32 and e3nn fp64 (reference) models, same weights"""
+    over, rand = MFEXT_CONFIGS[name]
+    cf = {**_mfext, **over}
+    torch.manual_seed(777)
+    model_e3nn = get_model(cf)
+    gen = torch.Generator().manual_seed(1)
+    with torch.no_grad():
+        for n, q in model_e3nn.named_parameters():
+            if any(r in n for r in rand):
+                q.copy_(0.3 * torch.randn(q.shape, generator=gen))
+    model_lunatp = get_model(cf, use_lunatp=True)
+    missing, unexpected = model_lunatp.load_state_dict(
+        model_e3nn.state_dict(), strict=False
+    )
+    assert all(k.endswith('tp_conv.tp.weight') for k in missing), missing
+    assert all('_convolution.convolution.' in k for k in unexpected), unexpected
+    model_64 = copy.deepcopy(model_e3nn).double()
+    model_64._modules['onehot_idx_to_onehot'].register_forward_hook(
+        _to_double_hook
+    )
+    for m in (model_e3nn, model_lunatp, model_64):
+        m.prepare_modal_deploy('mpa')
+    return model_e3nn, model_lunatp, model_64
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize('name', list(MFEXT_CONFIGS))
+def test_mfext_lunatp(name):
+    """
+    every new IrrepsLinear / EquivariantGate / EquivariantRMSNorm of the
+    metaformer extensions is LunaTP-patched; E/F/S, a Hessian-vector product
+    (double backward) and the parameter gradients of a loss of all of them
+    agree with the e3nn model's to fp32 precision (both compared with an
+    fp64 e3nn reference)
+    """
+    from LunaEquivariance import LunaEqGate, LunaEqLinear
+
+    from sevenn.nn.equivariant_gate import EquivariantGate
+    from sevenn.nn.lunatp_helper import LunaTPEquivariantRMSNorm
+    from sevenn.nn.linear import IrrepsLinear
+    from sevenn.nn.normalization import EquivariantRMSNorm
+
+    model_e3nn, model_lunatp, model_64 = _mfext_backends(name)
+    for k, m in model_lunatp._modules.items():
+        if isinstance(m, IrrepsLinear):
+            assert isinstance(m.linear, LunaEqLinear), k
+        elif isinstance(m, EquivariantGate):
+            assert isinstance(m.gate, LunaEqGate), k
+        elif isinstance(m, EquivariantRMSNorm):
+            assert isinstance(m, LunaTPEquivariantRMSNorm), k
+    gen = torch.Generator().manual_seed(2)
+    v = torch.randn(_graph[KEY.POS].shape, generator=gen).to('cuda')
+    ref64, g64 = _mfext_run(model_64, v, torch.float64)
+    ref, g_ref = _mfext_run(model_e3nn, v)
+    out, g_out = _mfext_run(model_lunatp, v)
+    # LunaTP fp32 is as close to the fp64 e3nn reference as e3nn fp32 is
+    # (a missing patch or a wrong derivative would be off at O(1))
+    for a64, a, b, tag in zip(ref64, ref, out, ('E', 'F', 'S', 'Hv')):
+        noise = (a - a64).abs().max().item()
+        err = (b - a64).abs().max().item()
+        floor = 1e-6 * max(1.0, a64.abs().max().item())
+        assert err <= 10 * noise + floor, (tag, err, noise)
+    assert ref64[3].abs().max() > 1e-3  # non-trivial Hessian
+    assert g64 and g64.keys() == g_ref.keys() == g_out.keys()
+    for n, g in g64.items():
+        noise = (g_ref[n] - g).norm().item()
+        err = (g_out[n] - g).norm().item()
+        assert err <= 10 * noise + 1e-6 * g.norm().item() + 1e-10, (n, err, noise)

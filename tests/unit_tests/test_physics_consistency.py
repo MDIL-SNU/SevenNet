@@ -64,6 +64,7 @@ CONFIGS = {
                                          '4x0e+4x1o+4x2e+4x3o', '4x0e']},
     'irreps_conv': {**_metaformer,
                     'irreps_conv': ['4x0e', '2x0e+2x1o+2x2e', '2x0e+2x1o+2x2e']},
+    'no_prenorm': {**_metaformer, 'metaformer_norm': False},
 }
 
 

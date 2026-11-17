@@ -273,6 +273,7 @@ FFN_MOE = 'ffn_moe'  # element-group routed MoE FFN (shared + 1 expert)
 BILINEAR_PATHS = 'bilinear_paths'  # 'all' | 'same_l' | 'lmax2' | 'scalar'
 BILINEAR_B = 'bilinear_b'  # 'own' (B from self_interaction_2) | 'shared' (B = A)
 READOUT_ACTIVATION = 'readout_activation'  # act between the two readout linears
+METAFORMER_NORM = 'metaformer_norm'  # False: blocks without norm_1 / norm_2
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 
 USE_FLASH_TP = 'use_flash_tp'
