@@ -12,6 +12,7 @@ from e3nn.o3 import FullyConnectedTensorProduct
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
+from .bilinear_gate import BilinearGate
 from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
 from .equivariant_gate import EquivariantGate
 from .linear import IrrepsLinear
@@ -82,6 +83,33 @@ try:
             object.__setattr__(self, 'tp', tp)
             self._parameters['weight'] = tp.weight
             self._buffers['output_mask'] = tp.output_mask
+
+        @property
+        def weight(self):
+            return self._parameters['weight']
+
+    class LunaTPTensorProduct(TensorProduct):
+        """
+        An existing e3nn TensorProduct computed by LunaTP (BilinearGate: 'uuu',
+        no or per-node weights). As in LunaTPFullyConnectedTensorProduct, the
+        e3nn module is kept outside the module tree and its parameters, buffers and
+        submodules (w3j constants) are registered here under the e3nn names,
+        so state dicts match the e3nn backend.
+        Kernels: LunaEquivariance 0.1.0 (HPC-AI-Team, BSD-3-Clause,
+        github.com/HPC-AI-Team/LunaEquivariance), fused 'uuu' tensor product
+        (LunaEquivariance/lunatp/uuu) with CUDA derivatives through third order.
+        """
+
+        def __init__(self, tp):
+            super().__init__(tp)
+            del self._modules['tp']
+            object.__setattr__(self, 'tp', tp)
+            for name, value in tp.named_parameters(recurse=False):
+                self._parameters[name] = value
+            for name, value in tp.named_buffers(recurse=False):
+                self._buffers[name] = value
+            for name, child in tp.named_children():
+                self._modules[name] = child
 
         @property
         def weight(self):
@@ -338,6 +366,20 @@ def patch_rms_norm(module: EquivariantRMSNorm):
     return fused
 
 
+@lunatp_needed
+def patch_bilinear_gate(module: BilinearGate):
+    """
+    BilinearGate's three ops (e3nn Gate, 'uuu' TensorProduct on the full gate
+    input/output buffers, Linear) replaced by LunaEqGate, LunaTP and
+    LunaEqLinear; the forward (Gate -> TP -> Linear -> add) is unchanged and
+    state dict names are those of e3nn.
+    """
+    module.gate = LunaEqGate(gate=module.gate)
+    module.tp = LunaTPTensorProduct(module.tp)
+    module.linear = LunaEqLinear(module.linear)
+    return module
+
+
 def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
     # Forward and backward on two nodes (and two edges) build the module's kernels.
     # LunaEquivariance compiles a variant per set of tensors that require grad, so
@@ -366,6 +408,11 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
         dims = [tp.irreps_in1.dim, tp.irreps_in2.dim, tp.weight_numel]
         src = torch.tensor([1, 0], device=device, dtype=torch.int32)
         extra = [src, src.flip(0)]
+    elif isinstance(module, LunaTPTensorProduct):
+        dims = [module.irreps_in1.dim, module.irreps_in2.dim]
+        if module.weight_numel > 0 and not module.internal_weights:
+            dims.append(module.weight_numel)  # per-node path weights
+        extra = []
     elif isinstance(module, LunaTPFullyConnectedTensorProduct):
         dims = [module.irreps_in1.dim]
         onehot = torch.zeros(2, module.irreps_in2.dim, device=device, dtype=dtype)
@@ -445,6 +492,7 @@ def _precompile_worker(checkpoint_path: str, rank: str, size: str, order: str):
     luna_types = (
         LunaTPConvolution,
         LunaTPFullyConnectedTensorProduct,
+        LunaTPTensorProduct,
         LunaEqLinear,
         LunaEqGate,
         LunaTPEquivariantRMSNorm,

@@ -7,9 +7,19 @@ from torch.nn import Module
 import sevenn._keys as KEY
 
 from .convolution import IrrepsConvolution
+from .bilinear_gate import BilinearGate
 from .equivariant_gate import EquivariantGate
 from .ffn_variants import ElementFiLM, LayerScale, SwiGLUGate
 from .linear import IrrepsLinear
+
+
+def _gate(
+    irreps_out: Irreps, act_scalar, act_gate, gate_type: str,
+    paths: str = 'all', b: str = 'own',
+):
+    if gate_type == 'bilinear' and any(ir.l > 0 for _, ir in Irreps(irreps_out)):
+        return BilinearGate(irreps_out, act_scalar, act_gate, paths=paths, b=b)
+    return EquivariantGate(irreps_out, act_scalar, act_gate)
 
 
 def NequIP_interaction_block(
@@ -27,7 +37,10 @@ def NequIP_interaction_block(
     bias_in_linear: bool,
     num_species: int,
     t: int,   # interaction layer index
+    gate_type: str = 'gate',
     irreps_conv: Optional[Irreps] = None,
+    bilinear_paths: str = 'all',
+    bilinear_b: str = 'own',
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -37,7 +50,9 @@ def NequIP_interaction_block(
     irreps_node_attr = Irreps(f'{num_species}x0e')
     sc_intro, sc_outro = self_connection_pair
 
-    gate_layer = EquivariantGate(irreps_out, act_scalar, act_gate)
+    gate_layer = _gate(
+        irreps_out, act_scalar, act_gate, gate_type, bilinear_paths, bilinear_b
+    )
     irreps_for_gate_in = gate_layer.get_gate_irreps_in()
 
     block[f'{t}_self_connection_intro'] = sc_intro(
@@ -100,10 +115,13 @@ def Metaformer_interaction_block(
     use_ffn: bool = True,
     ffn_hidden_scale: int = 2,
     norm_eps: float = 1e-5,
+    gate_type: str = 'gate',
     ffn_type: str = 'gate',
     layer_scale_init: Optional[float] = None,
     ffn_film: bool = False,
     irreps_conv: Optional[Irreps] = None,
+    bilinear_paths: str = 'all',
+    bilinear_b: str = 'own',
     data_key_x: str = KEY.NODE_FEATURE,
     data_key_weight_input: str = KEY.EDGE_EMBEDDING,
     parallel: bool = False,
@@ -124,7 +142,9 @@ def Metaformer_interaction_block(
     irreps_node_attr = Irreps(f'{num_species}x0e')
     sc_intro, sc_outro = self_connection_pair
 
-    gate_layer = EquivariantGate(irreps_out, act_scalar, act_gate)
+    gate_layer = _gate(
+        irreps_out, act_scalar, act_gate, gate_type, bilinear_paths, bilinear_b
+    )
     irreps_for_gate_in = gate_layer.get_gate_irreps_in()
 
     block[f'{t}_self_connection_intro'] = sc_intro(

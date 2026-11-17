@@ -257,12 +257,15 @@ FFN_HIDDEN_SCALE = 'ffn_hidden_scale'
 NORM_EPS = 'norm_eps'
 USE_FINAL_NORM = 'use_final_norm'
 RADIAL_PAIR_EMBEDDING = 'radial_pair_embedding'
+GATE_TYPE = 'gate_type'  # 'gate' | 'bilinear'
 FFN_TYPE = 'ffn_type'  # metaformer FFN nonlinearity: 'gate' | 'swiglu'
 LAYER_SCALE_INIT = 'layer_scale_init'  # None or float: LayerScale init
 FFN_FILM = 'ffn_film'  # element-conditioned FFN hidden features
 DISTANCE_TRANSFORM = 'distance_transform'  # None | 'agnesi'
 IRREPS_CONV = 'irreps_conv'  # per-layer conv irreps (narrower than node irreps)
 LUNATP_FUSED_NORM = 'lunatp_fused_norm'  # LunaEq fused EquivariantRMSNorm
+BILINEAR_PATHS = 'bilinear_paths'  # 'all' | 'same_l' | 'lmax2' | 'scalar'
+BILINEAR_B = 'bilinear_b'  # 'own' (B from self_interaction_2) | 'shared' (B = A)
 READOUT_ACTIVATION = 'readout_activation'  # act between the two readout linears
 TRAIN_AVG_NUM_NEIGH = 'train_avg_num_neigh'  # deprecated
 

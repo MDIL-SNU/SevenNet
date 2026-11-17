@@ -19,6 +19,7 @@ from .nn.edge_embedding import (
     SphericalEncoding,
     XPLORCutoff,
 )
+from .nn.bilinear_gate import BilinearGate
 from .nn.equivariant_gate import EquivariantGate
 from .nn.force_output import ForceStressOutputFromEdge
 from .nn.interaction_blocks import (
@@ -428,6 +429,8 @@ def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         ):
             # same function as the PyTorch norm (fp32 rounding differs)
             updates[k] = lunatp_helper.patch_rms_norm(module)
+        elif isinstance(module, BilinearGate):
+            updates[k] = lunatp_helper.patch_bilinear_gate(module)
 
     layers.update(updates)
     return layers
@@ -656,6 +659,9 @@ def build_E3_equivariant_model(
     weight_nn_layers = [radial_basis_num] + weight_nn_hidden
 
     param_interaction_block = {
+        'gate_type': config.get(KEY.GATE_TYPE, 'gate'),
+        'bilinear_paths': config.get(KEY.BILINEAR_PATHS, 'all'),
+        'bilinear_b': config.get(KEY.BILINEAR_B, 'own'),
         'irreps_filter': irreps_filter,
         'weight_nn_layers': weight_nn_layers,
         'train_conv_denominator': train_conv_denominator,

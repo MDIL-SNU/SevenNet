@@ -12,6 +12,7 @@ from ase.build import bulk
 from torch_geometric.loader.dataloader import Collater
 
 import sevenn
+import sevenn._keys as KEY
 import sevenn.train.dataload as dl
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.calculator import SevenNetCalculator
@@ -544,3 +545,145 @@ def test_fused_rmsnorm_gradcheck_float64(irreps):
     tol = dict(eps=1e-6, atol=1e-7, rtol=1e-5)
     assert torch.autograd.gradcheck(f, inputs, **tol)
     assert torch.autograd.gradgradcheck(f, inputs, **tol)
+
+
+_bilinear = {
+    'gate_type': 'bilinear',
+    'lmax': 3,
+    'self_connection_type': 'linear',
+    'irreps_manual': [
+        '16x0e', '16x0e+8x1o+8x2e+8x3o', '16x0e+8x1o+8x2e+8x3o', '16x0e'
+    ],
+}
+
+
+def _randomize_bilinear(model):
+    from sevenn.nn.bilinear_gate import BilinearGate
+
+    n = 0
+    with torch.no_grad():
+        for m in model.modules():
+            if isinstance(m, BilinearGate):
+                m.linear.weight.normal_()
+                n += 1
+    assert n > 0
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize(
+    'cf', [_bilinear, {**_bilinear, 'interaction_type': 'metaformer',
+                       'self_connection_type': 'identity'},
+           {**_bilinear, 'bilinear_b': 'shared'}]
+)
+def test_bilinear_gate_output(cf):
+    from sevenn.nn.bilinear_gate import BilinearGate
+    from sevenn.nn.lunatp_helper import LunaTPTensorProduct
+
+    torch.manual_seed(777)
+    model_e3nn = get_model(cf)
+    _randomize_bilinear(model_e3nn)
+    model_lunatp = get_model(cf, use_lunatp=True)
+    missing, unexpected = model_lunatp.load_state_dict(
+        model_e3nn.state_dict(), strict=False
+    )
+    # only the convolutions differ (e3nn constants, LunaTP's empty tp weight)
+    assert all(k.endswith('tp_conv.tp.weight') for k in missing), missing
+    assert all('_convolution.convolution.' in k for k in unexpected), unexpected
+    gate = model_lunatp._modules['1_equivariant_gate']
+    assert isinstance(gate, BilinearGate)
+    assert isinstance(gate.tp, LunaTPTensorProduct)
+
+    model_e3nn.set_is_batch_data(True)
+    model_lunatp.set_is_batch_data(True)
+    e3nn_out = model_e3nn._preprocess(get_graphs(batched=True))
+    lunatp_out = model_lunatp._preprocess(get_graphs(batched=True))
+    for k, e3nn_f in model_e3nn._modules.items():
+        e3nn_out = e3nn_f(e3nn_out)  # type: ignore
+        lunatp_out = model_lunatp._modules[k](lunatp_out)  # type: ignore
+        assert torch.allclose(e3nn_out.x, lunatp_out.x, atol=1e-5), k
+    assert torch.allclose(
+        e3nn_out.inferred_total_energy, lunatp_out.inferred_total_energy
+    )
+    assert torch.allclose(
+        e3nn_out.inferred_force, lunatp_out.inferred_force, atol=1e-5
+    )
+    assert torch.allclose(
+        e3nn_out.inferred_stress, lunatp_out.inferred_stress, atol=1e-5
+    )
+
+
+@pytest.mark.filterwarnings('ignore:.*is not found from.*')
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize('start_from_lunatp', [True, False])
+def test_bilinear_checkpoint_convert(tmp_path, start_from_lunatp):
+    torch.manual_seed(123)
+    model_from = get_model(_bilinear, use_lunatp=start_from_lunatp)
+    _randomize_bilinear(model_from)
+    cfg = get_model_config()
+    cfg.update(
+        {**_bilinear, 'use_lunatp': start_from_lunatp, 'version': sevenn.__version__}
+    )
+    torch.save(
+        {'model_state_dict': model_from.state_dict(), 'config': cfg},
+        tmp_path / 'cp_from.pth',
+    )
+    model_to, _ = model_from_checkpoint(
+        str(tmp_path / 'cp_from.pth'), enable_lunatp=(not start_from_lunatp)
+    )
+    model_to.to('cuda')
+    model_from.set_is_batch_data(True)
+    model_to.set_is_batch_data(True)
+    from_out = model_from(get_graphs(batched=True))
+    to_out = model_to(get_graphs(batched=True))
+    # fp32: the e3nn scatter is not deterministic (~5e-6 eV run to run here)
+    assert torch.allclose(
+        from_out.inferred_total_energy, to_out.inferred_total_energy, atol=2e-5
+    )
+    assert torch.allclose(from_out.inferred_force, to_out.inferred_force, atol=1e-5)
+    assert torch.allclose(
+        from_out.inferred_stress, to_out.inferred_stress, atol=1e-5
+    )
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize('b', ['own', 'shared'])
+def test_bilinear_gate_double_backward(b):
+    """second derivatives (force-loss backward) of the LunaTP BilinearGate equal
+    e3nn's in float64, and torch gradcheck/gradgradcheck pass on the LunaTP op"""
+    from e3nn.o3 import Irreps
+
+    from sevenn._const import ACTIVATION_DICT
+    from sevenn.nn.bilinear_gate import BilinearGate
+    from sevenn.nn.lunatp_helper import patch_bilinear_gate
+
+    act = {'e': ACTIVATION_DICT['e']['silu'], 'o': ACTIVATION_DICT['o']['tanh']}
+    irreps = Irreps('8x0e+4x1o+4x2e+4x3o')
+    torch.manual_seed(0)
+    ref = BilinearGate(irreps, act, act, b=b)
+    with torch.no_grad():
+        ref.linear.weight.normal_()
+    luna = patch_bilinear_gate(BilinearGate(irreps, act, act, b=b))
+    luna.load_state_dict(ref.state_dict(), strict=True)
+    ref, luna = ref.cuda().double(), luna.cuda().double()
+    x = torch.randn(
+        6, ref.get_gate_irreps_in().dim, device='cuda', dtype=torch.float64
+    )
+
+    def f(m):
+        return lambda t: m({KEY.NODE_FEATURE: t})[KEY.NODE_FEATURE]
+
+    res = []
+    for m in (ref, luna):
+        xx = x.clone().requires_grad_(True)
+        y = f(m)(xx)
+        (g,) = torch.autograd.grad(y, xx, torch.ones_like(y), create_graph=True)
+        loss = g.square().sum() + y.square().sum()
+        res.append(torch.autograd.grad(loss, (xx, m.linear.weight)))
+    # LunaTP's float64 path agrees with e3nn to ~2e-8 relative to the largest
+    # entry (fp32-precision constants); a wrong derivative would differ at O(1)
+    for a, b in zip(*res):
+        assert (a - b).abs().max() < 1e-6 * b.abs().max()
+    xx = x[:3].clone().requires_grad_(True)
+    # atomic accumulation (index_select backward) is not bitwise reproducible
+    assert torch.autograd.gradcheck(f(luna), (xx,), nondet_tol=1e-12)
+    assert torch.autograd.gradgradcheck(f(luna), (xx,), nondet_tol=1e-12)

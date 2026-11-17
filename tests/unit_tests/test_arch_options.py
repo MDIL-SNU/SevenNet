@@ -205,6 +205,132 @@ def test_frozen_bessel_moves_with_module():
     model(get_graphs(batched=True))
 
 
+def _bilinear_reference(g, x):
+    """BilinearGate from its definition with plain torch ops:
+    [act(s), act_g(g) * A] + Linear(A (x)_uuu (B * silu(w))), CG = sqrt(2l+1) w3j"""
+    from e3nn import o3
+
+    irreps_a = g.irreps_gated
+    n_ch, dim_a = irreps_a.num_irreps, irreps_a.dim
+    if g.shared:  # B = A, w appended to the plain gate input
+        s, g_a, a = g.gate.sc(x[:, : g.dim_gate_in])
+        b, w = a, x[:, g.dim_gate_in:]
+    else:
+        s, gw, ab = g.gate.sc(x)  # e3nn's own column extraction of the gate input
+        a, b = ab[:, :dim_a], ab[:, dim_a:]
+        g_a, w = gw[:, :n_ch], gw[:, n_ch:]
+    starts = [sum(m for m, _ in irreps_a[:i]) for i in range(len(irreps_a))]
+    ch = torch.cat([
+        torch.arange(c, c + m).repeat_interleave(ir.dim)
+        for c, (m, ir) in zip(starts, irreps_a)
+    ])
+    act_g = g.gate.act_gates.acts[0]  # e3nn-normalized gate activation
+    base_out = torch.cat([g.gate.act_scalars(s), a * act_g(g_a)[:, ch]], 1)
+    b = b * torch.nn.functional.silu(w)[:, ch]
+    offs = [0]
+    for m, ir in irreps_a:
+        offs.append(offs[-1] + m * ir.dim)
+
+    def blk(t, i):
+        m, ir = irreps_a[i]
+        return t[:, offs[i]:offs[i + 1]].reshape(-1, m, ir.dim)
+
+    mids = []
+    for k, (i, j) in enumerate(g.path_ij):
+        l1, l2 = irreps_a[i].ir.l, irreps_a[j].ir.l
+        ir3 = g.tp.irreps_out[k].ir
+        cg = o3.wigner_3j(l1, l2, ir3.l) * (2 * ir3.l + 1) ** 0.5
+        mids.append(torch.einsum('ijk,nui,nuj->nuk', cg, blk(a, i), blk(b, j))
+                    .reshape(x.shape[0], -1))
+    return base_out + g.linear(torch.cat(mids, 1))
+
+
+@pytest.mark.parametrize('cf', [{**_partial, 'gate_type': 'bilinear'},
+                                {**_metaformer, 'gate_type': 'bilinear'},
+                                {**_partial, 'gate_type': 'bilinear',
+                                 'irreps_manual': ['4x0e', '8x0e+4x1o+4x2e+4x1e',
+                                                   '8x0e+4x1o+4x2e+4x1e', '4x0e']},
+                                {**_partial, 'gate_type': 'bilinear',
+                                 'bilinear_b': 'shared'},
+                                {**_metaformer, 'gate_type': 'bilinear',
+                                 'bilinear_b': 'shared'}])
+def test_bilinear_gate(cf):
+    from e3nn.util.jit import script
+
+    from sevenn.nn.bilinear_gate import BilinearGate
+    from sevenn.train.muon import build_muon_param_groups
+
+    model = get_model(cf)
+    gates = {
+        k: m for k, m in model.named_children() if k.endswith('equivariant_gate')
+    }
+    assert isinstance(gates['1_equivariant_gate'], BilinearGate)
+    assert not isinstance(gates['2_equivariant_gate'], BilinearGate)  # scalar out
+    g = gates['1_equivariant_gate']
+    # cross-l path exists with uniform widths (1o x 2e -> 1o)
+    assert any(
+        g.irreps_gated[i].ir != g.irreps_gated[j].ir for i, j in g.path_ij
+    )
+    si2 = dict(model.named_children())['1_self_interaction_2']
+    assert si2.linear.irreps_out == g.get_gate_irreps_in()
+    x = torch.randn(7, g.get_gate_irreps_in().dim)
+    out = g({KEY.NODE_FEATURE: x.clone()})[KEY.NODE_FEATURE]
+    ref = _bilinear_reference(g, x)
+    assert torch.allclose(out, ref, atol=1e-6)  # zero-init: the plain gate
+    with torch.no_grad():
+        for m in gates.values():
+            if isinstance(m, BilinearGate):
+                m.linear.weight.normal_()
+    out = g({KEY.NODE_FEATURE: x.clone()})[KEY.NODE_FEATURE]
+    assert torch.allclose(out, _bilinear_reference(g, x), atol=1e-5)
+    assert (out - g.gate(x[:, : g.dim_gate_in])[:, : g.dim_out]).abs().max() > 1e-2
+    o, o_r, R = _rotated_pair(model)
+    e, e_r = o[KEY.PRED_TOTAL_ENERGY], o_r[KEY.PRED_TOTAL_ENERGY]
+    assert torch.allclose(e, e_r, atol=1e-4)
+    f, f_r = o[KEY.PRED_FORCE], o_r[KEY.PRED_FORCE]
+    assert torch.allclose(f @ R.T, f_r, atol=1e-4)
+    build_muon_param_groups(model)
+    # TorchScript (deploy path) gives the same energy and forces
+    from tests.unit_tests.test_model import _graph_list
+
+    model.eval()
+    g0 = _graph_list[0].clone()
+    o = model(g0.clone())  # before scripting (script converts in place)
+    inp = {k: v for k, v in g0.to_dict().items() if isinstance(v, torch.Tensor)}
+    inp[KEY.NODE_FEATURE] = model._atomic_numbers_to_onehot(inp[KEY.ATOMIC_NUMBERS])
+    model.eval_type_map = False  # as sevenn deploy
+    o_s = script(model)(inp)
+    assert torch.allclose(o[KEY.PRED_TOTAL_ENERGY], o_s[KEY.PRED_TOTAL_ENERGY])
+    assert torch.allclose(o[KEY.PRED_FORCE], o_s[KEY.PRED_FORCE], atol=1e-6)
+
+
+@pytest.mark.parametrize('paths', ['same_l', 'lmax2', 'scalar'])
+def test_bilinear_paths(paths):
+    from sevenn.nn.bilinear_gate import BilinearGate
+
+    cf = {**_partial, 'lmax': 3, 'gate_type': 'bilinear', 'irreps_manual': [
+        '4x0e', '4x0e+4x1o+4x2e+4x3o', '4x0e+4x1o+4x2e+4x3o', '4x0e']}
+    full = get_model(cf)
+    model = get_model({**cf, 'bilinear_paths': paths})
+    g = dict(model.named_children())['1_equivariant_gate']
+    g_full = dict(full.named_children())['1_equivariant_gate']
+    assert isinstance(g, BilinearGate)
+    assert 0 < len(g.path_ij) < len(g_full.path_ij)
+    keep = {
+        'same_l': lambda i, j, ir: i == j,
+        'lmax2': lambda i, j, ir: ir.l <= 2,
+        'scalar': lambda i, j, ir: ir.l == 0,
+    }[paths]
+    assert all(
+        keep(i, j, g.tp.irreps_out[k].ir) for k, (i, j) in enumerate(g.path_ij)
+    )
+    with torch.no_grad():
+        g.linear.weight.normal_()
+    x = torch.randn(5, g.get_gate_irreps_in().dim)
+    out = g({KEY.NODE_FEATURE: x.clone()})[KEY.NODE_FEATURE]
+    assert torch.allclose(out, _bilinear_reference(g, x), atol=1e-5)
+
+
 def test_metaformer_ffn_per_layer():
     model = get_model({**_metaformer, 'use_ffn': [False, True, False]})
     names = list(dict(model.named_children()))

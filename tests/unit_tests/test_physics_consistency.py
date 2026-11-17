@@ -37,6 +37,16 @@ CONFIGS = {
         'trainable_coeff': False}},
     'pair_radial': {**_metaformer, 'radial_pair_embedding': True},
     'silu_readout': {**_metaformer, 'readout_activation': 'silu'},
+    'bilinear_gate': {**_metaformer, 'gate_type': 'bilinear'},
+    'bilinear_gate_l3': {**_partial, 'gate_type': 'bilinear', 'lmax': 3,
+                         'irreps_manual': ['4x0e', '4x0e+4x1o+4x2e+4x3o',
+                                           '4x0e+4x1o+4x2e+4x3o', '4x0e']},
+    'bilinear_gate_same_l': {**_metaformer, 'gate_type': 'bilinear',
+                             'bilinear_paths': 'same_l'},
+    'bilinear_gate_shared': {**_partial, 'gate_type': 'bilinear', 'lmax': 3,
+                             'bilinear_b': 'shared',
+                             'irreps_manual': ['4x0e', '4x0e+4x1o+4x2e+4x3o',
+                                               '4x0e+4x1o+4x2e+4x3o', '4x0e']},
     'swiglu': {**_metaformer, 'ffn_type': 'swiglu'},
     'layer_scale': {**_metaformer, 'layer_scale_init': 0.1},
     'film': _film_rand,
@@ -68,7 +78,7 @@ def _model(cf):
     model.onehot_idx_to_onehot.register_forward_hook(_to_double_hook)
     with torch.no_grad():  # zero-initialized tables would hide their derivatives
         for n, p in model.named_parameters():
-            if 'film' in n:
+            if 'film' in n or 'equivariant_gate.linear' in n:  # bilinear term
                 p.normal_(0, 0.3)
     model.set_is_batch_data(False)
     return model
@@ -193,7 +203,7 @@ def _dimer_tail(model, h=1e-3):
 
 
 @pytest.mark.parametrize('name', ['metaformer', 'agnesi', 'pair_radial', 'swiglu',
-                                  'film'])
+                                  'film', 'bilinear_gate', 'bilinear_gate_l3'])
 def test_dimer_c2_at_cutoff(name):
     """
     poly_cut (p=6) vanishes as (r_c - r)^3: halving the distance to r_c must
