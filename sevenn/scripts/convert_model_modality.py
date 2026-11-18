@@ -67,6 +67,20 @@ def _erase_linear_modal_params(
     return flattened_weight
 
 
+def _get_bias_or_zeros(
+    model_state_dct: Dict[str, torch.Tensor],
+    key: str,
+    output_dim: int,
+) -> torch.Tensor:
+    orig_bias = model_state_dct.get(key + '.linear.bias')
+    if orig_bias is not None and orig_bias.numel() != 0:
+        return orig_bias
+    orig_weight = model_state_dct[key + '.linear.weight']
+    return torch.zeros(
+        output_dim, dtype=orig_weight.dtype, device=orig_weight.device
+    )
+
+
 def _get_modal_weight_as_bias(
     model_state_dct: Dict[str, torch.Tensor],
     key: str,
@@ -78,9 +92,7 @@ def _get_modal_weight_as_bias(
     input_dim = irreps_in.count('0e')
     output_dim = irreps_out.count('0e')
     orig_weight = model_state_dct[key + '.linear.weight']
-    orig_bias = model_state_dct[key + '.linear.bias']
-    if len(orig_bias) == 0:
-        orig_bias = torch.zeros(output_dim, dtype=orig_weight.dtype)
+    orig_bias = _get_bias_or_zeros(model_state_dct, key, output_dim)
 
     modal_weight = _reshape_weight_of_linear(
         irreps_in, irreps_out, orig_weight
@@ -145,6 +157,8 @@ def get_single_modal_model_dct(
     """
     Convert multimodal model state dictionary to single modal model.
     Modal is selected by `ref_modal`
+    Learned linear biases are retained when modality weights are folded away.
+    Modality-specific shifts and scales are selected independently.
 
     `model_state_dct`: model state dictionary from multimodal checkpoint file
     `config`: dictionary containing configuration of the checkpoint model
@@ -194,7 +208,7 @@ def get_single_modal_model_dct(
                 )
 
                 new_bias = (
-                    torch.zeros(output_dim)
+                    _get_bias_or_zeros(model_state_dct, module_key, output_dim)
                     if ref_modal == 'common'
                     else _get_modal_weight_as_bias(
                         model_state_dct,
@@ -217,17 +231,16 @@ def get_single_modal_model_dct(
                 )
                 model_state_dct[module_key + '.linear.bias'] = new_bias
             elif modal_module_name in module_key:
-                model_state_dct[module_key + '.linear.bias'] = torch.zeros(
-                    output_dim,
-                    dtype=model_state_dct[module_key + '.linear.weight'].dtype,
+                model_state_dct[module_key + '.linear.bias'] = (
+                    _get_bias_or_zeros(model_state_dct, module_key, output_dim)
                 )
 
     final_block_key = 'reduce_hidden_to_energy'
-    model_state_dct[final_block_key + '.linear.bias'] = torch.tensor(
-        [0], dtype=model_state_dct[final_block_key + '.linear.weight'].dtype
+    model_state_dct[final_block_key + '.linear.bias'] = _get_bias_or_zeros(
+        model_state_dct, final_block_key, 1
     )
 
-    if config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SHIFT]:
+    if config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE]:
         rescaler_names = []
         if config[KEY.USE_MODAL_WISE_SHIFT]:
             rescaler_names.append('shift')
