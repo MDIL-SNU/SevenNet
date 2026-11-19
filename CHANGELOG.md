@@ -8,10 +8,15 @@ All notable changes to this project will be documented in this file.
 - Dataset type: `aselmdb`, `custom`
 - SevenNet-Nano checkpoints for `7net-nano-4.5`, `7net-nano-5.0`, `7net-nano-5.5`, and `7net-nano-6.0`
 - Support LunaTP (`enable_lunatp`). LAMMPS through ML-IAP only.
+- `cuda_graph` option of `SevenNetCalculator`: the model call is captured once and replayed for calls with the same atoms; a changed edge index is copied in and the edges are padded with self-loops at r_c (checked to change nothing), so one capture serves an MD run; a thrash guard stops captures that do not pay back
 
 ### Changed
 - The default dtype of the rescale layer is changed to double precision. Use the `SEVENN_SHIFT_SCALE_DTYPE` environment variable for backward single-precision compatibility.
 - The recommended LAMMPS ML-IAP version is bumped to `stable_22Jul2025_update4`.
+- The model call makes no host synchronization (type map buffer, modal index fill, ModalWiseRescale index, force output atom count and volume clamp); same values
+- `SevenNetCalculator` copies its inputs with one pinned host-to-device copy per dtype and its outputs with one device-to-host copy; same values
+- `SevenNetCalculator` freezes the weights of a checkpoint model (`requires_grad_(False)`): the force backward skips dE/dW
+- LunaTP: the LunaTP graph is cached on the input edge index; eager calculator calls put the edges in one order and reuse the previous call's device edge index when the topology is unchanged (no graph build); the model receives a plain dict
 - LunaTP: LunaEquivariance is pinned to GitHub commit a045a88 (0.2.0 with the CUDA 13 fix; the PyPI 0.2.0 wheel is the earlier release commit, whose graph kernel does not compile with CUDA 13)
 - `sevenn lunatp_precompile` builds the forward-only kernel of a linear whose input and weights do not require grad (the calculator's atom-type embedding), which the calculator otherwise compiled at its first call: after a differentiable call, LunaEquivariance serves a no-grad linear call from the fused forward+backward kernel, so the precompile runs the no-grad combination first. `--train` also runs the linears on 65 rows (LunaEquivariance selects the second-derivative kernel of a small linear by the number of rows: 0.1.0 always, a045a88 in fp64). The convolution forward kernels, which a045a88 compiles when a convolution is built, are built in parallel (a share per worker). A failed precompile worker (CUDA out of memory on a shared GPU) runs once more.
 
