@@ -146,7 +146,7 @@ class AtomGraphSequential(nn.Sequential):
     def _eval_modal_map(self, data: AtomGraphDataType):
         assert self.modal_map is not None
         # modal_map: dict[str, int]
-        device = data.x.device  # type: ignore
+        device = data[KEY.NODE_FEATURE].device  # also a plain dict
         if not self.is_batch_data:
             modal_idx = self.modal_map[data[KEY.DATA_MODALITY]]  # type: ignore
             # a fill kernel, not a host-to-device copy (no host sync)

@@ -25,6 +25,23 @@ _OUTPUT_KEYS = (
 )
 
 
+def _sort_edges(data):
+    """
+    Puts the edges in one order: by destination, then source (stable). The
+    neighbor list orders the same edges of a periodic cell differently after
+    small moves; in this order an unchanged topology gives an equal edge index
+    (eager topology reuse), and the edges are sorted by
+    destination as LunaTP needs. Same function as the neighbor-list order, fp32
+    summation order only.
+    """
+    ei = data[KEY.EDGE_IDX]
+    num_atoms = len(data[KEY.ATOMIC_NUMBERS])
+    order = torch.argsort(ei[0] * num_atoms + ei[1], stable=True)
+    # index_select: CPU advanced indexing costs ~0.5 ms at 3k edges
+    data[KEY.EDGE_IDX] = ei.index_select(1, order)
+    data[KEY.EDGE_VEC] = data[KEY.EDGE_VEC].index_select(0, order)
+
+
 def _to_device_packed(data, device):
     """
     Moves the tensors of data to device with one pinned buffer and one
@@ -43,6 +60,15 @@ def _to_device_packed(data, device):
             n = data[k].numel()
             data[k] = dev[offset:offset + n].view(data[k].shape)
             offset += n
+
+
+def _with_topology(data, topology):
+    """data with a prepared LunaTP topology for the next model call, if any"""
+    if topology is not None:
+        from sevenn.nn.lunatp_helper import PREPARED_GRAPH_KEY
+
+        data[PREPARED_GRAPH_KEY] = topology
+    return data
 
 
 def _pack_outputs(output):
@@ -74,7 +100,6 @@ def _unpack_outputs(flat: np.ndarray, meta, num_atoms: int, num_edges: int):
     if KEY.PRED_ATOMIC_VIRIAL in out:
         results['stresses'] = out[KEY.PRED_ATOMIC_VIRIAL][:num_atoms, :]
     return results
-
 
 
 class SevenNetCalculator(Calculator):
@@ -251,6 +276,10 @@ class SevenNetCalculator(Calculator):
 
         self.model.to(self.device)
         self.model.eval()
+
+        # (number of atoms, host edge index, device edge index) of the last eager call
+        self._last_edge_index = (-1, None, None, None)
+        self._has_lunatp: Optional[bool] = None
         self.implemented_properties = [
             'free_energy',
             'energy',
@@ -279,6 +308,18 @@ class SevenNetCalculator(Calculator):
             output[KEY.EDGE_IDX].shape[1],
         )
 
+    def _lunatp_topology(self, edge_index, num_atoms: int):
+        """(edge order, LunaTP graph) of a device edge index, None without LunaTP"""
+        from sevenn.nn.lunatp_helper import LunaTPConvolution, prepare_graph
+
+        if self._has_lunatp is None:
+            self._has_lunatp = any(
+                isinstance(m, LunaTPConvolution) for m in self.model.modules()
+            )
+        if not self._has_lunatp or edge_index.numel() == 0:
+            return None
+        return prepare_graph(edge_index, num_atoms)
+
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
@@ -289,13 +330,30 @@ class SevenNetCalculator(Calculator):
         )
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
+        _sort_edges(data)
 
+        # same topology as the previous eager call: its device edge index and
+        # LunaTP topology
+        ei = data[KEY.EDGE_IDX]
+        num_atoms = data[KEY.ATOMIC_NUMBERS].shape[0]
+        last = self._last_edge_index
+        reuse = last[0] == num_atoms and torch.equal(last[1], ei)
+        if reuse:
+            del data[KEY.EDGE_IDX]
         if self.device.type == 'cuda':
             _to_device_packed(data, self.device)
         else:
             data.to(self.device)  # type: ignore
+        if reuse:
+            data[KEY.EDGE_IDX] = last[2]
+        else:
+            topology = self._lunatp_topology(data[KEY.EDGE_IDX], num_atoms)
+            last = (num_atoms, ei, data[KEY.EDGE_IDX], topology)
+            self._last_edge_index = last
 
-        output = self.model(data)
+        # a plain dict: the ~110 writes and ~210 reads of a forward skip the
+        # torch_geometric Data storage layer (same tensors)
+        output = self.model(_with_topology(data.to_dict(), last[3]))
         self.results = self.output_to_results(output)
 
 
