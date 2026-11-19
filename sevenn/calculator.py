@@ -25,6 +25,23 @@ _OUTPUT_KEYS = (
 )
 
 
+def _sort_edges(data):
+    """
+    Puts the edges in one order: by destination, then source (stable). The
+    neighbor list orders the same edges of a periodic cell differently after
+    small moves; in this order an unchanged topology gives an equal edge index
+    (eager topology reuse), and the edges are sorted by
+    destination as LunaTP needs. Same function as the neighbor-list order, fp32
+    summation order only.
+    """
+    ei = data[KEY.EDGE_IDX]
+    num_atoms = len(data[KEY.ATOMIC_NUMBERS])
+    order = torch.argsort(ei[0] * num_atoms + ei[1], stable=True)
+    # index_select: CPU advanced indexing costs ~0.5 ms at 3k edges
+    data[KEY.EDGE_IDX] = ei.index_select(1, order)
+    data[KEY.EDGE_VEC] = data[KEY.EDGE_VEC].index_select(0, order)
+
+
 def _to_device_packed(data, device):
     """
     Moves the tensors of data to device with one pinned buffer and one
@@ -74,7 +91,6 @@ def _unpack_outputs(flat: np.ndarray, meta, num_atoms: int, num_edges: int):
     if KEY.PRED_ATOMIC_VIRIAL in out:
         results['stresses'] = out[KEY.PRED_ATOMIC_VIRIAL][:num_atoms, :]
     return results
-
 
 
 class SevenNetCalculator(Calculator):
@@ -251,6 +267,9 @@ class SevenNetCalculator(Calculator):
 
         self.model.to(self.device)
         self.model.eval()
+
+        # (number of atoms, host edge index, device edge index) of the last eager call
+        self._last_edge_index = (-1, None, None)
         self.implemented_properties = [
             'free_energy',
             'energy',
@@ -289,13 +308,28 @@ class SevenNetCalculator(Calculator):
         )
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
+        _sort_edges(data)
 
+        # same topology as the previous eager call: its device edge index, on
+        # which a backend keeps its topology (LunaTP graph, see get_graph)
+        ei = data[KEY.EDGE_IDX]
+        num_atoms = data[KEY.ATOMIC_NUMBERS].shape[0]
+        last = self._last_edge_index
+        reuse = last[0] == num_atoms and torch.equal(last[1], ei)
+        if reuse:
+            del data[KEY.EDGE_IDX]
         if self.device.type == 'cuda':
             _to_device_packed(data, self.device)
         else:
             data.to(self.device)  # type: ignore
+        if reuse:
+            data[KEY.EDGE_IDX] = last[2]
+        else:
+            self._last_edge_index = (num_atoms, ei, data[KEY.EDGE_IDX])
 
-        output = self.model(data)
+        # a plain dict: the ~110 writes and ~210 reads of a forward skip the
+        # torch_geometric Data storage layer (same tensors)
+        output = self.model(data.to_dict())
         self.results = self.output_to_results(output)
 
 

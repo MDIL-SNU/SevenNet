@@ -11,7 +11,7 @@ from ase.build import bulk, molecule
 
 import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.calculator import SevenNetCalculator
+from sevenn.calculator import SevenNetCalculator, _sort_edges
 from sevenn.train.dataload import unlabeled_atoms_to_graph
 from sevenn.util import pretrained_name_to_path
 
@@ -20,6 +20,7 @@ DEVICES = ['cpu'] + (['cuda'] if torch.cuda.is_available() else [])
 
 def _reference(calc, atoms):
     data = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms, calc.cutoff))
+    _sort_edges(data)  # the calculator's edge order (fp32 summation order)
     data.to(calc.device)
     out = calc.model(data)
     n = out['num_atoms'].item()

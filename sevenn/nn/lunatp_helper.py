@@ -4,11 +4,13 @@ import subprocess
 import sys
 import tempfile
 import warnings
-import weakref
 from typing import Optional, Union
 
 import torch
 from e3nn.o3 import FullyConnectedTensorProduct
+
+import sevenn._keys as KEY
+from sevenn._const import AtomGraphDataType
 
 from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
 from .equivariant_gate import EquivariantGate
@@ -128,37 +130,110 @@ class LunaTPConvolution(torch.nn.Module):
             internal_weights=internal_weights,
         )
 
-    # (weakref to edge_filter, num_nodes, edge order, graph) of the last graph,
-    # shared by all instances. The convolution layers of one forward receive the
-    # same KEY.EDGE_ATTR tensor as edge_filter, so the layers after the first
-    # reuse its edge order and graph.
-    _cache = (None, -1, None, None)
+    @staticmethod
+    def get_graph(key, edge_src, edge_dst, num_nodes: int):
+        """
+        (edge order or None, LunaTPGraph) of the dst-sorted edges, cached as
+        an attribute of the key tensor: built once per key tensor, freed with
+        it. The key is the forward's input edge index (graph_key, see
+        LunaTPSharedGraphConvolution), so all layers of a forward share one
+        graph, and a caller that keeps the same edge index tensor across calls
+        (the calculator: CUDA graph, and eager calls of an unchanged topology)
+        builds it once. Without graph_key the key is the edge filter.
+        The key tensor must not be modified in place while it is a key.
+        LunaTP requires edges sorted by destination. make_graph checks the order
+        in its kernel and reads the result on the host anyway, so dst-sorted
+        edges (neighbor lists, the calculator) are not checked a second time
+        (one host sync less); unsorted edges raise there and are sorted here.
+        """
+        cached = getattr(key, '_lunatp_graph', None)
+        if cached is not None and cached[0] == num_nodes:
+            return cached[1], cached[2]
+        order = None
+        try:
+            graph = make_graph(edge_src, edge_dst, num_nodes)
+        except ValueError:
+            if bool(torch.all(edge_dst[1:] >= edge_dst[:-1])):
+                raise  # not an order error
+            order = torch.argsort(edge_dst, stable=True)
+            graph = make_graph(edge_src[order], edge_dst[order], num_nodes)
+        key._lunatp_graph = (num_nodes, order, graph)
+        return order, graph
 
-    def forward(self, x, edge_filter, weight, edge_src, edge_dst):
-        ref, num_nodes, order, graph = LunaTPConvolution._cache
-        if ref is None or ref() is not edge_filter or num_nodes != x.shape[0]:
-            # LunaTP requires edges sorted by destination
-            order = None
-            if not bool(torch.all(edge_dst[1:] >= edge_dst[:-1])):
-                order = torch.argsort(edge_dst, stable=True)
-                edge_src, edge_dst = edge_src[order], edge_dst[order]
-            graph = make_graph(edge_src, edge_dst, x.shape[0])
-            LunaTPConvolution._cache = (
-                weakref.ref(edge_filter), x.shape[0], order, graph
-            )
+    def forward(
+        self,
+        x,
+        edge_filter,
+        weight,
+        edge_src,
+        edge_dst,
+        graph_key: Optional[torch.Tensor] = None,
+    ):
+        key = edge_filter if graph_key is None else graph_key
+        order, graph = self.get_graph(key, edge_src, edge_dst, x.shape[0])
         if order is not None:
             edge_filter, weight = edge_filter[order], weight[order]
         return self.tp_conv(x, edge_filter, weight, graph=graph)
 
 
+class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
+    """
+    IrrepsScatterGatterFusedConvolution with LunaTPConvolution that passes the
+    forward's input edge index tensor (data[key_edge_idx]) as the graph cache
+    key, so all layers of a forward share one LunaTP graph, also layers whose
+    edge filter is not KEY.EDGE_ATTR (edge attention: the attention-weighted
+    spherical harmonics, a new tensor per layer). The edge index is an input
+    of the forward, so a caller that passes the same tensor again (CUDA graph
+    capture after a warm-up) finds the graph without a host sync.
+    Same math, bitwise identical outputs.
+    """
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        assert self.convolution is not None, 'Convolution is not instantiated'
+        assert self.weight_nn is not None, 'Weight_nn is not instantiated'
+
+        x = data[self.key_x]
+        weight = self.weight_nn(data[self.key_weight_input])
+        if self.is_parallel:
+            x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
+
+        edge_src = data[self.key_edge_idx][1]
+        edge_dst = data[self.key_edge_idx][0]
+        edge_filter = data[self.key_filter]
+
+        if edge_src.numel() == 0:  # as IrrepsScatterGatterFusedConvolution
+            x = x.new_zeros(x.shape[0], self._out_dim)
+            x = x + (edge_filter.sum() + weight.sum()) * 0
+        else:
+            # int64 indices: read only by make_graph (int32 tables), once per key
+            x = self.convolution(
+                x,
+                edge_filter,
+                weight,
+                edge_src,
+                edge_dst,
+                graph_key=data[self.key_edge_idx],
+            )
+
+        x = x.div(self.denominator)
+
+        if self.is_parallel:
+            x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
+        data[self.key_x] = x
+        return data
+
+
 @lunatp_needed
 def patch_convolution(irreps_convolution: IrrepsConvolution):
+    """
+    LunaTPSharedGraphConvolution: every layer keys the LunaTP graph cache on
+    the forward's input edge index, so the layers of a forward share one graph
+    and a caller that passes the same edge index again reuses it.
+    """
     assert not irreps_convolution.layer_instantiated, (
         'Convolution layer already instantiated; cannot patch'
     )
-    ret = IrrepsScatterGatterFusedConvolution.from_irreps_convolution(
-        irreps_convolution
-    )
+    ret = LunaTPSharedGraphConvolution.from_irreps_convolution(irreps_convolution)
     ret.convolution_cls = LunaTPConvolution
     return ret
 
