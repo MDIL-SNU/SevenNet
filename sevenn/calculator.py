@@ -196,6 +196,11 @@ class SevenNetCalculator(Calculator):
                 enable_lunatp=enable_lunatp,
             )
             model_loaded.set_is_batch_data(False)
+            # inference only: forces and stress are gradients w.r.t. edge vectors,
+            # which stay differentiable; freezing the weights skips dE/dW in the
+            # force backward (same results, faster on every backend). A
+            # 'model_instance' given by the caller is left as it is.
+            model_loaded.requires_grad_(False)
 
             self.type_map = cp.config[KEY.TYPE_MAP]
             self.cutoff = cp.config[KEY.CUTOFF]
