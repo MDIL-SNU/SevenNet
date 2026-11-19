@@ -1,7 +1,10 @@
 import ctypes
+import math
+import dataclasses
 import os
 import pathlib
 import warnings
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -30,7 +33,7 @@ def _sort_edges(data):
     Puts the edges in one order: by destination, then source (stable). The
     neighbor list orders the same edges of a periodic cell differently after
     small moves; in this order an unchanged topology gives an equal edge index
-    (eager topology reuse), and the edges are sorted by
+    (CUDA graph key, eager topology reuse), and the edges are sorted by
     destination as LunaTP needs. Same function as the neighbor-list order, fp32
     summation order only.
     """
@@ -62,6 +65,52 @@ def _to_device_packed(data, device):
             offset += n
 
 
+def _segments_per_source(edge_index, num_atoms: int, segment: int):
+    """
+    (LunaTP source segments of each source: ceil(degree / segment), >= 1,
+    source degrees). numpy: torch CPU ops on these small arrays cost ~0.1 ms
+    each, numpy ~2 us
+    """
+    deg = np.bincount(edge_index[1].numpy(), minlength=num_atoms)
+    return np.maximum((deg + segment - 1) // segment, 1), deg
+
+
+def _num_segments(edge_index, num_atoms: int, segment: int) -> int:
+    """number of LunaTP source segments of an edge index"""
+    return int(_segments_per_source(edge_index, num_atoms, segment)[0].sum())
+
+
+def _pad_edges(tensors, num_edges: int, length: float, segment: Optional[int]):
+    """
+    tensors (host) with edges added up to num_edges: self-loops i -> i with
+    the edge vector (length, 0, 0), length = the cutoff. There the cutoff
+    function and its derivative vanish, so every edge term of the model is 0:
+    a padded edge adds 0 to messages and coordination, and dE/dr_ij of it is
+    exactly 0 (checked once per calculator, SevenNetCalculator._pads_neutral).
+    With segment (LunaTP), a padded edge goes to a source with room below its
+    next multiple of segment edges: the number of source segments stays.
+    The edges are put in one order again (_sort_edges).
+    """
+    edge_index, edge_vec = tensors[KEY.EDGE_IDX], tensors[KEY.EDGE_VEC]
+    num_atoms = tensors[KEY.ATOMIC_NUMBERS].shape[0]
+    k = num_edges - edge_index.shape[1]
+    if segment is None:
+        nodes = torch.zeros(k, dtype=edge_index.dtype)
+    else:
+        nseg, deg = _segments_per_source(edge_index, num_atoms, segment)
+        room = segment * nseg - deg
+        before = np.cumsum(room) - room
+        take = np.clip(np.minimum(room, k - before), 0, None)
+        nodes = torch.from_numpy(np.repeat(np.arange(num_atoms), take))
+    pad_vec = edge_vec.new_zeros(k, 3)
+    pad_vec[:, 0] = length
+    out = dict(tensors)
+    out[KEY.EDGE_IDX] = torch.cat([edge_index, torch.stack([nodes, nodes])], 1)
+    out[KEY.EDGE_VEC] = torch.cat([edge_vec, pad_vec])
+    _sort_edges(out)
+    return out
+
+
 def _with_topology(data, topology):
     """data with a prepared LunaTP topology for the next model call, if any"""
     if topology is not None:
@@ -69,6 +118,38 @@ def _with_topology(data, topology):
 
         data[PREPARED_GRAPH_KEY] = topology
     return data
+
+
+def _tensor_pairs(a, b, out: list) -> bool:
+    """
+    Walks two objects of one structure (tensors in tuples, lists, dicts and
+    dataclasses) and appends (tensor of a, tensor of b) to out for every tensor
+    leaf. False if a tensor shape or dtype, the structure, or a non-tensor leaf
+    (e.g. a node count) differs.
+    """
+    if isinstance(a, torch.Tensor):
+        if not isinstance(b, torch.Tensor):
+            return False
+        if a.shape != b.shape or a.dtype != b.dtype:
+            return False
+        out.append((a, b))
+        return True
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, (tuple, list)):
+        return len(a) == len(b) and all(
+            _tensor_pairs(x, y, out) for x, y in zip(a, b)
+        )
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(
+            _tensor_pairs(a[k], b[k], out) for k in a
+        )
+    if dataclasses.is_dataclass(a):
+        return all(
+            _tensor_pairs(getattr(a, f.name), getattr(b, f.name), out)
+            for f in dataclasses.fields(a)
+        )
+    return a == b
 
 
 def _pack_outputs(output):
@@ -123,6 +204,7 @@ class SevenNetCalculator(Calculator):
         enable_lunatp: bool = False,
         compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
+        cuda_graph: bool = False,
         **kwargs,
     ) -> None:
         """Initialize SevenNetCalculator.
@@ -156,6 +238,16 @@ class SevenNetCalculator(Calculator):
             Not used, but can be used to carry meta information of this calculator
         compute_atomic_virial: bool, default=False
             If True, request per-atom virial output (`stresses`) at runtime.
+        cuda_graph: bool, default=False
+            if True, repeated calls with the same atoms (atomic numbers, modal)
+            replay a CUDA graph captured at the second such call (the graphs
+            of the last 16 are kept): the edges are padded to the graph's
+            number of edges (1/8 above the most seen; edges of length r_c,
+            which change nothing) and a changed edge index is copied in (MD,
+            relaxation). Other calls run eagerly. After 8 captures, a capture
+            needs 2 replays per capture so far, otherwise the call runs
+            eagerly. For small systems, whose calls are bound by kernel
+            launches. CUDA only.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
@@ -277,6 +369,15 @@ class SevenNetCalculator(Calculator):
         self.model.to(self.device)
         self.model.eval()
 
+        self.cuda_graph = cuda_graph and self.device.type == 'cuda'
+        self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None
+        self._graphs_seen: OrderedDict = OrderedDict()  # topologies seen once
+        self._capture_stream = None  # one stream: cuBLAS keeps a workspace each
+        self._n_captures = 0  # captures tried (failed ones included)
+        self._n_replays = 0  # replays of a kept graph (capture calls excluded)
+        self._n_refreshes = 0  # replays with another edge index copied in
+        self._pad = None  # padded edges: None unchecked, True, False (off)
+        self._segment = -1  # LunaTP source segment size, None (e3nn); -1 unknown
         # (number of atoms, host edge index, device edge index) of the last eager call
         self._last_edge_index = (-1, None, None, None)
         self._has_lunatp: Optional[bool] = None
@@ -308,6 +409,270 @@ class SevenNetCalculator(Calculator):
             output[KEY.EDGE_IDX].shape[1],
         )
 
+    _MAX_GRAPHS = 16
+    _MAX_SEEN = 64
+    # thrash guard: after _FREE_CAPTURES captures, capture only while replays
+    # >= _REPLAYS_PER_CAPTURE * captures. A capture call costs ~2-3 eager calls
+    # and a replay saves ~0.8 eager call (A5000, LunaTP, dimer/Si64).
+    _FREE_CAPTURES = 8
+    _REPLAYS_PER_CAPTURE = 2
+
+    def _graph_results(self, data: AtomGraphData) -> Optional[Dict[str, Any]]:
+        """
+        Results by replaying a kept CUDA graph, or None (run eagerly). A
+        captured graph reads the topology from device tensors only (the model
+        call makes no host sync); a launch configuration depends on shapes
+        only. The cache key holds every host value a graph bakes in: the
+        integer inputs except the edge index (atomic numbers, number of atoms),
+        the non-tensor inputs (modal, data_info), the shapes other than the
+        number of edges, and the number of LunaTP source segments. A kept graph
+        holds a number of edges e_pad (the most edges seen for the key, plus
+        1/8): a call with fewer edges is padded up to it (_pad_edges), one
+        with more is captured anew. The float inputs (edge vectors, positions,
+        cell volume) are copied in per replay, another edge index by _refresh.
+        Without padding (cutoff not exact in fp32, or pads not neutral) the
+        number of edges is in the key. The edges arrive in one order
+        (_sort_edges).
+        """
+        if self._segment == -1:
+            self._segment = self._lunatp_segment()
+        if self._pad is None and float(np.float32(self.cutoff)) != self.cutoff:
+            self._pad = False
+        pad = self._pad is not False
+        tensors = {k: v for k, v in data.items() if isinstance(v, torch.Tensor)}
+        floats = [k for k, v in tensors.items() if v.is_floating_point()]
+        edge_index = tensors[KEY.EDGE_IDX]
+        num_atoms = tensors[KEY.ATOMIC_NUMBERS].shape[0]
+        num_edges = edge_index.shape[1]
+        segments = (
+            _num_segments(edge_index, num_atoms, self._segment)
+            if self._segment else None
+        )
+        edge_keys = (KEY.EDGE_IDX, KEY.EDGE_VEC)
+        key = tuple(
+            (k, None if pad and k in edge_keys else v.shape,
+             None if k in floats or k == KEY.EDGE_IDX else v.numpy().tobytes())
+            for k, v in tensors.items()
+        ) + tuple((k, repr(v)) for k, v in data.items() if k not in tensors)
+        key += (('segments', segments),)
+
+        entry = self._graphs.get(key, False)  # False: no kept graph
+        if entry is not False:
+            self._graphs.move_to_end(key)
+            if entry is None:  # capture failed
+                return None
+            if num_edges > entry['num_edges']:  # more edges than the graph
+                del self._graphs[key]
+                self._mark_seen(key, num_edges)
+                entry = False
+        if entry is False:
+            if key not in self._graphs_seen or not self._capture_pays():
+                self._mark_seen(key, num_edges)  # first call, or guard: eager
+                return None
+            e_pad = num_edges
+            if pad:
+                e_max = max(self._graphs_seen[key], num_edges)
+                e_pad = e_max + max(16, e_max // 8)
+                if self._segment:
+                    e_pad = min(e_pad, self._segment * segments)
+            del self._graphs_seen[key]  # second call: capture
+            padded = self._padded(tensors, e_pad)
+            if self._pad is None and e_pad > num_edges:
+                self._pad = self._pads_neutral(data, tensors, padded)
+                if not self._pad:
+                    return None  # the next calls key on the number of edges
+            self._n_captures += 1
+            entry = self._capture(data, padded, floats)
+            self._graphs[key] = entry
+            if len(self._graphs) > self._MAX_GRAPHS:
+                self._graphs.popitem(last=False)
+            if entry is None:
+                return None
+            entry['num_edges'] = e_pad
+        else:
+            padded = self._padded(tensors, entry['num_edges'])
+            new_edge_index = padded[KEY.EDGE_IDX]
+            if not torch.equal(entry['edge_index'], new_edge_index):
+                if not self._refresh(entry, new_edge_index):
+                    # backend topology of other shapes (LunaTP segments)
+                    del self._graphs[key]
+                    self._mark_seen(key, num_edges)
+                    return None
+                entry['edge_index'] = new_edge_index
+                self._n_refreshes += 1
+            self._n_replays += 1
+        tensors = padded
+
+        graph, dev_in, host_in = entry['graph'], entry['dev_in'], entry['host_in']
+        dev_out, host_out = entry['dev_out'], entry['host_out']
+        torch.cat([tensors[k].reshape(-1) for k in floats], out=host_in)
+        dev_in.copy_(host_in, non_blocking=True)
+        graph.replay()
+        host_out.copy_(dev_out, non_blocking=True)
+        torch.cuda.current_stream(self.device).synchronize()
+        return _unpack_outputs(
+            host_out.numpy(),  # astype copies: results outlive host_out
+            entry['meta'],
+            num_atoms,
+            num_edges,
+        )
+
+    def _lunatp_segment(self) -> Optional[int]:
+        """source segment size (edges) of the LunaTP graph, None without LunaTP"""
+        from sevenn.nn.lunatp_helper import LunaTPConvolution
+
+        if not any(isinstance(m, LunaTPConvolution) for m in self.model.modules()):
+            return None
+        from LunaEquivariance.lunatp.uvu_conv.kernels.utils import (
+            _SOURCE_SEGMENT_EDGES,
+        )
+
+        return int(_SOURCE_SEGMENT_EDGES)
+
+    def _padded(self, tensors, num_edges: int):
+        if num_edges == tensors[KEY.EDGE_IDX].shape[1]:
+            return tensors
+        return _pad_edges(tensors, num_edges, self.cutoff, self._segment)
+
+    def _pads_neutral(self, data, tensors, padded) -> bool:
+        """
+        Padded edges change nothing (once per calculator): dE/dr_ij of every
+        padded edge is exactly 0, and the energy equals the energy without
+        them within fp32 round-off (1e-6 relative); a non-finite energy or
+        gradient fails the check. Padded edges are the self-loops at least
+        r_c long (every edge of the neighbour list is shorter than r_c).
+        Otherwise padding is turned off for this calculator, with a warning.
+        """
+        energies, pad_grads, finite = [], 0.0, True
+        for t in (tensors, padded):
+            d = AtomGraphData(**{k: v.to(self.device) for k, v in t.items()})
+            for k, v in data.items():
+                if k not in t:
+                    d[k] = v
+            vec = d[KEY.EDGE_VEC].requires_grad_(True)
+            grads = []
+            vec.register_hook(grads.append)  # dE/dr_ij (force output)
+            energies.append(float(self.model(d)[KEY.PRED_TOTAL_ENERGY].sum().detach()))
+            if t is padded:
+                ei, ev = t[KEY.EDGE_IDX], t[KEY.EDGE_VEC]
+                pad = (ei[0] == ei[1]) & (ev.norm(dim=1) >= self.cutoff)
+                g = grads[0] if grads else torch.zeros_like(vec)
+                pad_grads = g[pad.to(self.device)].abs().sum().item()
+                finite = bool(torch.isfinite(g).all())
+        e0, e1 = energies
+        finite = finite and math.isfinite(e0) and math.isfinite(e1)
+        if (
+            not finite
+            or pad_grads != 0.0
+            or abs(e1 - e0) > 1e-5 + 1e-6 * abs(e0)
+        ):
+            warnings.warn(
+                'padded edges change the model outputs (sum |dE/dr_ij| '
+                f'{pad_grads:.2e}, energy {e1 - e0:+.2e}); the CUDA graphs of '
+                'this calculator key on the number of edges'
+            )
+            return False
+        return True
+
+    def _mark_seen(self, key, num_edges: int) -> None:
+        self._graphs_seen[key] = max(num_edges, self._graphs_seen.get(key, 0))
+        self._graphs_seen.move_to_end(key)
+        if len(self._graphs_seen) > self._MAX_SEEN:
+            self._graphs_seen.popitem(last=False)
+
+    def _refresh(self, entry, edge_index) -> bool:
+        """
+        Copies another edge index of the same shapes into a captured graph:
+        the static edge index, and the LunaTP topology the capture read (CSR,
+        orders, tiers and source segments, built here for the new edges, one
+        host sync) tensor by tensor in place. False (nothing copied) if the
+        topology differs in a shape or a host value (number of source segments).
+        """
+        static_edge_index = entry['static'][KEY.EDGE_IDX]
+        new = edge_index.pin_memory().to(self.device, non_blocking=True)
+        topology = self._lunatp_topology(new, entry['num_atoms'])
+        pairs: list = []
+        if not _tensor_pairs(entry['topology'], topology, pairs):
+            return False
+        static_edge_index.copy_(new)
+        copied = set()
+        for dst, src in pairs:  # graph._tables holds the same tensors again
+            if id(dst) not in copied:
+                copied.add(id(dst))
+                dst.copy_(src)
+        return True
+
+    def _capture_pays(self) -> bool:
+        return (
+            self._n_captures < self._FREE_CAPTURES
+            or self._n_replays >= self._REPLAYS_PER_CAPTURE * self._n_captures
+        )
+
+    def _capture(self, data, tensors, floats):
+        """
+        Capture the model call on static device inputs: the float inputs are
+        views of one device buffer (filled by one copy per replay), the integer
+        inputs are device copies kept with the graph, and the LunaTP topology
+        of the static edge index is prepared here and passed to every model
+        call of the capture. Returns the cache entry, or None with a warning if
+        the capture fails.
+        """
+        flat_in = torch.cat([tensors[k].reshape(-1) for k in floats])
+        host_in = flat_in.pin_memory()
+        dev_in = flat_in.to(self.device)
+        static = {}
+        offset = 0
+        for k, v in tensors.items():
+            if k in floats:
+                static[k] = dev_in[offset:offset + v.numel()].view(v.shape)
+                offset += v.numel()
+            else:
+                static[k] = v.to(self.device)
+        extra = {k: v for k, v in data.items() if k not in tensors}
+        num_atoms = static[KEY.ATOMIC_NUMBERS].shape[0]
+        topology = self._lunatp_topology(static[KEY.EDGE_IDX], num_atoms)
+
+        def run():
+            d = AtomGraphData(**static)
+            for k, v in extra.items():
+                d[k] = v
+            return _pack_outputs(self.model(_with_topology(d, topology)))
+
+        # one memory pool for the kept graphs; a pool whose graphs are all freed
+        # is gone, so its handle is not kept: a new pool if no graph is kept
+        pool = next((e['graph'].pool() for e in self._graphs.values() if e), None)
+        if pool is None:
+            pool = torch.cuda.graph_pool_handle()
+        graph = torch.cuda.CUDAGraph()
+        if self._capture_stream is None:
+            self._capture_stream = torch.cuda.Stream(self.device)
+        current = torch.cuda.current_stream(self.device)
+        side = self._capture_stream
+        side.wait_stream(current)
+        try:
+            with torch.cuda.stream(side):
+                run()  # warm-up: lazy inits and caches of the static inputs
+                graph.capture_begin(pool=pool)
+                try:
+                    dev_out, meta = run()
+                finally:
+                    graph.capture_end()
+        except Exception as e:
+            current.wait_stream(side)
+            warnings.warn(
+                f'CUDA graph capture failed ({type(e).__name__}: {e}); '
+                'this topology runs eagerly'
+            )
+            return None
+        current.wait_stream(side)
+        host_out = torch.empty_like(dev_out, device='cpu').pin_memory()
+        return {
+            'graph': graph, 'dev_in': dev_in, 'host_in': host_in,
+            'dev_out': dev_out, 'host_out': host_out, 'meta': meta,
+            'static': static, 'edge_index': tensors[KEY.EDGE_IDX],
+            'topology': topology, 'num_atoms': num_atoms,
+        }
+
     def _lunatp_topology(self, edge_index, num_atoms: int):
         """(edge order, LunaTP graph) of a device edge index, None without LunaTP"""
         from sevenn.nn.lunatp_helper import LunaTPConvolution, prepare_graph
@@ -331,6 +696,12 @@ class SevenNetCalculator(Calculator):
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
         _sort_edges(data)
+
+        if self.cuda_graph:
+            results = self._graph_results(data)
+            if results is not None:
+                self.results = results
+                return
 
         # same topology as the previous eager call: its device edge index and
         # LunaTP topology
