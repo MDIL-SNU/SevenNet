@@ -104,6 +104,22 @@ def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
     assert np.allclose(atoms_mol.get_potential_energies(), atoms2_ref['energies'])
 
 
+def test_checkpoint_calc_freezes_weights_only(atoms_pbc):
+    model, _ = model_from_checkpoint(pretrained_name_to_path('7net-0_11July2024'))
+    flags = [p.requires_grad for p in model.parameters()]
+    calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
+    calc_instance = SevenNetCalculator(model, file_type='model_instance')
+    assert not any(p.requires_grad for p in calc_cp.model.parameters())
+    # a model instance given by the caller is not modified
+    assert [p.requires_grad for p in calc_instance.model.parameters()] == flags
+    atoms_pbc.calc = calc_cp
+    f_cp, s_cp = atoms_pbc.get_forces(), atoms_pbc.get_stress()
+    atoms_pbc.calc = calc_instance
+    f_in, s_in = atoms_pbc.get_forces(), atoms_pbc.get_stress()
+    assert np.allclose(f_cp, f_in, atol=1e-6)
+    assert np.allclose(s_cp, s_in, atol=1e-7)
+
+
 def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
     atoms_pbc.rattle(stdev=0.01, seed=42)
     model, _ = model_from_checkpoint(pretrained_name_to_path('7net-0_11July2024'))
