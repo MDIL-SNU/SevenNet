@@ -20,8 +20,9 @@ lunatp/uvu_conv/kernels/{forward,backward}.py), patched as text: weight row
 index, and the weight-gradient stores replaced by the contraction. Same
 function as LunaTPSharedGraphConvolution up to round-off.
 """
+import copy
 import re
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import torch
 import torch.nn as nn
@@ -30,13 +31,16 @@ import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 from .lunatp_helper import LunaTPConvolution, LunaTPSharedGraphConvolution
-from .radial_table import FoldedRadialMLP, _convolutions
+from .radial_table import FoldedRadialMLP, _convolutions, _table
+from .self_connection import SelfConnectionIntro
 
 _KEY_R = 'fused_radial_r'  # the KEY.EDGE_LENGTH tensor the entries belong to
 _KEY_RID = 'fused_radial_rid'
 _KEY_RU = 'fused_radial_r_unique'
 _KEY_EMB = 'fused_radial_embedding'
 _KEY_EMB_R = 'fused_radial_embedding_r'
+_KEY_HID = 'fused_radial_hidden'
+_KEY_HID_R = 'fused_radial_hidden_r'
 KEY_N_UNIQUE = 'fused_radial_n_unique'
 
 
@@ -180,6 +184,86 @@ def backward_source(op):
     return (src, *flags)
 
 
+_HIDDEN_SOURCE = r"""
+#include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
+namespace {
+__global__ void sevenn_radial_hidden_kernel(
+    const float* __restrict__ r, const float* __restrict__ coef,
+    float* __restrict__ out, int64_t n, int W, int H, int K1, double r0,
+    double inv_h) {
+    const int64_t idx = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx >= n * W) return;
+    const int64_t i = idx / W;
+    const int c = int(idx - i * W);
+    const double x = (double(r[i]) - r0) * inv_h;
+    const int k = min(max(int(floor(x)), 0), K1 - 1);
+    const float t = float(x - k);
+    const float* a = coef + (int64_t(k) * W + c) * 4;
+    const float a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
+    const int l = c / H, f = c - l * H;
+    float* o = out + int64_t(l) * 2 * n * H;
+    o[i * H + f] = a0 + t * (a1 + t * (a2 + t * a3));
+    o[(n + i) * H + f] = (a1 + t * (2.0f * a2 + 3.0f * t * a3)) * float(inv_h);
+}
+}  // namespace
+void sevenn_radial_hidden(torch::Tensor r, torch::Tensor coef, torch::Tensor out,
+                          int64_t H, double r0, double inv_h) {
+    const int64_t n = r.numel();
+    const int W = coef.size(1);
+    const int64_t total = n * W;
+    if (total == 0) return;
+    sevenn_radial_hidden_kernel<<<(total + 255) / 256, 256, 0,
+        at::cuda::getCurrentCUDAStream()>>>(
+        r.data_ptr<float>(), coef.data_ptr<float>(), out.data_ptr<float>(), n, W,
+        int(H), int(coef.size(0)), r0, inv_h);
+}
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("sevenn_radial_hidden", &sevenn_radial_hidden);
+}
+"""
+
+
+def _load_cuda(name: str, source: str):
+    """a CUDA extension by LunaEquivariance's build cache"""
+    from LunaEquivariance.utils.extension import BINDING_CFLAGS
+    from LunaEquivariance.utils.jit import load_extension
+
+    return load_extension(
+        name, cuda_sources=source,
+        extra_cflags=['-O3', *BINDING_CFLAGS],
+        extra_cuda_cflags=['-O3', *BINDING_CFLAGS],
+    )
+
+
+class RadialHiddenTable(nn.Module):
+    """
+    The hidden activations of the radial MLPs of all fused convolutions (L
+    layers of H) and their r-derivatives as one cubic Hermite table in r, read
+    by one kernel: forward(r (U,)) -> (L, 2U, H), rows [value ; d/dr] of each
+    layer. Built in fp64; num_knots on [r_min, cutoff] (shorter: the first
+    interval's cubic).
+    """
+
+    def __init__(self, hidden64, num_layers: int, cutoff: float,
+                 num_knots: int = 8192, r_min: float = 0.25):
+        super().__init__()
+        coef, h = _table(hidden64, r_min, cutoff, num_knots, torch.float32)
+        # (K - 1, 4, W) -> (K - 1, W, 4)
+        self.register_buffer('coef', coef.transpose(1, 2).contiguous())
+        self.r0, self.inv_h = r_min, 1.0 / h
+        self.num_layers = num_layers
+        self.width = coef.shape[2] // num_layers
+        self.ext = _load_cuda('sevenn_radial_hidden_fp32', _HIDDEN_SOURCE)
+
+    def forward(self, r: torch.Tensor) -> torch.Tensor:
+        out = r.new_empty((self.num_layers, 2 * r.shape[0], self.width))
+        self.ext.sevenn_radial_hidden(
+            r.contiguous(), self.coef, out, self.width, self.r0, self.inv_h
+        )
+        return out
+
+
 class _FusedConv(torch.autograd.Function):
     """out(x, y; w[rid]); r only receives dE/dr (through dw/dr)"""
 
@@ -263,15 +347,19 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     unique_cap: Optional[int] = None
 
     def _setup(self, emb) -> None:
+        ref = self.denominator
         folded = FoldedRadialMLP(
-            self.weight_nn, 1.0 / float(self.denominator.detach().double())
+            copy.deepcopy(self.weight_nn).to('cpu', torch.float64),
+            1.0 / float(ref.detach().double()),
         )
         self.denominator_folded = True
         assert folded.num_layers == 3
-        self.register_buffer('rad_w0', folded.w0)
-        self.register_buffer('rad_w1', folded.w1)
-        self.register_buffer('rad_w2', folded.w2.contiguous())
+        for n in range(3):
+            w = getattr(folded, f'w{n}').to(ref.device, ref.dtype).contiguous()
+            self.register_buffer(f'rad_w{n}', w)
         self._acts = folded.acts
+        self._folded64 = folded  # fp64, cpu: for the table of the hidden layers
+        self._hid_table, self._layer = None, 0
         object.__setattr__(self, '_emb', emb)  # not a submodule of this one
         self.weight_nn = nn.Identity()
         self._kernels()
@@ -307,6 +395,11 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
 
     def _weights(self, data: AtomGraphDataType, ru: torch.Tensor):
         """[w ; dw/dr] (2U, W): the MLP in forward mode, rows [value ; d/dr]"""
+        if self._hid_table is not None:
+            if _KEY_HID not in data or data[_KEY_HID_R] is not ru:
+                data[_KEY_HID] = self._hid_table(ru)
+                data[_KEY_HID_R] = ru
+            return torch.mm(data[_KEY_HID][self._layer], self.rad_w2)
         x = self._embedding(data, ru)
         n = ru.shape[0]
         for w, act in zip((self.rad_w0, self.rad_w1), self._acts):
@@ -374,7 +467,7 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         return data
 
 
-def fuse_radial_conv(model: nn.Module) -> List[str]:
+def fuse_radial_conv(model: nn.Module, hidden_table: bool = True) -> List[str]:
     """
     In place: every LunaTP convolution of a serial model whose radial MLP is
     an e3nn FullyConnectedNet [n, h, h, W] of the edge embedding becomes a
@@ -385,7 +478,7 @@ def fuse_radial_conv(model: nn.Module) -> List[str]:
     emb = model._modules['edge_embedding']
     if getattr(emb, 'distance_transform', None) is not None:
         return []
-    changed = []
+    changed, fused = [], []
     for name, conv in _convolutions(model):
         if (
             type(conv) is not LunaTPSharedGraphConvolution
@@ -399,6 +492,97 @@ def fuse_radial_conv(model: nn.Module) -> List[str]:
             continue
         conv.__class__ = LunaTPFusedRadialConvolution
         conv._setup(emb)
+        changed.append(name)
+        fused.append(conv)
+    widths = {c.rad_w2.shape[0] for c in fused}
+    if hidden_table and fused and len(widths) == 1 and fused[0].rad_w2.is_cuda:
+        emb64 = copy.deepcopy(emb).to('cpu', torch.float64)
+
+        def hidden64(r):
+            x = emb64.basis_function(r) * emb64.cutoff_function(r).unsqueeze(-1)
+            return torch.cat([
+                c._acts[1](c._acts[0](x @ c._folded64.w0) @ c._folded64.w1)
+                for c in fused
+            ], 1)
+
+        table = RadialHiddenTable(hidden64, len(fused), float(model.cutoff))
+        table.to(fused[0].rad_w2.device)
+        for n, c in enumerate(fused):
+            object.__setattr__(c, '_hid_table', table)  # shared, not a submodule
+            c._layer = n
+    return changed
+
+
+class PrunedSelfConnectionIntro(SelfConnectionIntro):
+    """
+    SelfConnectionIntro whose operand (species one-hot, 119 columns in 7net)
+    is cut to the columns of the species that can occur: the same function
+    for those species, a tensor product over len(columns) operand components
+    instead of all.
+    """
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        operand = data[self.key_operand].index_select(1, self.columns)
+        data[KEY.SELF_CONNECTION_TEMP] = self.fc_tensor_product(
+            data[self.key_x], operand
+        )
+        return data
+
+
+def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> List[str]:
+    """
+    In place: every SelfConnectionIntro of model (operand n x 0e) becomes a
+    PrunedSelfConnectionIntro of the operand columns given (type indices of
+    the species that can occur). Calls with other species are wrong. Calling
+    it again prunes the original weights to the new columns.
+    """
+    from e3nn.o3 import Irreps
+
+    columns = sorted(set(int(c) for c in columns))
+    changed = []
+    for name, sc in model._modules.items():
+        if type(sc) is PrunedSelfConnectionIntro:  # again, other columns
+            old = sc._full
+        elif type(sc) is SelfConnectionIntro and sc.layer_instantiated:
+            old = sc.fc_tensor_product
+        else:
+            continue
+        in2 = Irreps(sc.irreps_in2)
+        if len(in2) != 1 or in2[0].ir.l != 0 or in2[0].ir.p != 1:
+            continue
+        ref = old.weight
+        new = sc.fc_tensor_product_cls(
+            sc.irreps_in1, Irreps(f'{len(columns)}x0e'), sc.irreps_out,
+            shared_weights=True, internal_weights=None,
+            **sc.fc_tensor_product_kwargs,
+        ).to(ref.device, ref.dtype)
+        cols = torch.tensor(columns, device=ref.device)
+        tp = getattr(old, 'tp', old)  # the e3nn module (instructions)
+        pieces, offset = [], 0
+        for ins in tp.instructions:
+            if not ins.has_weight:
+                continue
+            m1, m2, m3 = ins.path_shape
+            w = ref.detach()[offset: offset + m1 * m2 * m3].view(m1, m2, m3)
+            pieces.append(w.index_select(1, cols).reshape(-1))
+            offset += m1 * m2 * m3
+        assert offset == ref.numel()
+        # path normalization counts the operand multiplicity: one factor
+        scale = (len(columns) / in2[0].mul) ** 0.5
+        with torch.no_grad():
+            new.weight.copy_(torch.cat(pieces) * scale)
+            x = torch.randn(4, Irreps(sc.irreps_in1).dim, device=ref.device,
+                            dtype=ref.dtype)
+            op = torch.zeros(4, in2[0].mul, device=ref.device, dtype=ref.dtype)
+            op[torch.arange(4), cols[torch.arange(4) % len(columns)]] = 1.0
+            a, b = old(x, op), new(x, op.index_select(1, cols))
+            if not torch.allclose(a, b, rtol=1e-4, atol=1e-5 * float(a.abs().max())):
+                raise RuntimeError(f'{name}: pruned self connection differs')
+        new.requires_grad_(False)
+        sc.__class__ = PrunedSelfConnectionIntro
+        object.__setattr__(sc, '_full', old)  # kept outside the module tree
+        sc.fc_tensor_product = new
+        sc.register_buffer('columns', cols)
         changed.append(name)
     return changed
 
