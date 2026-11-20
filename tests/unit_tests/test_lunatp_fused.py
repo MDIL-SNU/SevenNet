@@ -50,7 +50,8 @@ def _fused_graph(cp, half_weights=False):
     return MLIAPCudaGraph(model, torch.device('cuda'), cutoff, modal=modal), names
 
 
-@pytest.mark.parametrize('name', GPU_CONFIGS)
+# nequip_sc: the species (fully connected) self connection, pruned
+@pytest.mark.parametrize('name', ['nequip_sc'] + GPU_CONFIGS)
 def test_fused_mliap_cuda_graph(tmp_path, name):
     if name == 'moe':  # no capture (torch.nonzero per expert)
         pytest.skip('ffn_moe is not captured')
@@ -68,6 +69,15 @@ def test_fused_mliap_cuda_graph(tmp_path, name):
             _assert_close_f32(par, _serial_f32(cp, moved), (name, step))
     assert graph.enabled
     assert graph.n_captures == 1 and graph.n_replays == 3
+    if name == 'nequip_sc':
+        from sevenn.nn.lunatp_fused import PrunedSelfConnectionIntro
+
+        pruned = [
+            m for m in graph.model.modules()
+            if isinstance(m, PrunedSelfConnectionIntro)
+        ]
+        n_species = len(set(atoms.numbers.tolist()))
+        assert pruned and all(m.columns.numel() == n_species for m in pruned)
 
 
 def test_fused_half_weights(tmp_path):
