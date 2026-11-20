@@ -98,14 +98,19 @@ def _lunatp_graph(edge_index: torch.Tensor, num_nodes: int, num_segments: int):
 
 class MLIAPCudaGraph:
     """
-    model: plain serial model (not patch_model_for_mliap), force_output
-    deleted, modal prepared, eval, on device, weights frozen.
+    model: plain serial model (not patch_model_for_mliap) as built from a
+    checkpoint (the modal is read from the data: no prepare_modal_deploy,
+    whose host-to-device copy cannot be captured), force_output deleted,
+    eval, on device, weights frozen. modal: of a multi-modal model.
     compute(lmp_data) -> True if energies and pair forces were written to
     lmp_data; False: the caller must run the eager call.
     """
 
     # room above the sizes at capture
-    EDGE_ROOM = 32  # edges: E / EDGE_ROOM (at least MIN_EDGE_ROOM)
+    # edges: E / EDGE_ROOM (at least MIN_EDGE_ROOM); halved (down to
+    # MIN_EDGE_ROOM_DIV) whenever a run outgrows a capture
+    EDGE_ROOM = 32
+    MIN_EDGE_ROOM_DIV = 2
     MIN_EDGE_ROOM = 128
     SEGMENT_ROOM = 8  # LunaTP source segments: N / SEGMENT_ROOM
     PAD_EDGES_PER_FAKE_ATOM = 32
@@ -121,18 +126,23 @@ class MLIAPCudaGraph:
         cutoff: float,
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
+        modal: Optional[str] = None,
     ):
         self.model = model
+        self.modal = modal
         self.device = device
         self.cutoff = float(cutoff)
         self.dtype = dtype
         self.verbose = verbose or os.getenv('SEVENN_MLIAP_GRAPH_VERBOSE') == '1'
         self.enabled = device.type == 'cuda'
+        # no capture: the eager call of the folded serial model
+        self.eager_fold = os.getenv('SEVENN_MLIAP_FOLD_EAGER') == '1'
         self.n_captures = 0
         self.n_replays = 0
         self.n_refreshes = 0
         self.n_eager = 0
         self._entry: Optional[Dict[str, Any]] = None
+        self._edge_room = self.EDGE_ROOM
         self._stream = None
         # a value the owner of a ghost must return: another rank has another one
         self._token = float(int.from_bytes(os.urandom(6), 'little'))
@@ -166,6 +176,10 @@ class MLIAPCudaGraph:
         pair_j = torch.as_tensor(lmp_data.pair_j, device=dev)
         src = owner.index_select(0, pair_j.to(torch.int64))
         elems = torch.as_tensor(lmp_data.elems, device=dev)[:nlocal]
+        if self.eager_fold:
+            if bool(foreign):
+                return self._disable('a ghost atom is owned by another rank')
+            return self._eager(lmp_data, nlocal, pair_i, src, elems)
 
         entry = self._entry
         fits = (
@@ -186,6 +200,8 @@ class MLIAPCudaGraph:
         elif bool(foreign):
             return self._disable('a ghost atom is owned by another rank')
         if not fits:
+            if entry is not None and entry['nlocal'] == nlocal:
+                self._edge_room = max(self.MIN_EDGE_ROOM_DIV, self._edge_room // 2)
             if not self._capture_pays():
                 return self._disable(
                     f'{self.n_captures} captures for {self.n_replays} replays'
@@ -214,6 +230,28 @@ class MLIAPCudaGraph:
         torch.as_tensor(lmp_data.eatoms).copy_(entry['e_atoms'])
         lmp_data.energy = entry['e_total']
         lmp_data.update_pair_forces_gpu(entry['pair_forces'])
+        return True
+
+    def _eager(self, lmp_data, nlocal, pair_i, src, elems) -> bool:
+        dev = self.device
+        edge_vec = torch.as_tensor(lmp_data.rij, dtype=self.dtype, device=dev)
+        edge_vec.requires_grad_(True)
+        data = {
+            KEY.EDGE_IDX: torch.stack([pair_i.to(torch.int64), src]),
+            KEY.EDGE_VEC: edge_vec,
+            KEY.ATOMIC_NUMBERS: elems.to(torch.int64),
+            KEY.NUM_ATOMS: torch.tensor(nlocal, dtype=torch.int64, device=dev),
+        }
+        if self.modal is not None:
+            data[KEY.DATA_MODALITY] = self.modal
+        output = self.model(data)
+        e_atoms = output[KEY.ATOMIC_ENERGY].view(-1)
+        e_total = e_atoms.sum()
+        (grad,) = torch.autograd.grad(e_total, [edge_vec])
+        torch.as_tensor(lmp_data.eatoms).copy_(e_atoms.detach())
+        lmp_data.energy = e_total.detach()
+        lmp_data.update_pair_forces_gpu(grad.to(torch.float64))
+        self.n_eager += 1
         return True
 
     # ---- helpers -----------------------------------------------------------
@@ -268,7 +306,7 @@ class MLIAPCudaGraph:
         self.n_captures += 1
         self._entry = None  # frees the previous graph and its pool
         dev = self.device
-        room = max(self.MIN_EDGE_ROOM, npairs // self.EDGE_ROOM)
+        room = max(self.MIN_EDGE_ROOM, npairs // self._edge_room)
         num_edges = npairs + room
         num_fake = max(1, -(-2 * room // self.PAD_EDGES_PER_FAKE_ATOM))
         num_nodes = nlocal + num_fake
@@ -314,6 +352,8 @@ class MLIAPCudaGraph:
                 KEY.ATOMIC_NUMBERS: z,
                 KEY.NUM_ATOMS: num_atoms,
             }
+            if self.modal is not None:
+                data[KEY.DATA_MODALITY] = self.modal
             output = self.model(data)
             e_atoms = output[KEY.ATOMIC_ENERGY].view(-1)[:nlocal]
             e_total = e_atoms.sum()
