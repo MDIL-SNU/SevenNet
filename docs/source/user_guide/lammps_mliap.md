@@ -137,6 +137,11 @@ sevenn get_model \
 sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp --cuda_graph
 ```
 
+- With ``--fused`` (with ``--enable_lunatp``; used by ``--cuda_graph`` on one MPI rank), kernels specific to the frozen model are used: radial weights shared by edges of equal length, no weight-gradient array in the force backward, the species self-connection restricted to the species of the atoms, and the modality folded into the weights. The forces are those of the model to single-precision round-off. An existing potential file can be switched with ``SEVENN_MLIAP_FUSED=1``.
+```bash
+sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp --cuda_graph --fused
+```
+
 ### Single-GPU MD
 Below is an example snippet of a LAMMPS script for using SevenNet models with ML-IAP:
 ```text
