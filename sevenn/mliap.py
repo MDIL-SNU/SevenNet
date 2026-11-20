@@ -197,6 +197,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             model.requires_grad_(False)
             names = fuse_radial_conv(model)
             print(f'[INFO] fused radial + conv: {" ".join(names)}', flush=True)
+            model.prune_species = True  # by MLIAPCudaGraph, to the species seen
         if (
             getattr(self, 'use_radial_table', False)
             or os.getenv('SEVENN_MLIAP_RADIAL_TABLE') == '1'

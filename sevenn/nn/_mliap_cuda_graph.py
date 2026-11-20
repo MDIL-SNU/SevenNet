@@ -120,7 +120,6 @@ class MLIAPCudaGraph:
     # REPLAYS_PER_CAPTURE replays per capture so far, else eager for good
     FREE_CAPTURES = 4
     REPLAYS_PER_CAPTURE = 50
-    UNIQUE_NUM, UNIQUE_DEN = 9, 16
 
     def __init__(
         self,
@@ -165,12 +164,16 @@ class MLIAPCudaGraph:
 
         # fused radial convolutions: weight rows per distinct edge length. A
         # full neighbor list holds every length twice (i-j, j-i); the captured
-        # call has room for UNIQUE_NUM / UNIQUE_DEN of its edges, or for all
-        # of them once that was not enough
+        # call has rows for half of its pairs plus slack, or for all of them
+        # once that was not enough
         self._fused = any(
             isinstance(m, LunaTPFusedRadialConvolution) for m in model.modules()
         )
         self._unique_all = False
+        # species self connection pruned to the species seen so far
+        # (lunatp_fused.prune_self_connection); a new species prunes again
+        self._prune = bool(getattr(model, 'prune_species', False))
+        self._allowed = torch.zeros(256, dtype=torch.bool, device=device)
 
     def _tick(self, phase: str, since: float) -> float:
         if self._times is None:
@@ -215,9 +218,14 @@ class MLIAPCudaGraph:
         pair_j = torch.as_tensor(lmp_data.pair_j, device=dev)
         src = owner.index_select(0, pair_j.to(torch.int64))
         elems = torch.as_tensor(lmp_data.elems, device=dev)[:nlocal]
+        unseen = foreign
+        if self._prune:
+            unseen = (~self._allowed[elems.to(torch.int64)]).any()
         if self.eager_fold:
             if bool(foreign):
                 return self._disable('a ghost atom is owned by another rank')
+            if self._prune and bool(unseen):
+                self._new_species(elems)
             return self._eager(lmp_data, nlocal, pair_i, src, elems)
 
         entry = self._entry
@@ -230,16 +238,21 @@ class MLIAPCudaGraph:
             cand = entry['cand']
             self._fill_edge_index(cand, pair_i, src, npairs, entry)
             flags = torch.stack(
-                [foreign, (cand != entry['edge_index']).any()]
+                [foreign, (cand != entry['edge_index']).any(), unseen]
             ).tolist()  # the one host sync before the replay
             t = self._tick('edges', t)
             if flags[0]:
                 return self._disable('a ghost atom is owned by another rank')
-            if flags[1] and not self._refresh(entry, cand):
+            if self._prune and flags[2]:
+                self._new_species(elems)
+                fits = False  # other weights: capture again
+            elif flags[1] and not self._refresh(entry, cand):
                 fits = False
             t = self._tick('refresh', t)
         elif bool(foreign):
             return self._disable('a ghost atom is owned by another rank')
+        elif self._prune and bool(unseen):
+            self._new_species(elems)
         if not fits:
             if entry is not None and entry['nlocal'] == nlocal:
                 self._edge_room = max(self.MIN_EDGE_ROOM_DIV, self._edge_room // 2)
@@ -255,7 +268,8 @@ class MLIAPCudaGraph:
                 print(
                     f'[SevenNet] CUDA graph captured: {nlocal} atoms '
                     f'(+{entry["num_nodes"] - nlocal} fake), {npairs} pairs '
-                    f'(room {entry["num_edges"]}), capture {self.n_captures}',
+                    f'(room {entry["num_edges"]}, weight rows '
+                    f'{entry["unique_cap"]}), capture {self.n_captures}',
                     flush=True,
                 )
             t = self._tick('capture', t)
@@ -273,6 +287,12 @@ class MLIAPCudaGraph:
             t = self._tick('replay', t)
             if not self._fused or int(entry['n_unique']) <= entry['unique_cap']:
                 break
+            if self.verbose:
+                print(
+                    f'[SevenNet] {int(entry["n_unique"])} distinct edge lengths '
+                    f'of {npairs} pairs, weight rows {entry["unique_cap"]}',
+                    flush=True,
+                )
             # more distinct edge lengths than weight rows: rows for all edges
             if attempt == 1 or self._unique_all:
                 return self._disable('edge lengths do not fit the weight rows')
@@ -316,6 +336,20 @@ class MLIAPCudaGraph:
         return True
 
     # ---- helpers -----------------------------------------------------------
+    def _new_species(self, elems) -> None:
+        from sevenn.nn.lunatp_fused import prune_self_connection
+
+        self._allowed[elems.to(torch.int64)] = True
+        numbers = torch.nonzero(self._allowed).view(-1).tolist()
+        names = prune_self_connection(
+            self.model, [self.model.type_map[z] for z in numbers]
+        )
+        if self.verbose:
+            print(
+                f'[SevenNet] self connection of {len(names)} layers pruned to '
+                f'atomic numbers {numbers}', flush=True,
+            )
+
     def _disable(self, why: str) -> bool:
         self.enabled = False
         self._entry = None
@@ -412,8 +446,8 @@ class MLIAPCudaGraph:
 
             unique_cap = num_edges
             if not self._unique_all:
-                unique_cap = num_edges * self.UNIQUE_NUM // self.UNIQUE_DEN + 64
-            unique_cap = min(num_edges, unique_cap + unique_cap % 2)
+                # half of the real pairs (+ slack), one row for the pads
+                unique_cap = min(num_edges, npairs // 2 + npairs // 64 + 64)
             set_unique_cap(self.model, unique_cap)
         entry['unique_cap'] = unique_cap
 
