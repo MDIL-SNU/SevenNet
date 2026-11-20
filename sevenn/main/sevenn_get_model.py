@@ -68,6 +68,11 @@ def add_args(parser):
         help='Use LAMMPS ML-IAP interface.',
         action='store_true',
     )
+    ag.add_argument(
+        '--cuda_graph',
+        help='ML-IAP, one rank: replay a captured CUDA graph of the model call.',
+        action='store_true',
+    )
 
 
 def run(args):
@@ -83,6 +88,7 @@ def run(args):
     use_oeq = args.enable_oeq
     use_lunatp = args.enable_lunatp
     use_mliap = args.use_mliap
+    cuda_graph = args.cuda_graph
 
     # Check dependencies
     if use_flash:
@@ -114,6 +120,9 @@ def run(args):
 
     if use_lunatp and not use_mliap:
         raise ValueError('LunaTP is only supported in ML-IAP interface.')
+
+    if cuda_graph and not use_mliap:
+        raise ValueError('cuda_graph is only supported in ML-IAP interface.')
 
     if use_mliap and get_parallel:
         raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
@@ -156,6 +165,7 @@ def run(args):
             use_flash=use_flash,
             use_oeq=use_oeq,
             use_lunatp=use_lunatp,
+            use_cuda_graph=cuda_graph,
         )
         torch.save(mliap_module, output_prefix)
 

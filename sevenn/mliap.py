@@ -87,6 +87,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             modal: Optional[str] = None
             use_cueq: bool = False
             use_flash: bool = False
+            use_cuda_graph: bool = False  # one rank only; replays a captured
+                CUDA graph of the model call (sevenn/nn/_mliap_cuda_graph.py)
         """
 
         super().__init__()
@@ -114,6 +116,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.use_oeq = kwargs.get('use_oeq', False)
         self.use_lunatp = kwargs.get('use_lunatp', False)
         self.modal = kwargs.get('modal', None)
+        self.use_cuda_graph = kwargs.get('use_cuda_graph', False)
+        self.graph = None  # lazy init
 
         # extract configs
         config = self.cp.config
@@ -148,11 +152,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
     until the first compute_forces call.
     """
 
-    def _ensure_model_initialized(self):
-        if self.model is not None:
-            return  # Already initialized
-        print('[INFO] Lazy initializing SevenNet model...', flush=True)
-        print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}, oeq={self.use_oeq}, lunatp={self.use_lunatp}', flush=True)  # noqa: E501
+    def _build_model(self, ghost_exchange: bool):
         model = self.cp.build_model(
             enable_cueq=self.use_cueq,
             enable_flash=self.use_flash,
@@ -160,11 +160,12 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             enable_lunatp=self.use_lunatp,
         )
 
-        for k, module in model._modules.items():
-            if k.endswith('_convolution'):
-                model._modules[k] = MLIAPWrappedConvolution(module)
-            elif k == 'onehot_to_feature_x':
-                model._modules[k] = MLIAPWrappedIrrepsLinear(module)
+        if ghost_exchange:
+            for name, module in model._modules.items():
+                if name.endswith('_convolution'):
+                    model._modules[name] = MLIAPWrappedConvolution(module)
+                elif name == 'onehot_to_feature_x':
+                    model._modules[name] = MLIAPWrappedIrrepsLinear(module)
 
         model.set_is_batch_data(False)
         if self.modal is not None:
@@ -172,12 +173,42 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             model.prepare_modal_deploy(self.modal)  # set the fidelity of input data
 
         model.delete_module_by_key('force_output')  # to autograd edge forces
-        self.model = model
-        self.model.to(self.device)
-        self.model.eval()
+        model.to(self.device)
+        model.eval()
+        return model
+
+    def _ensure_model_initialized(self):
+        if self.model is not None:
+            return  # Already initialized
+        print('[INFO] Lazy initializing SevenNet model...', flush=True)
+        print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}, oeq={self.use_oeq}, lunatp={self.use_lunatp}', flush=True)  # noqa: E501
+        self.model = self._build_model(ghost_exchange=True)
+
+    def _ensure_graph_initialized(self):
+        if self.graph is not None:
+            return
+        from sevenn.nn._mliap_cuda_graph import MLIAPCudaGraph
+
+        print('[INFO] SevenNet ML-IAP CUDA graph (one rank)', flush=True)
+        print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}, oeq={self.use_oeq}, lunatp={self.use_lunatp}', flush=True)  # noqa: E501
+        # the plain serial model: ghosts are folded to their owners
+        model = self._build_model(ghost_exchange=False)
+        model.requires_grad_(False)  # the force backward skips dE/dW
+        self.graph = MLIAPCudaGraph(model, self.device, self.cutoff)
 
     # -------- unified entrypoint --------
     def compute_forces(self, lmp_data):
+        # getattr: potential files saved before use_cuda_graph existed
+        use_graph = (
+            getattr(self, 'use_cuda_graph', False)
+            or os.getenv('SEVENN_MLIAP_CUDA_GRAPH') == '1'
+        ) and self.device.type == 'cuda'
+        if use_graph and os.getenv('SEVENN_MLIAP_CUDA_GRAPH') != '0':
+            if getattr(self, 'graph', None) is None:
+                self.graph = None
+                self._ensure_graph_initialized()
+            if self.graph.compute(lmp_data):
+                return
         self._ensure_model_initialized()  # lazy init
         assert self.model, 'Model must be initialized'
         if lmp_data.nlocal == 0:
