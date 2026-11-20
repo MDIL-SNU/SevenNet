@@ -120,6 +120,10 @@ class MLIAPCudaGraph:
     # REPLAYS_PER_CAPTURE replays per capture so far, else eager for good
     FREE_CAPTURES = 4
     REPLAYS_PER_CAPTURE = 50
+    # fused kernels: index launch order above this index_coherence (random
+    # atom order: 0.44), for cells large enough for the order to matter
+    INDEX_ORDER_COHERENCE = 0.6
+    INDEX_ORDER_MIN_ATOMS = 256
 
     def __init__(
         self,
@@ -237,8 +241,16 @@ class MLIAPCudaGraph:
         if fits:
             cand = entry['cand']
             self._fill_edge_index(cand, pair_i, src, npairs, entry)
+            reorder = foreign
+            if self._fused and nlocal >= self.INDEX_ORDER_MIN_ATOMS:
+                # the atom order became (in)coherent, e.g. LAMMPS sorted
+                d = (cand[0, :npairs] - cand[1, :npairs]).abs()
+                coherent = (d < nlocal // 4).float().mean() > (
+                    self.INDEX_ORDER_COHERENCE
+                )
+                reorder = coherent != entry['index_order']
             flags = torch.stack(
-                [foreign, (cand != entry['edge_index']).any(), unseen]
+                [foreign, (cand != entry['edge_index']).any(), unseen, reorder]
             ).tolist()  # the one host sync before the replay
             t = self._tick('edges', t)
             if flags[0]:
@@ -246,6 +258,8 @@ class MLIAPCudaGraph:
             if self._prune and flags[2]:
                 self._new_species(elems)
                 fits = False  # other weights: capture again
+            elif self._fused and flags[3]:
+                fits = False  # other launch order: capture again
             elif flags[1] and not self._refresh(entry, cand):
                 fits = False
             t = self._tick('refresh', t)
@@ -269,7 +283,9 @@ class MLIAPCudaGraph:
                     f'[SevenNet] CUDA graph captured: {nlocal} atoms '
                     f'(+{entry["num_nodes"] - nlocal} fake), {npairs} pairs '
                     f'(room {entry["num_edges"]}, weight rows '
-                    f'{entry["unique_cap"]}), capture {self.n_captures}',
+                    f'{entry["unique_cap"]}, index coherence '
+                    f'{entry.get("coherence", 0.0):.2f}), capture '
+                    f'{self.n_captures}',
                     flush=True,
                 )
             t = self._tick('capture', t)
@@ -449,6 +465,16 @@ class MLIAPCudaGraph:
                 # half of the real pairs (+ slack), one row for the pads
                 unique_cap = min(num_edges, npairs // 2 + npairs // 64 + 64)
             set_unique_cap(self.model, unique_cap)
+            from sevenn.nn.lunatp_fused import index_coherence, set_index_order
+
+            # launch order of the kernel blocks: node index order pays if
+            # the atoms are in a spatially coherent order (see lunatp_fused)
+            coherence = 1.0
+            if nlocal >= self.INDEX_ORDER_MIN_ATOMS:
+                coherence = index_coherence(edge_index[:, :npairs], nlocal)
+            entry['coherence'] = coherence
+            entry['index_order'] = coherence > self.INDEX_ORDER_COHERENCE
+            set_index_order(self.model, entry['index_order'])
         entry['unique_cap'] = unique_cap
 
         def run():

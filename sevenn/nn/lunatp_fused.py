@@ -21,6 +21,7 @@ index, and the weight-gradient stores replaced by the contraction. Same
 function as LunaTPSharedGraphConvolution up to round-off.
 """
 import copy
+import dataclasses
 import re
 from typing import List, Optional, Sequence
 
@@ -297,6 +298,37 @@ class RadialHiddenTable(nn.Module):
         return out
 
 
+def _index_order(tables):
+    """tables with the launch orders in node / segment index order (cached)"""
+    cached = getattr(tables.src, '_sevenn_index_order', None)
+    if cached is not None and cached[0] is tables:
+        return cached[1]
+    seg = tables.source_segments
+    out = dataclasses.replace(
+        tables,
+        node_order=torch.arange(
+            tables.node_order.numel(), device=tables.node_order.device,
+            dtype=tables.node_order.dtype,
+        ),
+        source_segments=dataclasses.replace(
+            seg, order=torch.arange(
+                seg.order.numel(), device=seg.order.device, dtype=seg.order.dtype
+            ),
+        ),
+    )
+    tables.src._sevenn_index_order = (tables, out)
+    return out
+
+
+def index_coherence(edge_index: torch.Tensor, num_nodes: int) -> float:
+    """
+    fraction of edges between nodes closer than num_nodes / 4 in index: 7/16
+    for a random node order, near 1 for a spatially sorted one
+    """
+    d = (edge_index[0] - edge_index[1]).abs()
+    return float((d < max(1, num_nodes // 4)).float().mean())
+
+
 class _FusedConv(torch.autograd.Function):
     """out(x, y; w[rid]); r only receives dE/dr (through dw/dr)"""
 
@@ -378,6 +410,11 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     """
 
     unique_cap: Optional[int] = None
+    # kernel blocks launched in node index order instead of LunaTP's order by
+    # degree: with atoms in a spatially coherent order (LAMMPS atom sorting)
+    # the rows that neighbors share (weight rows of i-j and j-i, the output
+    # gradient rows) are still in the GPU cache when the next block reads them
+    index_order: bool = True
     # weight rows (w, dw/dr) stored as fp16: half the bytes the kernels read,
     # forces change by ~1e-4 eV/A (not the same function to round-off)
     half_weights: bool = False
@@ -398,7 +435,9 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         self._folded64 = folded  # fp64, cpu: for the table of the hidden layers
         self._hid_table, self._layer = None, 0
         if half_weights:
-            self.register_buffer('rad_w2_half', self.rad_w2.half())
+            wh = self.rad_w2.half()
+            wl = (self.rad_w2 - wh.float()).half()
+            self.register_buffer('rad_w2_half', torch.cat([wh, wh, wl]))
         object.__setattr__(self, '_emb', emb)  # not a submodule of this one
         self.weight_nn = nn.Identity()
         self._kernels()
@@ -440,10 +479,7 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             if _KEY_HID not in data or data[_KEY_HID_R] is not ru:
                 data[_KEY_HID] = self._hid_table(ru)
                 data[_KEY_HID_R] = ru
-            hid = data[_KEY_HID][self._layer]
-            if self.half_weights:
-                return torch.mm(hid.half(), self.rad_w2_half)
-            return torch.mm(hid, self.rad_w2)
+            return self._last(data[_KEY_HID][self._layer])
         x = self._embedding(data, ru)
         n = ru.shape[0]
         for w, act in zip((self.rad_w0, self.rad_w1), self._acts):
@@ -455,9 +491,18 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             else:
                 with torch.enable_grad():
                     x = torch.cat(torch.func.jvp(act, (v,), (d,))).detach()
-        if self.half_weights:
-            return torch.mm(x.half(), self.rad_w2_half)
-        return torch.mm(x, self.rad_w2)
+        return self._last(x)
+
+    def _last(self, x: torch.Tensor) -> torch.Tensor:
+        """the last layer of the MLP, rows [value ; d/dr]"""
+        if not self.half_weights:
+            return torch.mm(x, self.rad_w2)
+        # fp16 GEMM (fp32 accumulation) of inputs split in two fp16 parts:
+        # x w = xh wh + xl wh + xh wl (+ xl wl, dropped); only the result is
+        # rounded to fp16
+        xh = x.half()
+        xl = (x - xh.float()).half()
+        return torch.mm(torch.cat([xh, xl, xh], 1), self.rad_w2_half)
 
     @staticmethod
     def _unique(data: AtomGraphDataType, cap: Optional[int]):
@@ -506,6 +551,8 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         if order is not None:
             y, r, rid = y[order], r[order], rid[order]
         tables = graph._tables[('uvu', 32)]
+        if self.index_order and not self.convolution.tp_conv.op.forward_degree_tiers:
+            tables = _index_order(tables)
         data[self.key_x] = _FusedConv.apply(
             self, x.contiguous(), y.contiguous(), r, rid.contiguous(), wbuf,
             tables,
@@ -633,6 +680,12 @@ def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> List[str]
         sc.register_buffer('columns', cols)
         changed.append(name)
     return changed
+
+
+def set_index_order(model: nn.Module, flag: bool) -> None:
+    for module in model.modules():
+        if isinstance(module, LunaTPFusedRadialConvolution):
+            module.index_order = flag
 
 
 def set_unique_cap(model: nn.Module, cap: Optional[int]) -> None:
