@@ -90,7 +90,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             use_cuda_graph: bool = False  # one rank only; replays a captured
                 CUDA graph of the model call (sevenn/nn/_mliap_cuda_graph.py)
             use_radial_table: bool = False  # radial MLPs as cubic tables in r
-                (sevenn/nn/radial_table.py; original SevenNet models only)
+                (narrow layers) or with folded constants (wide layers), see
+                sevenn/nn/radial_table.py optimize_radial
         """
 
         super().__init__()
@@ -182,10 +183,14 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             getattr(self, 'use_radial_table', False)
             or os.getenv('SEVENN_MLIAP_RADIAL_TABLE') == '1'
         ) and os.getenv('SEVENN_MLIAP_RADIAL_TABLE') != '0':
-            from sevenn.nn.radial_table import tabulate_radial
+            from sevenn.nn.radial_table import optimize_radial
 
-            names = tabulate_radial(model, kernel=self.device.type == 'cuda')
-            print(f'[INFO] radial MLP tables: {len(names)} convolutions', flush=True)
+            names = optimize_radial(
+                model,
+                int(os.getenv('SEVENN_RADIAL_TABLE_MAX_WIDTH', '1024')),
+                kernel=self.device.type == 'cuda',
+            )
+            print(f'[INFO] radial MLPs: {" ".join(names)}', flush=True)
         return model
 
     def _ensure_model_initialized(self):

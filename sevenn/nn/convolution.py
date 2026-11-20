@@ -52,6 +52,9 @@ class IrrepsConvolution(nn.Module):
         self.denominator = nn.Parameter(
             torch.FloatTensor([denominator]), requires_grad=train_denominator
         )
+        # inference: 1 / denominator is in the radial weights (the convolution
+        # is linear in them), see sevenn/nn/radial_table.py
+        self.denominator_folded = False
         self.key_x = data_key_x
         self.key_filter = data_key_filter
         self.key_weight_input = data_key_weight_input
@@ -132,7 +135,8 @@ class IrrepsConvolution(nn.Module):
 
         x = message_gather(x, edge_dst, message)
 
-        x = x.div(self.denominator)
+        if not self.denominator_folded:
+            x = x.div(self.denominator)
 
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
@@ -167,6 +171,9 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         self.denominator = nn.Parameter(
             torch.FloatTensor([denominator]), requires_grad=train_denominator
         )
+        # inference: 1 / denominator is in the radial weights (the convolution
+        # is linear in them), see sevenn/nn/radial_table.py
+        self.denominator_folded = False
         self.key_x = data_key_x
         self.key_filter = data_key_filter
         self.key_weight_input = data_key_weight_input
@@ -280,7 +287,8 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         else:
             x = self._convolve(data, x, edge_filter, weight)
 
-        x = x.div(self.denominator)
+        if not self.denominator_folded:
+            x = x.div(self.denominator)
 
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
