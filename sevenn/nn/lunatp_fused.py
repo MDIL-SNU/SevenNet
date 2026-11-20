@@ -66,7 +66,7 @@ def _closing(text: str, start: int) -> int:
     return pos - 1
 
 
-def forward_source(op) -> str:
+def forward_source(op, half: bool = False) -> str:
     from LunaEquivariance.lunatp.uvu_conv.kernels import forward as F
 
     uniform = len({int(s['channels']) for s in op.generated_specs}) == 1
@@ -106,12 +106,24 @@ def forward_source(op) -> str:
         parts[0] + kernel + parts[1] + kernel + parts[2] + host + parts[3]
         + host + parts[4]
     )
-    return _sub(
+    src = _sub(
         r'num_nodes\);', 'num_nodes, rid.data_ptr<int32_t>());', src, count=2
     )
+    if half:  # weight rows stored as fp16
+        src = _sub(r'const float ?\*(?: ?__restrict__)? weight\b',
+                   'const __half* __restrict__ weight', src, count=2)
+        src = _sub('const float* weight_edge', 'const __half* weight_edge', src,
+                   regex=False)
+        src = _sub(r'= weight_edge\[(\d+) \+ u\];',
+                   r'= __half2float(weight_edge[\1 + u]);', src)
+        src = _sub('weight.data_ptr<float>()',
+                   'reinterpret_cast<const __half*>(weight.data_ptr<at::Half>())',
+                   src, count=2, regex=False)
+        src = '#include <cuda_fp16.h>\n' + src
+    return src
 
 
-def backward_source(op):
+def backward_source(op, half: bool = False):
     """(source, segmented, partials, vectorized, zero_x, zero_y)"""
     from LunaEquivariance.lunatp.uvu_conv.kernels import backward as B
 
@@ -182,6 +194,26 @@ def backward_source(op):
         'torch::Tensor grp) {',
         src, count=1, regex=False,
     )
+    if half:  # weight rows (w and dw/dr) stored as fp16
+        src = _sub('const float* __restrict__ weight,',
+                   'const __half* __restrict__ weight,', src, count=1, regex=False)
+        src = _sub('const float* __restrict__ grad_weight,',
+                   'const __half* __restrict__ grad_weight,', src, count=1,
+                   regex=False)
+        src = re.sub(
+            r'__ldg\(reinterpret_cast<const float2\*>\(weight \+ wb \+ (\d+) \+ u\)\)',
+            r'make_float2(__half2float(weight[wb + \1 + u]), '
+            r'__half2float(weight[wb + \1 + u + 1]))', src,
+        )
+        src = _sub(r'__ldg\(((?:grad_)?weight \+ wb \+ \d+ \+ u(?: \+ 1)?)\)',
+                   r'__half2float(*(\1))', src)
+        src = _sub('weight.data_ptr<float>()',
+                   'reinterpret_cast<const __half*>(weight.data_ptr<at::Half>())',
+                   src, regex=False)
+        src = _sub('gw.data_ptr<float>()',
+                   'reinterpret_cast<const __half*>(gw.data_ptr<at::Half>())',
+                   src, regex=False)
+        src = '#include <cuda_fp16.h>\n' + src
     return (src, *flags)
 
 
@@ -346,8 +378,12 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     """
 
     unique_cap: Optional[int] = None
+    # weight rows (w, dw/dr) stored as fp16: half the bytes the kernels read,
+    # forces change by ~1e-4 eV/A (not the same function to round-off)
+    half_weights: bool = False
 
-    def _setup(self, emb) -> None:
+    def _setup(self, emb, half_weights: bool = False) -> None:
+        self.half_weights = half_weights
         ref = self.denominator
         folded = FoldedRadialMLP(
             copy.deepcopy(self.weight_nn).to('cpu', torch.float64),
@@ -361,6 +397,8 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         self._acts = folded.acts
         self._folded64 = folded  # fp64, cpu: for the table of the hidden layers
         self._hid_table, self._layer = None, 0
+        if half_weights:
+            self.register_buffer('rad_w2_half', self.rad_w2.half())
         object.__setattr__(self, '_emb', emb)  # not a submodule of this one
         self.weight_nn = nn.Identity()
         self._kernels()
@@ -369,13 +407,15 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         from LunaEquivariance.utils.extension import load_tp_extension
 
         op = self.convolution.tp_conv.op
+        tag = 'w16' if self.half_weights else 'fp32'
         self.fwd_ext = load_tp_extension(
-            'sevenn_uvuconv_fused_fwd_fp32', forward_source(op),
+            f'sevenn_uvuconv_fused_fwd_{tag}',
+            forward_source(op, self.half_weights),
             max_channels=op.max_channels, index_bits=32,
         )
-        src, *self.bwd_flags = backward_source(op)
+        src, *self.bwd_flags = backward_source(op, self.half_weights)
         self.bwd_ext = load_tp_extension(
-            'sevenn_uvuconv_fused_bwd_fp32', src,
+            f'sevenn_uvuconv_fused_bwd_{tag}', src,
             max_channels=op.max_channels, index_bits=32,
         )
 
@@ -400,7 +440,10 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             if _KEY_HID not in data or data[_KEY_HID_R] is not ru:
                 data[_KEY_HID] = self._hid_table(ru)
                 data[_KEY_HID_R] = ru
-            return torch.mm(data[_KEY_HID][self._layer], self.rad_w2)
+            hid = data[_KEY_HID][self._layer]
+            if self.half_weights:
+                return torch.mm(hid.half(), self.rad_w2_half)
+            return torch.mm(hid, self.rad_w2)
         x = self._embedding(data, ru)
         n = ru.shape[0]
         for w, act in zip((self.rad_w0, self.rad_w1), self._acts):
@@ -412,6 +455,8 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             else:
                 with torch.enable_grad():
                     x = torch.cat(torch.func.jvp(act, (v,), (d,))).detach()
+        if self.half_weights:
+            return torch.mm(x.half(), self.rad_w2_half)
         return torch.mm(x, self.rad_w2)
 
     @staticmethod
@@ -468,7 +513,9 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         return data
 
 
-def fuse_radial_conv(model: nn.Module, hidden_table: bool = True) -> List[str]:
+def fuse_radial_conv(
+    model: nn.Module, hidden_table: bool = True, half_weights: bool = False
+) -> List[str]:
     """
     In place: every LunaTP convolution of a serial model whose radial MLP is
     an e3nn FullyConnectedNet [n, h, h, W] of the edge embedding becomes a
@@ -492,7 +539,7 @@ def fuse_radial_conv(model: nn.Module, hidden_table: bool = True) -> List[str]:
         ):
             continue
         conv.__class__ = LunaTPFusedRadialConvolution
-        conv._setup(emb)
+        conv._setup(emb, half_weights)
         changed.append(name)
         fused.append(conv)
     widths = {c.rad_w2.shape[0] for c in fused}
