@@ -47,6 +47,9 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             use_radial_table: bool = False  # radial MLPs as cubic tables in r
                 (narrow layers) or with folded constants (wide layers), see
                 sevenn/nn/radial_table.py optimize_radial
+            use_fused: bool = False  # LunaTP, with the CUDA graph or the
+                folded eager call (one rank): frozen-model kernels of
+                sevenn/nn/lunatp_fused.py
         """
 
         super().__init__()
@@ -76,6 +79,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.modal = kwargs.get('modal', None)
         self.use_cuda_graph = kwargs.get('use_cuda_graph', False)
         self.use_radial_table = kwargs.get('use_radial_table', False)
+        self.use_fused = kwargs.get('use_fused', False)
         self.graph = None  # lazy init
 
         # extract configs
@@ -131,6 +135,20 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         model.delete_module_by_key('force_output')  # to autograd edge forces
         model.to(self.device)
         model.eval()
+        if (
+            not ghost_exchange
+            and self.use_lunatp
+            and (
+                getattr(self, 'use_fused', False)
+                or os.getenv('SEVENN_MLIAP_FUSED') == '1'
+            )
+            and os.getenv('SEVENN_MLIAP_FUSED') != '0'
+        ):
+            from sevenn.nn.lunatp_fused import fuse_radial_conv
+
+            model.requires_grad_(False)
+            names = fuse_radial_conv(model)
+            print(f'[INFO] fused radial + conv: {" ".join(names)}', flush=True)
         if (
             getattr(self, 'use_radial_table', False)
             or os.getenv('SEVENN_MLIAP_RADIAL_TABLE') == '1'
