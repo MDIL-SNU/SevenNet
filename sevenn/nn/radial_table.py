@@ -9,6 +9,12 @@ of the forward and the backward.
 
 Not applicable to (and refused for) a model whose radial input depends on
 more than r: pair / node conditioned radial MLPs, distance transforms.
+
+fold_radial keeps the MLP and removes its per-call constant kernels instead:
+the weight normalizations and the activation constants of e3nn's
+FullyConnectedNet go into the frozen weight matrices (matmul, activation,
+matmul, ...). Both fold 1 / denominator of the convolution into the radial
+weights (the convolution is linear in them).
 """
 import copy
 from typing import List
@@ -62,7 +68,13 @@ extern "C" __global__ void radial_fwd(
 {
     long long idx = (long long)blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= E * W) return;
-    long long e = idx / W; int w = (int)(idx - e * W);
+    long long e; int w;
+    if (E * W < 4294967296LL) {  // 32-bit division: several times faster
+        unsigned int e32 = (unsigned int)idx / (unsigned int)W;
+        e = e32; w = (int)((unsigned int)idx - e32 * (unsigned int)W);
+    } else {
+        e = idx / W; w = (int)(idx - e * W);
+    }
     float u = (r[e] - r0) * inv_h;
     int i = (int)floorf(u);
     i = i < 0 ? 0 : (i > K1 - 1 ? K1 - 1 : i);
@@ -152,6 +164,64 @@ class RadialTable(nn.Module):
         return fn.apply(r.contiguous(), self.coef, self.r0, self.inv_h)
 
 
+class FoldedRadialMLP(nn.Module):
+    """e3nn FullyConnectedNet with every constant in the frozen weights"""
+
+    def __init__(self, net, scale: float = 1.0):
+        super().__init__()
+        layers = list(net)
+        self.acts = [layer.act.f if layer.act is not None else None
+                     for layer in layers]
+        carry = 1.0  # constant factor of the previous layer's output
+        for n, layer in enumerate(layers):
+            w = layer.weight.detach().to(torch.float64) * carry
+            if layer.act is not None:
+                w = w / (layer.h_in * layer.var_in) ** 0.5
+                cst = 1.0 if layer.act._is_id else layer.act.cst
+                carry = cst * layer.var_out ** 0.5
+            else:
+                w = w / (layer.h_in * layer.var_in / layer.var_out) ** 0.5
+                carry = 1.0
+            if n == len(layers) - 1:
+                w = w * (carry * scale)
+            self.register_buffer(f'w{n}', w.to(layer.weight.dtype))
+        self.num_layers = len(layers)
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        for n in range(self.num_layers):
+            x = x @ getattr(self, f'w{n}')
+            if self.acts[n] is not None:
+                x = self.acts[n](x)
+        return x
+
+
+def _convolutions(model):
+    for name, conv in model._modules.items():
+        if name.endswith('_convolution'):
+            yield name, getattr(conv, 'conv', conv)  # MLIAPWrappedConvolution
+
+
+def fold_radial(model: nn.Module) -> List[str]:
+    """
+    In place, for every convolution whose radial MLP is an e3nn
+    FullyConnectedNet: FoldedRadialMLP with 1 / denominator folded in.
+    Inference only (frozen weights). Returns the names changed.
+    """
+    from e3nn.nn import FullyConnectedNet
+
+    changed = []
+    for name, conv in _convolutions(model):
+        if not isinstance(conv.weight_nn, FullyConnectedNet):
+            continue
+        if not hasattr(conv, 'denominator_folded') or conv.denominator_folded:
+            continue
+        scale = 1.0 / float(conv.denominator.detach().double().item())
+        conv.weight_nn = FoldedRadialMLP(conv.weight_nn, scale)
+        conv.denominator_folded = True
+        changed.append(name)
+    return changed
+
+
 def _table(radial, r0: float, r1: float, num_knots: int, dtype):
     """Hermite coefficients (K - 1, 4, W) of radial: (K,) fp64 -> (K, W)"""
     r = torch.linspace(r0, r1, num_knots, dtype=torch.float64)
@@ -165,15 +235,42 @@ def _table(radial, r0: float, r1: float, num_knots: int, dtype):
     return coef.to(dtype), h
 
 
+def optimize_radial(
+    model: nn.Module, max_table_width: int = 1024, kernel: bool = True,
+    num_knots: int = 2048,
+) -> List[str]:
+    """
+    Per convolution, in place: a table (tabulate_radial) if the radial input
+    is the edge embedding and the convolution has at most max_table_width
+    weights (a table reads 4 values per weight and edge, the last matmul of
+    the MLP is a 64-wide GEMM: tables win for narrow layers, the MLP for wide
+    ones), else the folded MLP (fold_radial). Layers of other radial modules
+    are left as they are. Returns '<name>:table' / '<name>:fold'.
+    """
+    emb = model._modules['edge_embedding']
+    plain = getattr(emb, 'distance_transform', None) is None
+    narrow = [
+        name for name, conv in _convolutions(model)
+        if plain and conv.key_weight_input == KEY.EDGE_EMBEDDING
+        and hasattr(conv.weight_nn, '__len__')
+        and conv.weight_nn[-1].h_out <= max_table_width
+    ]
+    done = [f'{n}:table' for n in tabulate_radial(
+        model, num_knots, kernel=kernel, only=narrow
+    )] if narrow else []
+    return done + [f'{n}:fold' for n in fold_radial(model)]
+
+
 def tabulate_radial(
     model: nn.Module, num_knots: int = 2048, r_min: float = 0.25,
-    kernel: bool = False,
+    kernel: bool = False, only=None,
 ) -> List[str]:
     """
     Replaces, in place, the radial MLP of every convolution of model by a
     RadialTable on [r_min, cutoff] (shorter edges: the first interval's cubic,
     extrapolated). kernel: one cupy CUDA kernel per pass instead of torch ops
-    (fp32, CUDA). Returns the names of the convolutions changed.
+    (fp32, CUDA). only: names of the convolutions to change (default all).
+    Returns the names of the convolutions changed.
     """
     emb = model._modules['edge_embedding']
     if getattr(emb, 'distance_transform', None) is not None:
@@ -181,16 +278,19 @@ def tabulate_radial(
     ref = next(model.parameters())
     emb64 = copy.deepcopy(emb).to('cpu', torch.float64)
     changed = []
-    for name, conv in model._modules.items():
-        conv = getattr(conv, 'conv', conv)  # MLIAPWrappedConvolution
-        if not name.endswith('_convolution'):
+    for name, conv in _convolutions(model):
+        if only is not None and name not in only:
             continue
         if conv.key_weight_input != KEY.EDGE_EMBEDDING:
             raise ValueError(f'{name}: radial input {conv.key_weight_input}')
         mlp64 = copy.deepcopy(conv.weight_nn).to('cpu', torch.float64)
+        scale = 1.0
+        if not getattr(conv, 'denominator_folded', True):
+            scale = 1.0 / float(conv.denominator.detach().double().item())
+            conv.denominator_folded = True
 
-        def radial(r, mlp64=mlp64):
-            return mlp64(
+        def radial(r, mlp64=mlp64, scale=scale):
+            return scale * mlp64(
                 emb64.basis_function(r) * emb64.cutoff_function(r).unsqueeze(-1)
             )
 

@@ -70,7 +70,7 @@ def add_args(parser):
     )
     ag.add_argument(
         '--radial_table',
-        help='ML-IAP: radial MLPs as cubic tables in r (original SevenNet models).',
+        help='ML-IAP: radial MLPs as cubic tables in r / with folded constants.',
         action='store_true',
     )
     ag.add_argument(

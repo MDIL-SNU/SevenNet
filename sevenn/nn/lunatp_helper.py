@@ -247,7 +247,8 @@ class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
                 graph_key=data[self.key_edge_idx],
             )
 
-        x = x.div(self.denominator)
+        if not self.denominator_folded:
+            x = x.div(self.denominator)
 
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
