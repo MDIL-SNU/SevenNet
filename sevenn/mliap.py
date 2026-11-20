@@ -44,6 +44,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             use_flash: bool = False
             use_cuda_graph: bool = False  # one rank only; replays a captured
                 CUDA graph of the model call (sevenn/nn/_mliap_cuda_graph.py)
+            use_radial_table: bool = False  # radial MLPs as cubic tables in r
+                (sevenn/nn/radial_table.py; original SevenNet models only)
         """
 
         super().__init__()
@@ -72,6 +74,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.use_lunatp = kwargs.get('use_lunatp', False)
         self.modal = kwargs.get('modal', None)
         self.use_cuda_graph = kwargs.get('use_cuda_graph', False)
+        self.use_radial_table = kwargs.get('use_radial_table', False)
         self.graph = None  # lazy init
 
         # extract configs
@@ -127,6 +130,14 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         model.delete_module_by_key('force_output')  # to autograd edge forces
         model.to(self.device)
         model.eval()
+        if (
+            getattr(self, 'use_radial_table', False)
+            or os.getenv('SEVENN_MLIAP_RADIAL_TABLE') == '1'
+        ) and os.getenv('SEVENN_MLIAP_RADIAL_TABLE') != '0':
+            from sevenn.nn.radial_table import tabulate_radial
+
+            names = tabulate_radial(model, kernel=self.device.type == 'cuda')
+            print(f'[INFO] radial MLP tables: {len(names)} convolutions', flush=True)
         return model
 
     def _ensure_model_initialized(self):

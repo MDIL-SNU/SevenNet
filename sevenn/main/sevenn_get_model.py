@@ -69,6 +69,11 @@ def add_args(parser):
         action='store_true',
     )
     ag.add_argument(
+        '--radial_table',
+        help='ML-IAP: radial MLPs as cubic tables in r (original SevenNet models).',
+        action='store_true',
+    )
+    ag.add_argument(
         '--cuda_graph',
         help='ML-IAP, one rank: replay a captured CUDA graph of the model call.',
         action='store_true',
@@ -89,6 +94,7 @@ def run(args):
     use_lunatp = args.enable_lunatp
     use_mliap = args.use_mliap
     cuda_graph = args.cuda_graph
+    radial_table = args.radial_table
 
     # Check dependencies
     if use_flash:
@@ -121,8 +127,10 @@ def run(args):
     if use_lunatp and not use_mliap:
         raise ValueError('LunaTP is only supported in ML-IAP interface.')
 
-    if cuda_graph and not use_mliap:
-        raise ValueError('cuda_graph is only supported in ML-IAP interface.')
+    if (cuda_graph or radial_table) and not use_mliap:
+        raise ValueError(
+            'cuda_graph and radial_table are only supported in ML-IAP interface.'
+        )
 
     if use_mliap and get_parallel:
         raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
@@ -166,6 +174,7 @@ def run(args):
             use_oeq=use_oeq,
             use_lunatp=use_lunatp,
             use_cuda_graph=cuda_graph,
+            use_radial_table=radial_table,
         )
         torch.save(mliap_module, output_prefix)
 
