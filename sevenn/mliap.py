@@ -195,8 +195,14 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             from sevenn.nn.lunatp_fused import fold_modal, fuse_radial_conv
 
             model.requires_grad_(False)
-            names = fuse_radial_conv(model)
-            print(f'[INFO] fused radial + conv: {" ".join(names)}', flush=True)
+            # experimental, not the same function to round-off (~1e-4 eV/A):
+            # radial weight rows stored as fp16
+            w16 = os.getenv('SEVENN_MLIAP_FUSED_W16') == '1'
+            names = fuse_radial_conv(model, half_weights=w16)
+            print(
+                f'[INFO] fused radial + conv{" (fp16 weight rows)" if w16 else ""}'
+                f': {" ".join(names)}', flush=True,
+            )
             if self.modal is not None and model.modal_map:
                 names = fold_modal(model, self.modal)
                 print(f'[INFO] modal folded: {" ".join(names)}', flush=True)
