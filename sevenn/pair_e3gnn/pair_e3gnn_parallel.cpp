@@ -351,7 +351,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   // extra_graph_idx_map is set from comm_preprocess();
   // last one is for trash values. See pack_forward_init
   const int extra_size =
-      ghost_node_num + static_cast<int>(extra_graph_idx_map.size()) + 1;
+      ghost_node_num + n_extra_slots + 1;
   torch::Tensor x_local;
   torch::Tensor x_ghost;
 
@@ -526,6 +526,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   }
 
   extra_graph_idx_map.clear();
+  n_extra_slots = 0;
 }
 
 // allocate arrays (called from coeff)
@@ -718,18 +719,18 @@ void PairE3GNNParallel::comm_preprocess() {
     std::set<int>& already_met = already_met_map[sproc];
     // the last index of x_comm is used to trash unnecessary values
     const int trash_index =
-        graph_size + static_cast<int>(extra_graph_idx_map.size()); //+ 1;
+        graph_size + n_extra_slots;
+    // Graph nodes and relay slots are both one per tag, so two entries for
+    // one index (two images of an atom, or one atom sent in two phases to the
+    // same rank) come back with the same, complete gradient of that node:
+    // keep the earliest phase (processed last in reverse, so it carries all).
     for (int i = 0; i < n; i++) {
       const int idx = idx_map_forward[i];
-      if (idx < graph_size) {
-        if (already_met.count(idx) == 1) {
-          idx_map_reverse.push_back(trash_index);
-        } else {
-          idx_map_reverse.push_back(idx);
-          already_met.insert(idx);
-        }
+      if (already_met.count(idx) == 1) {
+        idx_map_reverse.push_back(trash_index);
       } else {
         idx_map_reverse.push_back(idx);
+        already_met.insert(idx);
       }
     }
 
@@ -766,12 +767,18 @@ void PairE3GNNParallel::pack_forward_init(int n, int *list_send,
       // unknown atom, these are not used in computation in this process
       // instead, this process is used to hand over these atoms to other proecss
       // hold them in continuous manner for flexible tensor operations later
-      if (extra_graph_idx_map.find(list_i) != extra_graph_idx_map.end()) {
-        idx_map.push_back(extra_graph_idx_map[list_i]);
+      // keyed by tag: a self-swap copy of a relayed ghost shares its slot
+      // (keying by atom index here sent never-filled slots, i.e. zero
+      // features, when the unsplit direction lay between two split ones,
+      // e.g. processor grid 2x1x2)
+      auto it = extra_graph_idx_map.find(tag[list_i]);
+      if (it != extra_graph_idx_map.end()) {
+        idx_map.push_back(it->second);
       } else {
-        // unknown atom at pack forward, ghost atom outside cutoff?
-        extra_graph_idx_map[i] = graph_size + extra_graph_idx_map.size();
-        idx_map.push_back(extra_graph_idx_map[i]); // same as list_i in pack
+        // not received before (not expected): an empty slot
+        const long slot = graph_size + n_extra_slots++;
+        extra_graph_idx_map[tag[list_i]] = slot;
+        idx_map.push_back(slot);
       }
     }
   }
@@ -793,8 +800,16 @@ void PairE3GNNParallel::unpack_forward_init(int n, int first, int comm_phase) {
     if (graph_idx != -1) {
       idx_map.push_back(graph_idx);
     } else {
-      extra_graph_idx_map[i] = graph_size + extra_graph_idx_map.size();
-      idx_map.push_back(extra_graph_idx_map[i]); // same as list_i in pack
+      // one relay slot per tag, as for graph nodes: a second copy of the same
+      // atom (another image) reuses it
+      auto it = extra_graph_idx_map.find(tag[i]);
+      if (it != extra_graph_idx_map.end()) {
+        idx_map.push_back(it->second);
+      } else {
+        const long slot = graph_size + n_extra_slots++;
+        extra_graph_idx_map[tag[i]] = slot;
+        idx_map.push_back(slot);
+      }
     }
   }
 }
