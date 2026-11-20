@@ -168,7 +168,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                     model._modules[name] = MLIAPWrappedIrrepsLinear(module)
 
         model.set_is_batch_data(False)
-        if self.modal is not None:
+        if self.modal is not None and ghost_exchange:
             model.eval_modal_map = False
             model.prepare_modal_deploy(self.modal)  # set the fidelity of input data
 
@@ -194,7 +194,9 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         # the plain serial model: ghosts are folded to their owners
         model = self._build_model(ghost_exchange=False)
         model.requires_grad_(False)  # the force backward skips dE/dW
-        self.graph = MLIAPCudaGraph(model, self.device, self.cutoff)
+        self.graph = MLIAPCudaGraph(
+            model, self.device, self.cutoff, modal=self.modal
+        )
 
     # -------- unified entrypoint --------
     def compute_forces(self, lmp_data):
