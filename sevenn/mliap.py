@@ -144,11 +144,14 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             )
             and os.getenv('SEVENN_MLIAP_FUSED') != '0'
         ):
-            from sevenn.nn.lunatp_fused import fuse_radial_conv
+            from sevenn.nn.lunatp_fused import fold_modal, fuse_radial_conv
 
             model.requires_grad_(False)
             names = fuse_radial_conv(model)
             print(f'[INFO] fused radial + conv: {" ".join(names)}', flush=True)
+            if self.modal is not None and model.modal_map:
+                names = fold_modal(model, self.modal)
+                print(f'[INFO] modal folded: {" ".join(names)}', flush=True)
             model.prune_species = True  # by MLIAPCudaGraph, to the species seen
         if (
             getattr(self, 'use_radial_table', False)

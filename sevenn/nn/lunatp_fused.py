@@ -30,6 +30,7 @@ import torch.nn as nn
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
+from .linear import IrrepsLinear
 from .lunatp_helper import LunaTPConvolution, LunaTPSharedGraphConvolution
 from .radial_table import FoldedRadialMLP, _convolutions, _table
 from .self_connection import SelfConnectionIntro
@@ -591,3 +592,73 @@ def set_unique_cap(model: nn.Module, cap: Optional[int]) -> None:
     for module in model.modules():
         if isinstance(module, LunaTPFusedRadialConvolution):
             module.unique_cap = cap
+
+
+class ModalFoldedLinear(IrrepsLinear):
+    """
+    IrrepsLinear of a multi-modal model for one fixed modality: the modal
+    one-hot columns appended to the input (a copy of the whole input per
+    call) only add a constant to the scalar outputs, kept as modal_bias.
+    """
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        data[self.key_output] = self.linear(data[self.key_input]) + self.modal_bias
+        return data
+
+
+def fold_modal(model: nn.Module, modal: str) -> List[str]:
+    """
+    In place: every IrrepsLinear with modal input becomes a ModalFoldedLinear
+    of the modality given. The model then gives that modality whatever
+    data[KEY.DATA_MODALITY] says for these layers.
+    """
+    from e3nn.o3 import Irreps, Linear
+
+    index = model.modal_map[modal]
+    changed = []
+    for name, lin in model._modules.items():
+        if type(lin) is not IrrepsLinear or lin.num_modalities <= 1:
+            continue
+        if not lin.layer_instantiated:
+            continue
+        old = lin.linear
+        ref = old.weight
+        kwargs = {k: v for k, v in lin.linear_kwargs.items()}
+        ins_old = Linear(lin.irreps_in, lin.irreps_out, **kwargs).instructions
+        ins_new = Linear(
+            lin._irreps_in_wo_modal, lin.irreps_out, **kwargs
+        ).instructions
+        new = lin.linear_cls(
+            lin._irreps_in_wo_modal, lin.irreps_out, **kwargs
+        ).to(ref.device, ref.dtype)
+        chunks, offset = {}, 0
+        for ins in ins_old:
+            n = ins.path_shape[0] * ins.path_shape[1]
+            chunks[(ins.i_in, ins.i_out)] = (
+                ref.detach()[offset: offset + n], ins.path_weight
+            )
+            offset += n
+        assert offset == ref.numel()
+        pieces = []
+        for ins in ins_new:
+            w, path_weight = chunks[(ins.i_in, ins.i_out)]
+            pieces.append(w * (path_weight / ins.path_weight))
+        in_dim = Irreps(lin._irreps_in_wo_modal).dim
+        with torch.no_grad():
+            new.weight.copy_(torch.cat(pieces))
+            onehot = torch.zeros(
+                4, lin.num_modalities, device=ref.device, dtype=ref.dtype
+            )
+            onehot[:, index] = 1.0
+            zero = torch.zeros(4, in_dim, device=ref.device, dtype=ref.dtype)
+            bias = old(torch.cat([zero, onehot], 1))[0].clone()
+            x = torch.randn_like(zero)
+            a, b = old(torch.cat([x, onehot], 1)), new(x) + bias
+            if not torch.allclose(a, b, rtol=1e-4, atol=1e-5 * float(a.abs().max())):
+                raise RuntimeError(f'{name}: modal-folded linear differs')
+        new.requires_grad_(False)
+        lin.__class__ = ModalFoldedLinear
+        lin.linear = new
+        lin.register_buffer('modal_bias', bias)
+        changed.append(name)
+    return changed
