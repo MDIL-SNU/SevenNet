@@ -74,6 +74,11 @@ def add_args(parser):
         action='store_true',
     )
     ag.add_argument(
+        '--fused',
+        help='ML-IAP with LunaTP, one rank: frozen-model fused kernels.',
+        action='store_true',
+    )
+    ag.add_argument(
         '--cuda_graph',
         help='ML-IAP, one rank: replay a captured CUDA graph of the model call.',
         action='store_true',
@@ -95,6 +100,7 @@ def run(args):
     use_mliap = args.use_mliap
     cuda_graph = args.cuda_graph
     radial_table = args.radial_table
+    fused = args.fused
 
     # Check dependencies
     if use_flash:
@@ -127,10 +133,13 @@ def run(args):
     if use_lunatp and not use_mliap:
         raise ValueError('LunaTP is only supported in ML-IAP interface.')
 
-    if (cuda_graph or radial_table) and not use_mliap:
+    if (cuda_graph or radial_table or fused) and not use_mliap:
         raise ValueError(
-            'cuda_graph and radial_table are only supported in ML-IAP interface.'
+            'cuda_graph, radial_table and fused are only supported in ML-IAP '
+            'interface.'
         )
+    if fused and not use_lunatp:
+        raise ValueError('fused needs LunaTP (--enable_lunatp).')
 
     if use_mliap and get_parallel:
         raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
@@ -175,6 +184,7 @@ def run(args):
             use_lunatp=use_lunatp,
             use_cuda_graph=cuda_graph,
             use_radial_table=radial_table,
+            use_fused=fused,
         )
         torch.save(mliap_module, output_prefix)
 

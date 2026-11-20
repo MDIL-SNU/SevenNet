@@ -120,6 +120,7 @@ class MLIAPCudaGraph:
     # REPLAYS_PER_CAPTURE replays per capture so far, else eager for good
     FREE_CAPTURES = 4
     REPLAYS_PER_CAPTURE = 50
+    UNIQUE_NUM, UNIQUE_DEN = 9, 16
 
     def __init__(
         self,
@@ -160,6 +161,16 @@ class MLIAPCudaGraph:
         self._lunatp = any(
             isinstance(m, LunaTPConvolution) for m in model.modules()
         )
+        from sevenn.nn.lunatp_fused import LunaTPFusedRadialConvolution
+
+        # fused radial convolutions: weight rows per distinct edge length. A
+        # full neighbor list holds every length twice (i-j, j-i); the captured
+        # call has room for UNIQUE_NUM / UNIQUE_DEN of its edges, or for all
+        # of them once that was not enough
+        self._fused = any(
+            isinstance(m, LunaTPFusedRadialConvolution) for m in model.modules()
+        )
+        self._unique_all = False
 
     def _tick(self, phase: str, since: float) -> float:
         if self._times is None:
@@ -251,14 +262,26 @@ class MLIAPCudaGraph:
         else:
             self.n_replays += 1
 
-        with torch.no_grad():
-            entry['z'][:nlocal] = elems
-            vec = entry['edge_vec']
-            vec[:npairs] = torch.as_tensor(lmp_data.rij, device=dev)
-            vec[npairs:] = entry['pad_vec']
-        t = self._tick('copy_in', t)
-        entry['graph'].replay()
-        t = self._tick('replay', t)
+        for attempt in range(2):
+            with torch.no_grad():
+                entry['z'][:nlocal] = elems
+                vec = entry['edge_vec']
+                vec[:npairs] = torch.as_tensor(lmp_data.rij, device=dev)
+                vec[npairs:] = entry['pad_vec']
+            t = self._tick('copy_in', t)
+            entry['graph'].replay()
+            t = self._tick('replay', t)
+            if not self._fused or int(entry['n_unique']) <= entry['unique_cap']:
+                break
+            # more distinct edge lengths than weight rows: rows for all edges
+            if attempt == 1 or self._unique_all:
+                return self._disable('edge lengths do not fit the weight rows')
+            self._unique_all = True
+            entry = self._capture(nlocal, npairs, pair_i, src, elems)
+            self._entry = entry
+            if entry is None:
+                return self._disable('capture failed')
+            t = self._tick('capture', t)
 
         torch.as_tensor(lmp_data.eatoms).copy_(entry['e_atoms'])
         lmp_data.energy = entry['e_total']
@@ -278,6 +301,10 @@ class MLIAPCudaGraph:
         }
         if self.modal is not None:
             data[KEY.DATA_MODALITY] = self.modal
+        if self._fused:
+            from sevenn.nn.lunatp_fused import set_unique_cap
+
+            set_unique_cap(self.model, None)
         output = self.model(data)
         e_atoms = output[KEY.ATOMIC_ENERGY].view(-1)
         e_total = e_atoms.sum()
@@ -379,6 +406,17 @@ class MLIAPCudaGraph:
             entry['num_segments'] = num_segments
             entry['graph_tensors'] = _graph_tensors(graph)
 
+        unique_cap = 0
+        if self._fused:
+            from sevenn.nn.lunatp_fused import KEY_N_UNIQUE, set_unique_cap
+
+            unique_cap = num_edges
+            if not self._unique_all:
+                unique_cap = num_edges * self.UNIQUE_NUM // self.UNIQUE_DEN + 64
+            unique_cap = min(num_edges, unique_cap + unique_cap % 2)
+            set_unique_cap(self.model, unique_cap)
+        entry['unique_cap'] = unique_cap
+
         def run():
             data = {
                 KEY.EDGE_IDX: edge_index,
@@ -396,6 +434,7 @@ class MLIAPCudaGraph:
                 e_atoms.detach().to(torch.float64),
                 e_total.detach().to(torch.float64),
                 grad.to(torch.float64),
+                output[KEY_N_UNIQUE] if self._fused else None,
             )
 
         graph = torch.cuda.CUDAGraph()
@@ -409,7 +448,7 @@ class MLIAPCudaGraph:
                 run()  # warm-up: lazy inits, caches on the static inputs
                 graph.capture_begin()
                 try:
-                    e_atoms, e_total, pair_forces = run()
+                    e_atoms, e_total, pair_forces, n_unique = run()
                 finally:
                     graph.capture_end()
         except Exception as e:
@@ -421,5 +460,6 @@ class MLIAPCudaGraph:
             graph=graph, edge_index=edge_index, edge_vec=edge_vec, z=z,
             pad_vec=pad_vec, cand=edge_index.clone(),
             e_atoms=e_atoms, e_total=e_total, pair_forces=pair_forces,
+            n_unique=n_unique,
         )
         return entry
