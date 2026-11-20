@@ -26,8 +26,10 @@ More edges / segments / atoms than the capture holds: captured again with new
 room. Several ranks (a ghost owned by another rank): not supported, the
 caller runs the eager ghost-exchange model.
 """
+import atexit
 import dataclasses
 import os
+import time
 import warnings
 from typing import Any, Dict, List, Optional
 
@@ -143,6 +145,13 @@ class MLIAPCudaGraph:
         self.n_eager = 0
         self._entry: Optional[Dict[str, Any]] = None
         self._edge_room = self.EDGE_ROOM
+        # SEVENN_MLIAP_GRAPH_TIMING=1: wall time per phase of a call (a
+        # synchronize after each phase, so the call itself gets slower),
+        # printed at exit
+        self._times: Optional[Dict[str, float]] = None
+        if os.getenv('SEVENN_MLIAP_GRAPH_TIMING') == '1':
+            self._times = {}
+            atexit.register(self._print_times)
         self._stream = None
         # a value the owner of a ghost must return: another rank has another one
         self._token = float(int.from_bytes(os.urandom(6), 'little'))
@@ -151,6 +160,23 @@ class MLIAPCudaGraph:
         self._lunatp = any(
             isinstance(m, LunaTPConvolution) for m in model.modules()
         )
+
+    def _tick(self, phase: str, since: float) -> float:
+        if self._times is None:
+            return since
+        torch.cuda.synchronize(self.device)
+        now = time.perf_counter()
+        self._times[phase] = self._times.get(phase, 0.0) + now - since
+        return now
+
+    def _print_times(self) -> None:
+        n = max(1, self.n_replays)
+        total = sum(v for k, v in self._times.items() if k != 'capture')
+        print(f'[SevenNet] CUDA graph phases, ms per replay ({n} replays, '
+              f'{self.n_refreshes} refreshes, {self.n_captures} captures):')
+        for k, v in self._times.items():
+            print(f'  {k:10s} {v / n * 1e3:8.3f}')
+        print(f'  {"sum":10s} {total / n * 1e3:8.3f}  (without capture)', flush=True)
 
     # ---- per call ----------------------------------------------------------
     def _owners(self, lmp_data, nlocal: int, ntotal: int):
@@ -171,7 +197,9 @@ class MLIAPCudaGraph:
         if npairs <= 1 or nlocal == 0:
             return False
         dev = self.device
+        t = time.perf_counter()
         owner, foreign = self._owners(lmp_data, nlocal, ntotal)
+        t = self._tick('owners', t)
         pair_i = torch.as_tensor(lmp_data.pair_i, device=dev)
         pair_j = torch.as_tensor(lmp_data.pair_j, device=dev)
         src = owner.index_select(0, pair_j.to(torch.int64))
@@ -193,10 +221,12 @@ class MLIAPCudaGraph:
             flags = torch.stack(
                 [foreign, (cand != entry['edge_index']).any()]
             ).tolist()  # the one host sync before the replay
+            t = self._tick('edges', t)
             if flags[0]:
                 return self._disable('a ghost atom is owned by another rank')
             if flags[1] and not self._refresh(entry, cand):
                 fits = False
+            t = self._tick('refresh', t)
         elif bool(foreign):
             return self._disable('a ghost atom is owned by another rank')
         if not fits:
@@ -217,6 +247,7 @@ class MLIAPCudaGraph:
                     f'(room {entry["num_edges"]}), capture {self.n_captures}',
                     flush=True,
                 )
+            t = self._tick('capture', t)
         else:
             self.n_replays += 1
 
@@ -225,11 +256,14 @@ class MLIAPCudaGraph:
             vec = entry['edge_vec']
             vec[:npairs] = torch.as_tensor(lmp_data.rij, device=dev)
             vec[npairs:] = entry['pad_vec']
+        t = self._tick('copy_in', t)
         entry['graph'].replay()
+        t = self._tick('replay', t)
 
         torch.as_tensor(lmp_data.eatoms).copy_(entry['e_atoms'])
         lmp_data.energy = entry['e_total']
         lmp_data.update_pair_forces_gpu(entry['pair_forces'])
+        self._tick('outputs', t)
         return True
 
     def _eager(self, lmp_data, nlocal, pair_i, src, elems) -> bool:

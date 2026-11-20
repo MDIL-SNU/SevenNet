@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Support LunaTP (`enable_lunatp`, LunaEquivariance 0.3.0). LAMMPS through ML-IAP only.
 - LunaTP kernels compile in parallel processes when a model is built (`SEVENNET_LUNATP_PRECOMPILE_WORKERS`, `0` to turn off)
 - Hybrid Muon optimizer (`optimizer: muon`): Muon for e3nn linear and radial weight matrices, auxiliary Adam for the rest
+- LAMMPS ML-IAP, one rank: `sevenn get_model --use_mliap --cuda_graph` (or `SEVENN_MLIAP_CUDA_GRAPH=1` with an existing potential file) replays a captured CUDA graph of the model call (LunaTP and e3nn backends). One capture serves an MD run: ghosts are folded to their owners (the plain serial model is called, no ghost exchange), the pair list is padded to a fixed number of edges with self-loops on fake atoms, and a changed pair list (LunaTP graph tables, with source segments padded by empty ones) is copied in. `SEVENN_MLIAP_FOLD_EAGER=1` runs the same folded model without a capture. Several ranks: turns itself off (eager ghost-exchange model)
 
 ### Changed
 - The default dtype of the rescale layer is changed to double precision. Use the `SEVENN_SHIFT_SCALE_DTYPE` environment variable for backward single-precision compatibility.
