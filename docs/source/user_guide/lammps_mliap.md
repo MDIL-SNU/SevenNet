@@ -132,6 +132,11 @@ sevenn get_model \
 ```
 
 
+- With ``--cuda_graph`` (one MPI rank; LunaTP or no accelerator), the model call is captured once as a CUDA graph and replayed every step. This removes the per-kernel launch overhead that bounds small systems; large systems, bound by the kernels themselves, gain little. With several ranks it turns itself off. An existing potential file can be switched with the environment variable ``SEVENN_MLIAP_CUDA_GRAPH=1`` (``0`` forces it off).
+```bash
+sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp --cuda_graph
+```
+
 ### Single-GPU MD
 Below is an example snippet of a LAMMPS script for using SevenNet models with ML-IAP:
 ```text

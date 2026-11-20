@@ -8,6 +8,7 @@ All notable changes to this project will be documented in this file.
 - Dataset type: `aselmdb`, `custom`
 - SevenNet-Nano checkpoints for `7net-nano-4.5`, `7net-nano-5.0`, `7net-nano-5.5`, and `7net-nano-6.0`
 - Support LunaTP (`enable_lunatp`). LAMMPS through ML-IAP only.
+- LAMMPS ML-IAP, one rank: `sevenn get_model --use_mliap --cuda_graph` (or `SEVENN_MLIAP_CUDA_GRAPH=1` with an existing potential file) replays a captured CUDA graph of the model call (LunaTP and e3nn backends). One capture serves an MD run: ghosts are folded to their owners (the plain serial model is called, no ghost exchange), the pair list is padded to a fixed number of edges with self-loops on fake atoms, and a changed pair list (LunaTP graph tables, with source segments padded by empty ones) is copied in. `SEVENN_MLIAP_FOLD_EAGER=1` runs the same folded model without a capture. Several ranks: turns itself off (eager ghost-exchange model)
 - `cuda_graph` option of `SevenNetCalculator`: the model call is captured once and replayed for calls with the same atoms; a changed edge index is copied in and the edges are padded with self-loops at r_c (checked to change nothing), so one capture serves an MD run; a thrash guard stops captures that do not pay back
 
 ### Changed
