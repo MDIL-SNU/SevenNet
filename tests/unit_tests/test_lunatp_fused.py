@@ -96,3 +96,29 @@ def test_fused_half_weights(tmp_path):
         ref = _serial_f32(cp, atoms)
     err = float(abs(par[1] - ref[1]).max())
     assert 0.0 < err < 2e-2 * float(abs(ref[1]).max())
+
+
+@pytest.mark.parametrize('lmax', [1, 2, 3, 4])
+def test_fused_edge_geometry(lmax):
+    """one-kernel edge length + spherical harmonics and their backward"""
+    import sevenn._keys as KEY
+    from sevenn.nn.edge_embedding import SphericalEncoding
+    from sevenn.nn.lunatp_fused import FusedEdgeGeometry
+
+    class _Emb:
+        spherical = SphericalEncoding(lmax)
+
+    geo = FusedEdgeGeometry(_Emb())
+    torch.manual_seed(0)
+    v = (torch.randn(500, 3, device='cuda') * 2.0).requires_grad_(True)
+    out = geo({KEY.EDGE_VEC: v})
+    r, y = out[KEY.EDGE_LENGTH], out[KEY.EDGE_ATTR]
+    gr, gy = torch.randn_like(r), torch.randn_like(y)
+    (g,) = torch.autograd.grad([r, y], v, [gr, gy])
+    v64 = v.detach().double().requires_grad_(True)
+    y64 = _Emb.spherical.double().to('cuda')(v64)
+    r64 = v64.norm(dim=-1)
+    (g64,) = torch.autograd.grad([r64, y64], v64, [gr.double(), gy.double()])
+    assert torch.allclose(y.double(), y64, atol=2e-6)
+    assert torch.allclose(r.double(), r64, atol=2e-6)
+    assert torch.allclose(g.double(), g64, atol=1e-5 * float(g64.abs().max()))
