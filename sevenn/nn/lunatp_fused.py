@@ -16,8 +16,8 @@ the MLP's backward). Here
 
 With knots > 0 (fuse_radial_conv) there is no per-call weight array at all:
 the kernels interpolate each weight (cubic Hermite in r) from a table of the
-MLP at fixed knots, (K, 3 W) floats that stay mostly in the GPU cache, and
-take dw/dr from the same loads. The kernels are then bound by arithmetic, not
+MLP at fixed knots, (K - 1, W, 4) floats that stay mostly in the GPU cache,
+and take dw/dr from the same load. The kernels are then bound by arithmetic, not
 by memory traffic, and the last-layer GEMM is gone.
 
 The kernels are LunaEquivariance's generated uvu_conv forward and first-order
@@ -73,22 +73,22 @@ def _closing(text: str, start: int) -> int:
     return pos - 1
 
 
-# cubic Hermite weights of one edge from the knot rows k, k + 1 of a table
-# (K, 3 W) [w | h dw/dr | w(k + 1) - w(k)]: w(t) = w_k + hc1 dw_k + hc2 d_k
-# + hc3 d_k+1 (the difference of the knot values is in the table, not taken
-# in fp32: the r-derivative has no cancellation). (k, t) of edge e are the
-# int32 pair rid[2 e], bits of the float t in the second
-_HERMITE = (
-    'const int hk_ = {k}; const float ht_ = __int_as_float({t}); '
-    'const float ht2_ = ht_ * ht_; const float ht3_ = ht2_ * ht_; '
-    'const float hc1 = 3.0f * ht2_ - 2.0f * ht3_, '
-    'hc2 = ht_ - 2.0f * ht2_ + ht3_, hc3 = ht3_ - ht2_;'
-)
-# h * d/dr of the above
-_HERMITE_D = (
-    ' const float hd1 = 6.0f * ht_ - 6.0f * ht2_, '
-    'hd2 = 1.0f - 4.0f * ht_ + 3.0f * ht2_, hd3 = 3.0f * ht2_ - 2.0f * ht_;'
-)
+# weights of one edge from a table (K - 1, W, 4): the cubic in t of each weight
+# on each knot interval (the Hermite interpolant of w and dw/dr at the knots),
+# one 16 byte load per weight. (k, t) of edge e are the int32 pair rid[2 e],
+# bits of the float t in the second
+_CUBIC = """
+static __forceinline__ __device__ float sevenn_w(const float* p, float t) {
+    const float4 a = __ldg(reinterpret_cast<const float4*>(p));
+    return fmaf(t, fmaf(t, fmaf(t, a.w, a.z), a.y), a.x);
+}
+// h * dw/dr
+static __forceinline__ __device__ float sevenn_dw(const float* p, float t) {
+    const float4 a = __ldg(reinterpret_cast<const float4*>(p));
+    return fmaf(t, fmaf(t, 3.0f * a.w, 2.0f * a.z), a.y);
+}
+"""
+_KNOT = 'const int hk_ = {k}; const float ht_ = __int_as_float({t});'
 
 
 def forward_source(op, half: bool = False, hermite: bool = False) -> str:
@@ -136,24 +136,20 @@ def forward_source(op, half: bool = False, hermite: bool = False) -> str:
     )
     if hermite:
         assert not half
-        w = int(op.weight_numel)
         src = _sub(
             r'const float\* weight_edge = weight \+ '
             r'static_cast<uint64_t>\(rid\[e\]\) \* \d+;',
-            _HERMITE.format(k='rid[2 * e]', t='rid[2 * e + 1]')
+            _KNOT.format(k='rid[2 * e]', t='rid[2 * e + 1]')
             + ' const float* weight_edge = weight + '
-            f'static_cast<uint64_t>(hk_) * {3 * w};', src,
+            f'static_cast<uint64_t>(hk_) * {4 * int(op.weight_numel)};', src,
         )
         src = _sub(
             r'= weight_edge\[(\d+) \+ u\];',
-            rf'= weight_edge[\1 + u] + hc1 * weight_edge[\1 + u + {2 * w}]'
-            rf' + hc2 * weight_edge[\1 + u + {w}]'
-            rf' + hc3 * weight_edge[\1 + u + {4 * w}];', src,
+            r'= sevenn_w(weight_edge + 4 * (\1 + u), ht_);', src,
         )
-        if len(re.findall(r'weight_edge\[', src)) != 4 * len(
-            re.findall(r' \+ hc3 \* weight_edge\[', src)
-        ):
+        if 'weight_edge[' in src:
             raise RuntimeError('LunaTP source patch: unknown weight read')
+        src = _CUBIC + src
     if half:  # weight rows stored as fp16
         src = _sub(r'const float ?\*(?: ?__restrict__)? weight\b',
                    'const __half* __restrict__ weight', src, count=2)
@@ -244,42 +240,33 @@ def backward_source(op, half: bool = False, hermite: bool = False):
     )
     if hermite:
         assert not half
-        w = int(op.weight_numel)
 
-        def comb(c, at):
-            return '(' + (f'__ldg(weight + wb + {at} + 0) + ' if c == 'hc' else '') \
-                + ' + '.join(
-                    f'{c}{n} * __ldg(weight + wb + {at} + {off})'
-                    for n, off in ((1, 2 * w), (2, w), (3, 4 * w))
-                ) + ')'
+        def at(m, f, extra=''):
+            return f'{f}(weight + 4 * (wb + {m.group(1)} + u{extra}), ht_)'
 
         src = _sub(
             'const INDEX wb = INDEX(__ldg(rid + e)) * W_DIM; float gr_e = 0.0f;',
-            _HERMITE.format(k='__ldg(rid + 2 * e)', t='__ldg(rid + 2 * e + 1)')
-            + _HERMITE_D
-            + ' const INDEX wb = INDEX(hk_) * (3 * W_DIM); float gr_e = 0.0f;',
+            _KNOT.format(k='__ldg(rid + 2 * e)', t='__ldg(rid + 2 * e + 1)')
+            + ' const INDEX wb = INDEX(hk_) * W_DIM; float gr_e = 0.0f;',
             src, regex=False,
         )
         src = re.sub(
             r'__ldg\(reinterpret_cast<const float2\*>'
             r'\(weight \+ wb \+ (\d+) \+ u\)\)',
-            lambda m: 'make_float2(' + comb('hc', f'{m.group(1)} + u') + ', '
-            + comb('hc', f'{m.group(1)} + u + 1') + ')', src,
+            lambda m: f'make_float2({at(m, "sevenn_w")}, '
+            f'{at(m, "sevenn_w", " + 1")})', src,
         )
         src = re.sub(
             r'__ldg\(weight \+ wb \+ (\d+) \+ u\)',
-            lambda m: comb('hc', f'{m.group(1)} + u'), src,
+            lambda m: at(m, 'sevenn_w'), src,
         )
         src = _sub(
             r'__ldg\(grad_weight \+ wb \+ (\d+) \+ u( \+ 1)?\)',
-            lambda m: comb('hd', f'{m.group(1)} + u{m.group(2) or ""}'), src,
+            lambda m: at(m, 'sevenn_dw', m.group(2) or ''), src,
         )
-        reads = len(re.findall(r'weight \+ wb', src))
-        if 'grad_weight + wb' in src or reads != (
-            4 * len(re.findall(r'hc3 \* __ldg\(weight \+ wb', src))
-            + 3 * len(re.findall(r'hd3 \* __ldg\(weight \+ wb', src))
-        ):
-            raise RuntimeError('LunaTP source patch: Hermite weight reads')
+        if 'grad_weight + wb' in src or re.search(r'[^(]weight \+ wb', src):
+            raise RuntimeError('LunaTP source patch: table weight reads')
+        src = _CUBIC + src
     if half:  # weight rows (w and dw/dr) stored as fp16
         src = _sub('const float* __restrict__ weight,',
                    'const __half* __restrict__ weight,', src, count=1, regex=False)
@@ -666,6 +653,8 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             return data
         r = data[KEY.EDGE_LENGTH]
         if self.knots:
+            if self.rad_table.numel() >= 2**31:
+                raise RuntimeError('too many knots for the fused radial kernels')
             rid, wbuf = self._knots(data), self.rad_table
         else:
             rid, ru = self._unique(data, self.unique_cap)
@@ -689,9 +678,10 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
 
 def weight_table(conv, emb, r_min: float, cutoff: float, knots: int):
     """
-    (table (K, 3 W) fp64 [w | h dw/dr | w(next knot) - w] of conv's radial
-    MLP at K knots on [r_min, cutoff], h): conv after _setup (folded fp64
-    weights)
+    (table (K - 1, W, 4) fp64, h): on each of the intervals of K knots on
+    [r_min, cutoff], the cubic in t = (r - r_k) / h of every weight of conv's
+    radial MLP that has the MLP's value and r-derivative at both knots. conv
+    after _setup (folded fp64 weights)
     """
     emb64 = copy.deepcopy(emb).to('cpu', torch.float64)
     f = conv._folded64
@@ -703,9 +693,11 @@ def weight_table(conv, emb, r_min: float, cutoff: float, knots: int):
     r = torch.linspace(r_min, cutoff, knots, dtype=torch.float64)
     h = (cutoff - r_min) / (knots - 1)
     v, dv = torch.autograd.functional.jvp(radial, r, torch.ones_like(r))
-    dif = torch.zeros_like(v)
-    dif[:-1] = v[1:] - v[:-1]
-    return torch.cat([v, dv * h, dif], 1).detach(), h
+    v, d = v.detach(), dv.detach() * h
+    dif = v[1:] - v[:-1]
+    a2 = 3.0 * dif - 2.0 * d[:-1] - d[1:]
+    a3 = -2.0 * dif + d[:-1] + d[1:]
+    return torch.stack([v[:-1], d[:-1], a2, a3], 2), h
 
 
 def fuse_radial_conv(
