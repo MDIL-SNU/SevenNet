@@ -62,6 +62,64 @@ def _graph_tensors(graph) -> List[torch.Tensor]:
     return out
 
 
+_PREP_SOURCE = r"""
+#include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
+namespace {
+// one step's bookkeeping before a replay: the edge index of the pairs (ghosts
+// folded to their owners) padded with self-loops on the fake atoms, and
+// flags[0] a ghost of another rank, [1] the edge index differs from ref,
+// [2] a species that is not allowed, [3] number of pairs between atoms
+// closer than near in index
+__global__ void sevenn_mliap_prep_kernel(
+    const double* __restrict__ recv, const int32_t* __restrict__ pair_i,
+    const int32_t* __restrict__ pair_j, const int32_t* __restrict__ elems,
+    const bool* __restrict__ allowed, const int64_t* __restrict__ ref,
+    int64_t* __restrict__ cand, int32_t* __restrict__ flags, double token,
+    int64_t nlocal, int64_t ntotal, int64_t npairs, int64_t edges,
+    int64_t num_fake, int64_t near, bool prune) {
+    const int64_t p = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (p < edges) {
+        int64_t a, b;
+        if (p < npairs) {
+            a = pair_i[p];
+            b = int64_t(recv[2 * int64_t(pair_j[p])]);
+            const int64_t d = a > b ? a - b : b - a;
+            if (d < near) atomicAdd(flags + 3, 1);
+        } else {
+            a = b = nlocal + ((p - npairs) * num_fake) / (edges - npairs);
+        }
+        cand[p] = a;
+        cand[edges + p] = b;
+        if (a != ref[p] || b != ref[edges + p]) flags[1] = 1;
+    }
+    if (p < ntotal && recv[2 * p + 1] != token) flags[0] = 1;
+    if (prune && p < nlocal && !allowed[elems[p]]) flags[2] = 1;
+}
+}  // namespace
+void sevenn_mliap_prep(torch::Tensor recv, torch::Tensor pair_i,
+                       torch::Tensor pair_j, torch::Tensor elems,
+                       torch::Tensor allowed, torch::Tensor ref,
+                       torch::Tensor cand, torch::Tensor flags, double token,
+                       int64_t nlocal, int64_t npairs, int64_t num_fake,
+                       int64_t near, bool prune) {
+    const int64_t ntotal = recv.size(0), edges = cand.size(1);
+    const int64_t n = std::max(edges, ntotal);
+    if (n == 0) return;
+    sevenn_mliap_prep_kernel<<<(n + 255) / 256, 256, 0,
+        at::cuda::getCurrentCUDAStream()>>>(
+        recv.data_ptr<double>(), pair_i.data_ptr<int32_t>(),
+        pair_j.data_ptr<int32_t>(), elems.data_ptr<int32_t>(),
+        allowed.data_ptr<bool>(), ref.data_ptr<int64_t>(),
+        cand.data_ptr<int64_t>(), flags.data_ptr<int32_t>(), token, nlocal,
+        ntotal, npairs, edges, num_fake, near, prune);
+}
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("sevenn_mliap_prep", &sevenn_mliap_prep);
+}
+"""
+
+
 def _make_graph(edge_index: torch.Tensor, num_nodes: int, segment_edges: int):
     """make_graph with source segments of at most segment_edges (0: LunaTP's)"""
     import LunaEquivariance.lunatp.graph as luna_graph
@@ -192,6 +250,17 @@ class MLIAPCudaGraph:
         # (lunatp_fused.prune_self_connection); a new species prunes again
         self._prune = bool(getattr(model, 'prune_species', False))
         self._owner_buf = None
+        # the step bookkeeping as one kernel (built by LunaEquivariance's JIT)
+        self._prep = None
+        if self._lunatp and device.type == 'cuda' and (
+            os.getenv('SEVENN_MLIAP_GRAPH_PREP', '1') != '0'
+        ):
+            try:
+                from sevenn.nn.lunatp_fused import _load_cuda
+
+                self._prep = _load_cuda('sevenn_mliap_prep', _PREP_SOURCE)
+            except Exception as e:  # no compiler: the torch operations
+                warnings.warn(f'ML-IAP step kernel not built: {e}')
         self._allowed = torch.zeros(256, dtype=torch.bool, device=device)
 
     def _tick(self, phase: str, since: float) -> float:
@@ -226,7 +295,42 @@ class MLIAPCudaGraph:
             buf = self._owner_buf = ((nlocal, ntotal), send, torch.empty_like(send))
         _, send, recv = buf  # send is constant for (nlocal, ntotal)
         lmp_data.forward_exchange(send, recv, 2)
-        return recv[:, 0].to(torch.int64), (recv[:, 1] != self._token).any()
+        return recv
+
+    def _prepare(self, lmp_data, entry, recv, nlocal: int, npairs: int):
+        """
+        One kernel for the step's bookkeeping when the captured call may fit:
+        fills entry['cand'], returns [foreign, changed, unseen, reorder] (one
+        host sync), or None if the kernel does not apply.
+        """
+        if self._prep is None:
+            return None
+        dev = self.device
+        pair_i = torch.as_tensor(lmp_data.pair_i, device=dev)
+        pair_j = torch.as_tensor(lmp_data.pair_j, device=dev)
+        elems = torch.as_tensor(lmp_data.elems, device=dev)
+        if not (
+            pair_i.dtype == pair_j.dtype == elems.dtype == torch.int32
+            and pair_i.is_contiguous() and pair_j.is_contiguous()
+            and elems.is_contiguous()
+        ):
+            return None
+        flags = entry.get('flags')
+        if flags is None:
+            flags = entry['flags'] = torch.zeros(4, dtype=torch.int32, device=dev)
+        else:
+            flags.zero_()
+        self._prep.sevenn_mliap_prep(
+            recv, pair_i, pair_j, elems, self._allowed, entry['edge_index'],
+            entry['cand'], flags, self._token, nlocal, npairs,
+            entry['num_fake'], max(1, nlocal // 4), self._prune,
+        )
+        foreign, changed, unseen, near = flags.tolist()  # the one host sync
+        reorder = False
+        if self._fused and nlocal >= self.INDEX_ORDER_MIN_ATOMS:
+            coherent = near / npairs > self.INDEX_ORDER_COHERENCE
+            reorder = coherent != entry['index_order']
+        return [bool(foreign), bool(changed), bool(unseen), reorder]
 
     def compute(self, lmp_data) -> bool:
         if not self.enabled:
@@ -236,15 +340,31 @@ class MLIAPCudaGraph:
             return False
         dev = self.device
         t = time.perf_counter()
-        owner, foreign = self._owners(lmp_data, nlocal, ntotal)
+        recv = self._owners(lmp_data, nlocal, ntotal)
         t = self._tick('owners', t)
-        pair_i = torch.as_tensor(lmp_data.pair_i, device=dev)
-        pair_j = torch.as_tensor(lmp_data.pair_j, device=dev)
-        src = owner.index_select(0, pair_j.to(torch.int64))
+        entry = self._entry
+        fits = (
+            entry is not None
+            and entry['nlocal'] == nlocal
+            and npairs <= entry['num_edges']
+        )
+        flags = None
+        if fits and not self.eager_fold:
+            flags = self._prepare(lmp_data, entry, recv, nlocal, npairs)
         elems = torch.as_tensor(lmp_data.elems, device=dev)[:nlocal]
-        unseen = foreign
-        if self._prune:
-            unseen = (~self._allowed[elems.to(torch.int64)]).any()
+        if flags is not None:
+            cand = entry['cand']  # filled: the pairs, ghosts as their owners
+            pair_i, src = cand[0, :npairs], cand[1, :npairs]
+            foreign = unseen = None
+        else:
+            owner = recv[:, 0].to(torch.int64)
+            foreign = (recv[:, 1] != self._token).any()
+            pair_i = torch.as_tensor(lmp_data.pair_i, device=dev)
+            pair_j = torch.as_tensor(lmp_data.pair_j, device=dev)
+            src = owner.index_select(0, pair_j.to(torch.int64))
+            unseen = foreign
+            if self._prune:
+                unseen = (~self._allowed[elems.to(torch.int64)]).any()
         if self.eager_fold:
             if bool(foreign):
                 return self._disable('a ghost atom is owned by another rank')
@@ -252,26 +372,21 @@ class MLIAPCudaGraph:
                 self._new_species(elems)
             return self._eager(lmp_data, nlocal, pair_i, src, elems)
 
-        entry = self._entry
-        fits = (
-            entry is not None
-            and entry['nlocal'] == nlocal
-            and npairs <= entry['num_edges']
-        )
         if fits:
             cand = entry['cand']
-            self._fill_edge_index(cand, pair_i, src, npairs, entry)
-            reorder = foreign
-            if self._fused and nlocal >= self.INDEX_ORDER_MIN_ATOMS:
-                # the atom order became (in)coherent, e.g. LAMMPS sorted
-                d = (cand[0, :npairs] - cand[1, :npairs]).abs()
-                coherent = (d < nlocal // 4).float().mean() > (
-                    self.INDEX_ORDER_COHERENCE
-                )
-                reorder = coherent != entry['index_order']
-            flags = torch.stack(
-                [foreign, (cand != entry['edge_index']).any(), unseen, reorder]
-            ).tolist()  # the one host sync before the replay
+            if flags is None:
+                self._fill_edge_index(cand, pair_i, src, npairs, entry)
+                reorder = foreign
+                if self._fused and nlocal >= self.INDEX_ORDER_MIN_ATOMS:
+                    # the atom order became (in)coherent, e.g. LAMMPS sorted
+                    d = (cand[0, :npairs] - cand[1, :npairs]).abs()
+                    coherent = (d < nlocal // 4).float().mean() > (
+                        self.INDEX_ORDER_COHERENCE
+                    )
+                    reorder = coherent != entry['index_order']
+                flags = torch.stack(
+                    [foreign, (cand != entry['edge_index']).any(), unseen, reorder]
+                ).tolist()  # the one host sync before the replay
             t = self._tick('edges', t)
             if flags[0]:
                 return self._disable('a ghost atom is owned by another rank')
