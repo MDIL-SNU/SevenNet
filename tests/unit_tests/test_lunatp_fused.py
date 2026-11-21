@@ -13,7 +13,8 @@ import torch
 
 from sevenn.nn._mliap_cuda_graph import MLIAPCudaGraph
 from tests.unit_tests.test_arch_options import ARCHS
-from tests.unit_tests.test_mliap_cuda_graph import _compute, _moved
+from tests.unit_tests.test_mliap_cuda_graph import _compute as _compute_i64
+from tests.unit_tests.test_mliap_cuda_graph import _moved
 from tests.unit_tests.test_model import cutoff
 from tests.unit_tests.test_parallel_consistency import (
     GPU_CONFIGS,
@@ -33,6 +34,15 @@ pytestmark = pytest.mark.skipif(
     not (torch.cuda.is_available() and _backend_available('lunatp')),
     reason='needs CUDA and LunaTP',
 )
+
+
+def _compute(graph, lmp):
+    """int32 pair lists and types as LAMMPS gives them: the one-kernel step
+    bookkeeping of MLIAPCudaGraph (the emulation's are int64)"""
+    lmp.pair_i = lmp.pair_i.astype(np.int32)
+    lmp.pair_j = lmp.pair_j.astype(np.int32)
+    lmp.elems = lmp.elems.astype(np.int32)
+    _compute_i64(graph, lmp)
 
 
 def _fused_graph(cp, half_weights=False, knots=0):
@@ -79,6 +89,7 @@ def test_fused_mliap_cuda_graph(tmp_path, name, knots):
             _assert_close_f32(par, _serial_f32(cp, moved), (name, knots, step))
     assert graph.enabled
     assert graph.n_captures == 1 and graph.n_replays == 3
+    assert graph._prep is not None and 'flags' in graph._entry  # step kernel
     if name == 'nequip_sc':
         from sevenn.nn.lunatp_fused import PrunedSelfConnectionIntro
 
