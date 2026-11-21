@@ -173,6 +173,17 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             if self.modal is not None and model.modal_map:
                 names = fold_modal(model, self.modal)
                 print(f'[INFO] modal folded: {" ".join(names)}', flush=True)
+            if knots and os.getenv('SEVENN_MLIAP_FUSED_FIRST', '1') != '0':
+                from sevenn.nn.lunatp_fused import collapse_first_layer
+
+                reference = self.cp.build_model()
+                reference.delete_module_by_key('force_output')
+                names = collapse_first_layer(model, reference, self.modal)
+                if names:
+                    print(
+                        f'[INFO] first layer as radial tables: {" ".join(names)}',
+                        flush=True,
+                    )
             model.prune_species = True  # by MLIAPCudaGraph, to the species seen
         if (
             getattr(self, 'use_radial_table', False)

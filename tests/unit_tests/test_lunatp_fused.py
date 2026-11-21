@@ -48,6 +48,12 @@ def _fused_graph(cp, half_weights=False, knots=0):
     modal = MODAL if model.modal_map else None
     if modal is not None:
         fold_modal(model, modal)
+    if knots:  # the first layer as per-species radial tables, where it applies
+        from sevenn.nn.lunatp_fused import collapse_first_layer
+
+        reference, _ = model_from_checkpoint(str(cp))
+        reference.delete_module_by_key('force_output')
+        names = names + collapse_first_layer(model, reference, modal)
     model.prune_species = True
     return MLIAPCudaGraph(model, torch.device('cuda'), cutoff, modal=modal), names
 
@@ -82,6 +88,13 @@ def test_fused_mliap_cuda_graph(tmp_path, name, knots):
         ]
         n_species = len(set(atoms.numbers.tolist()))
         assert pruned and all(m.columns.numel() == n_species for m in pruned)
+        if knots:
+            from sevenn.nn.lunatp_fused import FusedFirstLayer
+
+            first = [
+                m for m in graph.model.modules() if isinstance(m, FusedFirstLayer)
+            ]
+            assert first and len(first[0].columns) == n_species
 
 
 def test_fused_half_weights(tmp_path):

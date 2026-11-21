@@ -867,10 +867,24 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             data[KEY_N_UNIQUE] = torch.zeros((), dtype=torch.int64, device=r.device)
         return rid
 
+    def _graph(self, data: AtomGraphDataType, num_nodes: int):
+        """(edge order or None, LunaTP uvu tables) of the call's edge index"""
+        import LunaEquivariance.lunatp.graph as luna_graph
+
+        edge_index = data[self.key_edge_idx]
+        if not _SEGMENT_EDGES:
+            _SEGMENT_EDGES.append(luna_graph._SOURCE_SEGMENT_EDGES)
+        small = edge_index.shape[1] < SMALL_GRAPH_EDGES
+        luna_graph._SOURCE_SEGMENT_EDGES = 8 if small else _SEGMENT_EDGES[0]
+        order, graph = LunaTPConvolution.get_graph(
+            edge_index, edge_index[1], edge_index[0], num_nodes
+        )
+        luna_graph._SOURCE_SEGMENT_EDGES = _SEGMENT_EDGES[0]
+        return order, graph._tables[('uvu', 32)]
+
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         x = data[self.key_x]
         edge_src = data[self.key_edge_idx][1]
-        edge_dst = data[self.key_edge_idx][0]
         y = data[self.key_filter]
         if edge_src.numel() == 0:
             data[self.key_x] = (
@@ -887,19 +901,9 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             if ru.shape[0] * self.rad_w2.shape[1] >= 2**31:
                 raise RuntimeError('too many edges for the fused radial kernels')
             wbuf = self._weights(data, ru)
-        import LunaEquivariance.lunatp.graph as luna_graph
-
-        if not _SEGMENT_EDGES:
-            _SEGMENT_EDGES.append(luna_graph._SOURCE_SEGMENT_EDGES)
-        small = edge_src.numel() < SMALL_GRAPH_EDGES
-        luna_graph._SOURCE_SEGMENT_EDGES = 8 if small else _SEGMENT_EDGES[0]
-        order, graph = LunaTPConvolution.get_graph(
-            data[self.key_edge_idx], edge_src, edge_dst, x.shape[0]
-        )
-        luna_graph._SOURCE_SEGMENT_EDGES = _SEGMENT_EDGES[0]
+        order, tables = self._graph(data, x.shape[0])
         if order is not None:
             y, r, rid = y[order], r[order], rid[order]
-        tables = graph._tables[('uvu', 32)]
         if self.index_order and not self.convolution.tp_conv.op.forward_degree_tiers:
             tables = _index_order(tables)
         data[self.key_x] = _FusedConv.apply(
@@ -926,11 +930,369 @@ def weight_table(conv, emb, r_min: float, cutoff: float, knots: int):
     r = torch.linspace(r_min, cutoff, knots, dtype=torch.float64)
     h = (cutoff - r_min) / (knots - 1)
     v, dv = torch.autograd.functional.jvp(radial, r, torch.ones_like(r))
-    v, d = v.detach(), dv.detach() * h
+    return _cubics(v.detach(), dv.detach() * h), h
+
+
+def _cubics(v: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
+    """(K - 1, W, 4): the Hermite cubics in t of values v, slopes d (K, W)"""
     dif = v[1:] - v[:-1]
     a2 = 3.0 * dif - 2.0 * d[:-1] - d[1:]
     a3 = -2.0 * dif + d[:-1] + d[1:]
-    return torch.stack([v[:-1], d[:-1], a2, a3], 2), h
+    return torch.stack([v[:-1], d[:-1], a2, a3], 2)
+
+
+_FIRST_SOURCE = r"""
+#include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
+namespace {
+static __forceinline__ __device__ float4 cubic(const float* table, int64_t at) {
+    return __ldg(reinterpret_cast<const float4*>(table + at * 4));
+}
+// out[i, block of c] = sum over the edges into i of G[species of the source,
+// c](r) * Y[block of c]
+__global__ void sevenn_first_fwd_kernel(
+    const float* __restrict__ y, const int32_t* __restrict__ rid,
+    const int32_t* __restrict__ src, const int32_t* __restrict__ slot,
+    const int32_t* __restrict__ rowptr, const float* __restrict__ table,
+    const int32_t* __restrict__ meta, float* __restrict__ out, int64_t n,
+    int C, int K1, int YD, int OD) {
+    const int64_t idx = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (idx >= n * C) return;
+    const int64_t i = idx / C;
+    const int c = int(idx - i * C);
+    const int yo = meta[3 * c], oo = meta[3 * c + 1], d = meta[3 * c + 2];
+    float acc[7] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    for (int e = rowptr[i]; e < rowptr[i + 1]; ++e) {
+        const int k = rid[2 * e];
+        const float t = __int_as_float(rid[2 * e + 1]);
+        const float4 a = cubic(
+            table, (int64_t(slot[src[e]]) * K1 + k) * C + c);
+        const float g = fmaf(t, fmaf(t, fmaf(t, a.w, a.z), a.y), a.x);
+        const float* ye = y + int64_t(e) * YD + yo;
+        #pragma unroll
+        for (int m = 0; m < 7; ++m)
+            if (m < d) acc[m] = fmaf(g, ye[m], acc[m]);
+    }
+    float* o = out + i * OD + oo;
+    #pragma unroll
+    for (int m = 0; m < 7; ++m)
+        if (m < d) o[m] = acc[m];
+}
+// one warp per (edge, chunk of up to 32 functions of one block), a lane per
+// function: dE/dY of the block's components and the chunk's part of
+// h * dE/dr, summed over the lanes, then added to the edge's
+__global__ void sevenn_first_bwd_kernel(
+    const float* __restrict__ y, const int32_t* __restrict__ rid,
+    const int32_t* __restrict__ src, const int32_t* __restrict__ dst,
+    const int32_t* __restrict__ slot, const float* __restrict__ table,
+    const int32_t* __restrict__ chunks, const float* __restrict__ go,
+    float* __restrict__ gy, float* __restrict__ gr, int64_t edges, int B,
+    int C, int K1, int YD, int OD) {
+    const int64_t warp = (int64_t(blockIdx.x) * blockDim.x + threadIdx.x) >> 5;
+    const int lane = threadIdx.x & 31;
+    if (warp >= edges * B) return;
+    const int64_t e = warp / B;
+    const int b = int(warp - e * B);
+    const int c0 = chunks[5 * b], count = chunks[5 * b + 1];
+    const int yo = chunks[5 * b + 2], oo = chunks[5 * b + 3], d = chunks[5 * b + 4];
+    const float* ye = y + e * YD + yo;
+    float acc[7] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    float r = 0.0f;
+    if (lane < count) {
+        const int k = rid[2 * e];
+        const float t = __int_as_float(rid[2 * e + 1]);
+        const float4 a = cubic(
+            table, (int64_t(slot[src[e]]) * K1 + k) * C + c0 + lane);
+        const float g = fmaf(t, fmaf(t, fmaf(t, a.w, a.z), a.y), a.x);
+        const float dg = fmaf(t, fmaf(t, 3.0f * a.w, 2.0f * a.z), a.y);
+        const float* q = go + int64_t(dst[e]) * OD + oo + lane * d;
+        float s = 0.0f;
+        #pragma unroll
+        for (int m = 0; m < 7; ++m) {
+            if (m < d) {
+                const float qm = __ldg(q + m);
+                acc[m] = qm * g;
+                s = fmaf(qm, __ldg(ye + m), s);
+            }
+        }
+        r = s * dg;
+    }
+    #pragma unroll
+    for (int o = 16; o > 0; o >>= 1) {
+        #pragma unroll
+        for (int m = 0; m < 7; ++m)
+            if (m < d) acc[m] += __shfl_xor_sync(0xffffffffu, acc[m], o);
+        r += __shfl_xor_sync(0xffffffffu, r, o);
+    }
+    if (lane == 0) {
+        #pragma unroll
+        for (int m = 0; m < 7; ++m)
+            if (m < d) atomicAdd(gy + e * YD + yo + m, acc[m]);
+        atomicAdd(gr + e, r);
+    }
+}
+}  // namespace
+void sevenn_first_fwd(torch::Tensor y, torch::Tensor rid, torch::Tensor src,
+                      torch::Tensor slot, torch::Tensor rowptr,
+                      torch::Tensor table, torch::Tensor meta, torch::Tensor out) {
+    const int64_t n = out.size(0);
+    const int C = meta.size(0);
+    if (n * C == 0) return;
+    sevenn_first_fwd_kernel<<<(n * C + 127) / 128, 128, 0,
+        at::cuda::getCurrentCUDAStream()>>>(
+        y.data_ptr<float>(), rid.data_ptr<int32_t>(), src.data_ptr<int32_t>(),
+        slot.data_ptr<int32_t>(), rowptr.data_ptr<int32_t>(),
+        table.data_ptr<float>(), meta.data_ptr<int32_t>(), out.data_ptr<float>(),
+        n, C, int(table.size(1)), int(y.size(1)), int(out.size(1)));
+}
+void sevenn_first_bwd(torch::Tensor y, torch::Tensor rid, torch::Tensor src,
+                      torch::Tensor dst, torch::Tensor slot, torch::Tensor table,
+                      torch::Tensor blocks, torch::Tensor go, torch::Tensor gy,
+                      torch::Tensor gr) {
+    const int64_t edges = y.size(0);
+    const int B = blocks.size(0);
+    if (edges * B == 0) return;
+    sevenn_first_bwd_kernel<<<(edges * B * 32 + 127) / 128, 128, 0,
+        at::cuda::getCurrentCUDAStream()>>>(
+        y.data_ptr<float>(), rid.data_ptr<int32_t>(), src.data_ptr<int32_t>(),
+        dst.data_ptr<int32_t>(), slot.data_ptr<int32_t>(), table.data_ptr<float>(),
+        blocks.data_ptr<int32_t>(), go.data_ptr<float>(), gy.data_ptr<float>(),
+        gr.data_ptr<float>(), edges, B, int(table.size(2)), int(table.size(1)),
+        int(y.size(1)), int(go.size(1)));
+}
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("sevenn_first_fwd", &sevenn_first_fwd);
+    m.def("sevenn_first_bwd", &sevenn_first_bwd);
+}
+"""
+
+
+class _FirstLayer(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, mod, y, r, rid, slot, tables):
+        ctx.mod, ctx.tables = mod, tables
+        ctx.save_for_backward(y, rid, slot)
+        out = y.new_empty((slot.shape[0], mod.out_dim))
+        mod.ext.sevenn_first_fwd(
+            y, rid.view(-1), tables.src, slot, tables.dst_rowptr, mod.table,
+            mod.meta, out,
+        )
+        return out
+
+    @staticmethod
+    @torch.autograd.function.once_differentiable
+    def backward(ctx, go):
+        y, rid, slot = ctx.saved_tensors
+        mod, g = ctx.mod, ctx.tables
+        gy = torch.zeros_like(y)
+        gr = y.new_zeros(y.shape[0])
+        mod.ext.sevenn_first_bwd(
+            y, rid.view(-1), g.src, g.dst, slot, mod.table, mod.chunks,
+            go.contiguous(), gy, gr,
+        )
+        return None, gy, gr * mod.conv.table_inv_h, None, None, None
+
+
+class _PassThrough(nn.Module):
+    """a module whose work a neighbor does (FusedFirstLayer)"""
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        return data
+
+
+class FusedFirstLayer(nn.Module):
+    """
+    The first interaction of a model whose node features start as a function
+    of the species alone: self-interaction linear, convolution of a scalar
+    input, and the linear after it are
+
+        x_i[l, v, m] = sum_j G[species_j, l, v](r_ij) Y_lm(r_ij) + bias
+
+    (the convolution of scalars has no Clebsch-Gordan sum, and the linear only
+    mixes channels, which folds into the radial functions). G is a table in r
+    per species (the same knots as the convolution's weight table), taken in
+    fp64 from the reference modules by set_species: 384 functions per species
+    in 7net-omni instead of 512 weights times a feature gather and a linear,
+    and the backward has no feature gradient.
+    """
+
+    def __init__(self, conv, reference, names, modal: Optional[str]) -> None:
+        super().__init__()
+        from e3nn.o3 import Irreps
+
+        self.conv = conv  # the fused convolution: knots, graph tables
+        object.__setattr__(self, '_ref', (reference, names, modal))
+        irreps_out = Irreps(reference._modules[names[2]].irreps_out)
+        meta, chunks, c, at = [], [], 0, 0
+        for mul, ir in irreps_out:
+            yo = ir.l * ir.l  # offset of Y_l in the harmonics 0 .. lmax
+            for v in range(mul):
+                meta.append([yo, at + v * ir.dim, ir.dim])
+            for v in range(0, mul, 32):  # (first function, count, Y, out, dim)
+                chunks.append(
+                    [c + v, min(32, mul - v), yo, at + v * ir.dim, ir.dim]
+                )
+            c += mul
+            at += mul * ir.dim
+        self.out_dim, self.num_functions = at, c
+        self._irreps_out = irreps_out
+        dev = conv.rad_table.device
+        self.register_buffer('meta', torch.tensor(meta, dtype=torch.int32).to(dev))
+        self.register_buffer(
+            'chunks', torch.tensor(chunks, dtype=torch.int32).to(dev)
+        )
+        self.register_buffer('table', torch.zeros((0, 1, 1, 4), device=dev))
+        self.register_buffer('bias', torch.zeros(at, device=dev))
+        self.register_buffer(
+            'lut', torch.zeros(len(reference.type_map), dtype=torch.int32).to(dev)
+        )
+        self.columns: List[int] = []
+        self.key_x, self.key_filter = conv.key_x, conv.key_filter
+        self.ext = _load_cuda('sevenn_first_layer_fp32', _FIRST_SOURCE)
+
+    def _reference(self, column: int, r: torch.Tensor, direction: torch.Tensor):
+        """(x after the linear (K, out_dim), bias, Y (dim,)) of single edges
+        of lengths r along direction from an atom of type index column"""
+        ref, names, modal = self._ref
+        number = {v: k for k, v in ref.type_map.items()}[column]
+        k = r.shape[0]
+        data = {
+            KEY.EDGE_IDX: torch.stack([
+                torch.arange(1, k + 1), torch.zeros(k, dtype=torch.int64)
+            ]),
+            KEY.EDGE_VEC: r.unsqueeze(1) * direction.unsqueeze(0),
+            KEY.ATOMIC_NUMBERS: torch.full((k + 2,), number, dtype=torch.int64),
+            KEY.NUM_ATOMS: torch.tensor(k + 2, dtype=torch.int64),
+        }
+        if modal is not None:
+            data[KEY.DATA_MODALITY] = modal
+        with torch.no_grad():
+            data = ref._preprocess(data)
+            for name, module in ref._modules.items():
+                data = module(data)
+                for key, value in data.items():  # one-hot embeddings are fp32
+                    if torch.is_tensor(value) and value.dtype == torch.float32:
+                        data[key] = value.double()
+                if name == names[2]:
+                    break
+        x = data[self.key_x]
+        # the last atom has no neighbor: the constant part
+        return x[1:k + 1] - x[k + 1], x[k + 1], data[self.key_filter][0]
+
+    def set_species(self, columns: Sequence[int]) -> None:
+        """the tables of the species of these type indices (all that occur)"""
+        columns = sorted(set(int(c) for c in columns))
+        if columns == self.columns:
+            return
+        conv = self.conv
+        h = 1.0 / conv.table_inv_h
+        r = conv.table_r0 + h * torch.arange(conv.knots, dtype=torch.float64)
+        g = torch.Generator().manual_seed(0)
+        direction = torch.randn(3, dtype=torch.float64, generator=g)
+        direction = direction / direction.norm()
+        other = torch.randn(3, dtype=torch.float64, generator=g)
+        other = other / other.norm()
+        eps = 1e-4
+        tables, bias = [], None
+        for column in columns:
+            def radial(rr, direction=direction):
+                x, b, y = self._reference(column, rr, direction)
+                out = []
+                for mul, ir in self._irreps_out:
+                    yl = y[ir.l * ir.l:ir.l * ir.l + ir.dim]
+                    m = int(yl.abs().argmax())
+                    blk = x[:, :mul * ir.dim].reshape(-1, mul, ir.dim)
+                    x = x[:, mul * ir.dim:]
+                    out.append(blk[:, :, m] / yl[m])
+                return torch.cat(out, 1), b
+
+            v, bias = radial(r)
+            # r-derivative: five-point stencil in fp64 (the reference is e3nn)
+            d = (
+                radial(r - 2 * eps)[0] - 8 * radial(r - eps)[0]
+                + 8 * radial(r + eps)[0] - radial(r + 2 * eps)[0]
+            ) / (12 * eps)
+            # another direction: x = G(r) Y, component by component
+            x2, _, y2 = self._reference(column, r[::97], other)
+            expect = torch.cat([
+                (v[::97, c:c + 1] * y2[yo:yo + dim]) for c, (yo, _, dim) in
+                enumerate(self.meta.tolist())
+            ], 1)
+            if float((x2 - expect).abs().max()) > 1e-9 * max(
+                1.0, float(x2.abs().max())
+            ):
+                raise RuntimeError('first layer is not radial functions times Y')
+            tables.append(_cubics(v, d * h))
+        dev = self.bias.device
+        self.table = torch.stack(tables).to(dev, torch.float32).contiguous()
+        self.bias = bias.to(dev, torch.float32)
+        lut = torch.zeros_like(self.lut)
+        lut[torch.tensor(columns)] = torch.arange(
+            len(columns), dtype=torch.int32
+        ).to(dev)
+        self.lut = lut
+        self.columns = columns
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        if not self.columns:
+            raise RuntimeError('FusedFirstLayer: set_species was not called')
+        y = data[self.key_filter]
+        r = data[KEY.EDGE_LENGTH]
+        types = data[KEY.ATOM_TYPE]
+        rid = self.conv._knots(data)
+        order, tables = self.conv._graph(data, types.shape[0])
+        if order is not None:
+            y, r, rid = y[order], r[order], rid[order]
+        slot = self.lut[types]
+        data[self.key_x] = _FirstLayer.apply(
+            self, y.contiguous(), r, rid.contiguous(), slot, tables
+        ) + self.bias
+        return data
+
+
+def collapse_first_layer(
+    model: nn.Module, reference: nn.Module, modal: Optional[str] = None
+) -> List[str]:
+    """
+    In place, after fuse_radial_conv(knots > 0): the linear before the first
+    convolution, that convolution and the linear after it become one
+    FusedFirstLayer, if the features entering are scalars made from the
+    species alone. reference: the same model with e3nn modules (any device /
+    dtype; a fp64 cpu copy is kept), with force_output deleted. The species
+    must be given by prune_self_connection (or FusedFirstLayer.set_species)
+    before a call. Returns the names of the modules replaced.
+    """
+    names = list(model._modules)
+    conv_names = [n for n in names if n.endswith('_convolution')]
+    if not conv_names:
+        return []
+    at = names.index(conv_names[0])
+    trio = names[at - 1:at + 2]
+    conv = model._modules[conv_names[0]]
+    lin1, lin2 = model._modules[trio[0]], model._modules[trio[2]]
+    if (
+        at < 1 or len(trio) != 3
+        or type(conv) is not LunaTPFusedRadialConvolution or not conv.knots
+        or not isinstance(lin1, IrrepsLinear) or not isinstance(lin2, IrrepsLinear)
+        or lin1.key_output != conv.key_x or lin2.key_input != conv.key_x
+        or lin2.key_output != conv.key_x
+        or any(ir.l != 0 or ir.p != 1 for _, ir in lin1.irreps_out)
+        or any(ir.p != (-1) ** ir.l for _, ir in lin2.irreps_out)
+        or 'onehot_to_feature_x' not in names[:at]
+    ):
+        return []
+    # between the embedding and the linear nothing else may write the features
+    for name in names[names.index('onehot_to_feature_x') + 1:at - 1]:
+        if getattr(model._modules[name], 'key_output', None) == conv.key_x:
+            return []
+    reference = copy.deepcopy(reference).to('cpu', torch.float64)
+    reference.set_is_batch_data(False)
+    reference.eval()
+    first = FusedFirstLayer(conv, reference, trio, modal)
+    model._modules[trio[0]] = _PassThrough()
+    model._modules[trio[1]] = first
+    model._modules[trio[2]] = _PassThrough()
+    return trio
 
 
 def live_paths(conv, linear) -> Optional[List[int]]:
@@ -1052,6 +1414,9 @@ def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> List[str]
     from e3nn.o3 import Irreps
 
     columns = sorted(set(int(c) for c in columns))
+    for module in model._modules.values():
+        if isinstance(module, FusedFirstLayer):
+            module.set_species(columns)
     changed = []
     for name, sc in model._modules.items():
         if type(sc) is PrunedSelfConnectionIntro:  # again, other columns
