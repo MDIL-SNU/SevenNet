@@ -370,6 +370,183 @@ class RadialHiddenTable(nn.Module):
         return out
 
 
+_GEOMETRY_SOURCE = r"""
+#include <torch/extension.h>
+#include <ATen/cuda/CUDAContext.h>
+namespace {
+__global__ void sevenn_edge_geometry_fwd_kernel(
+    const float* __restrict__ rvec, float* __restrict__ r_out,
+    float* __restrict__ y_out, int64_t n) {
+    const int64_t e = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (e >= n) return;
+    const double vx = rvec[3 * e], vy = rvec[3 * e + 1], vz = rvec[3 * e + 2];
+    const double r = sqrt(vx * vx + vy * vy + vz * vz);
+    const double ir = 1.0 / r;
+    r_out[e] = float(r);
+    float* Y = y_out + e * @DIM@;
+@POWERS@
+@VALUES@
+}
+__global__ void sevenn_edge_geometry_bwd_kernel(
+    const float* __restrict__ rvec, const float* __restrict__ gr,
+    const float* __restrict__ gy, float* __restrict__ out, int64_t n) {
+    const int64_t e = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    if (e >= n) return;
+    const double vx = rvec[3 * e], vy = rvec[3 * e + 1], vz = rvec[3 * e + 2];
+    const double r = sqrt(vx * vx + vy * vy + vz * vz);
+    const double ir = 1.0 / r;
+    const float* G = gy + e * @DIM@;
+@POWERS@
+    double gx = 0.0, gyy = 0.0, gz = 0.0;
+@GRADS@
+    // through u = v / r, then dE/dr along u
+    const double ug = gx * px1 + gyy * py1 + gz * pz1;
+    const double s = gr[e];
+    out[3 * e] = float((gx - px1 * ug) * ir + s * px1);
+    out[3 * e + 1] = float((gyy - py1 * ug) * ir + s * py1);
+    out[3 * e + 2] = float((gz - pz1 * ug) * ir + s * pz1);
+}
+}  // namespace
+void sevenn_edge_geometry_fwd(torch::Tensor rvec, torch::Tensor r,
+                              torch::Tensor y) {
+    const int64_t n = r.numel();
+    if (n == 0) return;
+    sevenn_edge_geometry_fwd_kernel<<<(n + 127) / 128, 128, 0,
+        at::cuda::getCurrentCUDAStream()>>>(
+        rvec.data_ptr<float>(), r.data_ptr<float>(), y.data_ptr<float>(), n);
+}
+void sevenn_edge_geometry_bwd(torch::Tensor rvec, torch::Tensor gr,
+                              torch::Tensor gy, torch::Tensor out) {
+    const int64_t n = gr.numel();
+    if (n == 0) return;
+    sevenn_edge_geometry_bwd_kernel<<<(n + 127) / 128, 128, 0,
+        at::cuda::getCurrentCUDAStream()>>>(
+        rvec.data_ptr<float>(), gr.data_ptr<float>(), gy.data_ptr<float>(),
+        out.data_ptr<float>(), n);
+}
+PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
+    m.def("sevenn_edge_geometry_fwd", &sevenn_edge_geometry_fwd);
+    m.def("sevenn_edge_geometry_bwd", &sevenn_edge_geometry_bwd);
+}
+"""
+
+
+def _harmonics_polynomials(sph: nn.Module, lmax: int):
+    """
+    [(component, coefficient, (a, b, c))]: sph(u) of a unit vector u as
+    polynomials sum coefficient x^a y^b z^c, fitted (fp64) to the module
+    """
+    sph = copy.deepcopy(sph).to('cpu', torch.float64)
+    g = torch.Generator().manual_seed(0)
+    u = torch.randn(256, 3, dtype=torch.float64, generator=g)
+    u = u / u.norm(dim=1, keepdim=True)
+    y = sph(u)
+    terms, at = [], 0
+    for l in range(lmax + 1):
+        mono = [(a, b, l - a - b) for a in range(l + 1) for b in range(l + 1 - a)]
+        A = torch.stack(
+            [u[:, 0] ** a * u[:, 1] ** b * u[:, 2] ** c for a, b, c in mono], 1
+        )
+        target = y[:, at:at + 2 * l + 1]
+        coef = torch.linalg.lstsq(A, target).solution  # (monomials, 2l + 1)
+        if float((A @ coef - target).abs().max()) > 1e-9:
+            raise RuntimeError('spherical harmonics are not polynomials of u')
+        for j, abc in enumerate(mono):
+            for m in range(2 * l + 1):
+                if abs(float(coef[j, m])) > 1e-11:
+                    terms.append((at + m, float(coef[j, m]), abc))
+        at += 2 * l + 1
+    if at != y.shape[1]:
+        raise RuntimeError('spherical harmonics: unexpected dimension')
+    return terms, at
+
+
+def _geometry_source(terms, dim: int, lmax: int) -> str:
+    def mono(a, b, c):
+        f = [f'p{n}{k}' for n, k in (('x', a), ('y', b), ('z', c)) if k > 0]
+        return ' * '.join(f) if f else '1.0'
+
+    # fp64 (a few hundred operations per edge)
+    powers = ['    const double px1 = vx * ir, py1 = vy * ir, pz1 = vz * ir;']
+    for k in range(2, lmax + 1):
+        powers.append(
+            f'    const double px{k} = px{k - 1} * px1, py{k} = py{k - 1} * py1, '
+            f'pz{k} = pz{k - 1} * pz1;'
+        )
+    values = {m: [] for m in range(dim)}
+    grads = {'gx': [], 'gyy': [], 'gz': []}
+    for m, coef, (a, b, c) in terms:
+        values[m].append(f'{coef!r} * {mono(a, b, c)}')
+        for name, k, low in (
+            ('gx', a, (a - 1, b, c)), ('gyy', b, (a, b - 1, c)),
+            ('gz', c, (a, b, c - 1)),
+        ):
+            if k > 0:
+                grads[name].append(f'G[{m}] * ({coef * k!r} * {mono(*low)})')
+    v = '\n'.join(
+        f'    Y[{m}] = float({" + ".join(t) if t else "0.0"});'
+        for m, t in values.items()
+    )
+    g = '\n'.join(
+        f'    {n} = {" + ".join(t) if t else "0.0"};' for n, t in grads.items()
+    )
+    src = _GEOMETRY_SOURCE.replace('@DIM@', str(dim))
+    src = src.replace('@POWERS@', '\n'.join(powers))
+    return src.replace('@VALUES@', v).replace('@GRADS@', g)
+
+
+class _EdgeGeometry(torch.autograd.Function):
+    @staticmethod
+    def forward(ctx, ext, dim, rvec):
+        ctx.ext = ext
+        ctx.save_for_backward(rvec)
+        r = rvec.new_empty(rvec.shape[0])
+        y = rvec.new_empty((rvec.shape[0], dim))
+        ext.sevenn_edge_geometry_fwd(rvec, r, y)
+        return r, y
+
+    @staticmethod
+    @torch.autograd.function.once_differentiable
+    def backward(ctx, gr, gy):
+        (rvec,) = ctx.saved_tensors
+        if gr is None:
+            gr = rvec.new_zeros(rvec.shape[0])
+        if gy is None:
+            gy = rvec.new_zeros((rvec.shape[0], 1))
+            raise RuntimeError('edge geometry: no gradient of the harmonics')
+        out = torch.empty_like(rvec)
+        ctx.ext.sevenn_edge_geometry_bwd(
+            rvec, gr.contiguous(), gy.contiguous(), out
+        )
+        return None, None, out
+
+
+class FusedEdgeGeometry(nn.Module):
+    """
+    EdgeEmbedding of a model whose convolutions all take their radial weights
+    from a table in r (fuse_radial_conv, knots > 0): the edge length and the
+    spherical harmonics by one kernel, their backward to the edge vector by
+    another (instead of ~60 + ~120 elementwise kernels). The radial basis,
+    which no module reads, is not computed.
+    """
+
+    def __init__(self, emb: nn.Module) -> None:
+        super().__init__()
+        lmax = int(emb.spherical.lmax)
+        terms, self.dim = _harmonics_polynomials(emb.spherical, lmax)
+        self.ext = _load_cuda(
+            'sevenn_edge_geometry', _geometry_source(terms, self.dim, lmax)
+        )
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        rvec = data[KEY.EDGE_VEC].contiguous()
+        data[KEY.EDGE_LENGTH], data[KEY.EDGE_ATTR] = _EdgeGeometry.apply(
+            self.ext, self.dim, rvec
+        )
+        return data
+
+
+
 def _index_order(tables):
     """tables with the launch orders in node / segment index order (cached)"""
     cached = getattr(tables.src, '_sevenn_index_order', None)
@@ -732,6 +909,13 @@ def fuse_radial_conv(
         conv._setup(emb, half_weights, knots, r_min, float(model.cutoff))
         changed.append(name)
         fused.append(conv)
+    if (
+        knots and fused and len(fused) == len(list(_convolutions(model)))
+        and fused[0].rad_w2.is_cuda and not emb.save_components
+        and bool(getattr(emb.spherical.sph, 'normalize', False))
+    ):
+        model._modules['edge_embedding'] = FusedEdgeGeometry(emb)
+        changed.append('edge_embedding')
     widths = {c.rad_w2.shape[0] for c in fused}
     if (
         hidden_table and not knots and fused and len(widths) == 1
