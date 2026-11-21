@@ -191,6 +191,7 @@ class MLIAPCudaGraph:
         # species self connection pruned to the species seen so far
         # (lunatp_fused.prune_self_connection); a new species prunes again
         self._prune = bool(getattr(model, 'prune_species', False))
+        self._owner_buf = None
         self._allowed = torch.zeros(256, dtype=torch.bool, device=device)
 
     def _tick(self, phase: str, since: float) -> float:
@@ -213,12 +214,17 @@ class MLIAPCudaGraph:
     # ---- per call ----------------------------------------------------------
     def _owners(self, lmp_data, nlocal: int, ntotal: int):
         """(owner local index of every atom, flag: a ghost of another rank)"""
-        send = torch.full((ntotal, 2), -1.0, dtype=torch.float64, device=self.device)
-        send[:nlocal, 0] = torch.arange(
-            nlocal, dtype=torch.float64, device=self.device
-        )
-        send[:nlocal, 1] = self._token
-        recv = torch.empty_like(send)
+        buf = self._owner_buf
+        if buf is None or buf[0] != (nlocal, ntotal):
+            send = torch.full(
+                (ntotal, 2), -1.0, dtype=torch.float64, device=self.device
+            )
+            send[:nlocal, 0] = torch.arange(
+                nlocal, dtype=torch.float64, device=self.device
+            )
+            send[:nlocal, 1] = self._token
+            buf = self._owner_buf = ((nlocal, ntotal), send, torch.empty_like(send))
+        _, send, recv = buf  # send is constant for (nlocal, ntotal)
         lmp_data.forward_exchange(send, recv, 2)
         return recv[:, 0].to(torch.int64), (recv[:, 1] != self._token).any()
 

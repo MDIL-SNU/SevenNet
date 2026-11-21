@@ -98,13 +98,23 @@ _KNOT = 'const int hk_ = {k}; const float ht_ = __int_as_float({t});'
 
 
 def forward_source(
-    op, half: bool = False, hermite: bool = False, specs=None
+    op, half: bool = False, hermite: bool = False, specs=None, tune=None
 ) -> str:
-    """specs: the paths to compute (default all: op.generated_specs)"""
+    """
+    specs: the paths to compute (default all: op.generated_specs). tune:
+    arguments of LunaTP's generator other than its defaults here (see
+    tune_kernels), e.g. {'resident_threads': 512}
+    """
     from LunaEquivariance.lunatp.uvu_conv.kernels import forward as F
 
     specs = op.generated_specs if specs is None else specs
     uniform = len({int(s['channels']) for s in specs}) == 1
+    args = dict(
+        merge_channel_chunks=(uniform or op.in2_dim >= 25),
+        resident_threads=1024,
+        task_warps=16,  # LunaTP's choice is 8 for 7net-omni: 5 to 8 % slower
+    )
+    args.update(tune or {})
     src = F.make_uvu_conv_fwd_source(
         specs,
         in1_dim=op.in1_dim,
@@ -116,11 +126,10 @@ def forward_source(
         weight_on_x_paths=None,
         return_l0=False,
         with_env=False,
-        merge_channel_chunks=(uniform or op.in2_dim >= 25),
         variable_channels=not uniform,
         weight_index_type='WeightIndex',
-        resident_threads=1024,
         degree_tiers=op.forward_degree_tiers,
+        **args,
     )  # as load_forward (fp32)
     src = _sub(
         r'weight \+ (?:static_cast<uint64_t>\(static_cast<WeightIndex>\(e\)\)'
@@ -174,11 +183,15 @@ def forward_source(
     return src
 
 
-def backward_source(op, half: bool = False, hermite: bool = False, specs=None):
+def backward_source(
+    op, half: bool = False, hermite: bool = False, specs=None, tune=None
+):
     """
     (source, segmented, partials, vectorized, zero_x, zero_y). hermite: the
     partial sums are h * dE/dr, grad_weight is not read. specs: the paths to
-    compute (default all)
+    compute (default all). tune: {'min_blocks': n or {group: n}}: resident
+    warps per SM of the group kernels (LunaTP: 8, 12 or 16 by its estimate of
+    the live registers)
     """
     from types import SimpleNamespace
 
@@ -257,6 +270,14 @@ def backward_source(op, half: bool = False, hermite: bool = False, specs=None):
         'torch::Tensor grp) {',
         src, count=1, regex=False,
     )
+    min_blocks = (tune or {}).get('min_blocks')
+    if min_blocks is not None:
+        def launch(m):
+            n = min_blocks.get(int(m.group(1)), m.group(4)) if isinstance(
+                min_blocks, dict) else min_blocks
+            return f'<{m.group(1)}, {m.group(2)}, {m.group(3)}, {n}, 32, Index>'
+
+        src = _sub(r'<(\d+), (\d+), (\d+), (\d+), 32, Index>', launch, src)
     if hermite:
         assert not half
 
