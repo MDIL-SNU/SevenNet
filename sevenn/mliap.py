@@ -164,7 +164,34 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
     until the first compute_forces call.
     """
 
+    def _memory_options(self) -> None:
+        """
+        SEVENN_CUDA_MEMORY_FRACTION=f: this process may allocate at most that
+        fraction of the GPU memory through torch (an out-of-memory error
+        instead of exhausting a shared GPU / unified memory).
+        SEVENN_MLIAP_MEMORY_REPORT=1: peak torch GPU memory printed at exit.
+        """
+        if self.device.type != 'cuda' or getattr(self, '_memory_set', False):
+            return
+        self._memory_set = True
+        fraction = os.getenv('SEVENN_CUDA_MEMORY_FRACTION')
+        if fraction:
+            torch.cuda.set_per_process_memory_fraction(float(fraction))
+        if os.getenv('SEVENN_MLIAP_MEMORY_REPORT') == '1':
+            import atexit
+
+            def report():
+                gb = torch.cuda.max_memory_allocated() / 2**30
+                res = torch.cuda.max_memory_reserved() / 2**30
+                print(
+                    f'[SevenNet] peak GPU memory: {gb:.2f} GiB allocated, '
+                    f'{res:.2f} GiB reserved', flush=True,
+                )
+
+            atexit.register(report)
+
     def _build_model(self, ghost_exchange: bool):
+        self._memory_options()
         model = self.cp.build_model(
             enable_cueq=self.use_cueq,
             enable_flash=self.use_flash,

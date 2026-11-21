@@ -205,6 +205,7 @@ class SevenNetCalculator(Calculator):
         compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         cuda_graph: bool = False,
+        fused: bool = False,
         **kwargs,
     ) -> None:
         """Initialize SevenNetCalculator.
@@ -248,6 +249,8 @@ class SevenNetCalculator(Calculator):
             needs 2 replays per capture so far, otherwise the call runs
             eagerly. For small systems, whose calls are bound by kernel
             launches. CUDA only.
+        fused: bool, default=False
+            Use frozen-model kernels for supported LunaTP checkpoints on CUDA.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
@@ -381,6 +384,36 @@ class SevenNetCalculator(Calculator):
         # (number of atoms, host edge index, device edge index) of the last eager call
         self._last_edge_index = (-1, None, None, None)
         self._has_lunatp: Optional[bool] = None
+        self.fused = []
+        self._fused_species = set()
+        if fused or os.getenv('SEVENNET_ENABLE_FUSED') == '1':
+            if not (
+                enable_lunatp and file_type == 'checkpoint'
+                and isinstance(model, str) and self.device.type == 'cuda'
+            ):
+                warnings.warn(
+                    'fused needs enable_lunatp, a checkpoint and CUDA: ignored'
+                )
+            else:
+                from sevenn.nn.lunatp_fused import (
+                    collapse_first_layer,
+                    fold_modal,
+                    fuse_radial_conv,
+                )
+
+                self.fused = fuse_radial_conv(self.model, knots=2048)
+                if self.fused:
+                    self.model.requires_grad_(False)
+                    if self.modal is not None:
+                        self.fused += fold_modal(self.model, self.modal)
+                    reference = cp.build_model()
+                    reference.delete_module_by_key('force_output')
+                    self.fused += collapse_first_layer(
+                        self.model, reference, self.modal
+                    )
+                else:
+                    warnings.warn('fused: no convolution of this model is covered')
+
         self.implemented_properties = [
             'free_energy',
             'energy',
@@ -685,11 +718,24 @@ class SevenNetCalculator(Calculator):
             return None
         return prepare_graph(edge_index, num_atoms)
 
+    def _fused_for(self, atoms: Atoms) -> None:
+        """the fused kernels' species tables cover the species of atoms"""
+        numbers = set(atoms.get_atomic_numbers().tolist())
+        if numbers <= self._fused_species:
+            return
+        from sevenn.nn.lunatp_fused import prune_self_connection
+
+        species = self._fused_species | numbers
+        prune_self_connection(self.model, [self.type_map[z] for z in sorted(species)])
+        self._fused_species = species
+
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
         if atoms is None:
             raise ValueError('No atoms to evaluate')
+        if self.fused:
+            self._fused_for(atoms)
         data = AtomGraphData.from_numpy_dict(
             unlabeled_atoms_to_graph(atoms, self.cutoff, with_shift=False)
         )

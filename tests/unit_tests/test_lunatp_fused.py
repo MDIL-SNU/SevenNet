@@ -210,3 +210,30 @@ def test_fused_md_energy(tmp_path, knots):
     assert abs(e_new - e_ref) <= tol, (e_new, e_ref)
     assert abs(tot_new - tot_ref) <= tol, (tot_new, tot_ref)
     assert np.abs(x_new - x_ref).max() <= 1e-4
+
+
+def test_fused_calculator(tmp_path):
+    """SevenNetCalculator(fused=True): energy, forces and stress of the plain
+    calculator, also after atoms with a species not seen before"""
+    from sevenn.calculator import SevenNetCalculator
+
+    cp = _save_checkpoint(_cf('nequip_sc', ARCHS[0]), tmp_path / 'cp.pth')
+    with _default_dtype(torch.float32):
+        plain = SevenNetCalculator(str(cp), device='cuda')
+        fused = SevenNetCalculator(
+            str(cp), device='cuda', enable_lunatp=True, fused=True
+        )
+        assert '0_convolution' in fused.fused
+        few = _atoms((2, 2, 2))
+        keep = [n for n, s in enumerate(few.get_chemical_symbols()) if s != 'H']
+        few = few[keep]  # then all four species: the tables are built again
+        for atoms in (few, _atoms((2, 2, 2)), few):
+            res = []
+            for calc in (plain, fused):
+                a = atoms.copy()
+                a.calc = calc
+                res.append(
+                    (a.get_potential_energy(), a.get_forces(), a.get_stress())
+                )
+            _assert_close_f32(res[1], res[0], len(atoms))
+    assert len(fused._fused_species) == 4
