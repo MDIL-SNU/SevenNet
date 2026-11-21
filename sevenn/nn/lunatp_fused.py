@@ -672,6 +672,15 @@ class _FusedConv(torch.autograd.Function):
         ctx.mod, ctx.tables = mod, tables
         ctx.save_for_backward(x, y, rid, wbuf)
         op = mod.convolution.tp_conv.op
+        # the fused kernels index with 32 bits (LunaTP's own switch to 64)
+        widest = max(op.out_dim, op.in1_dim)
+        if x.shape[0] * widest >= 2**31 or y.shape[0] * op.in2_dim >= 2**31:
+            raise RuntimeError(
+                f'{x.shape[0]} atoms / {y.shape[0]} edges are too many for the '
+                f'fused LunaTP kernels (32-bit indices: at most '
+                f'{(2**31 - 1) // widest} atoms for this model). Run without '
+                'fused (SEVENN_MLIAP_FUSED=0, or fused=False).'
+            )
         out = x.new_empty((x.shape[0], op.out_dim))
         # with paths, the columns of the skipped paths stay uninitialized: the
         # linear after has no weights for them (checked with NaN there)
