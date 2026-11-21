@@ -97,12 +97,16 @@ static __forceinline__ __device__ float sevenn_dw(const float* p, float t) {
 _KNOT = 'const int hk_ = {k}; const float ht_ = __int_as_float({t});'
 
 
-def forward_source(op, half: bool = False, hermite: bool = False) -> str:
+def forward_source(
+    op, half: bool = False, hermite: bool = False, specs=None
+) -> str:
+    """specs: the paths to compute (default all: op.generated_specs)"""
     from LunaEquivariance.lunatp.uvu_conv.kernels import forward as F
 
-    uniform = len({int(s['channels']) for s in op.generated_specs}) == 1
+    specs = op.generated_specs if specs is None else specs
+    uniform = len({int(s['channels']) for s in specs}) == 1
     src = F.make_uvu_conv_fwd_source(
-        op.generated_specs,
+        specs,
         in1_dim=op.in1_dim,
         in2_dim=op.in2_dim,
         out_dim=op.out_dim,
@@ -170,13 +174,22 @@ def forward_source(op, half: bool = False, hermite: bool = False) -> str:
     return src
 
 
-def backward_source(op, half: bool = False, hermite: bool = False):
+def backward_source(op, half: bool = False, hermite: bool = False, specs=None):
     """
     (source, segmented, partials, vectorized, zero_x, zero_y). hermite: the
-    partial sums are h * dE/dr, grad_weight is not read
+    partial sums are h * dE/dr, grad_weight is not read. specs: the paths to
+    compute (default all)
     """
+    from types import SimpleNamespace
+
     from LunaEquivariance.lunatp.uvu_conv.kernels import backward as B
 
+    if specs is not None:
+        op = SimpleNamespace(
+            compute_dtype=op.compute_dtype, generated_specs=specs,
+            in1_dim=op.in1_dim, in2_dim=op.in2_dim, out_dim=op.out_dim,
+            weight_numel=op.weight_numel,
+        )
     src, *flags = B.make_uvu_conv_bwd_source(op)
     src = _sub(
         'float* __restrict__ grad_weight, int64_t edges) {',
@@ -593,8 +606,8 @@ class _FusedConv(torch.autograd.Function):
         ctx.save_for_backward(x, y, rid, wbuf)
         op = mod.convolution.tp_conv.op
         out = x.new_empty((x.shape[0], op.out_dim))
-        if op.forward_output_needs_zero:
-            out.zero_()
+        if op.forward_output_needs_zero or mod.paths is not None:
+            out.zero_()  # paths: the columns no path writes
         mod.fwd_ext.run_uvu_conv_fwd_ordered(
             x, y, wbuf, None, None, tables.src, tables.dst_rowptr,
             tables.node_order, tables.node_tiers, out, x.shape[0], rid.view(-1),
@@ -687,10 +700,14 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     knots: int = 0
     table_r0: float = 0.25
     table_inv_h: float = 0.0
+    # indices of the paths (LunaTP specs) computed; None: all. See live_paths
+    paths: Optional[List[int]] = None
 
     def _setup(self, emb, half_weights: bool = False, knots: int = 0,
-               r_min: float = 0.25, cutoff: float = 0.0) -> None:
+               r_min: float = 0.25, cutoff: float = 0.0,
+               paths: Optional[List[int]] = None) -> None:
         self.half_weights = half_weights
+        self.paths = paths
         self.knots = int(knots)
         assert not (half_weights and knots)
         ref = self.denominator
@@ -726,12 +743,17 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         op = self.convolution.tp_conv.op
         herm = self.knots > 0
         tag = 'herm' if herm else 'w16' if self.half_weights else 'fp32'
+        specs = None
+        if self.paths is not None:
+            specs = [op.generated_specs[n] for n in self.paths]
         self.fwd_ext = load_tp_extension(
             f'sevenn_uvuconv_fused_fwd_{tag}',
-            forward_source(op, self.half_weights, herm),
+            forward_source(op, self.half_weights, herm, specs),
             max_channels=op.max_channels, index_bits=32,
         )
-        src, *self.bwd_flags = backward_source(op, self.half_weights, herm)
+        src, *self.bwd_flags = backward_source(
+            op, self.half_weights, herm, specs
+        )
         self.bwd_ext = load_tp_extension(
             f'sevenn_uvuconv_fused_bwd_{tag}', src,
             max_channels=op.max_channels, index_bits=32,
@@ -890,6 +912,32 @@ def weight_table(conv, emb, r_min: float, cutoff: float, knots: int):
     return torch.stack([v[:-1], d[:-1], a2, a3], 2), h
 
 
+def live_paths(conv, linear) -> Optional[List[int]]:
+    """
+    Indices of the paths (LunaTP specs) of conv whose output the IrrepsLinear
+    after it reads, None if that is all of them. A convolution computes every
+    path its inputs allow; the linear only has weights for the irreps of its
+    own output (7net-omni's last-but-one convolution: 34 of 68 paths, half
+    the per-edge weights, feed irreps the last layer cannot use).
+    """
+    irreps_in = getattr(linear, '_irreps_in_wo_modal', None)
+    irreps_out = getattr(linear, 'irreps_out', None)
+    op = conv.convolution.tp_conv.op
+    if irreps_in is None or irreps_out is None or irreps_in.dim != op.out_dim:
+        return None
+    used = {ir for _, ir in irreps_out}
+    live, at = [], 0  # [begin, end) column ranges the linear reads
+    for mul, ir in irreps_in:
+        if ir in used:
+            live.append((at, at + mul * ir.dim))
+        at += mul * ir.dim
+    keep = [
+        n for n, spec in enumerate(op.generated_specs)
+        if any(a <= int(spec['out_offset']) < b for a, b in live)
+    ]
+    return None if len(keep) == len(op.generated_specs) else keep
+
+
 def fuse_radial_conv(
     model: nn.Module, hidden_table: bool = True, half_weights: bool = False,
     knots: int = 0, r_min: float = 0.25,
@@ -918,9 +966,15 @@ def fuse_radial_conv(
             or getattr(conv, 'denominator_folded', True)
         ):
             continue
+        paths = None
+        linear = model._modules.get(
+            name.replace('convolution', 'self_interaction_2')
+        )
+        if isinstance(linear, IrrepsLinear) and linear.key_input == conv.key_x:
+            paths = live_paths(conv, linear)
         conv.__class__ = LunaTPFusedRadialConvolution
-        conv._setup(emb, half_weights, knots, r_min, float(model.cutoff))
-        changed.append(name)
+        conv._setup(emb, half_weights, knots, r_min, float(model.cutoff), paths)
+        changed.append(name if paths is None else f'{name}({len(paths)}paths)')
         fused.append(conv)
     if (
         knots and fused and len(fused) == len(list(_convolutions(model)))
