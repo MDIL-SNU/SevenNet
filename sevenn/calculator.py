@@ -196,6 +196,7 @@ class SevenNetCalculator(Calculator):
         compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         cuda_graph: bool = False,
+        fused: bool = False,
         **kwargs,
     ) -> None:
         """Initialize SevenNetCalculator.
@@ -239,6 +240,16 @@ class SevenNetCalculator(Calculator):
             needs 2 replays per capture so far, otherwise the call runs
             eagerly. For small systems, whose calls are bound by kernel
             launches. CUDA only.
+        fused: bool, default=False
+            with enable_lunatp, a checkpoint and CUDA: the frozen-model kernels
+            of sevenn/nn/lunatp_fused.py (radial weights interpolated inside
+            the convolution kernels from a table in the edge length, unused
+            tensor-product paths skipped, edge geometry in one kernel, the
+            first interaction and the self connections specialized to the
+            species seen so far). Same energies, forces and stress to
+            round-off (~1e-5 eV/A); several times faster for the models with a
+            plain radial MLP (7net-0, 7net-omni, ...). Models it does not
+            cover run as without it. The first call builds the kernels.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
@@ -359,6 +370,37 @@ class SevenNetCalculator(Calculator):
 
         self.model.to(self.device)
         self.model.eval()
+
+        # frozen-model kernels (see the docstring); the species they are
+        # specialized to follow the atoms given (_fused_species)
+        self.fused: List[str] = []
+        self._fused_species: set = set()
+        if fused or os.getenv('SEVENNET_ENABLE_FUSED') == '1':
+            if not (
+                enable_lunatp and file_type == 'checkpoint'
+                and isinstance(model, str) and self.device.type == 'cuda'
+            ):
+                warnings.warn(
+                    'fused needs enable_lunatp, a checkpoint and CUDA: ignored'
+                )
+            else:
+                from sevenn.nn.lunatp_fused import (
+                    collapse_first_layer,
+                    fold_modal,
+                    fuse_radial_conv,
+                )
+
+                self.fused = fuse_radial_conv(self.model, knots=2048)
+                if self.fused:
+                    if self.modal is not None:
+                        self.fused += fold_modal(self.model, self.modal)
+                    reference = cp.build_model()
+                    reference.delete_module_by_key('force_output')
+                    self.fused += collapse_first_layer(
+                        self.model, reference, self.modal
+                    )
+                else:
+                    warnings.warn('fused: no convolution of this model is covered')
 
         self.cuda_graph = cuda_graph and self.device.type == 'cuda'
         self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None
@@ -663,11 +705,28 @@ class SevenNetCalculator(Calculator):
             'static': static, 'edge_index': tensors[KEY.EDGE_IDX],
         }
 
+    def _fused_for(self, atoms: Atoms) -> None:
+        """the fused kernels' species tables cover the species of atoms"""
+        numbers = set(atoms.get_atomic_numbers().tolist())
+        if numbers <= self._fused_species:
+            return
+        from sevenn.nn.lunatp_fused import prune_self_connection
+
+        self._fused_species |= numbers
+        prune_self_connection(
+            self.model, [self.type_map[z] for z in sorted(self._fused_species)]
+        )
+        # captured graphs hold the previous tables
+        self._graphs.clear()
+        self._graphs_seen.clear()
+
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
         if atoms is None:
             raise ValueError('No atoms to evaluate')
+        if self.fused:
+            self._fused_for(atoms)
         data = AtomGraphData.from_numpy_dict(
             unlabeled_atoms_to_graph(atoms, self.cutoff, with_shift=False)
         )
