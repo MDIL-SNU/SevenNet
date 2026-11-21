@@ -7,6 +7,7 @@ pruned to the species present, modal input folded. Energy, forces and stress
 of the serial model along a sequence of structures, from one capture; fp16
 weight rows are close but not equal.
 """
+import numpy as np
 import pytest
 import torch
 
@@ -22,6 +23,7 @@ from tests.unit_tests.test_parallel_consistency import (
     _backend_available,
     _cf,
     _default_dtype,
+    _graph,
     _run_mliap,
     _save_checkpoint,
     _serial_f32,
@@ -122,3 +124,65 @@ def test_fused_edge_geometry(lmax):
     assert torch.allclose(y.double(), y64, atol=2e-6)
     assert torch.allclose(r.double(), r64, atol=2e-6)
     assert torch.allclose(g.double(), g64, atol=1e-5 * float(g64.abs().max()))
+
+
+def _md(efs, atoms, steps, dt):
+    """velocity Verlet (unit masses, at rest): potential, total energy, x"""
+    atoms = atoms.copy()
+    v = np.zeros((len(atoms), 3))
+    e, f = efs(atoms)[:2]
+    e_start = e
+    for _ in range(steps):
+        v += 0.5 * dt * f
+        atoms.set_positions(atoms.get_positions() + dt * v)
+        e, f = efs(atoms)[:2]
+        v += 0.5 * dt * f
+    return e_start, e, e + 0.5 * float((v * v).sum()), atoms.get_positions()
+
+
+# the trajectory of the optimized path against the serial model's: forces and
+# energies together, and what their differences add up to over the steps
+@pytest.mark.parametrize('knots', [0, 2048])
+def test_fused_md_energy(tmp_path, knots):
+    from sevenn.util import model_from_checkpoint
+
+    cp = _save_checkpoint(_cf('nequip_sc', ARCHS[0]), tmp_path / 'cp.pth')
+    atoms = _atoms((2, 2, 2))
+    steps = 40
+    with _default_dtype(torch.float32):
+        serial, _ = model_from_checkpoint(str(cp))
+        serial.set_is_batch_data(False)
+        if serial.modal_map:
+            serial.prepare_modal_deploy(MODAL)
+        serial.eval()
+
+        def ref(a):
+            g = _graph(a)
+            for k, v in g.items():
+                if torch.is_tensor(v) and v.is_floating_point():
+                    g[k] = v.float()
+            out = serial(g)
+            return (
+                out['inferred_total_energy'].item(),
+                out['inferred_force'].detach().numpy().astype(np.float64),
+            )
+
+        graph, names = _fused_graph(cp, knots=knots)
+        assert names
+
+        def new(a):
+            return _run_mliap(
+                [graph], a, (1, 1, 1), compute=_compute, device='cuda'
+            )[0][:2]
+
+        f0 = np.abs(ref(atoms)[1]).max()
+        dt = float(np.sqrt(2.0 * 2e-3 / f0))  # first step: 2e-3 A at most
+        e0, e_ref, tot_ref, x_ref = _md(ref, atoms, steps, dt)
+        _, e_new, tot_new, x_new = _md(new, atoms, steps, dt)
+    # fp32 energies of ~600 eV; measured: 1e-6 eV, 8e-6 A after atoms moved
+    # by up to ~1 A and the potential energy changed by 0.08 eV
+    tol = 5e-8 * max(1.0, abs(e_ref))
+    assert abs(e_ref - e0) > 100 * tol  # the atoms moved
+    assert abs(e_new - e_ref) <= tol, (e_new, e_ref)
+    assert abs(tot_new - tot_ref) <= tol, (tot_new, tot_ref)
+    assert np.abs(x_new - x_ref).max() <= 1e-4
