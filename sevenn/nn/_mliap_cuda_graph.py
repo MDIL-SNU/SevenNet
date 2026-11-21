@@ -62,15 +62,29 @@ def _graph_tensors(graph) -> List[torch.Tensor]:
     return out
 
 
-def _lunatp_graph(edge_index: torch.Tensor, num_nodes: int, num_segments: int):
+def _make_graph(edge_index: torch.Tensor, num_nodes: int, segment_edges: int):
+    """make_graph with source segments of at most segment_edges (0: LunaTP's)"""
+    import LunaEquivariance.lunatp.graph as luna_graph
+
+    default = luna_graph._SOURCE_SEGMENT_EDGES
+    if segment_edges:
+        luna_graph._SOURCE_SEGMENT_EDGES = segment_edges
+    try:
+        return luna_graph.make_graph(edge_index[1], edge_index[0], num_nodes)
+    finally:
+        luna_graph._SOURCE_SEGMENT_EDGES = default
+
+
+def _lunatp_graph(
+    edge_index: torch.Tensor, num_nodes: int, num_segments: int,
+    segment_edges: int = 0,
+):
     """
     LunaTPGraph of a dst-sorted edge index whose source segment tables are
     padded to num_segments with empty segments of the last node, or None if
     the graph has more segments.
     """
-    from LunaEquivariance import make_graph
-
-    graph = make_graph(edge_index[1], edge_index[0], num_nodes)
+    graph = _make_graph(edge_index, num_nodes, segment_edges)
     seg = graph.source_segments
     k = num_segments - seg.nodes.numel()
     if k < 0:
@@ -398,7 +412,10 @@ class MLIAPCudaGraph:
         if its LunaTP graph does not fit the captured tables.
         """
         if self._lunatp:
-            graph = _lunatp_graph(cand, entry['num_nodes'], entry['num_segments'])
+            graph = _lunatp_graph(
+                cand, entry['num_nodes'], entry['num_segments'],
+                entry['segment_edges'],
+            )
             if graph is None:
                 return False
             new = _graph_tensors(graph)
@@ -438,19 +455,24 @@ class MLIAPCudaGraph:
         num_atoms = torch.tensor(num_nodes, dtype=torch.int64, device=dev)
 
         if self._lunatp:
-            exact = _lunatp_graph(edge_index, num_nodes, 0)
-            n_seg = 0
-            if exact is None:  # always: a graph has at least one segment
-                from LunaEquivariance import make_graph
+            # small graphs of the fused kernels: shorter source segments
+            # (see lunatp_fused.SMALL_GRAPH_EDGES), 4 times the count
+            seg_edges = 0
+            if self._fused:
+                from sevenn.nn.lunatp_fused import SMALL_GRAPH_EDGES
 
-                n_seg = make_graph(
-                    edge_index[1], edge_index[0], num_nodes
-                ).source_segments.nodes.numel()
-            num_segments = (
-                n_seg + max(16, nlocal // self.SEGMENT_ROOM)
+                if num_edges < SMALL_GRAPH_EDGES:
+                    seg_edges = 8
+            n_seg = _make_graph(
+                edge_index, num_nodes, seg_edges
+            ).source_segments.nodes.numel()
+            scale = 4 if seg_edges else 1
+            num_segments = n_seg + scale * (
+                max(16, nlocal // self.SEGMENT_ROOM)
                 + room // self.PAD_EDGES_PER_FAKE_ATOM + num_fake
             )
-            graph = _lunatp_graph(edge_index, num_nodes, num_segments)
+            entry['segment_edges'] = seg_edges
+            graph = _lunatp_graph(edge_index, num_nodes, num_segments, seg_edges)
             # the key LunaTPSharedGraphConvolution looks the graph up by
             edge_index._lunatp_graph = (num_nodes, None, graph)
             entry['num_segments'] = num_segments

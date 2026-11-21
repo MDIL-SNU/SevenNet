@@ -42,6 +42,12 @@ from .lunatp_helper import LunaTPConvolution, LunaTPSharedGraphConvolution
 from .radial_table import FoldedRadialMLP, _convolutions, _table
 from .self_connection import SelfConnectionIntro
 
+# LunaTP's backward works on source segments of at most 32 edges; a graph of
+# fewer edges than this gets segments of 8 (more, shorter blocks: 7net-omni,
+# 64 atoms: 2.79 -> 2.55 ms per step; slower from ~200 atoms on)
+SMALL_GRAPH_EDGES = 4096
+_SEGMENT_EDGES: List[int] = []  # LunaTP's value
+
 _KEY_R = 'fused_radial_r'  # the KEY.EDGE_LENGTH tensor the entries belong to
 _KEY_RID = 'fused_radial_rid'
 _KEY_RU = 'fused_radial_r_unique'
@@ -838,9 +844,16 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             if ru.shape[0] * self.rad_w2.shape[1] >= 2**31:
                 raise RuntimeError('too many edges for the fused radial kernels')
             wbuf = self._weights(data, ru)
+        import LunaEquivariance.lunatp.graph as luna_graph
+
+        if not _SEGMENT_EDGES:
+            _SEGMENT_EDGES.append(luna_graph._SOURCE_SEGMENT_EDGES)
+        small = edge_src.numel() < SMALL_GRAPH_EDGES
+        luna_graph._SOURCE_SEGMENT_EDGES = 8 if small else _SEGMENT_EDGES[0]
         order, graph = LunaTPConvolution.get_graph(
             data[self.key_edge_idx], edge_src, edge_dst, x.shape[0]
         )
+        luna_graph._SOURCE_SEGMENT_EDGES = _SEGMENT_EDGES[0]
         if order is not None:
             y, r, rid = y[order], r[order], rid[order]
         tables = graph._tables[('uvu', 32)]
