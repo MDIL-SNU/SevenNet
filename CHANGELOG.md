@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 - ML-IAP CUDA graph: the bookkeeping before each replay (ghost owners, padded edge index, change flags) is one kernel (`SEVENN_MLIAP_GRAPH_PREP=0`: the torch operations); graphs below 4096 edges run the fused backward with shorter source segments and a stream per group kernel. 7net-omni in LAMMPS: 2.29 / 8.44 / 64.7 ms/step at 64 / 512 / 4096 atoms (original ML-IAP path: 34.5 / 77.3 / 471).
 - `SevenNetCalculator(..., enable_lunatp=True, fused=True)` (or `SEVENNET_ENABLE_FUSED=1`): the same frozen-model kernels in the ASE calculator; the species tables follow the atoms given. 7net-omni, Si, per MD step: 9.65 -> 5.35 ms (64 atoms), 38.5 -> 11.2 ms (512 atoms); energy, forces and stress as the plain calculator.
 - ML-IAP: `SEVENN_MLIAP_MEMORY_REPORT=1` prints the peak torch GPU memory at exit; `SEVENN_CUDA_MEMORY_FRACTION` caps what the process may allocate.
+- ML-IAP CUDA graph: the warm-up call's cached memory is released before the capture (the reserved GPU memory of a run halves: 7net-omni, 125000 atoms, 47.6 -> 24.6 GiB). The fused kernels raise an error above their 32-bit index range (7net-omni: 138084 atoms) instead of falling back.
 - `sevenn.nn.radial_table.tabulate_radial`: the radial MLPs of an original SevenNet model (weights = a function of the edge length only) as cubic Hermite tables in r, one CUDA kernel per pass (cupy); `sevenn get_model --use_mliap --radial_table` or `SEVENN_MLIAP_RADIAL_TABLE=1`. Forces within fp32 round-off of the MLP (4e-6 eV/A)
 
 ### Changed
