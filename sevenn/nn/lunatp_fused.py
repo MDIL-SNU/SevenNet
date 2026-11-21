@@ -627,8 +627,10 @@ class _FusedConv(torch.autograd.Function):
         ctx.save_for_backward(x, y, rid, wbuf)
         op = mod.convolution.tp_conv.op
         out = x.new_empty((x.shape[0], op.out_dim))
-        if op.forward_output_needs_zero or mod.paths is not None:
-            out.zero_()  # paths: the columns no path writes
+        # with paths, the columns of the skipped paths stay uninitialized: the
+        # linear after has no weights for them (checked with NaN there)
+        if op.forward_output_needs_zero:
+            out.zero_()
         mod.fwd_ext.run_uvu_conv_fwd_ordered(
             x, y, wbuf, None, None, tables.src, tables.dst_rowptr,
             tables.node_order, tables.node_tiers, out, x.shape[0], rid.view(-1),
