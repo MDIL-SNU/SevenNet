@@ -649,6 +649,10 @@ class MLIAPCudaGraph:
         try:
             with torch.cuda.stream(side):
                 run()  # warm-up: lazy inits, caches on the static inputs
+                # the captured call allocates from the graph's own pool: give
+                # the warm-up's cached blocks back (half the footprint)
+                torch.cuda.synchronize(dev)
+                torch.cuda.empty_cache()
                 graph.capture_begin()
                 try:
                     e_atoms, e_total, pair_forces, n_unique = run()
@@ -656,6 +660,8 @@ class MLIAPCudaGraph:
                     graph.capture_end()
         except Exception as e:
             current.wait_stream(side)
+            if 'fused LunaTP kernels' in str(e):
+                raise  # too large for them: the fallback would hide it
             warnings.warn(f'CUDA graph capture failed ({type(e).__name__}: {e})')
             return None
         current.wait_stream(side)
