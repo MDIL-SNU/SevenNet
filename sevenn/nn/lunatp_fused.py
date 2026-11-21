@@ -270,6 +270,52 @@ def backward_source(
         'torch::Tensor grp) {',
         src, count=1, regex=False,
     )
+    if (tune or {}).get('streams'):
+        # every source-group kernel on its own stream (LunaTP: two streams):
+        # for graphs too small to fill the GPU with one kernel
+        launch = re.compile(
+            r'(lunatp_uvuconv_bwd_source_fp32<[^>]*><<<[^>]*?, 0, )'
+            r'(state\.worker|stream)(>>>\()'
+        )
+        count = len(launch.findall(src))
+        if count > 2:
+            if count > 16:
+                raise RuntimeError('LunaTP source patch: backward streams')
+            index = iter(range(count))
+
+            def own(m):
+                n = next(index)
+                where = f'sevenn_s[{n}]' if n < count - 1 else 'stream'
+                return m.group(1) + where + m.group(3)
+
+            src = launch.sub(own, src)
+            src = _sub(
+                'void run_uvu_conv_bwd(',
+                'static cudaStream_t sevenn_s[16]; static cudaEvent_t sevenn_e[16];'
+                ' static bool sevenn_init = false;\nvoid run_uvu_conv_bwd(',
+                src, count=1, regex=False,
+            )
+            src = _sub(
+                'C10_CUDA_CHECK(cudaStreamWaitEvent(state.worker, state.start, 0));',
+                f'if (!sevenn_init) {{ for (int i = 0; i < {count - 1}; ++i) {{ '
+                'C10_CUDA_CHECK(cudaStreamCreateWithFlags(&sevenn_s[i], '
+                'cudaStreamNonBlocking)); C10_CUDA_CHECK(cudaEventCreateWithFlags('
+                '&sevenn_e[i], cudaEventDisableTiming)); } sevenn_init = true; }\n'
+                f'for (int i = 0; i < {count - 1}; ++i) C10_CUDA_CHECK('
+                'cudaStreamWaitEvent(sevenn_s[i], state.start, 0));',
+                src, count=1, regex=False,
+            )
+            src = _sub(
+                'C10_CUDA_CHECK(cudaEventRecord(state.done, state.worker));', '',
+                src, count=1, regex=False,
+            )
+            src = _sub(
+                'C10_CUDA_CHECK(cudaStreamWaitEvent(stream, state.done, 0));',
+                f'for (int i = 0; i < {count - 1}; ++i) {{ C10_CUDA_CHECK('
+                'cudaEventRecord(sevenn_e[i], sevenn_s[i])); C10_CUDA_CHECK('
+                'cudaStreamWaitEvent(stream, sevenn_e[i], 0)); }',
+                src, count=1, regex=False,
+            )
     min_blocks = (tune or {}).get('min_blocks')
     if min_blocks is not None:
         def launch(m):
@@ -647,10 +693,10 @@ class _FusedConv(torch.autograd.Function):
         mod, g = ctx.mod, ctx.tables
         rid = rid.view(-1)
         op = mod.convolution.tp_conv.op
-        ext = mod.bwd_ext
+        n_edge = y.shape[0]
+        ext = mod.bwd_small() if n_edge < SMALL_GRAPH_EDGES else mod.bwd_ext
         segmented, partials, _, zero_x, zero_y = mod.bwd_flags
         go = go.contiguous()
-        n_edge = y.shape[0]
         if segmented:
             seg = g.source_segments
         else:
@@ -774,6 +820,7 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             forward_source(op, self.half_weights, herm, specs),
             max_channels=op.max_channels, index_bits=32,
         )
+        self._bwd_small = None
         src, *self.bwd_flags = backward_source(
             op, self.half_weights, herm, specs
         )
@@ -781,6 +828,27 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             f'sevenn_uvuconv_fused_bwd_{tag}', src,
             max_channels=op.max_channels, index_bits=32,
         )
+
+    def bwd_small(self):
+        """the backward kernels for a small graph: a stream per group kernel"""
+        if self._bwd_small is None:
+            from LunaEquivariance.utils.extension import load_tp_extension
+
+            op = self.convolution.tp_conv.op
+            herm = self.knots > 0
+            tag = 'herm' if herm else 'w16' if self.half_weights else 'fp32'
+            specs = None
+            if self.paths is not None:
+                specs = [op.generated_specs[n] for n in self.paths]
+            src, *flags = backward_source(
+                op, self.half_weights, herm, specs, {'streams': True}
+            )
+            assert flags == self.bwd_flags
+            self._bwd_small = load_tp_extension(
+                f'sevenn_uvuconv_fused_bwd_{tag}', src,
+                max_channels=op.max_channels, index_bits=32,
+            )
+        return self._bwd_small
 
     def _embedding(self, data: AtomGraphDataType, ru: torch.Tensor):
         """[basis * cutoff ; its r-derivative] at ru, (2U, n): once per call"""
