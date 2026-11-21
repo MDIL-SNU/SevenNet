@@ -14,6 +14,12 @@ the MLP's backward). Here
   it in registers: dE/dr_e = sum_w dE/dw[e, w] * dw/dr[rid[e], w]. The weight
   gradient array is never written and the MLP has no backward.
 
+With knots > 0 (fuse_radial_conv) there is no per-call weight array at all:
+the kernels interpolate each weight (cubic Hermite in r) from a table of the
+MLP at fixed knots, (K, 3 W) floats that stay mostly in the GPU cache, and
+take dw/dr from the same loads. The kernels are then bound by arithmetic, not
+by memory traffic, and the last-layer GEMM is gone.
+
 The kernels are LunaEquivariance's generated uvu_conv forward and first-order
 backward sources (HPC-AI-Team/LunaEquivariance, BSD-3-Clause, commit a045a88,
 lunatp/uvu_conv/kernels/{forward,backward}.py), patched as text: weight row
@@ -67,7 +73,25 @@ def _closing(text: str, start: int) -> int:
     return pos - 1
 
 
-def forward_source(op, half: bool = False) -> str:
+# cubic Hermite weights of one edge from the knot rows k, k + 1 of a table
+# (K, 3 W) [w | h dw/dr | w(k + 1) - w(k)]: w(t) = w_k + hc1 dw_k + hc2 d_k
+# + hc3 d_k+1 (the difference of the knot values is in the table, not taken
+# in fp32: the r-derivative has no cancellation). (k, t) of edge e are the
+# int32 pair rid[2 e], bits of the float t in the second
+_HERMITE = (
+    'const int hk_ = {k}; const float ht_ = __int_as_float({t}); '
+    'const float ht2_ = ht_ * ht_; const float ht3_ = ht2_ * ht_; '
+    'const float hc1 = 3.0f * ht2_ - 2.0f * ht3_, '
+    'hc2 = ht_ - 2.0f * ht2_ + ht3_, hc3 = ht3_ - ht2_;'
+)
+# h * d/dr of the above
+_HERMITE_D = (
+    ' const float hd1 = 6.0f * ht_ - 6.0f * ht2_, '
+    'hd2 = 1.0f - 4.0f * ht_ + 3.0f * ht2_, hd3 = 3.0f * ht2_ - 2.0f * ht_;'
+)
+
+
+def forward_source(op, half: bool = False, hermite: bool = False) -> str:
     from LunaEquivariance.lunatp.uvu_conv.kernels import forward as F
 
     uniform = len({int(s['channels']) for s in op.generated_specs}) == 1
@@ -110,6 +134,26 @@ def forward_source(op, half: bool = False) -> str:
     src = _sub(
         r'num_nodes\);', 'num_nodes, rid.data_ptr<int32_t>());', src, count=2
     )
+    if hermite:
+        assert not half
+        w = int(op.weight_numel)
+        src = _sub(
+            r'const float\* weight_edge = weight \+ '
+            r'static_cast<uint64_t>\(rid\[e\]\) \* \d+;',
+            _HERMITE.format(k='rid[2 * e]', t='rid[2 * e + 1]')
+            + ' const float* weight_edge = weight + '
+            f'static_cast<uint64_t>(hk_) * {3 * w};', src,
+        )
+        src = _sub(
+            r'= weight_edge\[(\d+) \+ u\];',
+            rf'= weight_edge[\1 + u] + hc1 * weight_edge[\1 + u + {2 * w}]'
+            rf' + hc2 * weight_edge[\1 + u + {w}]'
+            rf' + hc3 * weight_edge[\1 + u + {4 * w}];', src,
+        )
+        if len(re.findall(r'weight_edge\[', src)) != 4 * len(
+            re.findall(r' \+ hc3 \* weight_edge\[', src)
+        ):
+            raise RuntimeError('LunaTP source patch: unknown weight read')
     if half:  # weight rows stored as fp16
         src = _sub(r'const float ?\*(?: ?__restrict__)? weight\b',
                    'const __half* __restrict__ weight', src, count=2)
@@ -124,8 +168,11 @@ def forward_source(op, half: bool = False) -> str:
     return src
 
 
-def backward_source(op, half: bool = False):
-    """(source, segmented, partials, vectorized, zero_x, zero_y)"""
+def backward_source(op, half: bool = False, hermite: bool = False):
+    """
+    (source, segmented, partials, vectorized, zero_x, zero_y). hermite: the
+    partial sums are h * dE/dr, grad_weight is not read
+    """
     from LunaEquivariance.lunatp.uvu_conv.kernels import backward as B
 
     src, *flags = B.make_uvu_conv_bwd_source(op)
@@ -195,6 +242,44 @@ def backward_source(op, half: bool = False):
         'torch::Tensor grp) {',
         src, count=1, regex=False,
     )
+    if hermite:
+        assert not half
+        w = int(op.weight_numel)
+
+        def comb(c, at):
+            return '(' + (f'__ldg(weight + wb + {at} + 0) + ' if c == 'hc' else '') \
+                + ' + '.join(
+                    f'{c}{n} * __ldg(weight + wb + {at} + {off})'
+                    for n, off in ((1, 2 * w), (2, w), (3, 4 * w))
+                ) + ')'
+
+        src = _sub(
+            'const INDEX wb = INDEX(__ldg(rid + e)) * W_DIM; float gr_e = 0.0f;',
+            _HERMITE.format(k='__ldg(rid + 2 * e)', t='__ldg(rid + 2 * e + 1)')
+            + _HERMITE_D
+            + ' const INDEX wb = INDEX(hk_) * (3 * W_DIM); float gr_e = 0.0f;',
+            src, regex=False,
+        )
+        src = re.sub(
+            r'__ldg\(reinterpret_cast<const float2\*>'
+            r'\(weight \+ wb \+ (\d+) \+ u\)\)',
+            lambda m: 'make_float2(' + comb('hc', f'{m.group(1)} + u') + ', '
+            + comb('hc', f'{m.group(1)} + u + 1') + ')', src,
+        )
+        src = re.sub(
+            r'__ldg\(weight \+ wb \+ (\d+) \+ u\)',
+            lambda m: comb('hc', f'{m.group(1)} + u'), src,
+        )
+        src = _sub(
+            r'__ldg\(grad_weight \+ wb \+ (\d+) \+ u( \+ 1)?\)',
+            lambda m: comb('hd', f'{m.group(1)} + u{m.group(2) or ""}'), src,
+        )
+        reads = len(re.findall(r'weight \+ wb', src))
+        if 'grad_weight + wb' in src or reads != (
+            4 * len(re.findall(r'hc3 \* __ldg\(weight \+ wb', src))
+            + 3 * len(re.findall(r'hd3 \* __ldg\(weight \+ wb', src))
+        ):
+            raise RuntimeError('LunaTP source patch: Hermite weight reads')
     if half:  # weight rows (w and dw/dr) stored as fp16
         src = _sub('const float* __restrict__ weight,',
                    'const __half* __restrict__ weight,', src, count=1, regex=False)
@@ -342,7 +427,7 @@ class _FusedConv(torch.autograd.Function):
             out.zero_()
         mod.fwd_ext.run_uvu_conv_fwd_ordered(
             x, y, wbuf, None, None, tables.src, tables.dst_rowptr,
-            tables.node_order, tables.node_tiers, out, x.shape[0], rid,
+            tables.node_order, tables.node_tiers, out, x.shape[0], rid.view(-1),
         )
         return out
 
@@ -354,6 +439,7 @@ class _FusedConv(torch.autograd.Function):
 
         x, y, rid, wbuf = ctx.saved_tensors
         mod, g = ctx.mod, ctx.tables
+        rid = rid.view(-1)
         op = mod.convolution.tp_conv.op
         ext = mod.bwd_ext
         segmented, partials, _, zero_x, zero_y = mod.bwd_flags
@@ -387,15 +473,21 @@ class _FusedConv(torch.autograd.Function):
         ext.run_uvu_conv_bwd(
             *state, x, y, wbuf, go, g.dst, g.edge_ids_by_src, seg.nodes,
             seg.begin, seg.end, seg.order, seg.rowptr, gx_partial, gy_partial,
-            gx, gy, wbuf[half:], x.shape[0], n_edge, seg.nodes.numel(),
+            gx, gy, wbuf if mod.knots else wbuf[half:], x.shape[0], n_edge,
+            seg.nodes.numel(),
             None, None, None, None, rid, gr_partial,
         )
         needs = ctx.needs_input_grad
+        gr = None
+        if needs[3]:
+            gr = gr_partial.sum(0)
+            if mod.knots:
+                gr = gr * mod.table_inv_h
         return (
             None,
             gx if needs[1] else None,
             gy if needs[2] else None,
-            gr_partial.sum(0) if needs[3] else None,
+            gr,
             None, None, None,
         )
 
@@ -418,9 +510,19 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     # weight rows (w, dw/dr) stored as fp16: half the bytes the kernels read,
     # forces change by ~1e-4 eV/A (not the same function to round-off)
     half_weights: bool = False
+    # > 0: the weights of an edge are cubic Hermite interpolated inside the
+    # kernels from a table of that many knots on [table_r0, cutoff] (see
+    # weight_table): no per-call weight array and GEMM.
+    # The table is what the kernels read, mostly from the GPU cache.
+    knots: int = 0
+    table_r0: float = 0.25
+    table_inv_h: float = 0.0
 
-    def _setup(self, emb, half_weights: bool = False) -> None:
+    def _setup(self, emb, half_weights: bool = False, knots: int = 0,
+               r_min: float = 0.25, cutoff: float = 0.0) -> None:
         self.half_weights = half_weights
+        self.knots = int(knots)
+        assert not (half_weights and knots)
         ref = self.denominator
         folded = FoldedRadialMLP(
             copy.deepcopy(self.weight_nn).to('cpu', torch.float64),
@@ -440,19 +542,26 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             self.register_buffer('rad_w2_half', torch.cat([wh, wh, wl]))
         object.__setattr__(self, '_emb', emb)  # not a submodule of this one
         self.weight_nn = nn.Identity()
+        if self.knots:
+            table, h = weight_table(self, emb, r_min, cutoff, self.knots)
+            self.table_r0, self.table_inv_h = float(r_min), 1.0 / h
+            self.register_buffer(
+                'rad_table', table.to(ref.device, ref.dtype).contiguous()
+            )
         self._kernels()
 
     def _kernels(self) -> None:
         from LunaEquivariance.utils.extension import load_tp_extension
 
         op = self.convolution.tp_conv.op
-        tag = 'w16' if self.half_weights else 'fp32'
+        herm = self.knots > 0
+        tag = 'herm' if herm else 'w16' if self.half_weights else 'fp32'
         self.fwd_ext = load_tp_extension(
             f'sevenn_uvuconv_fused_fwd_{tag}',
-            forward_source(op, self.half_weights),
+            forward_source(op, self.half_weights, herm),
             max_channels=op.max_channels, index_bits=32,
         )
-        src, *self.bwd_flags = backward_source(op, self.half_weights)
+        src, *self.bwd_flags = backward_source(op, self.half_weights, herm)
         self.bwd_ext = load_tp_extension(
             f'sevenn_uvuconv_fused_bwd_{tag}', src,
             max_channels=op.max_channels, index_bits=32,
@@ -530,6 +639,21 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         data[KEY_N_UNIQUE] = n_unique
         return rid, ru
 
+    def _knots(self, data: AtomGraphDataType) -> torch.Tensor:
+        """(E, 2) int32: knot interval of each edge, bits of the float t in it"""
+        r = data[KEY.EDGE_LENGTH]
+        key = (self.knots, self.table_r0)
+        if _KEY_R in data and data[_KEY_R] is r and data[_KEY_RU] == key:
+            return data[_KEY_RID]
+        u = (r.detach().double() - self.table_r0) * self.table_inv_h
+        k = u.floor().clamp(0, self.knots - 2)
+        t = (u - k).to(torch.float32)
+        rid = torch.stack([k.to(torch.int32), t.view(torch.int32)], 1)
+        data[_KEY_R], data[_KEY_RID], data[_KEY_RU] = r, rid, key
+        if KEY_N_UNIQUE not in data:
+            data[KEY_N_UNIQUE] = torch.zeros((), dtype=torch.int64, device=r.device)
+        return rid
+
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         x = data[self.key_x]
         edge_src = data[self.key_edge_idx][1]
@@ -541,10 +665,13 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             )
             return data
         r = data[KEY.EDGE_LENGTH]
-        rid, ru = self._unique(data, self.unique_cap)
-        if ru.shape[0] * self.rad_w2.shape[1] >= 2**31:
-            raise RuntimeError('too many edges for the fused radial kernels')
-        wbuf = self._weights(data, ru)
+        if self.knots:
+            rid, wbuf = self._knots(data), self.rad_table
+        else:
+            rid, ru = self._unique(data, self.unique_cap)
+            if ru.shape[0] * self.rad_w2.shape[1] >= 2**31:
+                raise RuntimeError('too many edges for the fused radial kernels')
+            wbuf = self._weights(data, ru)
         order, graph = LunaTPConvolution.get_graph(
             data[self.key_edge_idx], edge_src, edge_dst, x.shape[0]
         )
@@ -560,13 +687,37 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         return data
 
 
+def weight_table(conv, emb, r_min: float, cutoff: float, knots: int):
+    """
+    (table (K, 3 W) fp64 [w | h dw/dr | w(next knot) - w] of conv's radial
+    MLP at K knots on [r_min, cutoff], h): conv after _setup (folded fp64
+    weights)
+    """
+    emb64 = copy.deepcopy(emb).to('cpu', torch.float64)
+    f = conv._folded64
+
+    def radial(r):
+        x = emb64.basis_function(r) * emb64.cutoff_function(r).unsqueeze(-1)
+        return conv._acts[1](conv._acts[0](x @ f.w0) @ f.w1) @ f.w2
+
+    r = torch.linspace(r_min, cutoff, knots, dtype=torch.float64)
+    h = (cutoff - r_min) / (knots - 1)
+    v, dv = torch.autograd.functional.jvp(radial, r, torch.ones_like(r))
+    dif = torch.zeros_like(v)
+    dif[:-1] = v[1:] - v[:-1]
+    return torch.cat([v, dv * h, dif], 1).detach(), h
+
+
 def fuse_radial_conv(
-    model: nn.Module, hidden_table: bool = True, half_weights: bool = False
+    model: nn.Module, hidden_table: bool = True, half_weights: bool = False,
+    knots: int = 0, r_min: float = 0.25,
 ) -> List[str]:
     """
     In place: every LunaTP convolution of a serial model whose radial MLP is
     an e3nn FullyConnectedNet [n, h, h, W] of the edge embedding becomes a
     LunaTPFusedRadialConvolution. Inference only. Returns the names changed.
+    knots > 0: weights interpolated in the kernels from a table of that many
+    knots on [r_min, cutoff].
     """
     from e3nn.nn import FullyConnectedNet
 
@@ -586,11 +737,14 @@ def fuse_radial_conv(
         ):
             continue
         conv.__class__ = LunaTPFusedRadialConvolution
-        conv._setup(emb, half_weights)
+        conv._setup(emb, half_weights, knots, r_min, float(model.cutoff))
         changed.append(name)
         fused.append(conv)
     widths = {c.rad_w2.shape[0] for c in fused}
-    if hidden_table and fused and len(widths) == 1 and fused[0].rad_w2.is_cuda:
+    if (
+        hidden_table and not knots and fused and len(widths) == 1
+        and fused[0].rad_w2.is_cuda
+    ):
         emb64 = copy.deepcopy(emb).to('cpu', torch.float64)
 
         def hidden64(r):

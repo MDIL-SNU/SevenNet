@@ -79,6 +79,13 @@ def add_args(parser):
         action='store_true',
     )
     ag.add_argument(
+        '--fused_knots',
+        help='--fused: knots of the in-kernel radial weight table '
+        '(0: a weight row per distinct edge length each step).',
+        type=int,
+        default=2048,
+    )
+    ag.add_argument(
         '--cuda_graph',
         help='ML-IAP, one rank: replay a captured CUDA graph of the model call.',
         action='store_true',
@@ -185,6 +192,7 @@ def run(args):
             use_cuda_graph=cuda_graph,
             use_radial_table=radial_table,
             use_fused=fused,
+            fused_knots=args.fused_knots,
         )
         torch.save(mliap_module, output_prefix)
 

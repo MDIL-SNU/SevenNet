@@ -33,7 +33,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _fused_graph(cp, half_weights=False):
+def _fused_graph(cp, half_weights=False, knots=0):
     from sevenn.nn.lunatp_fused import fold_modal, fuse_radial_conv
     from sevenn.util import model_from_checkpoint
 
@@ -42,7 +42,7 @@ def _fused_graph(cp, half_weights=False):
     model.delete_module_by_key('force_output')
     model.requires_grad_(False)
     model.to('cuda').eval()
-    names = fuse_radial_conv(model, half_weights=half_weights)
+    names = fuse_radial_conv(model, half_weights=half_weights, knots=knots)
     modal = MODAL if model.modal_map else None
     if modal is not None:
         fold_modal(model, modal)
@@ -51,14 +51,16 @@ def _fused_graph(cp, half_weights=False):
 
 
 # nequip_sc: the species (fully connected) self connection, pruned
+# knots: weight rows per distinct edge length (0) / in-kernel weight table
+@pytest.mark.parametrize('knots', [0, 2048])
 @pytest.mark.parametrize('name', ['nequip_sc'] + GPU_CONFIGS)
-def test_fused_mliap_cuda_graph(tmp_path, name):
+def test_fused_mliap_cuda_graph(tmp_path, name, knots):
     if name == 'moe':  # no capture (torch.nonzero per expert)
         pytest.skip('ffn_moe is not captured')
     cp = _save_checkpoint(_cf(name, ARCHS[0]), tmp_path / 'cp.pth')
     atoms = _atoms((2, 2, 2))
     with _default_dtype(torch.float32):
-        graph, names = _fused_graph(cp)
+        graph, names = _fused_graph(cp, knots=knots)
         if not names:
             pytest.skip('no convolution of this config is fused')
         for step in range(4):
@@ -66,7 +68,7 @@ def test_fused_mliap_cuda_graph(tmp_path, name):
             par, _, _ = _run_mliap(
                 [graph], moved, (1, 1, 1), compute=_compute, device='cuda'
             )
-            _assert_close_f32(par, _serial_f32(cp, moved), (name, step))
+            _assert_close_f32(par, _serial_f32(cp, moved), (name, knots, step))
     assert graph.enabled
     assert graph.n_captures == 1 and graph.n_replays == 3
     if name == 'nequip_sc':

@@ -137,7 +137,7 @@ sevenn get_model \
 sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp --cuda_graph
 ```
 
-- With ``--fused`` (with ``--enable_lunatp``; used by ``--cuda_graph`` on one MPI rank), kernels specific to the frozen model are used: radial weights shared by edges of equal length, no weight-gradient array in the force backward, the species self-connection restricted to the species of the atoms, and the modality folded into the weights. The forces are those of the model to single-precision round-off. An existing potential file can be switched with ``SEVENN_MLIAP_FUSED=1``.
+- With ``--fused`` (with ``--enable_lunatp``; used by ``--cuda_graph`` on one MPI rank), kernels specific to the frozen model are used: radial weights shared by edges of equal length, no weight-gradient array in the force backward, the species self-connection restricted to the species of the atoms, and the modality folded into the weights. The forces are those of the model to single-precision round-off. An existing potential file can be switched with ``SEVENN_MLIAP_FUSED=1``. By default the radial weights are interpolated inside the convolution kernels from a table in the edge length (``--fused_knots``, 2048 knots; forces agree with the per-edge weights to round-off, ~5e-6 eV/A for 7net-omni). ``--fused_knots 0`` computes a weight row per distinct edge length instead (about 2x slower for 7net-omni).
 ```bash
 sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp --cuda_graph --fused
 ```

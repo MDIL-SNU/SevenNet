@@ -50,6 +50,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             use_fused: bool = False  # LunaTP, with the CUDA graph or the
                 folded eager call (one rank): frozen-model kernels of
                 sevenn/nn/lunatp_fused.py
+            fused_knots: int = 2048  # use_fused: knots of the in-kernel
+                radial weight table (0: weight rows per edge length per step)
         """
 
         super().__init__()
@@ -80,6 +82,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.use_cuda_graph = kwargs.get('use_cuda_graph', False)
         self.use_radial_table = kwargs.get('use_radial_table', False)
         self.use_fused = kwargs.get('use_fused', False)
+        self.fused_knots = int(kwargs.get('fused_knots', 2048))
+        self.fused_r_min = float(kwargs.get('fused_r_min', 0.25))
         self.graph = None  # lazy init
 
         # extract configs
@@ -150,11 +154,22 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             # experimental, not the same function to round-off (~1e-4 eV/A):
             # radial weight rows stored as fp16
             w16 = os.getenv('SEVENN_MLIAP_FUSED_W16') == '1'
-            names = fuse_radial_conv(model, half_weights=w16)
-            print(
-                f'[INFO] fused radial + conv{" (fp16 weight rows)" if w16 else ""}'
-                f': {" ".join(names)}', flush=True,
+            # weights interpolated in the kernels from a table of this many
+            # knots in r (0: a weight row per distinct edge length per call)
+            knots = 0 if w16 else int(
+                os.getenv(
+                    'SEVENN_MLIAP_FUSED_KNOTS', getattr(self, 'fused_knots', 2048)
+                )
             )
+            r_min = float(getattr(self, 'fused_r_min', 0.25))
+            names = fuse_radial_conv(
+                model, half_weights=w16, knots=knots, r_min=r_min
+            )
+            how = (
+                f' (weight table, {knots} knots from {r_min} A)'
+                if knots else ' (fp16 weight rows)' if w16 else ''
+            )
+            print(f'[INFO] fused radial + conv{how}: {" ".join(names)}', flush=True)
             if self.modal is not None and model.modal_map:
                 names = fold_modal(model, self.modal)
                 print(f'[INFO] modal folded: {" ".join(names)}', flush=True)
