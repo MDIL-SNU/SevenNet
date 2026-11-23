@@ -56,7 +56,8 @@ def deploy(
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
     chem_list = ''
-    for Z in type_map.keys():
+    # index order, not key order: the readers take a species' index from its position
+    for Z in sorted(type_map, key=lambda z: type_map[z]):
         chem_list += chemical_symbols[Z] + ' '
     chem_list.strip()
     md_configs.update({'chemical_symbols_to_index': chem_list})
@@ -142,7 +143,8 @@ def deploy_parallel(
     type_map = config[KEY.TYPE_MAP]
 
     chem_list = ''
-    for Z in type_map.keys():
+    # index order, not key order: the readers take a species' index from its position
+    for Z in sorted(type_map, key=lambda z: type_map[z]):
         chem_list += chemical_symbols[Z] + ' '
     chem_list.strip()
 
