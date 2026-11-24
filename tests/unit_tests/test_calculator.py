@@ -113,7 +113,9 @@ def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
     model, _ = model_from_checkpoint(pretrained_name_to_path('7net-0_11July2024'))
     flags = [p.requires_grad for p in model.parameters()]
 
-    calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
+    calc_cp = SevenNetCalculator(
+        pretrained_name_to_path('7net-0_11July2024'), radial_table=False,
+    )
     calc_instance = SevenNetCalculator(model, file_type='model_instance')
     assert not any(p.requires_grad for p in calc_cp.model.parameters())
     assert [p.requires_grad for p in calc_instance.model.parameters()] == flags

@@ -258,7 +258,7 @@ def test_calculator(tmp_path):
         cp_path,
     )
 
-    calc2 = SevenNetCalculator(cp_path, enable_flash=False)
+    calc2 = SevenNetCalculator(cp_path, enable_flash=False, radial_table=False)
     atoms2 = copy.deepcopy(_atoms)
     atoms2.calc = calc2
 
