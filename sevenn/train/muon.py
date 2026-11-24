@@ -88,6 +88,34 @@ def _muon_update(
     return torch.cat(pieces)
 
 
+# (shape, count, device, ns_steps) -> whether the batched Newton-Schulz of
+# `count` stacked matrices is bitwise equal to the per-matrix iteration
+_BATCHED_NS_EXACT: Dict[Tuple[Any, ...], bool] = {}
+
+
+def _batched_ns_is_exact(
+    shape: Tuple[int, ...], count: int, device: torch.device, ns_steps: int
+) -> bool:
+    """
+    cuBLAS may pick another algorithm (e.g. split-K for a long inner
+    dimension) for a batched matmul than for a single one, which changes the
+    bf16 rounding. Probed once per shape and batch size on random matrices;
+    the choice of algorithm does not depend on the values.
+    """
+    key = (tuple(shape), count, str(device), ns_steps)
+    exact = _BATCHED_NS_EXACT.get(key)
+    if exact is None:
+        generator = torch.Generator(device=device).manual_seed(0)
+        probe = torch.randn((count, *shape), generator=generator, device=device)
+        batched = zeropower_via_newtonschulz5(probe, ns_steps)
+        exact = all(
+            torch.equal(zeropower_via_newtonschulz5(matrix, ns_steps), result)
+            for matrix, result in zip(probe, batched)
+        )
+        _BATCHED_NS_EXACT[key] = exact
+    return exact
+
+
 def _adam_update(
     grad: torch.Tensor,
     exp_avg: torch.Tensor,
@@ -109,15 +137,23 @@ def _mixed_e3nn_step(
     blocks: List[E3nnBlock],
     muon_group: Dict[str, Any],
     adam_group: Dict[str, Any],
+    muon_base_update: torch.Tensor | None = None,
+    orthogonals: Dict[int, torch.Tensor] | None = None,
 ) -> None:
-    """Apply Muon and Adam to disjoint instruction blocks of one flat weight."""
+    """
+    Apply Muon and Adam to disjoint instruction blocks of one flat weight.
+    The batched step passes the momentum-blended update (momentum buffer
+    already advanced) and the scaled Newton-Schulz result of every Muon block
+    (block index -> matrix) computed for all parameters at once.
+    """
     grad = parameter.grad
     if grad is None:
         return
 
-    momentum_buffer = state['momentum_buffer']
-    momentum_buffer.lerp_(grad, 1.0 - muon_group['momentum'])
-    muon_base_update = grad.lerp(momentum_buffer, muon_group['momentum'])
+    if muon_base_update is None:
+        momentum_buffer = state['momentum_buffer']
+        momentum_buffer.lerp_(grad, 1.0 - muon_group['momentum'])
+        muon_base_update = grad.lerp(momentum_buffer, muon_group['momentum'])
 
     modal_blocks = [block for block in blocks if block[2]]
     if not modal_blocks:
@@ -141,7 +177,7 @@ def _mixed_e3nn_step(
 
     pieces = []
     modal_offset = 0
-    for slice_data, shape, use_modal_adam in blocks:
+    for block_index, (slice_data, shape, use_modal_adam) in enumerate(blocks):
         block_slice = slice(*slice_data)
         parameter_block = parameter[block_slice].flatten()
         if use_modal_adam:
@@ -151,12 +187,15 @@ def _mixed_e3nn_step(
             lr = adam_group['lr']
             weight_decay = adam_group['weight_decay']
         else:
-            update = zeropower_via_newtonschulz5(
-                muon_base_update[block_slice].reshape(shape),
-                muon_group['ns_steps'],
-            )
-            # e3nn Linear instruction views are stored (fan_in, fan_out).
-            update *= _muon_shape_factor(shape[1], shape[0])
+            if orthogonals is not None:
+                update = orthogonals[block_index]
+            else:
+                update = zeropower_via_newtonschulz5(
+                    muon_base_update[block_slice].reshape(shape),
+                    muon_group['ns_steps'],
+                )
+                # e3nn Linear instruction views are stored (fan_in, fan_out).
+                update *= _muon_shape_factor(shape[1], shape[0])
             update = update.flatten()
             lr = muon_group['lr']
             weight_decay = muon_group['weight_decay']
@@ -171,17 +210,63 @@ def _mixed_e3nn_step(
 
 
 class MuonWithAuxAdam(torch.optim.Optimizer):
-    """Replicated-DDP Muon with an auxiliary Adam parameter group."""
+    """
+    Replicated-DDP Muon with an auxiliary Adam parameter group.
+
+    batched=True (default) computes the same update with far fewer kernel
+    launches: momentum and Adam use torch._foreach ops, and the Newton-Schulz
+    iteration runs once per distinct (matrix shape, Muon scale) on the stacked
+    blocks of all parameters instead of once per block. Every operation and its
+    dtype are those of the per-block loop (batched=False); on GH200 / torch 2.10
+    the parameters after a step are bitwise identical (tests/unit_tests/
+    test_muon_batched.py). The per-block loop is CPU (launch) bound: ~1 ms per
+    block, 100 blocks for a 5-layer metaformer model.
+
+    cuda_graph=True (with batched, opt-in) additionally replays the learning
+    rate independent part (momentum, Newton-Schulz) from a CUDA graph,
+    captured at the second step and recaptured whenever the set of parameters
+    with gradients, the momentum buffers or momentum/ns_steps change.
+
+    Sources: Muon and its quintic Newton-Schulz iteration (written for stacked
+    matrices, acting on the last two dims): K. Jordan et al., Muon: An
+    optimizer for hidden layers in neural networks (2024),
+    kellerjordan.github.io/posts/muon, github.com/KellerJordan/Muon (muon.py,
+    zeropower_via_newtonschulz5). Multi-tensor (foreach) update pattern:
+    PyTorch torch/optim/adam.py (_multi_tensor_adam, foreach=True). CUDA
+    graph capture/replay: PyTorch torch.cuda.graph / CUDAGraph
+    (docs.pytorch.org/docs/stable/notes/cuda.html#cuda-graphs). Grouping the
+    blocks by shape, the exactness probe and the split into a graph-captured
+    lr-independent part are own engineering; no external code copied.
+    """
 
     @classmethod
-    def from_model(cls, model: torch.nn.Module, **kwargs) -> 'MuonWithAuxAdam':
-        return cls(build_muon_param_groups(model, **kwargs))
+    def from_model(
+        cls,
+        model: torch.nn.Module,
+        batched: bool = True,
+        cuda_graph: bool = False,
+        **kwargs,
+    ) -> 'MuonWithAuxAdam':
+        return cls(
+            build_muon_param_groups(model, **kwargs),
+            batched=batched,
+            cuda_graph=cuda_graph,
+        )
 
-    def __init__(self, params: Iterable[Dict[str, Any]]) -> None:
+    def __init__(
+        self,
+        params: Iterable[Dict[str, Any]],
+        batched: bool = True,
+        cuda_graph: bool = False,
+    ) -> None:
         groups = list(params)
         if not groups:
             raise ValueError('Muon requires non-empty parameter groups')
         super().__init__(groups, {})
+        # optimizer attributes, not group keys: load_state_dict replaces groups
+        self.batched = bool(batched)
+        self.cuda_graph = bool(cuda_graph) and self.batched
+        self._muon_graph: Dict[str, Any] | None = None
         # Optimizer.load_state_dict replaces custom param-group metadata.  Keep
         # model-derived routing separately so legacy checkpoints remain safe.
         self._muon_runtime_routes: Dict[
@@ -245,6 +330,206 @@ class MuonWithAuxAdam(torch.optim.Optimizer):
                 flush=True,
             )
 
+    def _batched_muon_step(
+        self, group: Dict[str, Any], adam_group: Dict[str, Any]
+    ) -> None:
+        """The per-parameter Muon loop of step() with batched kernels."""
+        params = [p for p in group['params'] if p.grad is not None]
+        if not params:
+            return
+        buffers = []
+        for parameter in params:
+            state = self.state[parameter]
+            if 'momentum_buffer' not in state:
+                state['momentum_buffer'] = torch.zeros_like(parameter)
+            buffers.append(state['momentum_buffer'])
+        grads = [p.grad for p in params]
+        if self.cuda_graph and params[0].is_cuda:
+            directions = self._graphed_muon_directions(group, params, grads, buffers)
+        else:
+            directions = self._muon_directions(group, params, grads, buffers)
+        updates, orthogonals, plain_updates = directions
+
+        plain_params, plain_directions = [], []
+        for index, parameter in enumerate(params):
+            if plain_updates[index] is not None:
+                plain_params.append(parameter)
+                plain_directions.append(plain_updates[index])
+                continue
+            blocks, _ = self._muon_runtime_routes[id(parameter)]
+            _mixed_e3nn_step(
+                parameter,
+                self.state[parameter],
+                blocks,
+                group,
+                adam_group,
+                muon_base_update=updates[index],
+                orthogonals=orthogonals[index],
+            )
+        if plain_params:
+            decay = 1.0 - group['lr'] * group['weight_decay']
+            torch._foreach_mul_(plain_params, decay)
+            torch._foreach_add_(plain_params, plain_directions, alpha=-group['lr'])
+
+    def _muon_directions(
+        self,
+        group: Dict[str, Any],
+        params: List[torch.nn.Parameter],
+        grads: List[torch.Tensor],
+        buffers: List[torch.Tensor],
+    ) -> Tuple[List[torch.Tensor], List[Dict[int, torch.Tensor]], List[Any]]:
+        """
+        Learning-rate independent part of the Muon step: advance the momentum
+        buffers and orthogonalize every block. Returns the momentum-blended
+        updates, the scaled Newton-Schulz result of every block and, for
+        parameters without modal Adam blocks, the full update (else None).
+        """
+        torch._foreach_lerp_(buffers, grads, 1.0 - group['momentum'])
+        updates = torch._foreach_lerp(grads, buffers, group['momentum'])
+
+        # Newton-Schulz jobs grouped by (matrix shape, Muon scale)
+        jobs: Dict[Tuple[Tuple[int, ...], float], List[torch.Tensor]] = {}
+        owners: Dict[Tuple[Tuple[int, ...], float], List[Tuple[int, int]]] = {}
+        routes = []
+        for index, (parameter, update) in enumerate(zip(params, updates)):
+            runtime_route = self._muon_runtime_routes.get(id(parameter))
+            if runtime_route is None:
+                raise ValueError('Missing immutable Muon runtime routing')
+            blocks, matrix_layout = runtime_route
+            routes.append(runtime_route)
+            if blocks is None:
+                matrix = update.view(len(update), -1) if update.ndim == 4 else update
+                if matrix.ndim < 2:
+                    raise ValueError('Muon requires a matrix-valued update')
+                if matrix_layout == FAN_OUT_FAN_IN:
+                    fan_out, fan_in = matrix.size(-2), matrix.size(-1)
+                elif matrix_layout == FAN_IN_FAN_OUT:
+                    fan_in, fan_out = matrix.size(-2), matrix.size(-1)
+                else:
+                    raise ValueError(f'Unknown Muon matrix layout: {matrix_layout}')
+                key = (tuple(matrix.shape), _muon_shape_factor(fan_out, fan_in))
+                jobs.setdefault(key, []).append(matrix)
+                owners.setdefault(key, []).append((index, -1))
+                continue
+            for block_index, (slice_data, shape, use_modal_adam) in enumerate(
+                blocks
+            ):
+                if use_modal_adam:
+                    continue
+                matrix = update[slice(*slice_data)].reshape(shape)
+                # e3nn Linear instruction views are stored (fan_in, fan_out).
+                key = (tuple(shape), _muon_shape_factor(shape[1], shape[0]))
+                jobs.setdefault(key, []).append(matrix)
+                owners.setdefault(key, []).append((index, block_index))
+
+        orthogonals: List[Dict[int, torch.Tensor]] = [{} for _ in params]
+        for key, matrices in jobs.items():
+            shape, factor = key
+            if len(matrices) > 1 and _batched_ns_is_exact(
+                shape, len(matrices), matrices[0].device, group['ns_steps']
+            ):
+                stacked = zeropower_via_newtonschulz5(
+                    torch.stack(matrices), group['ns_steps']
+                )
+                stacked *= factor
+                results = stacked.unbind(0)
+            else:
+                results = []
+                for matrix in matrices:
+                    orthogonal = zeropower_via_newtonschulz5(
+                        matrix, group['ns_steps']
+                    )
+                    orthogonal *= factor
+                    results.append(orthogonal)
+            for (index, block_index), orthogonal in zip(owners[key], results):
+                orthogonals[index][block_index] = orthogonal
+
+        plain_updates: List[Any] = []
+        for index, parameter in enumerate(params):
+            blocks, _ = routes[index]
+            if blocks is not None and any(block[2] for block in blocks):
+                plain_updates.append(None)  # mixed: finished by _mixed_e3nn_step
+                continue
+            if blocks is None:
+                update = orthogonals[index][-1]
+            else:
+                block_results = orthogonals[index]
+                pieces = [block_results[i].flatten() for i in range(len(blocks))]
+                update = torch.cat(pieces) if len(pieces) > 1 else pieces[0]
+            plain_updates.append(update.reshape_as(parameter))
+        return updates, orthogonals, plain_updates
+
+    def _graphed_muon_directions(
+        self,
+        group: Dict[str, Any],
+        params: List[torch.nn.Parameter],
+        grads: List[torch.Tensor],
+        buffers: List[torch.Tensor],
+    ):
+        """
+        _muon_directions replayed from a CUDA graph (cuda_graph=True). Its
+        inputs are static: the gradients are copied into fixed buffers and the
+        momentum buffers are updated in place. The graph is captured at the
+        second step with the same parameters, momentum buffers (storage) and
+        hyperparameters, so the first one runs eagerly and fills the caches
+        (cuBLAS handles, Newton-Schulz batching probes); any change runs
+        eagerly again and recaptures.
+        """
+        signature = (
+            tuple(id(p) for p in params),
+            tuple(b.data_ptr() for b in buffers),
+            group['momentum'],
+            group['ns_steps'],
+        )
+        cache = self._muon_graph
+        if cache is None or cache['signature'] != signature:
+            self._muon_graph = {'signature': signature, 'graph': None}
+            return self._muon_directions(group, params, grads, buffers)
+        if cache['graph'] is None:
+            static_grads = [g.clone() for g in grads]
+            graph = torch.cuda.CUDAGraph()
+            # thread_local: CUDA calls of other threads (e.g. the DataLoader
+            # pin_memory thread) stay legal during the capture
+            with torch.cuda.graph(graph, capture_error_mode='thread_local'):
+                outputs = self._muon_directions(group, params, static_grads, buffers)
+            cache.update(graph=graph, static_grads=static_grads, outputs=outputs)
+        else:
+            torch._foreach_copy_(cache['static_grads'], grads)
+        # capture records without running: the first replay is this step
+        cache['graph'].replay()
+        return cache['outputs']
+
+    def _foreach_adam_step(self, group: Dict[str, Any]) -> None:
+        """The per-parameter Adam loop of step() with torch._foreach ops."""
+        by_step: Dict[int, List[torch.nn.Parameter]] = {}
+        for parameter in group['params']:
+            if parameter.grad is None:
+                continue
+            state = self.state[parameter]
+            if not state:
+                state['exp_avg'] = torch.zeros_like(parameter)
+                state['exp_avg_sq'] = torch.zeros_like(parameter)
+                state['step'] = 0
+            state['step'] += 1
+            by_step.setdefault(state['step'], []).append(parameter)
+        beta1, beta2 = group['betas']
+        for step, params in by_step.items():
+            grads = [p.grad for p in params]
+            exp_avgs = [self.state[p]['exp_avg'] for p in params]
+            exp_avg_sqs = [self.state[p]['exp_avg_sq'] for p in params]
+            torch._foreach_lerp_(exp_avgs, grads, 1.0 - beta1)
+            # grad * grad is bitwise grad.square()
+            torch._foreach_lerp_(
+                exp_avg_sqs, torch._foreach_mul(grads, grads), 1.0 - beta2
+            )
+            corrected_avgs = torch._foreach_div(exp_avgs, 1.0 - beta1**step)
+            denominators = torch._foreach_div(exp_avg_sqs, 1.0 - beta2**step)
+            torch._foreach_sqrt_(denominators)
+            torch._foreach_add_(denominators, group['eps'])
+            updates = torch._foreach_div(corrected_avgs, denominators)
+            torch._foreach_mul_(params, 1.0 - group['lr'] * group['weight_decay'])
+            torch._foreach_add_(params, updates, alpha=-group['lr'])
+
     @torch.no_grad()
     def step(self, closure=None):
         loss = None
@@ -260,6 +545,12 @@ class MuonWithAuxAdam(torch.optim.Optimizer):
         adam_group = adam_groups[0]
 
         for group in self.param_groups:
+            if self.batched:
+                if group['use_muon']:
+                    self._batched_muon_step(group, adam_group)
+                else:
+                    self._foreach_adam_step(group)
+                continue
             if group['use_muon']:
                 for parameter in group['params']:
                     if parameter.grad is None:
