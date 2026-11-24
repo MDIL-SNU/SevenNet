@@ -140,11 +140,21 @@ if [ "$enable_flashTP" -eq 1 ]; then
     # Keep the wrapper beside its core library so $ORIGIN resolves correctly.
     cat >> "$lammps_root/cmake/CMakeLists.txt" <<EOF
 
-add_library(sevennet_flashtp SHARED IMPORTED)
+if(NOT TARGET sevennet_flashtp)
+    add_library(sevennet_flashtp SHARED IMPORTED)
+endif()
 set_target_properties(sevennet_flashtp PROPERTIES IMPORTED_LOCATION "$flashTP_so")
+
+# Some FlashTP builds keep a dependency on Torch's Python bindings.
+set(sevennet_flashtp_torch_libs "")
+foreach(torch_lib libtorch_python.so libshm.so)
+    if(EXISTS "\${TORCH_INSTALL_PREFIX}/lib/\${torch_lib}")
+        list(APPEND sevennet_flashtp_torch_libs "\${TORCH_INSTALL_PREFIX}/lib/\${torch_lib}")
+    endif()
+endforeach()
 EOF
-    optional_libs+=("    sevennet_flashtp")
-    optional_rpaths+=("$(dirname "$flashTP_so")" "\${TORCH_INSTALL_PREFIX}/lib")
+    optional_libs+=("    sevennet_flashtp" '    ${sevennet_flashtp_torch_libs}')
+    optional_rpaths+=("$(dirname "$flashTP_so")")
 fi
 
 if [ "$enable_oeq" -eq 1 ]; then
