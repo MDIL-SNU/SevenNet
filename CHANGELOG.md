@@ -16,6 +16,8 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
+- Fix incorrect LAMMPS species mapping when checkpoint type map keys are out of index order. Redeploy affected models.
+- Fix FlashTP shared library loading in LAMMPS.
 
 
 ## [0.13.0]
