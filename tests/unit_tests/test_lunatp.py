@@ -450,3 +450,22 @@ def test_auto_precompile_runs_once(tmp_path, monkeypatch):
     monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
     helper.auto_precompile({**cfg, 'lmax': 1})
     assert popen.call_count == 9
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_precompile_marker_tracks_cutlass(tmp_path, monkeypatch):
+    from sevenn.nn.lunatp_helper import _precompile_marker
+
+    markers = []
+    for include in (tmp_path / 'first', tmp_path / 'second'):
+        headers = include / 'cutlass'
+        (headers / 'gemm' / 'device').mkdir(parents=True)
+        (headers / 'gemm' / 'device' / 'gemm.h').touch()
+        (headers / 'cutlass.h').touch()
+        (headers / 'version.h').write_text('#define CUTLASS_MAJOR 3\n')
+        monkeypatch.setenv('LUNATP_CUTLASS_INCLUDE', str(include))
+        markers.append(_precompile_marker({}, order=1))
+
+    assert markers[0] != markers[1]
+    (headers / 'version.h').write_text('#define CUTLASS_MAJOR 4\n')
+    assert _precompile_marker({}, order=1) != markers[1]

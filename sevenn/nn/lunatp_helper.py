@@ -38,6 +38,9 @@ try:
         make_graph,
     )
     from LunaEquivariance.utils import jit as _lunaeq_jit
+    from LunaEquivariance.utils.extension import (
+        find_cutlass_include as _find_cutlass_include,
+    )
     from torch.utils import cpp_extension as _cpp_extension
 
     class _DigestVersionedCppExtension:
@@ -337,6 +340,15 @@ def _precompile_marker(config: dict, order: int) -> str:
         except (RuntimeError, OSError, subprocess.SubprocessError):
             toolchain.append((compiler, None))
 
+    cutlass = None
+    try:
+        include = _find_cutlass_include()
+    except RuntimeError:
+        pass
+    else:
+        header = include / 'cutlass' / 'version.h'
+        cutlass = (str(include), header.read_text() if header.is_file() else None)
+
     # Keep the build environment in sync with LunaEquivariance 0.3.0's JIT key.
     build_env = (
         'CC', 'NVCC_CCBIN', 'NVCC_PREPEND_FLAGS', 'NVCC_APPEND_FLAGS',
@@ -363,6 +375,7 @@ def _precompile_marker(config: dict, order: int) -> str:
         ],
         cuda_home,
         toolchain,
+        cutlass,
         {name: os.environ.get(name, '') for name in build_env},
     ]
     digest = hashlib.sha256(
