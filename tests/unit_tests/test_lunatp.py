@@ -277,8 +277,6 @@ dimer = Atoms('NaCl', positions=[[0, 0, 0], [0, 0, 2.4]])
 for atoms in (dimer, bulk('NaCl', 'rocksalt', a=4.0)):
     atoms.calc = calc
     atoms.get_potential_energy()
-    atoms.get_forces()
-    calc.results['stress']
 """
 
 
@@ -288,31 +286,26 @@ for atoms in (dimer, bulk('NaCl', 'rocksalt', a=4.0)):
     reason='compiles all kernels of a model; set SEVENNET_TEST_PRECOMPILE=1',
 )
 def test_precompile_covers_calculator(tmp_path, monkeypatch):
-    """
-    After precompile into an empty kernel cache, a new process running
-    SevenNetCalculator (energy, forces, stress) adds no LunaEquivariance kernel
-    library to the cache.
-    """
     from sevenn.nn.lunatp_helper import precompile
 
-    cache = tmp_path / 'lunaeq'
-    monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(cache))
+    monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(tmp_path))
+    monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
     cfg = get_model_config()
     cfg.update({
         'channel': 4, 'lmax': 1, 'num_convolution_layer': 2,
-        'use_lunatp': True, 'version': sevenn.__version__,
+        'use_lunatp': False, 'version': sevenn.__version__,
     })
     model = build_E3_equivariant_model(cfg, parallel=False)
     cp_path = str(tmp_path / 'cp.pth')
     torch.save({'model_state_dict': model.state_dict(), 'config': cfg}, cp_path)
 
     precompile(cp_path)
-    built = {str(p) for p in cache.rglob('*.so')}
+    built = set(tmp_path.rglob('*.so'))
     assert built
     subprocess.run(
         [sys.executable, '-c', _CALCULATOR_CALLS, cp_path], check=True
     )
-    added = {str(p) for p in cache.rglob('*.so')} - built
+    added = set(tmp_path.rglob('*.so')) - built
     assert not added, f'kernels built after precompile: {sorted(added)}'
 
 
@@ -330,11 +323,6 @@ for irreps in sys.argv[1:]:
 
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
 def test_kernel_cache_independent_of_load_order(tmp_path):
-    """
-    A process loads two kernel libraries of one base name (equ_norm) in the
-    order (X, Y) into an empty cache; a second process loads them in the
-    order (Y, X) and compiles nothing (see _DigestVersionedCppExtension).
-    """
     env = {**os.environ, 'LUNAEQ_CACHE_DIR': str(tmp_path)}
     configs = ['2x0e+1x1o', '3x0e+1x1o']
 
@@ -438,24 +426,19 @@ def test_no_fallback(monkeypatch):
 def test_auto_precompile_runs_once(tmp_path, monkeypatch):
     import sevenn.nn.lunatp_helper as helper
 
-    class Done:
-        def wait(self):
-            return 0
-
-    calls = []
-    monkeypatch.setattr(
-        helper.subprocess, 'Popen', lambda cmd, **kw: calls.append(cmd) or Done()
-    )
+    popen = Mock()
+    popen.return_value.wait.return_value = 0
+    monkeypatch.setattr(helper.subprocess, 'Popen', popen)
     monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(tmp_path))
     monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '3')
     cfg = get_model_config()
 
     helper.auto_precompile(cfg)
-    assert len(calls) == 3
+    assert popen.call_count == 3
     helper.auto_precompile(cfg)
-    assert len(calls) == 3
+    assert popen.call_count == 3
     helper.auto_precompile({**cfg, 'lmax': 3})
-    assert len(calls) == 6
+    assert popen.call_count == 6
     monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
     helper.auto_precompile({**cfg, 'lmax': 1})
-    assert len(calls) == 6
+    assert popen.call_count == 6

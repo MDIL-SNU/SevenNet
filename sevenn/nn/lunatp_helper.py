@@ -204,11 +204,8 @@ def patch_gate(module: EquivariantGate):
 
 def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
     """
-    Build the module's kernels: one forward and backward per combination of
-    tensors that require grad, the no-grad combination first (later no-grad
-    calls would reuse the fused forward+backward kernel and leave the
-    forward-only one unbuilt). order 2 differentiates once more and runs
-    linears on 65 rows (kernel selected by n <= 64).
+    Run no-grad first to build the forward-only kernel before the fused one.
+    For linear double backward, 65 rows exercise the kernel for n > 64.
     """
     if isinstance(module, LunaTPConvolution):
         tp = module.tp_conv
