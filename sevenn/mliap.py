@@ -95,8 +95,9 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
     ):
         """Load a checkpoint for ML-IAP inference.
 
-        On one rank, compatible models use radial interpolation. CUDA also
-        enables replay and, for LunaTP, fused kernels by default.
+        Single-rank runs use radial interpolation for compatible models. CUDA
+        enables replay by default, except with FlashTP. CUDA LunaTP also
+        enables fused kernels by default.
         """
 
         super().__init__()

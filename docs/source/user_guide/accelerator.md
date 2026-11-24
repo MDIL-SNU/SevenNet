@@ -113,7 +113,7 @@ For more information, see [OpenEquivariance](https://github.com/PASSIONLab/OpenE
 LunaTP support in SevenNet is currently experimental.
 :::
 
-LunaTP (LunaEquivariance package) replaces the tensor product convolution with a fused kernel that accumulates the messages of each destination atom in registers before one store to global memory. SevenNet also replaces the linear layers, the self-connection tensor product, and the gate nonlinearity with their LunaEquivariance counterparts. The kernels are compiled at the first use of each irreps configuration and cached on disk.
+LunaTP (LunaEquivariance package) replaces the tensor product convolution with a fused kernel that accumulates the messages of each destination atom in registers before one store to global memory. SevenNet also replaces the linear layers, the self-connection tensor product, and the gate nonlinearity with their LunaEquivariance counterparts.
 
 ### Requirements
 - Python >= 3.10, PyTorch >= 2.8
