@@ -385,3 +385,30 @@ def test_no_fallback(monkeypatch):
         _solve_accelerator(False, False, False, True)
     with pytest.raises(ValueError):
         _solve_accelerator(False, False, True, True)
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_auto_precompile_runs_once(tmp_path, monkeypatch):
+    import sevenn.nn.lunatp_helper as helper
+
+    class Done:
+        def wait(self):
+            return 0
+
+    calls = []
+    monkeypatch.setattr(
+        helper.subprocess, 'Popen', lambda cmd, **kw: calls.append(cmd) or Done()
+    )
+    monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(tmp_path))
+    monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '3')
+    cfg = get_model_config()
+
+    helper.auto_precompile(cfg)
+    assert len(calls) == 3
+    helper.auto_precompile(cfg)
+    assert len(calls) == 3
+    helper.auto_precompile({**cfg, 'lmax': 3})
+    assert len(calls) == 6
+    monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
+    helper.auto_precompile({**cfg, 'lmax': 1})
+    assert len(calls) == 6

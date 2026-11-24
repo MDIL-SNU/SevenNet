@@ -367,6 +367,7 @@ def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     if not config.get(KEY.USE_LUNATP, False):
         return layers
 
+    lunatp_helper.auto_precompile(config)
     # raises ImportError if LunaTP is not available, no fallback to e3nn
     updates = {}
     for k, module in layers.items():

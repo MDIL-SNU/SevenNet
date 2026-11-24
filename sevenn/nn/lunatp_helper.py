@@ -1,4 +1,7 @@
+import fcntl
+import hashlib
 import itertools
+import json
 import os
 import subprocess
 import sys
@@ -16,6 +19,8 @@ from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
 from .equivariant_gate import EquivariantGate
 from .linear import IrrepsLinear
 from .self_connection import SelfConnectionIntro, SelfConnectionLinearIntro
+
+_WORKERS_ENV = 'SEVENNET_LUNATP_PRECOMPILE_WORKERS'
 
 try:
     from LunaEquivariance import (
@@ -290,20 +295,22 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
             p.requires_grad_(f)
 
 
-def _precompile_worker(checkpoint_path: str, rank: str, size: str, order: str):
+def _precompile_worker(config_path: str, rank: str, size: str, order: str):
     """
     A convolution compiles its forward kernel when it is built, so each worker
-    first builds its share of them instead of waiting for them in build_model.
+    first builds its share of them instead of waiting for them in the model
+    build.
     """
-    from sevenn.util import load_checkpoint
+    from sevenn.model_build import build_E3_equivariant_model
 
+    config = torch.load(config_path, weights_only=False)
+    e3nn_model = build_E3_equivariant_model({**config, KEY.USE_LUNATP: False})
     convolutions = [
-        m for m in load_checkpoint(checkpoint_path).build_model().modules()
-        if isinstance(m, IrrepsConvolution)
+        m for m in e3nn_model.modules() if isinstance(m, IrrepsConvolution)
     ]
     for conv in convolutions[int(rank) :: int(size)]:
         LunaTPConvolution(**conv.convolution_kwargs)
-    model = load_checkpoint(checkpoint_path).build_model(enable_lunatp=True)
+    model = build_E3_equivariant_model(dict(config))
     model.to('cuda')
     param = next(model.parameters())
     luna_types = (
@@ -317,36 +324,83 @@ def _precompile_worker(checkpoint_path: str, rank: str, size: str, order: str):
         _run_once(module, param.device, param.dtype, int(order))
 
 
+def _precompile_marker(config: dict, order: int) -> str:
+    from importlib.metadata import version
+
+    from torch.utils import cpp_extension
+
+    root = os.environ.get('LUNAEQ_CACHE_DIR') or os.path.join(
+        os.environ.get('TORCH_EXTENSIONS_DIR')
+        or cpp_extension.get_default_build_root(),
+        'lunaeq',
+    )
+    key = [
+        config,
+        order,
+        torch.__version__,
+        version('LunaEquivariance'),
+        torch.cuda.get_device_capability(),
+    ]
+    digest = hashlib.sha256(
+        json.dumps(key, sort_keys=True, default=str).encode()
+    ).hexdigest()[:24]
+    return os.path.join(os.path.expanduser(root), 'sevenn_precompiled', digest)
+
+
 def precompile(
-    checkpoint: str, order: int = 1, max_workers: Optional[int] = None
+    model: Union[str, dict],
+    order: int = 1,
+    max_workers: Optional[int] = None,
+    skip_done: bool = False,
 ) -> None:
     """
-    Build the LunaEquivariance kernels of the model of a checkpoint (path or
-    pretrained name) before its first call, in max_workers processes (default
-    min(8, available CPUs)) that each run a share of the LunaTP modules once.
-    Processes, not threads: LunaEquivariance kernels must not run from several
-    threads of one process.
+    Build the LunaEquivariance kernels of a model (checkpoint path, pretrained
+    name or model config) in max_workers processes (default min(8, available
+    CPUs)) that each run a share of the LunaTP modules once.
     order=2 also builds the kernels of second derivatives (force training).
+    skip_done returns at once if an earlier call finished for the same model,
+    order and environment.
     """
     if not is_lunatp_available():
         return
-    from sevenn.util import load_checkpoint
+    if isinstance(model, dict):
+        config = dict(model)
+    else:
+        from sevenn.util import load_checkpoint
 
-    checkpoint_path = load_checkpoint(checkpoint).checkpoint_path
+        config = dict(load_checkpoint(model).config)
+    config.update({
+        KEY.USE_LUNATP: True,
+        KEY.USE_OEQ: False,
+        KEY.USE_FLASH_TP: False,
+        KEY.CUEQUIVARIANCE_CONFIG: {'use': False},
+    })
+    marker = _precompile_marker(config, order)
+    os.makedirs(os.path.dirname(marker), exist_ok=True)
     workers = max_workers or min(8, len(os.sched_getaffinity(0)))
-    # one compiler process per worker: a kernel's main.cpp and cuda.cu in turn
-    env = {**os.environ, 'MAX_JOBS': '1'}
+    env = {**os.environ, 'MAX_JOBS': '1', _WORKERS_ENV: '0'}
     code = (
         'import sys; from sevenn.nn.lunatp_helper import _precompile_worker; '
         '_precompile_worker(*sys.argv[1:])'
     )
-    with tempfile.TemporaryDirectory() as tmp:
+    with open(marker + '.lock', 'a') as lock, tempfile.TemporaryDirectory() as tmp:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if skip_done and os.path.exists(marker):
+            return
+        if skip_done:
+            print(
+                f'LunaTP: building kernels in {workers} processes '
+                f'(once per model; {_WORKERS_ENV}=0 disables)',
+                file=sys.stderr,
+            )
+        config_path = os.path.join(tmp, 'config.pt')
+        torch.save(config, config_path)
 
         def run(ranks):
             procs = {}
             for rank in ranks:
                 log = open(os.path.join(tmp, f'{rank}.log'), 'w')
-                cmd = [sys.executable, '-c', code, checkpoint_path, str(rank)]
+                cmd = [sys.executable, '-c', code, config_path, str(rank)]
                 cmd += [str(workers), str(order)]
                 procs[rank] = subprocess.Popen(
                     cmd, stdout=log, stderr=subprocess.STDOUT, env=env
@@ -364,3 +418,18 @@ def precompile(
                 f'LunaTP precompile workers {failed} failed; their kernels '
                 f'build at the first call.\n{tail}'
             )
+        else:
+            open(marker, 'w').close()
+
+
+def auto_precompile(config: dict) -> None:
+    """
+    precompile for a model about to be built, skipped if already done.
+    SEVENNET_LUNATP_PRECOMPILE_WORKERS sets the number of processes (0: off),
+    SEVENNET_LUNATP_PRECOMPILE_ORDER=2 adds the kernels for training.
+    """
+    workers = int(os.environ.get(_WORKERS_ENV, -1))
+    if workers == 0:
+        return
+    order = int(os.environ.get('SEVENNET_LUNATP_PRECOMPILE_ORDER', 1))
+    precompile(config, order, workers if workers > 0 else None, skip_done=True)
