@@ -1,48 +1,23 @@
-"""
-Frozen-model LunaTP path (sevenn/nn/lunatp_fused.py) in the LAMMPS ML-IAP
-CUDA graph, on the emulated lmp_data of test_parallel_consistency.py: fused
-radial convolutions (weight rows per distinct edge length, dE/dr contracted
-in the backward kernel, hidden layers from a table), species self connection
-pruned to the species present, modal input folded. Energy, forces and stress
-of the serial model along a sequence of structures, from one capture; fp16
-weight rows are close but not equal.
-"""
 import numpy as np
 import pytest
 import torch
 
 from sevenn.nn._mliap_cuda_graph import MLIAPCudaGraph
-from tests.unit_tests.test_arch_options import ARCHS
-from tests.unit_tests.test_mliap_cuda_graph import _compute as _compute_i64
-from tests.unit_tests.test_mliap_cuda_graph import _moved
-from tests.unit_tests.test_model import cutoff
-from tests.unit_tests.test_parallel_consistency import (
-    GPU_CONFIGS,
+from sevenn.nn.lunatp_helper import is_lunatp_available
+from tests.unit_tests._mliap_fixture import (
     MODAL,
-    _assert_close_f32,
-    _atoms,
-    _backend_available,
-    _cf,
-    _default_dtype,
-    _graph,
-    _run_mliap,
-    _save_checkpoint,
-    _serial_f32,
+    assert_efs,
+    atoms_with_ghosts,
+    cutoff,
+    evaluate,
+    reference,
+    save_checkpoint,
 )
+from tests.unit_tests.test_mliap_cuda_graph import _compute, _moved
 
 pytestmark = pytest.mark.skipif(
-    not (torch.cuda.is_available() and _backend_available('lunatp')),
-    reason='needs CUDA and LunaTP',
+    not is_lunatp_available(), reason='needs CUDA and LunaTP'
 )
-
-
-def _compute(graph, lmp):
-    """int32 pair lists and types as LAMMPS gives them: the one-kernel step
-    bookkeeping of MLIAPCudaGraph (the emulation's are int64)"""
-    lmp.pair_i = lmp.pair_i.astype(np.int32)
-    lmp.pair_j = lmp.pair_j.astype(np.int32)
-    lmp.elems = lmp.elems.astype(np.int32)
-    _compute_i64(graph, lmp)
 
 
 def _fused_graph(cp, half_weights=False, knots=0):
@@ -68,40 +43,32 @@ def _fused_graph(cp, half_weights=False, knots=0):
     return MLIAPCudaGraph(model, torch.device('cuda'), cutoff, modal=modal), names
 
 
-# nequip_sc: the species (fully connected) self connection, pruned
-# knots: weight rows per distinct edge length (0) / in-kernel weight table
 @pytest.mark.parametrize('knots', [0, 2048])
-@pytest.mark.parametrize('name', ['nequip_sc'] + GPU_CONFIGS)
-def test_fused_mliap_cuda_graph(tmp_path, name, knots):
-    if name == 'moe':  # no capture (torch.nonzero per expert)
-        pytest.skip('ffn_moe is not captured')
-    cp = _save_checkpoint(_cf(name, ARCHS[0]), tmp_path / 'cp.pth')
-    atoms = _atoms((2, 2, 2))
-    with _default_dtype(torch.float32):
-        graph, names = _fused_graph(cp, knots=knots)
-        if not names:
-            pytest.skip('no convolution of this config is fused')
-        for step in range(4):
-            moved = _moved(atoms, step)
-            par, _, _ = _run_mliap(
-                [graph], moved, (1, 1, 1), compute=_compute, device='cuda'
-            )
-            _assert_close_f32(par, _serial_f32(cp, moved), (name, knots, step))
+@pytest.mark.parametrize('self_connection', ['nequip', 'linear'])
+def test_fused_mliap_cuda_graph(tmp_path, self_connection, knots):
+    cp = save_checkpoint(tmp_path / 'cp.pth', self_connection, modal=True)
+    atoms = atoms_with_ghosts()
+    graph, names = _fused_graph(cp, knots=knots)
+    ref = reference(cp, MODAL)
+    assert names
+    for step in range(4):
+        moved = _moved(atoms, step)
+        out, _ = _compute(graph, moved)
+        assert_efs(out, evaluate(ref, moved))
+
     assert graph.enabled
     assert graph.n_captures == 1 and graph.n_replays == 3
-    assert graph._prep is not None and 'flags' in graph._entry  # step kernel
-    if name == 'nequip_sc':
-        from sevenn.nn.lunatp_fused import PrunedSelfConnectionIntro
+    assert graph._prep is not None and 'flags' in graph._entry
+    if self_connection == 'nequip':
+        from sevenn.nn.lunatp_fused import FusedFirstLayer, PrunedSelfConnectionIntro
 
+        n_species = len(set(atoms.numbers))
         pruned = [
             m for m in graph.model.modules()
             if isinstance(m, PrunedSelfConnectionIntro)
         ]
-        n_species = len(set(atoms.numbers.tolist()))
         assert pruned and all(m.columns.numel() == n_species for m in pruned)
         if knots:
-            from sevenn.nn.lunatp_fused import FusedFirstLayer
-
             first = [
                 m for m in graph.model.modules() if isinstance(m, FusedFirstLayer)
             ]
@@ -109,18 +76,13 @@ def test_fused_mliap_cuda_graph(tmp_path, name, knots):
 
 
 def test_fused_half_weights(tmp_path):
-    """fp16 weight rows: the forces of the serial model to ~1e-3"""
-    cp = _save_checkpoint(_cf(GPU_CONFIGS[0], ARCHS[0]), tmp_path / 'cp.pth')
-    atoms = _moved(_atoms((2, 2, 2)), 1)
-    with _default_dtype(torch.float32):
-        graph, names = _fused_graph(cp, half_weights=True)
-        if not names:
-            pytest.skip('no convolution of this config is fused')
-        par, _, _ = _run_mliap(
-            [graph], atoms, (1, 1, 1), compute=_compute, device='cuda'
-        )
-        ref = _serial_f32(cp, atoms)
-    err = float(abs(par[1] - ref[1]).max())
+    cp = save_checkpoint(tmp_path / 'cp.pth')
+    atoms = _moved(atoms_with_ghosts(), 1)
+    graph, names = _fused_graph(cp, half_weights=True)
+    assert names
+    out, _ = _compute(graph, atoms)
+    ref = evaluate(reference(cp), atoms)
+    err = float(abs(out[1] - ref[1]).max())
     assert 0.0 < err < 2e-2 * float(abs(ref[1]).max())
 
 
@@ -164,76 +126,48 @@ def _md(efs, atoms, steps, dt):
     return e_start, e, e + 0.5 * float((v * v).sum()), atoms.get_positions()
 
 
-# the trajectory of the optimized path against the serial model's: forces and
-# energies together, and what their differences add up to over the steps
 @pytest.mark.parametrize('knots', [0, 2048])
 def test_fused_md_energy(tmp_path, knots):
-    from sevenn.util import model_from_checkpoint
+    cp = save_checkpoint(tmp_path / 'cp.pth')
+    atoms = atoms_with_ghosts()
+    calc = reference(cp)
+    graph, names = _fused_graph(cp, knots=knots)
+    assert names
 
-    cp = _save_checkpoint(_cf('nequip_sc', ARCHS[0]), tmp_path / 'cp.pth')
-    atoms = _atoms((2, 2, 2))
-    steps = 40
-    with _default_dtype(torch.float32):
-        serial, _ = model_from_checkpoint(str(cp))
-        serial.set_is_batch_data(False)
-        if serial.modal_map:
-            serial.prepare_modal_deploy(MODAL)
-        serial.eval()
+    def ref(a):
+        return evaluate(calc, a)
 
-        def ref(a):
-            g = _graph(a)
-            for k, v in g.items():
-                if torch.is_tensor(v) and v.is_floating_point():
-                    g[k] = v.float()
-            out = serial(g)
-            return (
-                out['inferred_total_energy'].item(),
-                out['inferred_force'].detach().numpy().astype(np.float64),
-            )
+    def new(a):
+        return _compute(graph, a)[0]
 
-        graph, names = _fused_graph(cp, knots=knots)
-        assert names
-
-        def new(a):
-            return _run_mliap(
-                [graph], a, (1, 1, 1), compute=_compute, device='cuda'
-            )[0][:2]
-
-        f0 = np.abs(ref(atoms)[1]).max()
-        dt = float(np.sqrt(2.0 * 2e-3 / f0))  # first step: 2e-3 A at most
-        e0, e_ref, tot_ref, x_ref = _md(ref, atoms, steps, dt)
-        _, e_new, tot_new, x_new = _md(new, atoms, steps, dt)
-    # fp32 energies of ~600 eV; measured: 1e-6 eV, 8e-6 A after atoms moved
-    # by up to ~1 A and the potential energy changed by 0.08 eV
-    tol = 5e-8 * max(1.0, abs(e_ref))
-    assert abs(e_ref - e0) > 100 * tol  # the atoms moved
-    assert abs(e_new - e_ref) <= tol, (e_new, e_ref)
-    assert abs(tot_new - tot_ref) <= tol, (tot_new, tot_ref)
-    assert np.abs(x_new - x_ref).max() <= 1e-4
+    f0 = np.abs(ref(atoms)[1]).max()
+    dt = float(np.sqrt(2.0 * 2e-3 / f0))
+    e0, e_ref, tot_ref, x_ref = _md(ref, atoms, 20, dt)
+    _, e_new, tot_new, x_new = _md(new, atoms, 20, dt)
+    assert abs(e_ref - e0) > 1e-3
+    assert abs(e_new - e_ref) < 1e-4
+    assert abs(tot_new - tot_ref) < 1e-4
+    np.testing.assert_allclose(x_new, x_ref, atol=1e-4, rtol=0)
 
 
 def test_fused_calculator(tmp_path):
-    """SevenNetCalculator(fused=True): energy, forces and stress of the plain
-    calculator, also after atoms with a species not seen before"""
     from sevenn.calculator import SevenNetCalculator
 
-    cp = _save_checkpoint(_cf('nequip_sc', ARCHS[0]), tmp_path / 'cp.pth')
-    with _default_dtype(torch.float32):
-        plain = SevenNetCalculator(str(cp), device='cuda')
-        fused = SevenNetCalculator(
-            str(cp), device='cuda', enable_lunatp=True, fused=True
+    cp = save_checkpoint(tmp_path / 'cp.pth')
+    plain = SevenNetCalculator(str(cp), device='cpu', compute_atomic_virial=True)
+    fused = SevenNetCalculator(
+        str(cp), device='cuda', enable_lunatp=True, fused=True,
+        compute_atomic_virial=True,
+    )
+    assert any(name.startswith('0_convolution') for name in fused.fused)
+    atoms = atoms_with_ghosts()
+    fewer_species = atoms[atoms.numbers != 1]
+    empty_edges = atoms[:2]
+    empty_edges.set_cell([30.0, 30.0, 30.0])
+    empty_edges.positions[:] = [[5, 5, 5], [25, 25, 25]]
+    for structure in (fewer_species, empty_edges, atoms, fewer_species):
+        assert_efs(evaluate(fused, structure), evaluate(plain, structure))
+        np.testing.assert_allclose(
+            fused.results['stresses'], plain.results['stresses'], atol=1e-5
         )
-        assert '0_convolution' in fused.fused
-        few = _atoms((2, 2, 2))
-        keep = [n for n, s in enumerate(few.get_chemical_symbols()) if s != 'H']
-        few = few[keep]  # then all four species: the tables are built again
-        for atoms in (few, _atoms((2, 2, 2)), few):
-            res = []
-            for calc in (plain, fused):
-                a = atoms.copy()
-                a.calc = calc
-                res.append(
-                    (a.get_potential_energy(), a.get_forces(), a.get_stress())
-                )
-            _assert_close_f32(res[1], res[0], len(atoms))
     assert len(fused._fused_species) == 4

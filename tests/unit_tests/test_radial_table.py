@@ -18,7 +18,7 @@ from sevenn.nn.radial_table import (
     tabulate_radial,
 )
 from sevenn.train.dataload import unlabeled_atoms_to_graph
-from sevenn.util import pretrained_name_to_path, model_from_checkpoint
+from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 CASES = [('cpu', False)]
 if torch.cuda.is_available():
@@ -78,6 +78,6 @@ def test_optimize_radial(width):
 def test_radial_table_refused():
     model, _ = model_from_checkpoint(pretrained_name_to_path('7net-0'))
     conv = next(m for n, m in model._modules.items() if n.endswith('_convolution'))
-    conv.key_weight_input = KEY.EDGE_RBF
+    conv.key_weight_input = KEY.EDGE_ATTR
     with pytest.raises(ValueError, match='radial input'):
         tabulate_radial(model)
