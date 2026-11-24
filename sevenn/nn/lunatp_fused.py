@@ -400,13 +400,15 @@ def _harmonics_polynomials(sph: nn.Module, lmax: int):
             [u[:, 0] ** a * u[:, 1] ** b * u[:, 2] ** c for a, b, c in mono], 1
         )
         target = y[:, at:at + 2 * l + 1]
-        coef = torch.linalg.lstsq(A, target).solution  # (monomials, 2l + 1)
+        coef = torch.linalg.lstsq(A, target, driver='gels').solution
         if float((A @ coef - target).abs().max()) > 1e-9:
             raise RuntimeError('spherical harmonics are not polynomials of u')
         for j, abc in enumerate(mono):
             for m in range(2 * l + 1):
-                if abs(float(coef[j, m])) > 1e-11:
-                    terms.append((at + m, float(coef[j, m]), abc))
+                value = float(coef[j, m])
+                if abs(value) > 1e-11:
+                    # Keep the CUDA source stable across CPU thread counts.
+                    terms.append((at + m, float(f'{value:.13g}'), abc))
         at += 2 * l + 1
     if at != y.shape[1]:
         raise RuntimeError('spherical harmonics: unexpected dimension')
