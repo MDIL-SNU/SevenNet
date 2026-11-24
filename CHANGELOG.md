@@ -11,8 +11,8 @@ All notable changes to this project will be documented in this file.
 - LunaTP kernels compile in parallel processes when a model is built (`SEVENNET_LUNATP_PRECOMPILE_WORKERS`, `0` to turn off)
 - Hybrid Muon optimizer (`optimizer: muon`): Muon for e3nn linear and radial weight matrices, auxiliary Adam for the rest
 - CUDA Graph replay defaults on for compatible CUDA runs in ASE and single-rank ML-IAP. FlashTP uses eager execution.
-- Supported CUDA LunaTP models use fused inference kernels by default.
-- Compatible radial MLPs in ASE and single-rank ML-IAP use cubic Hermite interpolation on 2,048 knots from 0 Å to the model cutoff by default. Interpolation is independent of the tensor-product backend and fusion.
+- Supported CUDA LunaTP models use fused inference kernels by default in ASE and in both single- and multi-rank ML-IAP.
+- Compatible radial MLPs in ASE and ML-IAP use cubic Hermite interpolation on 2,048 knots from 0 Å to the model cutoff by default. Interpolation is independent of the tensor-product backend and fusion.
 - `SEVENN_MLIAP_MEMORY_REPORT=1` reports peak Torch GPU memory. `SEVENN_CUDA_MEMORY_FRACTION` limits per-process allocation.
 
 ### Changed

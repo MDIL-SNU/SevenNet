@@ -71,3 +71,55 @@ def test_mliap_cuda_graph_foreign_ghost(tmp_path):
         assert not graph.compute(lmp_data)
     assert not graph.enabled and not graph.compute(lmp_data)
     assert not lmp_data.eatoms.any()
+
+
+@pytest.mark.parametrize(
+    'options, fused, radial_table',
+    [
+        ({}, True, True),
+        ({'use_fused': False}, False, True),
+        ({'use_radial_table': False}, True, False),
+    ],
+    ids=['defaults', 'disable-fused', 'disable-radial-table'],
+)
+def test_parallel_inference_uses_eager(
+    tmp_path, monkeypatch, options, fused, radial_table
+):
+    if not is_lunatp_available():
+        pytest.skip('LunaTP not available')
+    pytest.importorskip('lammps.mliap.mliap_unified_abc')
+    from sevenn.mliap import SevenNetMLIAPWrapper
+    from sevenn.nn.lunatp_fused import LunaTPFusedRadialConvolution
+    from sevenn.nn.radial_table import RadialTable
+
+    monkeypatch.setenv('OMPI_COMM_WORLD_SIZE', '2')
+    cp = save_checkpoint(tmp_path / 'parallel.pth')
+    model = SevenNetMLIAPWrapper(
+        str(cp), use_lunatp=True, use_cuda_graph=True, **options,
+    )
+    ref = reference(cp)
+    atoms = atoms_with_ghosts()
+    atoms.pbc = False
+    counts = set()
+    structures = (atoms, atoms, atoms[:0], moved(atoms, 2), moved(atoms, 3))
+    for structure in structures:
+        lmp = FakeLmpData(structure)
+        lmp.elems = torch.as_tensor(lmp.elems, device='cuda')
+        lmp.reverse_exchange = lambda send, recv, width: recv.copy_(send)
+        model.compute_forces(lmp)
+        if not len(structure):
+            assert lmp.energy == 0.0
+            continue
+        assert_efs(lmp.efs(structure), evaluate(ref, structure))
+        assert model.graph is None
+        counts.add(lmp.npairs)
+    assert len(counts) > 1
+    fused_layers = [
+        layer for layer in model.model.modules()
+        if isinstance(layer, LunaTPFusedRadialConvolution)
+    ]
+    assert bool(fused_layers) == fused
+    assert (
+        any(layer.knots for layer in fused_layers)
+        or any(isinstance(layer, RadialTable) for layer in model.model.modules())
+    ) == radial_table

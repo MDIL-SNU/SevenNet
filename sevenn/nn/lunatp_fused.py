@@ -543,7 +543,7 @@ class _FusedConv(torch.autograd.Function):
     """out(x, y; w[rid]); r only receives dE/dr (through dw/dr)"""
 
     @staticmethod
-    def forward(ctx, mod, x, y, r, rid, wbuf, tables):
+    def forward(ctx, mod, x, y, r, rid, wbuf, tables, num_outputs):
         ctx.mod, ctx.tables = mod, tables
         ctx.save_for_backward(x, y, rid, wbuf)
         op = mod.convolution.tp_conv.op
@@ -556,12 +556,12 @@ class _FusedConv(torch.autograd.Function):
                 f'{(2**31 - 1) // widest} atoms for this model). Run without '
                 'fused (SEVENN_MLIAP_FUSED=0, or fused=False).'
             )
-        out = x.new_empty((x.shape[0], op.out_dim))
+        out = x.new_empty((num_outputs, op.out_dim))
         if op.forward_output_needs_zero:
             out.zero_()
         mod.fwd_ext.run_uvu_conv_fwd_ordered(
             x, y, wbuf, None, None, tables.src, tables.dst_rowptr,
-            tables.node_order, tables.node_tiers, out, x.shape[0], rid.view(-1),
+            tables.node_order, tables.node_tiers, out, num_outputs, rid.view(-1),
         )
         return out
 
@@ -623,7 +623,7 @@ class _FusedConv(torch.autograd.Function):
             gx if needs[1] else None,
             gy if needs[2] else None,
             gr,
-            None, None, None,
+            None, None, None, None,
         )
 
 
@@ -802,11 +802,13 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         tables = graph._tables[('uvu', 32)]
         if order is not None:
             y, r, rid = y[order], r[order], rid[order]
+        num_outputs = x.shape[0]
         if self.index_order and not self.convolution.tp_conv.op.forward_degree_tiers:
             tables = _index_order(graph)
+            num_outputs = data.get(KEY.MLIAP_OWNED_OUTPUT, num_outputs)
         data[self.key_x] = _FusedConv.apply(
             self, x.contiguous(), y.contiguous(), r, rid.contiguous(), wbuf,
-            tables,
+            tables, num_outputs,
         )
         return data
 
@@ -1105,12 +1107,12 @@ class FusedFirstLayer(nn.Module):
         self.columns = columns
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        if not self.columns:
-            raise RuntimeError('FusedFirstLayer: set_species was not called')
         self.conv._begin_graph(data)
         y = data[self.key_filter]
         r = data[KEY.EDGE_LENGTH]
         types = data[KEY.ATOM_TYPE]
+        if types.numel() and not self.columns:
+            raise RuntimeError('FusedFirstLayer: set_species was not called')
         if r.numel() == 0:
             data[self.key_x] = self.bias.expand(types.shape[0], -1) + r.sum() * 0
             return data
@@ -1231,7 +1233,7 @@ def prepare_fused_inference(model, build_reference, modal, knots, r_min, first=T
 
 
 def specialize_fused_species(model: nn.Module, columns: Sequence[int]) -> list[str]:
-    for module in model._modules.values():
+    for module in model.modules():
         if isinstance(module, FusedFirstLayer):
             module.set_species(columns)
     return prune_self_connection(model, columns)

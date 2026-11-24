@@ -77,7 +77,7 @@ def add_args(parser):
     )
     for name, help_text in (
         ('cuda_graph', 'Replay the model on one CUDA MPI rank.'),
-        ('fused', 'Use fused LunaTP kernels on one CUDA MPI rank.'),
+        ('fused', 'Use fused LunaTP kernels.'),
         ('radial_table', 'Interpolate radial weights with cubic Hermite tables.'),
     ):
         flags = ag.add_mutually_exclusive_group()
@@ -170,7 +170,10 @@ def run(args):
         raise ValueError('fused needs LunaTP (--enable_lunatp).')
 
     if use_mliap and get_parallel:
-        raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
+        raise ValueError(
+            'Deploy ML-IAP without --get_parallel. '
+            'It uses the same potential for single- and multi-rank runs.'
+        )
 
     # deploy
     if output_prefix is None:
