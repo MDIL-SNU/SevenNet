@@ -272,7 +272,10 @@ from ase import Atoms
 from ase.build import bulk
 from sevenn.calculator import SevenNetCalculator
 
-calc = SevenNetCalculator(sys.argv[1], enable_lunatp=True)
+calc = SevenNetCalculator(
+    sys.argv[1], enable_lunatp=True,
+    cuda_graph=False, fused=False, radial_table=False,
+)
 dimer = Atoms('NaCl', positions=[[0, 0, 0], [0, 0, 2.4]])
 for atoms in (dimer, bulk('NaCl', 'rocksalt', a=4.0)):
     atoms.calc = calc

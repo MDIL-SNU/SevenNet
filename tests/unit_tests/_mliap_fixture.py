@@ -7,7 +7,7 @@ from test_model import cutoff, get_model_config
 import sevenn
 from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
-from sevenn.util import chemical_species_preprocess
+from sevenn.util import chemical_species_preprocess, model_from_checkpoint
 
 MODAL = 'mpa'
 
@@ -48,7 +48,9 @@ def save_checkpoint(path, self_connection='nequip', modal=False, **model_options
 
 
 def reference(path, modal=None):
-    return SevenNetCalculator(str(path), device='cpu', modal=modal)
+    return SevenNetCalculator(
+        str(path), device='cpu', modal=modal, radial_table=False,
+    )
 
 
 def evaluate(calc, atoms):
@@ -60,6 +62,25 @@ def evaluate(calc, atoms):
 def assert_efs(actual, expected):
     for value, ref, atol in zip(actual, expected, (5e-5, 1e-4, 1e-5)):
         np.testing.assert_allclose(value, ref, rtol=1e-5, atol=atol)
+
+
+def graph_model(path, enable_lunatp=False):
+    model, _ = model_from_checkpoint(str(path), enable_lunatp=enable_lunatp)
+    model.set_is_batch_data(False)
+    model.delete_module_by_key('force_output')
+    return model.requires_grad_(False).cuda().eval()
+
+
+def compute_graph(graph, atoms, index_dtype=np.int32):
+    lmp = FakeLmpData(atoms, index_dtype)
+    assert graph.compute(lmp)
+    return lmp.efs(atoms), lmp.npairs
+
+
+def moved(atoms, step):
+    shifted = atoms.copy()
+    shifted.rattle(0.03 * step, seed=10 + step)
+    return shifted
 
 
 class FakeLmpData:

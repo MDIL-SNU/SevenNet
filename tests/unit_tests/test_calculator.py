@@ -2,12 +2,16 @@ import copy
 
 import numpy as np
 import pytest
+import torch
 from ase import Atoms
 from ase.build import bulk, molecule
 
-from sevenn.calculator import D3Calculator, SevenNetCalculator
+import sevenn._keys as KEY
+from sevenn.atom_graph_data import AtomGraphData
+from sevenn.calculator import D3Calculator, SevenNetCalculator, _sort_edges
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.flash_helper import is_flash_available
+from sevenn.train.dataload import unlabeled_atoms_to_graph
 from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
 
@@ -104,28 +108,15 @@ def test_sevennet_0_cal_mol(atoms_mol, sevennet_0_cal):
     assert np.allclose(atoms_mol.get_potential_energies(), atoms2_ref['energies'])
 
 
-def test_checkpoint_calc_freezes_weights_only(atoms_pbc):
-    model, _ = model_from_checkpoint(pretrained_name_to_path('7net-0_11July2024'))
-    flags = [p.requires_grad for p in model.parameters()]
-    calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
-    calc_instance = SevenNetCalculator(model, file_type='model_instance')
-    assert not any(p.requires_grad for p in calc_cp.model.parameters())
-    # a model instance given by the caller is not modified
-    assert [p.requires_grad for p in calc_instance.model.parameters()] == flags
-    atoms_pbc.calc = calc_cp
-    f_cp, s_cp = atoms_pbc.get_forces(), atoms_pbc.get_stress()
-    atoms_pbc.calc = calc_instance
-    f_in, s_in = atoms_pbc.get_forces(), atoms_pbc.get_stress()
-    assert np.allclose(f_cp, f_in, atol=1e-6)
-    assert np.allclose(s_cp, s_in, atol=1e-7)
-
-
 def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
     atoms_pbc.rattle(stdev=0.01, seed=42)
     model, _ = model_from_checkpoint(pretrained_name_to_path('7net-0_11July2024'))
+    flags = [p.requires_grad for p in model.parameters()]
 
     calc_cp = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'))
     calc_instance = SevenNetCalculator(model, file_type='model_instance')
+    assert not any(p.requires_grad for p in calc_cp.model.parameters())
+    assert [p.requires_grad for p in calc_instance.model.parameters()] == flags
 
     atoms_pbc.calc = calc_cp
     atoms_pbc.get_potential_energy()
@@ -137,6 +128,40 @@ def test_sevennet_0_cal_as_instance_consistency(atoms_pbc):
 
     for k in res_cp:
         assert np.allclose(res_cp[k], res_script[k])
+
+
+@pytest.mark.parametrize('device', [
+    'cpu', pytest.param('cuda', marks=pytest.mark.skipif(
+        not torch.cuda.is_available(), reason='needs CUDA',
+    )),
+])
+def test_packed_io_equals_per_tensor_io(device, atoms_pbc):
+    enabled = torch.are_deterministic_algorithms_enabled()
+    warn = torch.is_deterministic_algorithms_warn_only_enabled()
+    torch.use_deterministic_algorithms(True, warn_only=True)
+    try:
+        calc = SevenNetCalculator(
+            '7net-0_11July2024', device=device, cuda_graph=False,
+        )
+        atoms_pbc.rattle(0.03, seed=1)
+        calc.calculate(atoms_pbc)
+        data = AtomGraphData.from_numpy_dict(
+            unlabeled_atoms_to_graph(atoms_pbc, calc.cutoff)
+        )
+        _sort_edges(data)
+        out = calc.model(data.to(device))
+    finally:
+        torch.use_deterministic_algorithms(enabled, warn_only=warn)
+    ref = {
+        'energy': out[KEY.PRED_TOTAL_ENERGY].item(),
+        'energies': out[KEY.ATOMIC_ENERGY].detach().cpu().numpy().ravel(),
+        'forces': out[KEY.PRED_FORCE].detach().cpu().numpy(),
+        'stress': (-out[KEY.PRED_STRESS]).detach().cpu().numpy()[[0, 1, 2, 4, 5, 3]],
+    }
+    for key, value in ref.items():
+        actual = np.asarray(calc.results[key])
+        assert actual.dtype == np.asarray(value).dtype, key
+        np.testing.assert_array_equal(actual, value, err_msg=key)
 
 
 @pytest.mark.skipif(not is_cue_available(), reason='cueq not available')
