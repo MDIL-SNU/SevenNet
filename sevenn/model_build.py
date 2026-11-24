@@ -571,6 +571,7 @@ def build_E3_equivariant_model(
         'bias_in_linear': use_bias_in_linear,
         'num_species': num_species,
         'parallel': parallel,
+        'drop_unused_tp_irreps': config.get(KEY.DROP_UNUSED_TP_IRREPS, False),
     }
 
     interaction_builder = None

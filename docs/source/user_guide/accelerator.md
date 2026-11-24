@@ -143,6 +143,17 @@ sevenn lunatp_precompile 7net-omni --train   # also the kernels for training wit
 ```
 `--max_workers` sets the number of parallel processes.
 
+### Fused inference and radial interpolation
+
+The fused LunaTP kernels combine tensor products with radial weight lookup
+and force backpropagation. They can use exact radial MLP weights or cubic
+Hermite interpolation. Interpolation also works as a separate radial operation.
+The default table uses 2048 uniformly spaced knots from 0 Å to the cutoff.
+With a positive first knot, shorter distances use cubic extrapolation.
+
+See the [ASE](./ase_calculator.md#accelerating-inference) and
+[ML-IAP](./lammps_mliap.md) options for disabling or configuring these paths.
+
 For more information, see [LunaEquivariance](https://github.com/HPC-AI-Team/LunaEquivariance).
 
 ## Usage

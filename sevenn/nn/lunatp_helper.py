@@ -7,6 +7,7 @@ import subprocess
 import sys
 import sysconfig
 import tempfile
+import threading
 import warnings
 from typing import Optional, Union
 
@@ -28,6 +29,7 @@ from .self_connection import SelfConnectionIntro, SelfConnectionLinearIntro
 _WORKERS_ENV = 'SEVENNET_LUNATP_PRECOMPILE_WORKERS'
 PREPARED_GRAPH_KEY = '_lunatp_prepared_graph'
 _SHARED_GRAPH_KEY = '_lunatp_graph'
+_GRAPH_BUILD_LOCK = threading.Lock()
 
 try:
     from LunaEquivariance import (
@@ -103,16 +105,33 @@ def lunatp_needed(func):
     return wrapper
 
 
-def prepare_graph(edge_index: torch.Tensor, num_nodes: int):
+def _make_graph(edge_src, edge_dst, num_nodes, segment_edges=0):
+    with _GRAPH_BUILD_LOCK:
+        if not segment_edges:
+            return make_graph(edge_src, edge_dst, num_nodes)
+        import LunaEquivariance.lunatp.graph as luna_graph
+
+        # LunaEquivariance 0.3.0 reads the segment size from the module.
+        default = luna_graph._SOURCE_SEGMENT_EDGES
+        luna_graph._SOURCE_SEGMENT_EDGES = segment_edges
+        try:
+            return make_graph(edge_src, edge_dst, num_nodes)
+        finally:
+            luna_graph._SOURCE_SEGMENT_EDGES = default
+
+
+def prepare_graph(edge_index: torch.Tensor, num_nodes: int, segment_edges=0):
     """Return the edge permutation and LunaTP graph for this topology."""
     edge_dst, edge_src = edge_index
     try:
-        return None, make_graph(edge_src, edge_dst, num_nodes)
+        return None, _make_graph(edge_src, edge_dst, num_nodes, segment_edges)
     except ValueError:
         if bool(torch.all(edge_dst[1:] >= edge_dst[:-1])):
             raise
         order = torch.argsort(edge_dst, stable=True)
-        return order, make_graph(edge_src[order], edge_dst[order], num_nodes)
+        return order, _make_graph(
+            edge_src[order], edge_dst[order], num_nodes, segment_edges
+        )
 
 
 class LunaTPConvolution(torch.nn.Module):
@@ -153,7 +172,7 @@ class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
     starts_graph = True
     ends_graph = False
 
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+    def _begin_graph(self, data: AtomGraphDataType) -> None:
         if self.starts_graph:
             if _SHARED_GRAPH_KEY in data:
                 del data[_SHARED_GRAPH_KEY]
@@ -163,16 +182,26 @@ class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
                 del data[PREPARED_GRAPH_KEY]
                 if data[self.key_edge_idx].numel():
                     data[_SHARED_GRAPH_KEY] = topology
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        self._begin_graph(data)
         return super().forward(data)
 
-    def _convolve(self, data, x, edge_filter, weight):
+    def _prepare_graph(self, edge_index, num_nodes):
+        return prepare_graph(edge_index, num_nodes)
+
+    def _take_graph(self, data, num_nodes):
         if self.starts_graph and _SHARED_GRAPH_KEY not in data:
-            data[_SHARED_GRAPH_KEY] = prepare_graph(
-                data[self.key_edge_idx], x.shape[0]
+            data[_SHARED_GRAPH_KEY] = self._prepare_graph(
+                data[self.key_edge_idx], num_nodes
             )
         topology = data[_SHARED_GRAPH_KEY]
         if self.ends_graph:
             del data[_SHARED_GRAPH_KEY]
+        return topology
+
+    def _convolve(self, data, x, edge_filter, weight):
+        topology = self._take_graph(data, x.shape[0])
         return self.convolution(x, edge_filter, weight, topology)
 
 
@@ -323,6 +352,8 @@ def _precompile_marker(config: dict, order: int) -> str:
         key: config.get(key, defaults.get(key))
         for key in model_keys - {KEY.CONV_DENOMINATOR}
     }
+    if not model[KEY.DROP_UNUSED_TP_IRREPS]:
+        del model[KEY.DROP_UNUSED_TP_IRREPS]
 
     cuda_home = _cpp_extension.CUDA_HOME
     nvcc = os.path.join(cuda_home, 'bin', 'nvcc') if cuda_home else 'nvcc'
@@ -394,7 +425,8 @@ def precompile(
     Build the LunaEquivariance kernels of a model (checkpoint path, pretrained
     name or model config) in max_workers processes (default min(8, available
     CPUs)) that each run a share of the LunaTP modules once.
-    order=2 also builds the kernels of second derivatives (force training).
+    order=1 uses the inference layout. order=2 uses the checkpoint layout
+    and builds second derivatives for force training.
     skip_done returns at once if an earlier call finished for the same model,
     order and environment.
     """
@@ -405,7 +437,10 @@ def precompile(
     else:
         from sevenn.util import load_checkpoint
 
-        config = dict(load_checkpoint(model).config)
+        checkpoint = load_checkpoint(model)
+        if order == 1:
+            checkpoint = checkpoint.compact_for_inference()
+        config = checkpoint.config
     config.update({
         KEY.USE_LUNATP: True,
         KEY.USE_OEQ: False,

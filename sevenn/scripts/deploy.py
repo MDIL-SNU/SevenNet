@@ -23,7 +23,7 @@ def deploy(
     if not (use_flash or use_oeq):
         warn_no_tp_accelerator('LAMMPS TorchScript deployment')
 
-    cp = load_checkpoint(checkpoint)
+    cp = load_checkpoint(checkpoint).compact_for_inference()
     model, config = (
         cp.build_model(
             enable_cueq=False,
@@ -91,7 +91,7 @@ def deploy_parallel(
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
-    cp = load_checkpoint(checkpoint)
+    cp = load_checkpoint(checkpoint).compact_for_inference()
 
     model, config = (
         cp.build_model(

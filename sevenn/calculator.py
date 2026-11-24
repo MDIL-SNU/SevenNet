@@ -1,7 +1,10 @@
 import ctypes
+import dataclasses
+import math
 import os
 import pathlib
 import warnings
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Union
 
 import numpy as np
@@ -12,9 +15,151 @@ from ase.calculators.mixing import SumCalculator
 
 import sevenn._keys as KEY
 import sevenn.util as util
+from sevenn._const import DEFAULT_RADIAL_TABLE_KNOTS, DEFAULT_RADIAL_TABLE_R_MIN
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.train.dataload import unlabeled_atoms_to_graph
+
+_OUTPUT_KEYS = (
+    KEY.PRED_TOTAL_ENERGY,
+    KEY.ATOMIC_ENERGY,
+    KEY.PRED_FORCE,
+    KEY.PRED_STRESS,
+    KEY.PRED_ATOMIC_VIRIAL,  # only with compute_atomic_virial
+)
+
+
+def _sort_edges(data):
+    """Stably sort by destination and source to recognize unchanged topology."""
+    ei = data[KEY.EDGE_IDX]
+    num_atoms = len(data[KEY.ATOMIC_NUMBERS])
+    order = torch.argsort(ei[0] * num_atoms + ei[1], stable=True)
+    # index_select: CPU advanced indexing costs ~0.5 ms at 3k edges
+    data[KEY.EDGE_IDX] = ei.index_select(1, order)
+    data[KEY.EDGE_VEC] = data[KEY.EDGE_VEC].index_select(0, order)
+    if KEY.EDGE_PADDED in data:
+        data[KEY.EDGE_PADDED] = data[KEY.EDGE_PADDED].index_select(0, order)
+
+
+def _to_device_packed(data, device):
+    """Transfer CPU tensors in one non-blocking copy per dtype."""
+    groups: Dict[torch.dtype, list] = {}
+    for k, v in data.items():
+        if isinstance(v, torch.Tensor):
+            groups.setdefault(v.dtype, []).append(k)
+    for keys in groups.values():
+        flat = torch.cat([data[k].reshape(-1) for k in keys])
+        dev = flat.pin_memory().to(device, non_blocking=True)
+        offset = 0
+        for k in keys:
+            n = data[k].numel()
+            data[k] = dev[offset:offset + n].view(data[k].shape)
+            offset += n
+
+
+def _segments_per_source(edge_index, num_atoms: int, segment: int):
+    """Return the segment count (at least one) and degree of each source."""
+    deg = np.bincount(edge_index[1].numpy(), minlength=num_atoms)
+    return np.maximum((deg + segment - 1) // segment, 1), deg
+
+
+def _num_segments(edge_index, num_atoms: int, segment: int) -> int:
+    """Count LunaTP source segments in the edge index."""
+    return int(_segments_per_source(edge_index, num_atoms, segment)[0].sum())
+
+
+def _pad_edges(tensors, num_edges: int, length: float, segment: Optional[int]):
+    """Pad with cutoff-length self-loops, keeping LunaTP segment counts fixed.
+
+    The calculator checks that the added edges preserve energy and forces.
+    """
+    edge_index, edge_vec = tensors[KEY.EDGE_IDX], tensors[KEY.EDGE_VEC]
+    num_atoms = tensors[KEY.ATOMIC_NUMBERS].shape[0]
+    k = num_edges - edge_index.shape[1]
+    if segment is None:
+        nodes = torch.zeros(k, dtype=edge_index.dtype)
+    else:
+        nseg, deg = _segments_per_source(edge_index, num_atoms, segment)
+        room = segment * nseg - deg
+        before = np.cumsum(room) - room
+        take = np.clip(np.minimum(room, k - before), 0, None)
+        nodes = torch.from_numpy(np.repeat(np.arange(num_atoms), take))
+    pad_vec = edge_vec.new_zeros(k, 3)
+    pad_vec[:, 0] = length
+    out = dict(tensors)
+    out[KEY.EDGE_IDX] = torch.cat([edge_index, torch.stack([nodes, nodes])], 1)
+    out[KEY.EDGE_VEC] = torch.cat([edge_vec, pad_vec])
+    if KEY.EDGE_PADDED in tensors:
+        mask = tensors[KEY.EDGE_PADDED]
+        out[KEY.EDGE_PADDED] = torch.cat([mask, mask.new_ones(k)])
+    _sort_edges(out)
+    return out
+
+
+def _with_topology(data, topology):
+    """Attach any prepared LunaTP topology for the next model call."""
+    if topology is not None:
+        from sevenn.nn.lunatp_helper import PREPARED_GRAPH_KEY
+
+        data[PREPARED_GRAPH_KEY] = topology
+    return data
+
+
+def _tensor_pairs(a, b, out: list) -> bool:
+    """Collect matching tensor leaves and reject incompatible graph metadata."""
+    if isinstance(a, torch.Tensor):
+        if not isinstance(b, torch.Tensor):
+            return False
+        if a.shape != b.shape or a.dtype != b.dtype:
+            return False
+        out.append((a, b))
+        return True
+    if type(a) is not type(b):
+        return False
+    if isinstance(a, (tuple, list)):
+        return len(a) == len(b) and all(
+            _tensor_pairs(x, y, out) for x, y in zip(a, b)
+        )
+    if isinstance(a, dict):
+        return a.keys() == b.keys() and all(
+            _tensor_pairs(a[k], b[k], out) for k in a
+        )
+    if dataclasses.is_dataclass(a):
+        return all(
+            _tensor_pairs(getattr(a, f.name), getattr(b, f.name), out)
+            for f in dataclasses.fields(a)
+        )
+    return a == b
+
+
+def _pack_outputs(output):
+    """Pack outputs into one tensor and return the metadata to unpack them."""
+    keys = [k for k in _OUTPUT_KEYS if k in output]
+    tensors = [output[k].detach() for k in keys]
+    flat = torch.cat([t.reshape(-1) for t in tensors])
+    return flat, [(k, t.shape, t.dtype) for k, t in zip(keys, tensors)]
+
+
+def _unpack_outputs(flat: np.ndarray, meta, num_atoms: int, num_edges: int):
+    out = {}
+    offset = 0
+    for k, shape, dtype in meta:
+        n = shape.numel()
+        np_dtype = torch.empty(0, dtype=dtype).numpy().dtype
+        out[k] = flat[offset:offset + n].astype(np_dtype).reshape(shape)
+        offset += n
+    energy = out[KEY.PRED_TOTAL_ENERGY].reshape(-1)[0].item()
+    results: Dict[str, Any] = {
+        'free_energy': energy,
+        'energy': energy,
+        'energies': out[KEY.ATOMIC_ENERGY].flatten(),
+        'forces': out[KEY.PRED_FORCE][:num_atoms, :],
+        'stress': -out[KEY.PRED_STRESS][[0, 1, 2, 4, 5, 3]],  # as voigt notation
+        'num_edges': num_edges,
+    }
+    if KEY.PRED_ATOMIC_VIRIAL in out:
+        results['stresses'] = out[KEY.PRED_ATOMIC_VIRIAL][:num_atoms, :]
+    return results
 
 
 class SevenNetCalculator(Calculator):
@@ -38,6 +183,11 @@ class SevenNetCalculator(Calculator):
         enable_lunatp: bool = False,
         compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
+        fused: Optional[bool] = None,
+        cuda_graph: Optional[bool] = None,
+        radial_table: Optional[bool] = None,
+        radial_knots: int = DEFAULT_RADIAL_TABLE_KNOTS,
+        radial_r_min: float = DEFAULT_RADIAL_TABLE_R_MIN,
         **kwargs,
     ) -> None:
         """Initialize SevenNetCalculator.
@@ -46,8 +196,7 @@ class SevenNetCalculator(Calculator):
         ----------
         model: str | Path | AtomGraphSequential, default='7net-0'
             Name of pretrained models (7net-omni, 7net-nano-5.5, 7net-mf-ompa,
-            7net-omat, 7net-l3i5, 7net-0) or path to the checkpoint, deployed model
-            or the model itself
+            7net-omat, 7net-l3i5, 7net-0), a checkpoint path, or a model instance.
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -58,9 +207,8 @@ class SevenNetCalculator(Calculator):
             for 7net-omni, use one of 'mpa', 'omat24', 'matpes_pbe', 'matpes_r2scan',
             'mp_r2scan', 'oc20', 'oc22', 'odac23', 'omol25_low', 'omol25_high',
             'spice', 'qcml', 'pet_mad'
-            case insensitive
         enable_cueq: bool, default=False
-            if True, use cuEquivariant to accelerate inference.
+            Use cuEquivariance to accelerate inference.
         enable_flash: bool, default=False
             if True, use FlashTP to accelerate inference.
         enable_oeq: bool, default=False
@@ -71,6 +219,17 @@ class SevenNetCalculator(Calculator):
             Not used, but can be used to carry meta information of this calculator
         compute_atomic_virial: bool, default=False
             If True, request per-atom virial output (`stresses`) at runtime.
+        fused: bool | None, default=None
+            Use fused kernels for supported LunaTP checkpoints on CUDA.
+            Enabled by default for those checkpoints.
+        cuda_graph: bool | None, default=None
+            Replay compatible CUDA calls by default. Set False to run eagerly.
+        radial_table: bool | None, default=None
+            Use Hermite interpolation by default for compatible checkpoints.
+        radial_knots: int, default=2048
+            Number of Hermite knots when interpolation is enabled.
+        radial_r_min: float, default=0.0
+            First Hermite knot in angstroms.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
@@ -127,7 +286,7 @@ class SevenNetCalculator(Calculator):
             self.device = device
 
         if file_type == 'checkpoint' and isinstance(model, str):
-            cp = util.load_checkpoint(model)
+            cp = util.load_checkpoint(model).compact_for_inference()
 
             model_loaded = cp.build_model(
                 enable_cueq=enable_cueq,
@@ -136,6 +295,11 @@ class SevenNetCalculator(Calculator):
                 enable_lunatp=enable_lunatp,
             )
             model_loaded.set_is_batch_data(False)
+            # inference only: forces and stress are gradients w.r.t. edge vectors,
+            # which stay differentiable; freezing the weights skips dE/dW in the
+            # force backward (same results, faster on every backend). A
+            # 'model_instance' given by the caller is left as it is.
+            model_loaded.requires_grad_(False)
 
             self.type_map = cp.config[KEY.TYPE_MAP]
             self.cutoff = cp.config[KEY.CUTOFF]
@@ -186,6 +350,70 @@ class SevenNetCalculator(Calculator):
 
         self.model.to(self.device)
         self.model.eval()
+
+        from sevenn.nn.radial_table import (
+            supports_radial_table,
+            tabulate_radial,
+        )
+
+        self.fused = []
+        self._fused_species = set()
+        supports_fused = (
+            enable_lunatp and file_type == 'checkpoint'
+            and isinstance(model, str) and self.device.type == 'cuda'
+        )
+        if fused is None:
+            fused = os.getenv(
+                'SEVENNET_ENABLE_FUSED', '1' if supports_fused else '0'
+            ) == '1'
+        use_radial_table = radial_table
+        if use_radial_table is None:
+            use_radial_table = (
+                file_type == 'checkpoint' and isinstance(model, str)
+                and supports_radial_table(self.model)
+            )
+        if use_radial_table and radial_knots < 2:
+            raise ValueError('radial_knots must be at least 2')
+        if fused:
+            if not supports_fused:
+                warnings.warn(
+                    'fused needs enable_lunatp, a checkpoint and CUDA: ignored'
+                )
+            else:
+                from sevenn.nn.lunatp_fused import prepare_fused_inference
+
+                self.fused = prepare_fused_inference(
+                    self.model, cp.build_model, self.modal,
+                    radial_knots if use_radial_table else 0, radial_r_min,
+                )
+                if not self.fused and os.getenv('SEVENNET_ENABLE_FUSED') == '1':
+                    warnings.warn('fused: no convolution of this model is covered')
+
+        if use_radial_table:
+            tabulate_radial(
+                self.model, radial_knots, radial_r_min, exclude=self.fused,
+            )
+
+        self._fused_exact = bool(self.fused) and not use_radial_table
+        flash = any(
+            type(module).__module__.startswith('flashTP_e3nn.')
+            for module in self.model.modules()
+        )
+        self._cuda_graph_supported = self.device.type == 'cuda' and not flash
+        self.cuda_graph = cuda_graph is not False and self._cuda_graph_supported
+        if flash and cuda_graph is True:
+            warnings.warn('FlashTP runs eagerly because CUDA Graph replay is unsafe')
+        self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None
+        self._graphs_seen: OrderedDict = OrderedDict()  # topologies seen once
+        self._capture_stream = None  # one stream: cuBLAS keeps a workspace each
+        self._n_captures = 0  # captures tried (failed ones included)
+        self._n_replays = 0  # replays of a kept graph (capture calls excluded)
+        self._n_refreshes = 0  # replays with another edge index copied in
+        self._pad = None  # padded edges: None unchecked, True, False (off)
+        self._segment = -1  # LunaTP source segment size, None (e3nn); -1 unknown
+        # Last eager call's atom count, host and device edge indices, and topology.
+        self._last_edge_index = (-1, None, None, None)
+        self._has_lunatp: Optional[bool] = None
         self.implemented_properties = [
             'free_energy',
             'energy',
@@ -206,45 +434,335 @@ class SevenNetCalculator(Calculator):
                 )
 
     def output_to_results(self, output: Dict[str, torch.Tensor]) -> Dict[str, Any]:
-        energy = output[KEY.PRED_TOTAL_ENERGY].detach().cpu().item()
-        num_atoms = output['num_atoms'].item()
-        atomic_energies = output[KEY.ATOMIC_ENERGY].detach().cpu().numpy().flatten()
-        forces = output[KEY.PRED_FORCE].detach().cpu().numpy()[:num_atoms, :]
-        stress = np.array(
-            (-output[KEY.PRED_STRESS])
-            .detach()
-            .cpu()
-            .numpy()[[0, 1, 2, 4, 5, 3]]  # as voigt notation
+        flat, meta = _pack_outputs(output)
+        return _unpack_outputs(
+            flat.cpu().numpy(),
+            meta,
+            output[KEY.ATOMIC_NUMBERS].shape[0],  # = num_atoms, no device read
+            output[KEY.EDGE_IDX].shape[1],
         )
-        results: Dict[str, Any] = {
-            'free_energy': energy,
-            'energy': energy,
-            'energies': atomic_energies,
-            'forces': forces,
-            'stress': stress,
-            'num_edges': output[KEY.EDGE_IDX].shape[1],
-        }
-        if KEY.PRED_ATOMIC_VIRIAL in output:
-            virial = (
-                output[KEY.PRED_ATOMIC_VIRIAL].detach().cpu().numpy()[:num_atoms, :]
+
+    def _fused_for(self, atoms: Atoms) -> None:
+        """Extend the species tables when the structure includes new species."""
+        numbers = set(atoms.get_atomic_numbers().tolist())
+        if numbers <= self._fused_species:
+            return
+        from sevenn.nn.lunatp_fused import specialize_fused_species
+
+        species = self._fused_species | numbers
+        specialize_fused_species(
+            self.model, [self.type_map[z] for z in sorted(species)]
+        )
+        self._fused_species = species
+        # Specializing new species replaces weights held by earlier captures.
+        self._graphs.clear()
+        self._graphs_seen.clear()
+
+    _MAX_GRAPHS = 16
+    _MAX_SEEN = 64
+    # thrash guard: after _FREE_CAPTURES captures, capture only while replays
+    # >= _REPLAYS_PER_CAPTURE * captures. A capture call costs ~2-3 eager calls
+    # and a replay saves ~0.8 eager call (A5000, LunaTP, dimer/Si64).
+    _FREE_CAPTURES = 8
+    _REPLAYS_PER_CAPTURE = 2
+
+    def _graph_results(self, data: AtomGraphData) -> Optional[Dict[str, Any]]:
+        """Replay a compatible capture or return None for eager evaluation."""
+        if self._segment == -1:
+            self._segment = self._lunatp_segment()
+        if self._pad is None and float(np.float32(self.cutoff)) != self.cutoff:
+            self._pad = False
+        pad = self._pad is not False
+        tensors = {k: v for k, v in data.items() if isinstance(v, torch.Tensor)}
+        edge_index = tensors[KEY.EDGE_IDX]
+        num_atoms = tensors[KEY.ATOMIC_NUMBERS].shape[0]
+        num_edges = edge_index.shape[1]
+        if pad and self.fused and not self._fused_exact:
+            tensors[KEY.EDGE_PADDED] = tensors[KEY.EDGE_VEC].new_zeros(num_edges)
+        floats = [k for k, v in tensors.items() if v.is_floating_point()]
+        segments = (
+            _num_segments(edge_index, num_atoms, self._segment)
+            if self._segment else None
+        )
+        edge_keys = (KEY.EDGE_IDX, KEY.EDGE_VEC, KEY.EDGE_PADDED)
+        # Capture fixes non-tensor inputs, integer data other than the edge
+        # index, and the shapes of the tensors and LunaTP segments.
+        key = tuple(
+            (k, None if pad and k in edge_keys else v.shape,
+             None if k in floats or k == KEY.EDGE_IDX else v.numpy().tobytes())
+            for k, v in tensors.items()
+        ) + tuple((k, repr(v)) for k, v in data.items() if k not in tensors)
+        key += (('segments', segments),)
+
+        entry = self._graphs.get(key, False)  # False: no kept graph
+        if entry is not False:
+            self._graphs.move_to_end(key)
+            if entry is None:  # capture failed
+                return None
+            if num_edges > entry['num_edges']:  # more edges than the graph
+                del self._graphs[key]
+                self._mark_seen(key, num_edges)
+                entry = False
+        if entry is False:
+            if key not in self._graphs_seen or not self._capture_pays():
+                self._mark_seen(key, num_edges)  # first call, or guard: eager
+                return None
+            e_pad = num_edges
+            if pad:
+                e_max = max(self._graphs_seen[key], num_edges)
+                e_pad = e_max + max(16, e_max // 8)
+                if self._segment:
+                    e_pad = min(e_pad, self._segment * segments)
+            del self._graphs_seen[key]  # second call: capture
+            padded = self._padded(tensors, e_pad)
+            if self._pad is None and e_pad > num_edges:
+                self._pad = self._pads_neutral(data, tensors, padded)
+                if not self._pad:
+                    return None  # the next calls key on the number of edges
+            self._n_captures += 1
+            entry = self._capture(data, padded, floats)
+            self._graphs[key] = entry
+            if len(self._graphs) > self._MAX_GRAPHS:
+                self._graphs.popitem(last=False)
+            if entry is None:
+                return None
+            entry['num_edges'] = e_pad
+        else:
+            padded = self._padded(tensors, entry['num_edges'])
+            new_edge_index = padded[KEY.EDGE_IDX]
+            if not torch.equal(entry['edge_index'], new_edge_index):
+                if not self._refresh(entry, new_edge_index):
+                    # backend topology of other shapes (LunaTP segments)
+                    del self._graphs[key]
+                    self._mark_seen(key, num_edges)
+                    return None
+                entry['edge_index'] = new_edge_index
+                self._n_refreshes += 1
+            self._n_replays += 1
+        tensors = padded
+
+        graph, dev_in, host_in = entry['graph'], entry['dev_in'], entry['host_in']
+        dev_out, host_out = entry['dev_out'], entry['host_out']
+        torch.cat([tensors[k].reshape(-1) for k in floats], out=host_in)
+        dev_in.copy_(host_in, non_blocking=True)
+        graph.replay()
+        host_out.copy_(dev_out, non_blocking=True)
+        torch.cuda.current_stream(self.device).synchronize()
+        return _unpack_outputs(
+            host_out.numpy(),  # astype copies: results outlive host_out
+            entry['meta'],
+            num_atoms,
+            num_edges,
+        )
+
+    def _lunatp_segment(self) -> Optional[int]:
+        """source segment size (edges) of the LunaTP graph, None without LunaTP"""
+        from sevenn.nn.lunatp_helper import LunaTPConvolution
+
+        if not any(isinstance(m, LunaTPConvolution) for m in self.model.modules()):
+            return None
+        from LunaEquivariance.lunatp.uvu_conv.kernels.utils import (
+            _SOURCE_SEGMENT_EDGES,
+        )
+
+        return int(_SOURCE_SEGMENT_EDGES)
+
+    def _padded(self, tensors, num_edges: int):
+        if num_edges == tensors[KEY.EDGE_IDX].shape[1]:
+            return tensors
+        return _pad_edges(tensors, num_edges, self.cutoff, self._segment)
+
+    def _pads_neutral(self, data, tensors, padded) -> bool:
+        """Check once that cutoff-length self-loops preserve energy and forces."""
+        energies, pad_grads, finite = [], 0.0, True
+        for t in (tensors, padded):
+            d = AtomGraphData(**{k: v.to(self.device) for k, v in t.items()})
+            for k, v in data.items():
+                if k not in t:
+                    d[k] = v
+            vec = d[KEY.EDGE_VEC].requires_grad_(True)
+            grads = []
+            vec.register_hook(grads.append)  # dE/dr_ij (force output)
+            energies.append(
+                float(self.model(d)[KEY.PRED_TOTAL_ENERGY].sum().detach())
             )
-            results['stresses'] = virial
-        return results
+            if t is padded:
+                if KEY.EDGE_PADDED in t:
+                    pad = t[KEY.EDGE_PADDED].bool()
+                else:
+                    ei, ev = t[KEY.EDGE_IDX], t[KEY.EDGE_VEC]
+                    pad = (ei[0] == ei[1]) & (ev.norm(dim=1) >= self.cutoff)
+                g = grads[0] if grads else torch.zeros_like(vec)
+                pad_grads = g[pad.to(self.device)].abs().sum().item()
+                finite = bool(torch.isfinite(g).all())
+        e0, e1 = energies
+        finite = finite and math.isfinite(e0) and math.isfinite(e1)
+        if (
+            not finite
+            or pad_grads != 0.0
+            or abs(e1 - e0) > 1e-5 + 1e-6 * abs(e0)
+        ):
+            warnings.warn(
+                'padded edges change the model outputs (sum |dE/dr_ij| '
+                f'{pad_grads:.2e}, energy {e1 - e0:+.2e}); the CUDA graphs of '
+                'this calculator key on the number of edges'
+            )
+            return False
+        return True
+
+    def _mark_seen(self, key, num_edges: int) -> None:
+        self._graphs_seen[key] = max(num_edges, self._graphs_seen.get(key, 0))
+        self._graphs_seen.move_to_end(key)
+        if len(self._graphs_seen) > self._MAX_SEEN:
+            self._graphs_seen.popitem(last=False)
+
+    def _refresh(self, entry, edge_index) -> bool:
+        """Update the capture's topology in place if its buffer shapes match."""
+        static_edge_index = entry['static'][KEY.EDGE_IDX]
+        new = edge_index.pin_memory().to(self.device, non_blocking=True)
+        topology = self._lunatp_topology(new, entry['num_atoms'])
+        captured = entry['topology']
+        if self.fused and captured is not None and topology is not None:
+            from sevenn.nn.lunatp_fused import prepare_fused_refresh
+
+            prepare_fused_refresh(captured[1], topology[1])
+        pairs: list = []
+        if not _tensor_pairs(captured, topology, pairs):
+            return False
+        static_edge_index.copy_(new)
+        copied = set()
+        for dst, src in pairs:  # graph._tables holds the same tensors again
+            if id(dst) not in copied:
+                copied.add(id(dst))
+                dst.copy_(src)
+        return True
+
+    def _capture_pays(self) -> bool:
+        return (
+            self._n_captures < self._FREE_CAPTURES
+            or self._n_replays >= self._REPLAYS_PER_CAPTURE * self._n_captures
+        )
+
+    def _capture(self, data, tensors, floats):
+        """Capture with static inputs and return its entry, or None on failure."""
+        flat_in = torch.cat([tensors[k].reshape(-1) for k in floats])
+        host_in = flat_in.pin_memory()
+        dev_in = flat_in.to(self.device)
+        static = {}
+        offset = 0
+        for k, v in tensors.items():
+            if k in floats:
+                static[k] = dev_in[offset:offset + v.numel()].view(v.shape)
+                offset += v.numel()
+            else:
+                static[k] = v.to(self.device)
+        extra = {k: v for k, v in data.items() if k not in tensors}
+        num_atoms = static[KEY.ATOMIC_NUMBERS].shape[0]
+        topology = self._lunatp_topology(static[KEY.EDGE_IDX], num_atoms)
+
+        def run():
+            d = AtomGraphData(**static)
+            for k, v in extra.items():
+                d[k] = v
+            return _pack_outputs(self.model(_with_topology(d, topology)))
+
+        # one memory pool for the kept graphs; a pool whose graphs are all freed
+        # is gone, so its handle is not kept: a new pool if no graph is kept
+        pool = next((e['graph'].pool() for e in self._graphs.values() if e), None)
+        if pool is None:
+            pool = torch.cuda.graph_pool_handle()
+        graph = torch.cuda.CUDAGraph()
+        if self._capture_stream is None:
+            self._capture_stream = torch.cuda.Stream(self.device)
+        current = torch.cuda.current_stream(self.device)
+        side = self._capture_stream
+        side.wait_stream(current)
+        if self._fused_exact:
+            from sevenn.nn.lunatp_fused import set_unique_cap
+
+            num_edges = static[KEY.EDGE_IDX].shape[1]
+            set_unique_cap(self.model, num_edges + num_edges % 2)
+        try:
+            with torch.cuda.stream(side):
+                run()  # warm-up: lazy inits and caches of the static inputs
+                graph.capture_begin(pool=pool)
+                try:
+                    dev_out, meta = run()
+                finally:
+                    graph.capture_end()
+        except Exception as e:
+            current.wait_stream(side)
+            warnings.warn(
+                f'CUDA graph capture failed ({type(e).__name__}: {e}); '
+                'this topology runs eagerly'
+            )
+            return None
+        finally:
+            if self._fused_exact:
+                set_unique_cap(self.model, None)
+        current.wait_stream(side)
+        host_out = torch.empty_like(dev_out, device='cpu').pin_memory()
+        return {
+            'graph': graph, 'dev_in': dev_in, 'host_in': host_in,
+            'dev_out': dev_out, 'host_out': host_out, 'meta': meta,
+            'static': static, 'edge_index': tensors[KEY.EDGE_IDX],
+            'topology': topology, 'num_atoms': num_atoms,
+        }
+
+    def _lunatp_topology(self, edge_index, num_atoms: int):
+        """Prepare the edge order and graph for a nonempty LunaTP topology."""
+        from sevenn.nn.lunatp_helper import LunaTPConvolution, prepare_graph
+
+        if self._has_lunatp is None:
+            self._has_lunatp = any(
+                isinstance(m, LunaTPConvolution) for m in self.model.modules()
+            )
+        if not self._has_lunatp or edge_index.numel() == 0:
+            return None
+        return prepare_graph(edge_index, num_atoms)
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes
         Calculator.calculate(self, atoms, properties, system_changes)
         if atoms is None:
             raise ValueError('No atoms to evaluate')
+        if self.fused:
+            self._fused_for(atoms)
         data = AtomGraphData.from_numpy_dict(
             unlabeled_atoms_to_graph(atoms, self.cutoff, with_shift=False)
         )
         if self.modal:
             data[KEY.DATA_MODALITY] = self.modal
+        _sort_edges(data)
 
-        data.to(self.device)  # type: ignore
+        if self.cuda_graph and self._cuda_graph_supported:
+            results = self._graph_results(data)
+            if results is not None:
+                self.results = results
+                return
 
-        output = self.model(data)
+        # same topology as the previous eager call: its device edge index and
+        # LunaTP topology
+        ei = data[KEY.EDGE_IDX]
+        num_atoms = data[KEY.ATOMIC_NUMBERS].shape[0]
+        last = self._last_edge_index
+        reuse = last[0] == num_atoms and torch.equal(last[1], ei)
+        if reuse:
+            del data[KEY.EDGE_IDX]
+        if self.device.type == 'cuda':
+            _to_device_packed(data, self.device)
+        else:
+            data.to(self.device)  # type: ignore
+        if reuse:
+            data[KEY.EDGE_IDX] = last[2]
+        else:
+            topology = self._lunatp_topology(data[KEY.EDGE_IDX], num_atoms)
+            last = (num_atoms, ei, data[KEY.EDGE_IDX], topology)
+            self._last_edge_index = last
+
+        # a plain dict: the ~110 writes and ~210 reads of a forward skip the
+        # torch_geometric Data storage layer (same tensors)
+        output = self.model(_with_topology(data.to_dict(), last[3]))
         self.results = self.output_to_results(output)
 
 
@@ -264,6 +782,11 @@ class SevenNetD3Calculator(SumCalculator):
         functional_name: str = 'pbe',
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
+        fused: Optional[bool] = None,
+        cuda_graph: Optional[bool] = None,
+        radial_table: Optional[bool] = None,
+        radial_knots: int = DEFAULT_RADIAL_TABLE_KNOTS,
+        radial_r_min: float = DEFAULT_RADIAL_TABLE_R_MIN,
         **kwargs,  # pass extra kwargs to both calculators
     ) -> None:
         """Initialize SevenNetD3Calculator. CUDA required.
@@ -272,8 +795,7 @@ class SevenNetD3Calculator(SumCalculator):
         ----------
         model: str | Path | AtomGraphSequential
             Name of pretrained models (7net-omni, 7net-nano-5.5, 7net-mf-ompa,
-            7net-omat, 7net-l3i5, 7net-0) or path to the checkpoint, deployed model
-            or the model itself
+            7net-omat, 7net-l3i5, 7net-0), a checkpoint path, or a model instance.
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -302,6 +824,8 @@ class SevenNetD3Calculator(SumCalculator):
             vdw cutoff of D3 calculator in au^2
         cn_cutoff: float, default=1600
             cn cutoff of D3 calculator in au^2
+        fused, cuda_graph, radial_table, radial_knots, radial_r_min
+            Acceleration options passed to SevenNetCalculator.
         """
         if kwargs.get('compute_atomic_virial', False):
             warnings.warn(
@@ -328,6 +852,11 @@ class SevenNetD3Calculator(SumCalculator):
             enable_oeq=enable_oeq,
             enable_lunatp=enable_lunatp,
             sevennet_config=sevennet_config,
+            fused=fused,
+            cuda_graph=cuda_graph,
+            radial_table=radial_table,
+            radial_knots=radial_knots,
+            radial_r_min=radial_r_min,
             **kwargs,
         )
 

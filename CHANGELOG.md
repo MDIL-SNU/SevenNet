@@ -10,6 +10,10 @@ All notable changes to this project will be documented in this file.
 - Support LunaTP (`enable_lunatp`, LunaEquivariance 0.3.0). LAMMPS through ML-IAP only.
 - LunaTP kernels compile in parallel processes when a model is built (`SEVENNET_LUNATP_PRECOMPILE_WORKERS`, `0` to turn off)
 - Hybrid Muon optimizer (`optimizer: muon`): Muon for e3nn linear and radial weight matrices, auxiliary Adam for the rest
+- CUDA Graph replay defaults on for ASE and single-rank ML-IAP runs on CUDA.
+- Supported CUDA LunaTP models use fused inference kernels by default.
+- Radial MLPs can use cubic Hermite interpolation independently of tensor-product fusion. The CUDA LunaTP default is 2048 knots from 0.10 Å to the cutoff.
+- `SEVENN_MLIAP_MEMORY_REPORT=1` reports peak Torch GPU memory. `SEVENN_CUDA_MEMORY_FRACTION` limits per-process allocation.
 
 ### Changed
 - The default dtype of the rescale layer is changed to double precision. Use the `SEVENN_SHIFT_SCALE_DTYPE` environment variable for backward single-precision compatibility.

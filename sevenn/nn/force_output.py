@@ -169,7 +169,8 @@ class ForceStressOutputFromEdge(nn.Module):
         return self.key_edge
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        tot_num = torch.sum(data[KEY.NUM_ATOMS])  # ? item?
+        # = sum(num_atoms) (one row per atom), read from the shape: no host sync
+        tot_num = data[KEY.ATOMIC_NUMBERS].shape[0]
         rij = data[self.key_edge]
         energy = [(data[self.key_energy]).sum()]
         edge_idx = data[self.key_edge_idx]
@@ -226,12 +227,11 @@ class ForceStressOutputFromEdge(nn.Module):
 
             volume = data[self.key_cell_volume]
             vlim = 1e-3  # for cell volume = 0 for non PBC structures
+            # clamp, not a host-side comparison (same values, no host sync)
             if self._is_batch_data:
-                volume[volume < vlim] = vlim
-            elif volume < vlim:
-                volume = torch.tensor(
-                    vlim, dtype=volume.dtype, device=volume.device
-                )
+                volume.clamp_(min=vlim)  # in place, as the masked assignment
+            else:
+                volume = volume.clamp(min=vlim)
 
             data[self.key_stress] =\
                 torch.neg(sout) / volume.unsqueeze(-1)
