@@ -367,11 +367,17 @@ def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     if not config.get(KEY.USE_LUNATP, False):
         return layers
 
+    lunatp_helper.auto_precompile(config)
     # raises ImportError if LunaTP is not available, no fallback to e3nn
     updates = {}
+    last_convolution = None
     for k, module in layers.items():
         if isinstance(module, IrrepsConvolution):
-            updates[k] = lunatp_helper.patch_convolution(module)
+            starts_graph = last_convolution is None
+            if last_convolution is not None:
+                last_convolution.ends_graph = False
+            last_convolution = lunatp_helper.patch_convolution(module, starts_graph)
+            updates[k] = last_convolution
         elif isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
             updates[k] = lunatp_helper.patch_linear(module)
         elif isinstance(module, SelfConnectionIntro):

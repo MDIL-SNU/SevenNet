@@ -118,7 +118,7 @@ LunaTP (LunaEquivariance package) replaces the tensor product convolution with a
 ### Requirements
 - Python >= 3.10, PyTorch >= 2.8
 - NVIDIA GPU with compute capability 8.0 or later, CUDA toolkit with `nvcc`
-- LunaEquivariance
+- LunaEquivariance 0.3.0
 
 ### Installation
 ```bash
@@ -132,12 +132,16 @@ True
 ```
 
 ### Kernel compilation
-The first calculation with a model compiles its LunaTP kernels one after another, which takes several minutes. We recommend `sevenn lunatp_precompile`, which compiles the kernels of a checkpoint in parallel before the first calculation:
+Building a LunaTP model compiles its kernels in parallel processes (default: min(8, available CPUs)) before the first calculation. The compiled kernels are cached on disk, and later builds of the same model load them. The cache depends on the Python environment, `LD_LIBRARY_PATH`, and the GPU architecture.
+
+`SEVENNET_LUNATP_PRECOMPILE_WORKERS` sets the number of processes. Each process loads the model on the GPU, and `0` turns the parallel compilation off, so that each kernel compiles at its first use. `sevenn train` also compiles the kernels for training with force and stress losses.
+
+`sevenn lunatp_precompile` compiles the kernels of a checkpoint ahead of time, for example on a node other than the one of the later calculations:
 ```bash
 sevenn lunatp_precompile 7net-omni           # kernels for inference (energy, forces, stress)
 sevenn lunatp_precompile 7net-omni --train   # also the kernels for training with force and stress losses
 ```
-The compiled kernels are cached on disk, and later calculations load them. Run the command in the environment of the later calculations, since the cache depends on the Python environment, `LD_LIBRARY_PATH`, and the GPU architecture. `--max_workers` sets the number of parallel processes (default: min(8, available CPUs)).
+`--max_workers` sets the number of parallel processes.
 
 For more information, see [LunaEquivariance](https://github.com/HPC-AI-Team/LunaEquivariance).
 

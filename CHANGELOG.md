@@ -7,7 +7,8 @@ All notable changes to this project will be documented in this file.
 - Loss: MAE, L2MAE
 - Dataset type: `aselmdb`, `custom`
 - SevenNet-Nano checkpoints for `7net-nano-4.5`, `7net-nano-5.0`, `7net-nano-5.5`, and `7net-nano-6.0`
-- Support LunaTP (`enable_lunatp`). LAMMPS through ML-IAP only.
+- Support LunaTP (`enable_lunatp`, LunaEquivariance 0.3.0). LAMMPS through ML-IAP only.
+- LunaTP kernels compile in parallel processes when a model is built (`SEVENNET_LUNATP_PRECOMPILE_WORKERS`, `0` to turn off)
 - Hybrid Muon optimizer (`optimizer: muon`): Muon for e3nn linear and radial weight matrices, auxiliary Adam for the rest
 
 ### Changed

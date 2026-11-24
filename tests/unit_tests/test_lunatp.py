@@ -1,6 +1,10 @@
 # TODO: add gradient test from total loss after double precision.
 #       so far, it is empirically checked by seeing learning curves
 import copy
+import os
+import subprocess
+import sys
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -9,6 +13,7 @@ from ase.build import bulk
 from torch_geometric.loader.dataloader import Collater
 
 import sevenn
+import sevenn._keys as KEY
 import sevenn.train.dataload as dl
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.calculator import SevenNetCalculator
@@ -261,6 +266,76 @@ def test_calculator(tmp_path):
     assert_atoms(atoms, atoms2)
 
 
+_CALCULATOR_CALLS = """
+import sys
+from ase import Atoms
+from ase.build import bulk
+from sevenn.calculator import SevenNetCalculator
+
+calc = SevenNetCalculator(sys.argv[1], enable_lunatp=True)
+dimer = Atoms('NaCl', positions=[[0, 0, 0], [0, 0, 2.4]])
+for atoms in (dimer, bulk('NaCl', 'rocksalt', a=4.0)):
+    atoms.calc = calc
+    atoms.get_potential_energy()
+"""
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.skipif(
+    os.environ.get('SEVENNET_TEST_PRECOMPILE') != '1',
+    reason='compiles all kernels of a model; set SEVENNET_TEST_PRECOMPILE=1',
+)
+def test_precompile_covers_calculator(tmp_path, monkeypatch):
+    from sevenn.nn.lunatp_helper import precompile
+
+    monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(tmp_path))
+    monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
+    cfg = get_model_config()
+    cfg.update({
+        'channel': 4, 'lmax': 1, 'num_convolution_layer': 2,
+        'use_lunatp': False, 'version': sevenn.__version__,
+    })
+    model = build_E3_equivariant_model(cfg, parallel=False)
+    cp_path = str(tmp_path / 'cp.pth')
+    torch.save({'model_state_dict': model.state_dict(), 'config': cfg}, cp_path)
+
+    precompile(cp_path)
+    built = set(tmp_path.rglob('*.so'))
+    assert built
+    subprocess.run(
+        [sys.executable, '-c', _CALCULATOR_CALLS, cp_path], check=True
+    )
+    added = set(tmp_path.rglob('*.so')) - built
+    assert not added, f'kernels built after precompile: {sorted(added)}'
+
+
+_LOAD_EQU_NORM = """
+import sys
+import torch
+from e3nn.o3 import Irreps
+import sevenn.nn.lunatp_helper
+from LunaEquivariance.nn.equ_norm import EquNormOperator
+
+for irreps in sys.argv[1:]:
+    EquNormOperator(irreps)(torch.randn(2, Irreps(irreps).dim, device='cuda'))
+"""
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_kernel_cache_independent_of_load_order(tmp_path):
+    env = {**os.environ, 'LUNAEQ_CACHE_DIR': str(tmp_path)}
+    configs = ['2x0e+1x1o', '3x0e+1x1o']
+
+    def libraries_after(irreps):
+        cmd = [sys.executable, '-c', _LOAD_EQU_NORM, *irreps]
+        subprocess.run(cmd, check=True, env=env)
+        return sorted(str(p) for p in tmp_path.rglob('*.so'))
+
+    built = libraries_after(configs)
+    assert len(built) == 2
+    assert libraries_after(configs[::-1]) == built
+
+
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
 def test_unsorted_edges():
     # LunaTP needs edges sorted by destination, LunaTPConvolution sorts them
@@ -291,6 +366,53 @@ def test_unsorted_edges():
     )
 
 
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_graph_is_shared_only_within_one_forward(monkeypatch):
+    from sevenn.nn import lunatp_helper as helper
+
+    monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
+    model = get_model({'channel': 4, 'lmax': 1, 'num_convolution_layer': 2}, True)
+    model.set_is_batch_data(False)
+    data = _graph.clone().to('cuda')
+    edge_index = data[KEY.EDGE_IDX]
+    num_nodes = data[KEY.ATOMIC_NUMBERS].numel()
+    prepared = helper.prepare_graph(edge_index, num_nodes)
+    prepare = Mock(wraps=helper.prepare_graph)
+    monkeypatch.setattr(helper, 'prepare_graph', prepare)
+
+    original = model(data)[KEY.PRED_FORCE]
+    assert prepare.call_count == 1
+    assert helper._SHARED_GRAPH_KEY not in data
+    data[helper.PREPARED_GRAPH_KEY] = prepared
+    torch.testing.assert_close(model(data)[KEY.PRED_FORCE], original)
+    assert prepare.call_count == 1
+    assert helper.PREPARED_GRAPH_KEY not in data
+    assert helper._SHARED_GRAPH_KEY not in data
+
+    changed_edges = edge_index.clone()
+    changed_edges[1] = (changed_edges[1] + 1) % num_nodes
+    edge_index.copy_(changed_edges)
+    changed = model(data)[KEY.PRED_FORCE]
+    assert prepare.call_count == 2
+    fresh = _graph.clone().to('cuda')
+    fresh[KEY.EDGE_IDX] = changed_edges
+    torch.testing.assert_close(changed, model(fresh)[KEY.PRED_FORCE])
+    assert not torch.allclose(original, changed)
+
+    data[KEY.EDGE_IDX] = edge_index[:, :0]
+    data[KEY.EDGE_VEC] = data[KEY.EDGE_VEC][:0].detach()
+    data[helper.PREPARED_GRAPH_KEY] = prepared
+    kernel = Mock(side_effect=AssertionError('convolution on empty edges'))
+    for layer in model:
+        if isinstance(layer, helper.LunaTPSharedGraphConvolution):
+            monkeypatch.setattr(layer.convolution, 'forward', kernel)
+    prepare.reset_mock()
+    model(data)
+    prepare.assert_not_called()
+    kernel.assert_not_called()
+    assert helper.PREPARED_GRAPH_KEY not in data
+
+
 def test_no_fallback(monkeypatch):
     import sevenn.nn.lunatp_helper as lunatp_helper
     from sevenn.checkpoint import _solve_accelerator
@@ -300,3 +422,50 @@ def test_no_fallback(monkeypatch):
         _solve_accelerator(False, False, False, True)
     with pytest.raises(ValueError):
         _solve_accelerator(False, False, True, True)
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_auto_precompile_runs_once(tmp_path, monkeypatch):
+    import sevenn.nn.lunatp_helper as helper
+
+    popen = Mock()
+    popen.return_value.wait.return_value = 0
+    monkeypatch.setattr(helper.subprocess, 'Popen', popen)
+    monkeypatch.setattr(
+        helper._lunaeq_jit, 'compiler_identity', Mock(return_value=())
+    )
+    monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(tmp_path))
+    monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '3')
+    cfg = get_model_config()
+
+    helper.auto_precompile({**cfg, KEY.RANDOM_SEED: 42, KEY.CONV_DENOMINATOR: 4.0})
+    assert popen.call_count == 3
+    helper.auto_precompile(cfg)
+    assert popen.call_count == 3
+    helper.auto_precompile({**cfg, 'lmax': 3})
+    assert popen.call_count == 6
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/opt/another-env')
+    helper.auto_precompile(cfg)
+    assert popen.call_count == 9
+    monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
+    helper.auto_precompile({**cfg, 'lmax': 1})
+    assert popen.call_count == 9
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_precompile_marker_tracks_cutlass(tmp_path, monkeypatch):
+    from sevenn.nn.lunatp_helper import _precompile_marker
+
+    markers = []
+    for include in (tmp_path / 'first', tmp_path / 'second'):
+        headers = include / 'cutlass'
+        (headers / 'gemm' / 'device').mkdir(parents=True)
+        (headers / 'gemm' / 'device' / 'gemm.h').touch()
+        (headers / 'cutlass.h').touch()
+        (headers / 'version.h').write_text('#define CUTLASS_MAJOR 3\n')
+        monkeypatch.setenv('LUNATP_CUTLASS_INCLUDE', str(include))
+        markers.append(_precompile_marker({}, order=1))
+
+    assert markers[0] != markers[1]
+    (headers / 'version.h').write_text('#define CUTLASS_MAJOR 4\n')
+    assert _precompile_marker({}, order=1) != markers[1]
