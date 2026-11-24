@@ -1,6 +1,6 @@
 import ctypes
-import math
 import dataclasses
+import math
 import os
 import pathlib
 import warnings

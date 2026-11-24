@@ -5,7 +5,11 @@ import sevenn._keys as KEY
 from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.util import chemical_species_preprocess, load_checkpoint
-from tests.unit_tests._mliap_fixture import assert_efs, atoms_with_ghosts, evaluate
+from tests.unit_tests._mliap_fixture import (
+    assert_efs,
+    atoms_with_ghosts,
+    evaluate,
+)
 from tests.unit_tests.test_model import get_model_config
 
 

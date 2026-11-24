@@ -12,11 +12,7 @@ from ase.build import bulk
 
 import sevenn._keys as KEY
 from sevenn.atom_graph_data import AtomGraphData
-from sevenn.nn.radial_table import (
-    fold_radial,
-    optimize_radial,
-    tabulate_radial,
-)
+from sevenn.nn.radial_table import fold_radial, optimize_radial, tabulate_radial
 from sevenn.train.dataload import unlabeled_atoms_to_graph
 from sevenn.util import model_from_checkpoint, pretrained_name_to_path
 
