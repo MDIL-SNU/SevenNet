@@ -251,6 +251,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                 kernel=self.device.type == 'cuda', exclude=names,
             )
             print(f'[INFO] radial table: {knots} knots from {r_min} A', flush=True)
+        if self._single_rank:
+            model.requires_grad_(False)
         return model
 
     def _ensure_model_initialized(self):
@@ -264,7 +266,6 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         from sevenn.nn._mliap_cuda_graph import MLIAPCudaGraph
 
         model = self._build_model(ghost_exchange=False, fused=fused)
-        model.requires_grad_(False)
         runtime = MLIAPCudaGraph(
             model, self.device, self.cutoff, modal=self.modal, replay=replay,
         )
