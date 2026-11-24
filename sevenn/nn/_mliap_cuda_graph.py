@@ -1,45 +1,31 @@
+"""Single-rank ML-IAP replay with static CUDA Graph input buffers.
+
+Periodic ghosts map to local owners. Padding adds self-loops on isolated
+fake atoms beyond the real atoms, so their energy never contributes to the
+output or its gradients. LunaTP tables are copied in place when the pair
+list changes, with empty source segments padding the tables to fixed sizes.
 """
-CUDA graph replay of the SevenNet model call in LAMMPS ML-IAP (single rank).
-Kept free of the lammps import (as sevenn/nn/_ghost_exchange.py), so it can be
-tested with an emulated lmp_data.
+from __future__ import annotations
 
-The ML-IAP pair list changes at nearly every MD step (pairs are filtered by
-the cutoff), so one capture has to serve every topology of a run. The captured
-call has fixed shapes, and everything that changes is copied into static
-device tensors:
-
-- ghosts: with one rank every ghost is a periodic image of a local atom, so
-  the source index of an edge is folded to its owner (found by one
-  forward_exchange of the local indices) and the plain serial model is
-  called: no ghost exchange inside the call.
-- edges: padded to a fixed number with self-loops of length r_c on a few fake
-  atoms appended after the local atoms. Fake atoms share no edge with a real
-  atom and their energies are not summed, so the padding cannot change an
-  output (no assumption on the cutoff function). Real edges keep the LAMMPS
-  pair order (sorted by i, as LunaTP needs), so the pair forces are returned
-  without a permutation.
-- LunaTP: the graph tables are rebuilt for a changed pair list and copied in
-  place; the source segment tables are padded with empty segments to a fixed
-  number.
-
-More edges / segments / atoms than the capture holds: captured again with new
-room. Several ranks (a ghost owned by another rank): not supported, the
-caller runs the eager ghost-exchange model.
-"""
 import atexit
 import dataclasses
 import os
 import time
 import warnings
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 import sevenn._keys as KEY
+from sevenn.nn.lunatp_helper import (
+    PREPARED_GRAPH_KEY,
+    LunaTPConvolution,
+    _make_graph,
+)
 
 
-def _walk_tensors(obj, out: List[torch.Tensor], seen: set) -> None:
+def _walk_tensors(obj, out: list[torch.Tensor], seen: set) -> None:
     """unique tensors of dataclasses / dicts / tuples / lists, in a fixed order"""
     if isinstance(obj, torch.Tensor):
         if id(obj) not in seen:
@@ -56,8 +42,8 @@ def _walk_tensors(obj, out: List[torch.Tensor], seen: set) -> None:
             _walk_tensors(getattr(obj, f.name), out, seen)
 
 
-def _graph_tensors(graph) -> List[torch.Tensor]:
-    out: List[torch.Tensor] = []
+def _graph_tensors(graph) -> list[torch.Tensor]:
+    out: list[torch.Tensor] = []
     _walk_tensors(graph, out, set())
     return out
 
@@ -79,13 +65,14 @@ __global__ void sevenn_mliap_prep_kernel(
     int64_t nlocal, int64_t ntotal, int64_t npairs, int64_t edges,
     int64_t num_fake, int64_t near, bool prune) {
     const int64_t p = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
+    bool coherent = false;
     if (p < edges) {
         int64_t a, b;
         if (p < npairs) {
             a = pair_i[p];
             b = int64_t(recv[2 * int64_t(pair_j[p])]);
             const int64_t d = a > b ? a - b : b - a;
-            if (d < near) atomicAdd(flags + 3, 1);
+            coherent = d < near;
         } else {
             a = b = nlocal + ((p - npairs) * num_fake) / (edges - npairs);
         }
@@ -95,6 +82,8 @@ __global__ void sevenn_mliap_prep_kernel(
     }
     if (p < ntotal && recv[2 * p + 1] != token) flags[0] = 1;
     if (prune && p < nlocal && !allowed[elems[p]]) flags[2] = 1;
+    const unsigned mask = __ballot_sync(0xffffffff, coherent);
+    if (mask && (threadIdx.x & 31) == 0) atomicAdd(flags + 3, __popc(mask));
 }
 }  // namespace
 void sevenn_mliap_prep(torch::Tensor recv, torch::Tensor pair_i,
@@ -120,40 +109,23 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 """
 
 
-def _make_graph(edge_index: torch.Tensor, num_nodes: int, segment_edges: int):
-    """make_graph with source segments of at most segment_edges (0: LunaTP's)"""
-    import LunaEquivariance.lunatp.graph as luna_graph
-
-    default = luna_graph._SOURCE_SEGMENT_EDGES
-    if segment_edges:
-        luna_graph._SOURCE_SEGMENT_EDGES = segment_edges
-    try:
-        return luna_graph.make_graph(edge_index[1], edge_index[0], num_nodes)
-    finally:
-        luna_graph._SOURCE_SEGMENT_EDGES = default
-
-
-def _lunatp_graph(
-    edge_index: torch.Tensor, num_nodes: int, num_segments: int,
-    segment_edges: int = 0,
-):
+def _pad_graph(graph, num_segments: int):
     """
-    LunaTPGraph of a dst-sorted edge index whose source segment tables are
-    padded to num_segments with empty segments of the last node, or None if
-    the graph has more segments.
+    Pad with empty source segments at the last node, or return None if full.
     """
-    graph = _make_graph(edge_index, num_nodes, segment_edges)
     seg = graph.source_segments
     k = num_segments - seg.nodes.numel()
     if k < 0:
         return None
     if k > 0:
-        num_edges = edge_index.shape[1]
+        num_edges = graph.src.numel()
         rowptr = seg.rowptr.clone()
         rowptr[-1] = num_segments
         seg = dataclasses.replace(
             seg,
-            nodes=torch.cat([seg.nodes, seg.nodes.new_full((k,), num_nodes - 1)]),
+            nodes=torch.cat([
+                seg.nodes, seg.nodes.new_full((k,), graph.num_nodes - 1)
+            ]),
             begin=torch.cat([seg.begin, seg.begin.new_full((k,), num_edges)]),
             end=torch.cat([seg.end, seg.end.new_full((k,), num_edges)]),
             rowptr=rowptr,
@@ -172,12 +144,8 @@ def _lunatp_graph(
 
 class MLIAPCudaGraph:
     """
-    model: plain serial model (not patch_model_for_mliap) as built from a
-    checkpoint (the modal is read from the data: no prepare_modal_deploy,
-    whose host-to-device copy cannot be captured), force_output deleted,
-    eval, on device, weights frozen. modal: of a multi-modal model.
-    compute(lmp_data) -> True if energies and pair forces were written to
-    lmp_data; False: the caller must run the eager call.
+    Replay a frozen serial model with ghosts folded to their local owners.
+    compute returns False when the caller needs to run the eager model.
     """
 
     # room above the sizes at capture
@@ -204,47 +172,63 @@ class MLIAPCudaGraph:
         cutoff: float,
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
-        modal: Optional[str] = None,
+        modal: str | None = None,
     ):
         self.model = model
-        self.modal = modal
         self.device = device
         self.cutoff = float(cutoff)
         self.dtype = dtype
         self.verbose = verbose or os.getenv('SEVENN_MLIAP_GRAPH_VERBOSE') == '1'
         self.enabled = device.type == 'cuda'
+        if model.eval_type_map:
+            model.z_to_onehot_tensor = model.z_to_onehot_tensor.to(device)
+        self._modal_type = None
+        if modal is not None and model.modal_map:
+            # A CUDA index vector avoids copying a scalar index to the host.
+            self._modal_type = torch.tensor(
+                [model.modal_map[modal]], dtype=torch.int64, device=device
+            )
+            model.eval_modal_map = False
         # no capture: the eager call of the folded serial model
         self.eager_fold = os.getenv('SEVENN_MLIAP_FOLD_EAGER') == '1'
         self.n_captures = 0
         self.n_replays = 0
         self.n_refreshes = 0
         self.n_eager = 0
-        self._entry: Optional[Dict[str, Any]] = None
+        self._entry: dict[str, Any] | None = None
         self._edge_room = self.EDGE_ROOM
         # SEVENN_MLIAP_GRAPH_TIMING=1: wall time per phase of a call (a
         # synchronize after each phase, so the call itself gets slower),
         # printed at exit
-        self._times: Optional[Dict[str, float]] = None
+        self._times: dict[str, float] | None = None
         if os.getenv('SEVENN_MLIAP_GRAPH_TIMING') == '1':
             self._times = {}
             atexit.register(self._print_times)
         self._stream = None
         # a value the owner of a ghost must return: another rank has another one
         self._token = float(int.from_bytes(os.urandom(6), 'little'))
-        from sevenn.nn.lunatp_helper import LunaTPConvolution
-
         self._lunatp = any(
             isinstance(m, LunaTPConvolution) for m in model.modules()
         )
-        from sevenn.nn.lunatp_fused import LunaTPFusedRadialConvolution
+        from sevenn.nn.lunatp_fused import (
+            FusedEdgeGeometry,
+            LunaTPFusedRadialConvolution,
+        )
 
         # fused radial convolutions: weight rows per distinct edge length. A
         # full neighbor list holds every length twice (i-j, j-i); the captured
         # call has rows for half of its pairs plus slack, or for all of them
         # once that was not enough
-        self._fused = any(
-            isinstance(m, LunaTPFusedRadialConvolution) for m in model.modules()
+        fused = [
+            m for m in model.modules() if isinstance(m, LunaTPFusedRadialConvolution)
+        ]
+        self._fused = bool(fused)
+        self._distinct_lengths = any(not m.knots for m in fused)
+        self._skip_padding = isinstance(
+            model._modules.get('edge_embedding'), FusedEdgeGeometry
         )
+        for conv in fused:
+            conv.zero_padding_grad = self._skip_padding
         self._unique_all = False
         # species self connection pruned to the species seen so far
         # (lunatp_fused.prune_self_connection); a new species prunes again
@@ -259,7 +243,7 @@ class MLIAPCudaGraph:
                 from sevenn.nn.lunatp_fused import _load_cuda
 
                 self._prep = _load_cuda('sevenn_mliap_prep', _PREP_SOURCE)
-            except Exception as e:  # no compiler: the torch operations
+            except (ImportError, OSError, RuntimeError) as e:
                 warnings.warn(f'ML-IAP step kernel not built: {e}')
         self._allowed = torch.zeros(256, dtype=torch.bool, device=device)
 
@@ -323,7 +307,7 @@ class MLIAPCudaGraph:
         self._prep.sevenn_mliap_prep(
             recv, pair_i, pair_j, elems, self._allowed, entry['edge_index'],
             entry['cand'], flags, self._token, nlocal, npairs,
-            entry['num_fake'], max(1, nlocal // 4), self._prune,
+            entry['num_fake'], nlocal // 4 if self._fused else 0, self._prune,
         )
         foreign, changed, unseen, near = flags.tolist()  # the one host sync
         reorder = False
@@ -395,7 +379,7 @@ class MLIAPCudaGraph:
                 fits = False  # other weights: capture again
             elif self._fused and flags[3]:
                 fits = False  # other launch order: capture again
-            elif flags[1] and not self._refresh(entry, cand):
+            elif flags[1] and not self._refresh(entry, cand, npairs):
                 fits = False
             t = self._tick('refresh', t)
         elif bool(foreign):
@@ -436,7 +420,10 @@ class MLIAPCudaGraph:
             t = self._tick('copy_in', t)
             entry['graph'].replay()
             t = self._tick('replay', t)
-            if not self._fused or int(entry['n_unique']) <= entry['unique_cap']:
+            if (
+                not self._distinct_lengths
+                or int(entry['n_unique']) <= entry['unique_cap']
+            ):
                 break
             if self.verbose:
                 print(
@@ -470,8 +457,8 @@ class MLIAPCudaGraph:
             KEY.ATOMIC_NUMBERS: elems.to(torch.int64),
             KEY.NUM_ATOMS: torch.tensor(nlocal, dtype=torch.int64, device=dev),
         }
-        if self.modal is not None:
-            data[KEY.DATA_MODALITY] = self.modal
+        if self._modal_type is not None:
+            data[KEY.MODAL_TYPE] = self._modal_type
         if self._fused:
             from sevenn.nn.lunatp_fused import set_unique_cap
 
@@ -527,16 +514,38 @@ class MLIAPCudaGraph:
             out[0, npairs:] = fake
             out[1, npairs:] = fake
 
-    def _refresh(self, entry, cand) -> bool:
+    def _topology(self, edges, num_nodes, npairs, segment_edges):
+        if not self._skip_padding:
+            return _make_graph(edges[1], edges[0], num_nodes, segment_edges)
+        # Fully fused layers traverse the CSR. Keep their edge buffers at
+        # capture size but leave padded edges out of the traversal.
+        graph = _make_graph(
+            edges[1, :npairs], edges[0, :npairs], num_nodes, segment_edges
+        )
+        padding = (0, edges.shape[1] - npairs)
+        graph = dataclasses.replace(
+            graph,
+            src=nn.functional.pad(graph.src, padding, value=num_nodes - 1),
+            dst=nn.functional.pad(graph.dst, padding, value=num_nodes - 1),
+            edge_ids_by_src=nn.functional.pad(graph.edge_ids_by_src, padding),
+            edge_ids_by_dst=nn.functional.pad(graph.edge_ids_by_dst, padding),
+        )
+        graph.store_topology()
+        return graph
+
+    def _refresh(self, entry, cand, npairs) -> bool:
         """
         The edge index cand becomes the edge index of the captured call. False
         if its LunaTP graph does not fit the captured tables.
         """
         if self._lunatp:
-            graph = _lunatp_graph(
-                cand, entry['num_nodes'], entry['num_segments'],
-                entry['segment_edges'],
-            )
+            try:
+                graph = self._topology(
+                    cand, entry['num_nodes'], npairs, entry['segment_edges']
+                )
+            except ValueError:
+                return False
+            graph = _pad_graph(graph, entry['num_segments'])
             if graph is None:
                 return False
             new = _graph_tensors(graph)
@@ -557,9 +566,12 @@ class MLIAPCudaGraph:
         dev = self.device
         room = max(self.MIN_EDGE_ROOM, npairs // self._edge_room)
         num_edges = npairs + room
-        num_fake = max(1, -(-2 * room // self.PAD_EDGES_PER_FAKE_ATOM))
+        num_fake = (
+            1 if self._skip_padding
+            else max(1, -(-2 * room // self.PAD_EDGES_PER_FAKE_ATOM))
+        )
         num_nodes = nlocal + num_fake
-        entry: Dict[str, Any] = {
+        entry: dict[str, Any] = {
             'nlocal': nlocal, 'num_edges': num_edges, 'num_nodes': num_nodes,
             'num_fake': num_fake,
             'arange': torch.arange(num_edges, dtype=torch.int64, device=dev),
@@ -575,6 +587,7 @@ class MLIAPCudaGraph:
         edge_vec = pad_vec.repeat(num_edges, 1).requires_grad_(True)
         num_atoms = torch.tensor(num_nodes, dtype=torch.int64, device=dev)
 
+        topology = None
         if self._lunatp:
             # small graphs of the fused kernels: shorter source segments
             # (see lunatp_fused.SMALL_GRAPH_EDGES), 4 times the count
@@ -584,18 +597,21 @@ class MLIAPCudaGraph:
 
                 if num_edges < SMALL_GRAPH_EDGES:
                     seg_edges = 8
-            n_seg = _make_graph(
-                edge_index, num_nodes, seg_edges
-            ).source_segments.nodes.numel()
+            try:
+                graph = self._topology(edge_index, num_nodes, npairs, seg_edges)
+            except ValueError as exc:
+                warnings.warn(f'Cannot capture LunaTP topology: {exc}')
+                return None
+            n_seg = graph.source_segments.nodes.numel()
             scale = 4 if seg_edges else 1
             num_segments = n_seg + scale * (
                 max(16, nlocal // self.SEGMENT_ROOM)
                 + room // self.PAD_EDGES_PER_FAKE_ATOM + num_fake
             )
             entry['segment_edges'] = seg_edges
-            graph = _lunatp_graph(edge_index, num_nodes, num_segments, seg_edges)
-            # the key LunaTPSharedGraphConvolution looks the graph up by
-            edge_index._lunatp_graph = (num_nodes, None, graph)
+            graph = _pad_graph(graph, num_segments)
+            topology = (None, graph)
+            entry['lunatp_graph'] = graph  # owns the cached index-order tensors
             entry['num_segments'] = num_segments
             entry['graph_tensors'] = _graph_tensors(graph)
 
@@ -627,8 +643,10 @@ class MLIAPCudaGraph:
                 KEY.ATOMIC_NUMBERS: z,
                 KEY.NUM_ATOMS: num_atoms,
             }
-            if self.modal is not None:
-                data[KEY.DATA_MODALITY] = self.modal
+            if self._modal_type is not None:
+                data[KEY.MODAL_TYPE] = self._modal_type
+            if topology is not None:
+                data[PREPARED_GRAPH_KEY] = topology
             output = self.model(data)
             e_atoms = output[KEY.ATOMIC_ENERGY].view(-1)[:nlocal]
             e_total = e_atoms.sum()
@@ -637,7 +655,7 @@ class MLIAPCudaGraph:
                 e_atoms.detach().to(torch.float64),
                 e_total.detach().to(torch.float64),
                 grad.to(torch.float64),
-                output[KEY_N_UNIQUE] if self._fused else None,
+                output[KEY_N_UNIQUE] if self._distinct_lengths else None,
             )
 
         graph = torch.cuda.CUDAGraph()

@@ -132,15 +132,28 @@ sevenn get_model \
 ```
 
 
-- With ``--cuda_graph`` (one MPI rank; LunaTP or no accelerator), the model call is captured once as a CUDA graph and replayed every step. This removes the per-kernel launch overhead that bounds small systems; large systems, bound by the kernels themselves, gain little. With several ranks it turns itself off. An existing potential file can be switched with the environment variable ``SEVENN_MLIAP_CUDA_GRAPH=1`` (``0`` forces it off).
-```bash
-sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp --cuda_graph
-```
+Use `--cuda_graph` to capture and replay the model on one MPI rank with LunaTP
+or e3nn. Replay refreshes the topology as the neighbor list changes.
+Multi-rank runs use eager ghost exchange. For an existing potential,
+`SEVENN_MLIAP_CUDA_GRAPH=1` enables replay and `0` disables it.
 
-- With ``--fused`` (with ``--enable_lunatp``; used by ``--cuda_graph`` on one MPI rank), kernels specific to the frozen model are used: radial weights shared by edges of equal length, no weight-gradient array in the force backward, the species self-connection restricted to the species of the atoms, and the modality folded into the weights. The forces are those of the model to single-precision round-off. An existing potential file can be switched with ``SEVENN_MLIAP_FUSED=1``. By default the radial weights are interpolated inside the convolution kernels from a table in the edge length (``--fused_knots``, 2048 knots; forces agree with the per-edge weights to round-off, ~5e-6 eV/A for 7net-omni). ``--fused_knots 0`` computes a weight row per distinct edge length instead (about 2x slower for 7net-omni). Tensor-product paths whose output the next linear layer does not read are skipped (exact; half of the last-but-one convolution of 7net-omni), and the edge length and spherical harmonics are computed by one kernel. The first interaction is evaluated from per-species radial tables. 7net-omni, one GPU (NVIDIA GB10), Si: 2.3 / 8.4 / 65 ms per step at 64 / 512 / 4096 atoms.
+Add `--fused` with LunaTP to fuse edge geometry and evaluate radial weights
+inside the tensor-product kernels using cubic Hermite interpolation.
+`--fused_knots` defaults to 2048. With 0 knots, the implementation computes one
+weight row per distinct edge length and can tabulate the hidden activations.
+The weight tables start at 0.25 Å. Shorter distances use cubic extrapolation.
+Use `--enable_lunatp --cuda_graph` for replay with the original radial MLP.
+For an existing LunaTP potential, `SEVENN_MLIAP_FUSED=1` enables fusion when
+replay is enabled.
+The first run can compile model-specific CUDA kernels. Later runs in the same
+build environment reuse the compiled kernels.
+
 ```bash
 sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp --cuda_graph --fused
 ```
+
+`--radial_table` also works on the eager ML-IAP path. It tabulates narrow radial
+networks and folds constants into wider networks.
 
 ### Single-GPU MD
 Below is an example snippet of a LAMMPS script for using SevenNet models with ML-IAP:

@@ -144,7 +144,12 @@ sevenn lunatp_precompile 7net-omni --train   # also the kernels for training wit
 `--max_workers` sets the number of parallel processes.
 
 ### Frozen-model kernels (`fused`)
-For inference with the models that have a plain radial MLP (7net-0, 7net-omni, 7net-nano, ...), `fused` replaces more of the model by kernels specific to the loaded weights: the radial weights are interpolated inside the convolution kernels from a table in the edge length, tensor-product paths whose output is not read are skipped, and the first interaction and the self connections are specialized to the species present. Energies, forces and stress agree with the plain model to round-off (about 1e-5 eV/Å).
+
+For frozen models with a plain radial MLP, `fused` interpolates radial weights
+inside the LunaTP convolution kernels. The cubic Hermite tables approximate the
+original radial MLP. Kernels skip unused tensor-product paths and specialize
+the first interaction and self-connections to the species present.
+
 ```python
 from sevenn.calculator import SevenNetCalculator
 calc = SevenNetCalculator('7net-omni', modal='mpa', enable_lunatp=True, fused=True)

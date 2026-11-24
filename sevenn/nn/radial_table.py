@@ -1,26 +1,15 @@
-"""
-Tabulated radial MLP (inference). In the original SevenNet model the weights
-of a convolution are weight_nn(basis(r) * cutoff(r)): a function of the edge
-length only. tabulate_radial replaces it by a cubic Hermite table in r (values
-and exact derivatives of the fp64 function at uniform knots, so the table is
-C1 and its derivative is the derivative of what the forward returns), i.e.
-E x weight_numel reads instead of the E x (64 x weight_numel) matrix products
-of the forward and the backward.
+"""Frozen radial networks for ML-IAP inference.
 
-Not applicable to (and refused for) a model whose radial input depends on
-more than r: pair / node conditioned radial MLPs, distance transforms.
-
-fold_radial keeps the MLP and removes its per-call constant kernels instead:
-the weight normalizations and the activation constants of e3nn's
-FullyConnectedNet go into the frozen weight matrices (matmul, activation,
-matmul, ...). Both fold 1 / denominator of the convolution into the radial
-weights (the convolution is linear in them).
+For radial weights that depend only on edge length, cubic Hermite tables
+give values and their first derivatives. The folded MLP keeps the exact
+network and absorbs e3nn normalization and the convolution denominator.
 """
+from __future__ import annotations
+
 import copy
-from typing import List
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 import sevenn._keys as KEY
 
@@ -100,7 +89,8 @@ extern "C" __global__ void radial_bwd(
     const float* g = grad_w + e * W;
     float acc = 0.0f;
     for (int w = lane; w < W; w += 32)
-        acc += g[w] * (c[W + w] + t * (2.0f * c[2 * W + w] + 3.0f * t * c[3 * W + w]));
+        acc += g[w] * (c[W + w] + t * (2.0f * c[2 * W + w]
+                                      + 3.0f * t * c[3 * W + w]));
     for (int off = 16; off > 0; off >>= 1)
         acc += __shfl_down_sync(0xffffffff, acc, off);
     if (lane == 0) grad_r[e] = acc * inv_h;
@@ -117,7 +107,9 @@ class _HermiteKernel(torch.autograd.Function):
         cp, fwd, _ = _kernels()
         E, (K1, _, W) = r.shape[0], coef.shape
         out = torch.empty((E, W), dtype=r.dtype, device=r.device)
-        stream = cp.cuda.ExternalStream(torch.cuda.current_stream(r.device).cuda_stream)
+        stream = cp.cuda.ExternalStream(
+            torch.cuda.current_stream(r.device).cuda_stream
+        )
         with stream:
             n = E * W
             fwd(((n + 255) // 256,), (256,), (
@@ -137,10 +129,13 @@ class _HermiteKernel(torch.autograd.Function):
         E, (K1, _, W) = r.shape[0], coef.shape
         grad_r = torch.empty_like(r)
         grad_w = grad_w.contiguous()
-        stream = cp.cuda.ExternalStream(torch.cuda.current_stream(r.device).cuda_stream)
+        stream = cp.cuda.ExternalStream(
+            torch.cuda.current_stream(r.device).cuda_stream
+        )
         with stream:
             bwd(((E * 32 + 255) // 256,), (256,), (
-                cp.asarray(r.detach()), cp.asarray(coef.detach()), cp.asarray(grad_w.detach()),
+                cp.asarray(r.detach()), cp.asarray(coef.detach()),
+                cp.asarray(grad_w.detach()),
                 cp.asarray(grad_r), cp.float32(r0), cp.float32(inv_h),
                 cp.int32(K1), cp.int32(W), cp.int64(E),
             ))
@@ -201,7 +196,7 @@ def _convolutions(model):
             yield name, getattr(conv, 'conv', conv)  # MLIAPWrappedConvolution
 
 
-def fold_radial(model: nn.Module) -> List[str]:
+def fold_radial(model: nn.Module) -> list[str]:
     """
     In place, for every convolution whose radial MLP is an e3nn
     FullyConnectedNet: FoldedRadialMLP with 1 / denominator folded in.
@@ -238,7 +233,7 @@ def _table(radial, r0: float, r1: float, num_knots: int, dtype):
 def optimize_radial(
     model: nn.Module, max_table_width: int = 1024, kernel: bool = True,
     num_knots: int = 2048,
-) -> List[str]:
+) -> list[str]:
     """
     Per convolution, in place: a table (tabulate_radial) if the radial input
     is the edge embedding and the convolution has at most max_table_width
@@ -264,7 +259,7 @@ def optimize_radial(
 def tabulate_radial(
     model: nn.Module, num_knots: int = 2048, r_min: float = 0.25,
     kernel: bool = False, only=None,
-) -> List[str]:
+) -> list[str]:
     """
     Replaces, in place, the radial MLP of every convolution of model by a
     RadialTable on [r_min, cutoff] (shorter edges: the first interval's cubic,

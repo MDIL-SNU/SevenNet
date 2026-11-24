@@ -1,52 +1,32 @@
+"""Frozen LunaTP inference with radial weights fused into the convolution.
+
+Weights and radial derivatives come from cubic Hermite tables or from one
+MLP evaluation per distinct edge length. The force backward contracts the
+weight gradient with the radial derivative in registers.
+
+The CUDA source patches target LunaEquivariance 0.3.0's generated UVU
+convolution kernels (HPC-AI-Team/LunaEquivariance, BSD-3-Clause).
 """
-LunaTP convolution with its radial MLP, for inference with frozen weights
-(forces by one backward): the per-edge weight array (E x W floats, W up to
-3520 in 7net-omni) is what the convolution's time goes to, in five passes
-over it per layer (written by the MLP, read by the forward kernel, read by
-the backward kernel, its gradient written by the backward kernel and read by
-the MLP's backward). Here
+from __future__ import annotations
 
-- the weights are computed once per distinct edge length (edges i-j and j-i
-  of a full neighbor list share a row: U ~ E / 2 rows), and the LunaTP
-  kernels read row rid[e] instead of row e;
-- next to w the same GEMM gives dw/dr (forward mode through the MLP's two
-  hidden layers), and the backward kernel contracts the weight gradient with
-  it in registers: dE/dr_e = sum_w dE/dw[e, w] * dw/dr[rid[e], w]. The weight
-  gradient array is never written and the MLP has no backward.
-
-With knots > 0 (fuse_radial_conv) there is no per-call weight array at all:
-the kernels interpolate each weight (cubic Hermite in r) from a table of the
-MLP at fixed knots, (K - 1, W, 4) floats that stay mostly in the GPU cache,
-and take dw/dr from the same load. The kernels are then bound by arithmetic, not
-by memory traffic, and the last-layer GEMM is gone.
-
-The kernels are LunaEquivariance's generated uvu_conv forward and first-order
-backward sources (HPC-AI-Team/LunaEquivariance, BSD-3-Clause, commit a045a88,
-lunatp/uvu_conv/kernels/{forward,backward}.py), patched as text: weight row
-index, and the weight-gradient stores replaced by the contraction. Same
-function as LunaTPSharedGraphConvolution up to round-off.
-"""
 import copy
 import dataclasses
 import re
-from typing import List, Optional, Sequence
+from typing import Sequence
 
 import torch
-import torch.nn as nn
+from torch import nn
 
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
 from .linear import IrrepsLinear
-from .lunatp_helper import LunaTPConvolution, LunaTPSharedGraphConvolution
+from .lunatp_helper import LunaTPSharedGraphConvolution, prepare_graph
 from .radial_table import FoldedRadialMLP, _convolutions, _table
 from .self_connection import SelfConnectionIntro
 
-# LunaTP's backward works on source segments of at most 32 edges; a graph of
-# fewer edges than this gets segments of 8 (more, shorter blocks: 7net-omni,
-# 64 atoms: 2.79 -> 2.55 ms per step; slower from ~200 atoms on)
+# Shorter source segments expose more parallelism on small graphs.
 SMALL_GRAPH_EDGES = 4096
-_SEGMENT_EDGES: List[int] = []  # LunaTP's value
 
 _KEY_R = 'fused_radial_r'  # the KEY.EDGE_LENGTH tensor the entries belong to
 _KEY_RID = 'fused_radial_rid'
@@ -109,11 +89,11 @@ def forward_source(
 
     specs = op.generated_specs if specs is None else specs
     uniform = len({int(s['channels']) for s in specs}) == 1
-    args = dict(
-        merge_channel_chunks=(uniform or op.in2_dim >= 25),
-        resident_threads=1024,
-        task_warps=16,  # LunaTP's choice is 8 for 7net-omni: 5 to 8 % slower
-    )
+    args = {
+        'merge_channel_chunks': (uniform or op.in2_dim >= 25),
+        'resident_threads': 1024,
+        'task_warps': 16,  # LunaTP's choice is 8 for 7net-omni: 5 to 8 % slower
+    }
     args.update(tune or {})
     src = F.make_uvu_conv_fwd_source(
         specs,
@@ -360,7 +340,8 @@ def backward_source(
                    'const __half* __restrict__ grad_weight,', src, count=1,
                    regex=False)
         src = re.sub(
-            r'__ldg\(reinterpret_cast<const float2\*>\(weight \+ wb \+ (\d+) \+ u\)\)',
+            r'__ldg\(reinterpret_cast<const float2\*>\('
+            r'weight \+ wb \+ (\d+) \+ u\)\)',
             r'make_float2(__half2float(weight[wb + \1 + u]), '
             r'__half2float(weight[wb + \1 + u + 1]))', src,
         )
@@ -633,11 +614,12 @@ class FusedEdgeGeometry(nn.Module):
 
 
 
-def _index_order(tables):
-    """tables with the launch orders in node / segment index order (cached)"""
-    cached = getattr(tables.src, '_sevenn_index_order', None)
-    if cached is not None and cached[0] is tables:
-        return cached[1]
+def _index_order(graph):
+    key = ('sevenn_uvu_index_order', 32)
+    cached = graph._tables.get(key)
+    if cached is not None:
+        return cached
+    tables = graph._tables[('uvu', 32)]
     seg = tables.source_segments
     out = dataclasses.replace(
         tables,
@@ -651,7 +633,7 @@ def _index_order(tables):
             ),
         ),
     )
-    tables.src._sevenn_index_order = (tables, out)
+    graph._tables[key] = out
     return out
 
 
@@ -722,6 +704,7 @@ class _FusedConv(torch.autograd.Function):
             gx_partial = gx
             if zero_x:
                 gx.zero_()
+        zero_y = zero_y or mod.zero_padding_grad
         gy_partial = (torch.zeros if zero_y else torch.empty)(
             (partials, n_edge, op.in2_dim), device=x.device, dtype=x.dtype
         )
@@ -762,7 +745,8 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     larger: the caller must check it).
     """
 
-    unique_cap: Optional[int] = None
+    unique_cap: int | None = None
+    zero_padding_grad = False
     # kernel blocks launched in node index order instead of LunaTP's order by
     # degree: with atoms in a spatially coherent order (LAMMPS atom sorting)
     # the rows that neighbors share (weight rows of i-j and j-i, the output
@@ -779,11 +763,11 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     table_r0: float = 0.25
     table_inv_h: float = 0.0
     # indices of the paths (LunaTP specs) computed; None: all. See live_paths
-    paths: Optional[List[int]] = None
+    paths: list[int] | None = None
 
     def _setup(self, emb, half_weights: bool = False, knots: int = 0,
                r_min: float = 0.25, cutoff: float = 0.0,
-               paths: Optional[List[int]] = None) -> None:
+               paths: list[int] | None = None) -> None:
         self.half_weights = half_weights
         self.paths = paths
         self.knots = int(knots)
@@ -906,7 +890,7 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         return torch.mm(torch.cat([xh, xl, xh], 1), self.rad_w2_half)
 
     @staticmethod
-    def _unique(data: AtomGraphDataType, cap: Optional[int]):
+    def _unique(data: AtomGraphDataType, cap: int | None):
         r = data[KEY.EDGE_LENGTH]
         if _KEY_R in data and data[_KEY_R] is r:
             return data[_KEY_RID], data[_KEY_RU]
@@ -942,26 +926,14 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         t = (u - k).to(torch.float32)
         rid = torch.stack([k.to(torch.int32), t.view(torch.int32)], 1)
         data[_KEY_R], data[_KEY_RID], data[_KEY_RU] = r, rid, key
-        if KEY_N_UNIQUE not in data:
-            data[KEY_N_UNIQUE] = torch.zeros((), dtype=torch.int64, device=r.device)
         return rid
 
-    def _graph(self, data: AtomGraphDataType, num_nodes: int):
-        """(edge order or None, LunaTP uvu tables) of the call's edge index"""
-        import LunaEquivariance.lunatp.graph as luna_graph
-
-        edge_index = data[self.key_edge_idx]
-        if not _SEGMENT_EDGES:
-            _SEGMENT_EDGES.append(luna_graph._SOURCE_SEGMENT_EDGES)
-        small = edge_index.shape[1] < SMALL_GRAPH_EDGES
-        luna_graph._SOURCE_SEGMENT_EDGES = 8 if small else _SEGMENT_EDGES[0]
-        order, graph = LunaTPConvolution.get_graph(
-            edge_index, edge_index[1], edge_index[0], num_nodes
-        )
-        luna_graph._SOURCE_SEGMENT_EDGES = _SEGMENT_EDGES[0]
-        return order, graph._tables[('uvu', 32)]
+    def _prepare_graph(self, edge_index, num_nodes):
+        segment_edges = 8 if edge_index.shape[1] < SMALL_GRAPH_EDGES else 0
+        return prepare_graph(edge_index, num_nodes, segment_edges)
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        self._begin_graph(data)
         x = data[self.key_x]
         edge_src = data[self.key_edge_idx][1]
         y = data[self.key_filter]
@@ -980,11 +952,12 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             if ru.shape[0] * self.rad_w2.shape[1] >= 2**31:
                 raise RuntimeError('too many edges for the fused radial kernels')
             wbuf = self._weights(data, ru)
-        order, tables = self._graph(data, x.shape[0])
+        order, graph = self._take_graph(data, x.shape[0])
+        tables = graph._tables[('uvu', 32)]
         if order is not None:
             y, r, rid = y[order], r[order], rid[order]
         if self.index_order and not self.convolution.tp_conv.op.forward_degree_tiers:
-            tables = _index_order(tables)
+            tables = _index_order(graph)
         data[self.key_x] = _FusedConv.apply(
             self, x.contiguous(), y.contiguous(), r, rid.contiguous(), wbuf,
             tables,
@@ -1195,12 +1168,12 @@ class FusedFirstLayer(nn.Module):
     and the backward has no feature gradient.
     """
 
-    def __init__(self, conv, reference, names, modal: Optional[str]) -> None:
+    def __init__(self, conv, reference, names) -> None:
         super().__init__()
         from e3nn.o3 import Irreps
 
         self.conv = conv  # the fused convolution: knots, graph tables
-        object.__setattr__(self, '_ref', (reference, names, modal))
+        object.__setattr__(self, '_ref', (reference, names))
         irreps_out = Irreps(reference._modules[names[2]].irreps_out)
         meta, chunks, c, at = [], [], 0, 0
         for mul, ir in irreps_out:
@@ -1225,14 +1198,14 @@ class FusedFirstLayer(nn.Module):
         self.register_buffer(
             'lut', torch.zeros(len(reference.type_map), dtype=torch.int32).to(dev)
         )
-        self.columns: List[int] = []
+        self.columns: list[int] = []
         self.key_x, self.key_filter = conv.key_x, conv.key_filter
         self.ext = _load_cuda('sevenn_first_layer_fp32', _FIRST_SOURCE)
 
     def _reference(self, column: int, r: torch.Tensor, direction: torch.Tensor):
         """(x after the linear (K, out_dim), bias, Y (dim,)) of single edges
         of lengths r along direction from an atom of type index column"""
-        ref, names, modal = self._ref
+        ref, names = self._ref
         number = {v: k for k, v in ref.type_map.items()}[column]
         k = r.shape[0]
         data = {
@@ -1243,8 +1216,6 @@ class FusedFirstLayer(nn.Module):
             KEY.ATOMIC_NUMBERS: torch.full((k + 2,), number, dtype=torch.int64),
             KEY.NUM_ATOMS: torch.tensor(k + 2, dtype=torch.int64),
         }
-        if modal is not None:
-            data[KEY.DATA_MODALITY] = modal
         with torch.no_grad():
             data = ref._preprocess(data)
             for name, module in ref._modules.items():
@@ -1260,7 +1231,7 @@ class FusedFirstLayer(nn.Module):
 
     def set_species(self, columns: Sequence[int]) -> None:
         """the tables of the species of these type indices (all that occur)"""
-        columns = sorted(set(int(c) for c in columns))
+        columns = sorted({int(c) for c in columns})
         if columns == self.columns:
             return
         conv = self.conv
@@ -1274,7 +1245,7 @@ class FusedFirstLayer(nn.Module):
         eps = 1e-4
         tables, bias = [], None
         for column in columns:
-            def radial(rr, direction=direction):
+            def radial(rr, direction=direction, column=column):
                 x, b, y = self._reference(column, rr, direction)
                 out = []
                 for mul, ir in self._irreps_out:
@@ -1315,23 +1286,28 @@ class FusedFirstLayer(nn.Module):
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if not self.columns:
             raise RuntimeError('FusedFirstLayer: set_species was not called')
+        self.conv._begin_graph(data)
         y = data[self.key_filter]
         r = data[KEY.EDGE_LENGTH]
         types = data[KEY.ATOM_TYPE]
+        if r.numel() == 0:
+            data[self.key_x] = self.bias.expand(types.shape[0], -1) + r.sum() * 0
+            return data
         rid = self.conv._knots(data)
-        order, tables = self.conv._graph(data, types.shape[0])
+        order, graph = self.conv._take_graph(data, types.shape[0])
         if order is not None:
             y, r, rid = y[order], r[order], rid[order]
         slot = self.lut[types]
         data[self.key_x] = _FirstLayer.apply(
-            self, y.contiguous(), r, rid.contiguous(), slot, tables
+            self, y.contiguous(), r, rid.contiguous(), slot,
+            graph._tables[('uvu', 32)],
         ) + self.bias
         return data
 
 
 def collapse_first_layer(
-    model: nn.Module, reference: nn.Module, modal: Optional[str] = None
-) -> List[str]:
+    model: nn.Module, reference: nn.Module, modal: str | None = None
+) -> list[str]:
     """
     In place, after fuse_radial_conv(knots > 0): the linear before the first
     convolution, that convolution and the linear after it become one
@@ -1367,14 +1343,16 @@ def collapse_first_layer(
     reference = copy.deepcopy(reference).to('cpu', torch.float64)
     reference.set_is_batch_data(False)
     reference.eval()
-    first = FusedFirstLayer(conv, reference, trio, modal)
+    if modal is not None:
+        reference.prepare_modal_deploy(modal)
+    first = FusedFirstLayer(conv, reference, trio)
     model._modules[trio[0]] = _PassThrough()
     model._modules[trio[1]] = first
     model._modules[trio[2]] = _PassThrough()
     return trio
 
 
-def live_paths(conv, linear) -> Optional[List[int]]:
+def live_paths(conv, linear) -> list[int] | None:
     """
     Indices of the paths (LunaTP specs) of conv whose output the IrrepsLinear
     after it reads, None if that is all of them. A convolution computes every
@@ -1403,7 +1381,7 @@ def live_paths(conv, linear) -> Optional[List[int]]:
 def fuse_radial_conv(
     model: nn.Module, hidden_table: bool = True, half_weights: bool = False,
     knots: int = 0, r_min: float = 0.25,
-) -> List[str]:
+) -> list[str]:
     """
     In place: every LunaTP convolution of a serial model whose radial MLP is
     an e3nn FullyConnectedNet [n, h, h, W] of the edge embedding becomes a
@@ -1413,6 +1391,8 @@ def fuse_radial_conv(
     """
     from e3nn.nn import FullyConnectedNet
 
+    if knots < 0 or knots == 1:
+        raise ValueError('fused_knots must be 0 or at least 2')
     emb = model._modules['edge_embedding']
     if getattr(emb, 'distance_transform', None) is not None:
         return []
@@ -1440,7 +1420,7 @@ def fuse_radial_conv(
         fused.append(conv)
     if (
         knots and fused and len(fused) == len(list(_convolutions(model)))
-        and fused[0].rad_w2.is_cuda and not emb.save_components
+        and fused[0].rad_w2.is_cuda and not getattr(emb, 'save_components', False)
         and bool(getattr(emb.spherical.sph, 'normalize', False))
     ):
         model._modules['edge_embedding'] = FusedEdgeGeometry(emb)
@@ -1483,7 +1463,7 @@ class PrunedSelfConnectionIntro(SelfConnectionIntro):
         return data
 
 
-def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> List[str]:
+def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> list[str]:
     """
     In place: every SelfConnectionIntro of model (operand n x 0e) becomes a
     PrunedSelfConnectionIntro of the operand columns given (type indices of
@@ -1492,7 +1472,7 @@ def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> List[str]
     """
     from e3nn.o3 import Irreps
 
-    columns = sorted(set(int(c) for c in columns))
+    columns = sorted({int(c) for c in columns})
     for module in model._modules.values():
         if isinstance(module, FusedFirstLayer):
             module.set_species(columns)
@@ -1550,7 +1530,7 @@ def set_index_order(model: nn.Module, flag: bool) -> None:
             module.index_order = flag
 
 
-def set_unique_cap(model: nn.Module, cap: Optional[int]) -> None:
+def set_unique_cap(model: nn.Module, cap: int | None) -> None:
     for module in model.modules():
         if isinstance(module, LunaTPFusedRadialConvolution):
             module.unique_cap = cap
@@ -1568,7 +1548,7 @@ class ModalFoldedLinear(IrrepsLinear):
         return data
 
 
-def fold_modal(model: nn.Module, modal: str) -> List[str]:
+def fold_modal(model: nn.Module, modal: str) -> list[str]:
     """
     In place: every IrrepsLinear with modal input becomes a ModalFoldedLinear
     of the modality given. The model then gives that modality whatever

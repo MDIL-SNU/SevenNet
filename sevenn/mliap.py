@@ -87,16 +87,10 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             modal: Optional[str] = None
             use_cueq: bool = False
             use_flash: bool = False
-            use_cuda_graph: bool = False  # one rank only; replays a captured
-                CUDA graph of the model call (sevenn/nn/_mliap_cuda_graph.py)
-            use_radial_table: bool = False  # radial MLPs as cubic tables in r
-                (narrow layers) or with folded constants (wide layers), see
-                sevenn/nn/radial_table.py optimize_radial
-            use_fused: bool = False  # LunaTP, with the CUDA graph or the
-                folded eager call (one rank): frozen-model kernels of
-                sevenn/nn/lunatp_fused.py
-            fused_knots: int = 2048  # use_fused: knots of the in-kernel
-                radial weight table (0: weight rows per edge length per step)
+            use_cuda_graph: bool = False  # CUDA Graph replay on one rank
+            use_radial_table: bool = False  # tabulate or fold radial MLPs
+            use_fused: bool = False  # fused LunaTP kernels for replay
+            fused_knots: int = 2048  # 0 evaluates weights by distinct length
         """
 
         super().__init__()
@@ -303,11 +297,26 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             or os.getenv('SEVENN_MLIAP_CUDA_GRAPH') == '1'
         ) and self.device.type == 'cuda'
         if use_graph and os.getenv('SEVENN_MLIAP_CUDA_GRAPH') != '0':
-            if getattr(self, 'graph', None) is None:
-                self.graph = None
-                self._ensure_graph_initialized()
-            if self.graph.compute(lmp_data):
-                return
+            if getattr(self, '_graph_single_rank', None) is None:
+                # An extra owner exchange on some ranks would leave MPI peers
+                # waiting in the model's feature exchange.
+                self._graph_single_rank = all(
+                    int(os.getenv(key, '1')) == 1
+                    for key in (
+                        'OMPI_COMM_WORLD_SIZE', 'PMI_SIZE', 'MV2_COMM_WORLD_SIZE'
+                    )
+                )
+                if not self._graph_single_rank:
+                    print(
+                        '[INFO] SevenNet ML-IAP CUDA graph requires one rank',
+                        flush=True,
+                    )
+            if self._graph_single_rank:
+                if getattr(self, 'graph', None) is None:
+                    self.graph = None
+                    self._ensure_graph_initialized()
+                if self.graph.compute(lmp_data):
+                    return
         self._ensure_model_initialized()  # lazy init
         assert self.model, 'Model must be initialized'
         if lmp_data.nlocal == 0:
