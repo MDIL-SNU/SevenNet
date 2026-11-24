@@ -80,14 +80,14 @@ static __forceinline__ __device__ float sevenn_dw(const float* p, float t) {
 _KNOT = 'const int hk_ = {k}; const float ht_ = __int_as_float({t});'
 
 
-def forward_source(op, hermite: bool = False, specs=None, tune=None) -> str:
-    """Generate forward CUDA code for the selected TP paths.
+def forward_source(op, hermite: bool = False, tune=None) -> str:
+    """Generate forward CUDA code for the convolution's TP paths.
 
     Pass tune to override LunaTP generator options used here.
     """
     from LunaEquivariance.lunatp.uvu_conv.kernels import forward as F
 
-    specs = op.generated_specs if specs is None else specs
+    specs = op.generated_specs
     uniform = len({int(s['channels']) for s in specs}) == 1
     args = {
         'merge_channel_chunks': (uniform or op.in2_dim >= 25),
@@ -151,21 +151,13 @@ def forward_source(op, hermite: bool = False, specs=None, tune=None) -> str:
     return src
 
 
-def backward_source(op, hermite: bool = False, specs=None, tune=None):
+def backward_source(op, hermite: bool = False, tune=None):
     """Generate backward CUDA code and return it with the LunaTP kernel flags.
 
     In Hermite mode the partial sums are h * dE/dr for knot spacing h.
     """
-    from types import SimpleNamespace
-
     from LunaEquivariance.lunatp.uvu_conv.kernels import backward as B
 
-    if specs is not None:
-        op = SimpleNamespace(
-            compute_dtype=op.compute_dtype, generated_specs=specs,
-            in1_dim=op.in1_dim, in2_dim=op.in2_dim, out_dim=op.out_dim,
-            weight_numel=op.weight_numel,
-        )
     src, *flags = B.make_uvu_conv_bwd_source(op)
     src = _sub(
         'float* __restrict__ grad_weight, int64_t edges) {',
@@ -550,8 +542,6 @@ class _FusedConv(torch.autograd.Function):
                 'fused (SEVENN_MLIAP_FUSED=0, or fused=False).'
             )
         out = x.new_empty((x.shape[0], op.out_dim))
-        # with paths, the columns of the skipped paths stay uninitialized: the
-        # linear after has no weights for them (checked with NaN there)
         if op.forward_output_needs_zero:
             out.zero_()
         mod.fwd_ext.run_uvu_conv_fwd_ordered(
@@ -643,11 +633,8 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     knots: int = 0
     table_r0: float = DEFAULT_RADIAL_TABLE_R_MIN
     table_inv_h: float = 0.0
-    # indices of the paths (LunaTP specs) computed; None: all. See live_paths
-    paths: list[int] | None = None
 
-    def _setup(self, emb, knots, r_min, cutoff, paths) -> None:
-        self.paths = paths
+    def _setup(self, emb, knots, r_min, cutoff) -> None:
         self.knots = int(knots)
         ref = self.denominator
         folded = FoldedRadialMLP(
@@ -671,46 +658,32 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             )
         self._kernels()
 
-    def _kernels(self) -> None:
+    def _load_kernel(self, kind, source):
         from LunaEquivariance.utils.extension import load_tp_extension
 
         op = self.convolution.tp_conv.op
-        herm = self.knots > 0
-        tag = 'herm' if herm else 'fp32'
-        specs = None
-        if self.paths is not None:
-            specs = [op.generated_specs[n] for n in self.paths]
-        self.fwd_ext = load_tp_extension(
-            f'sevenn_uvuconv_fused_fwd_{tag}',
-            forward_source(op, herm, specs),
+        tag = 'herm' if self.knots else 'fp32'
+        return load_tp_extension(
+            f'sevenn_uvuconv_fused_{kind}_{tag}', source,
             max_channels=op.max_channels, index_bits=32,
         )
+
+    def _kernels(self) -> None:
+        op = self.convolution.tp_conv.op
+        hermite = self.knots > 0
+        self.fwd_ext = self._load_kernel('fwd', forward_source(op, hermite))
+        src, *self.bwd_flags = backward_source(op, hermite)
+        self.bwd_ext = self._load_kernel('bwd', src)
         self._bwd_small = None
-        src, *self.bwd_flags = backward_source(op, herm, specs)
-        self.bwd_ext = load_tp_extension(
-            f'sevenn_uvuconv_fused_bwd_{tag}', src,
-            max_channels=op.max_channels, index_bits=32,
-        )
 
     def bwd_small(self):
-        """the backward kernels for a small graph: a stream per group kernel"""
+        """Use separate streams for the backward groups on small graphs."""
         if self._bwd_small is None:
-            from LunaEquivariance.utils.extension import load_tp_extension
-
-            op = self.convolution.tp_conv.op
-            herm = self.knots > 0
-            tag = 'herm' if herm else 'fp32'
-            specs = None
-            if self.paths is not None:
-                specs = [op.generated_specs[n] for n in self.paths]
             src, *flags = backward_source(
-                op, herm, specs, {'streams': True}
+                self.convolution.tp_conv.op, self.knots > 0, tune={'streams': True}
             )
             assert flags == self.bwd_flags
-            self._bwd_small = load_tp_extension(
-                f'sevenn_uvuconv_fused_bwd_{tag}', src,
-                max_channels=op.max_channels, index_bits=32,
-            )
+            self._bwd_small = self._load_kernel('bwd', src)
         return self._bwd_small
 
     def _embedding(self, data: AtomGraphDataType, ru: torch.Tensor):
@@ -1170,26 +1143,6 @@ def collapse_first_layer(
     return trio
 
 
-def live_paths(conv, linear) -> list[int] | None:
-    """Return the TP paths read by the next linear, or None if it reads all."""
-    irreps_in = getattr(linear, '_irreps_in_wo_modal', None)
-    irreps_out = getattr(linear, 'irreps_out', None)
-    op = conv.convolution.tp_conv.op
-    if irreps_in is None or irreps_out is None or irreps_in.dim != op.out_dim:
-        return None
-    used = {ir for _, ir in irreps_out}
-    live, at = [], 0  # [begin, end) column ranges the linear reads
-    for mul, ir in irreps_in:
-        if ir in used:
-            live.append((at, at + mul * ir.dim))
-        at += mul * ir.dim
-    keep = [
-        n for n, spec in enumerate(op.generated_specs)
-        if any(a <= int(spec['out_offset']) < b for a, b in live)
-    ]
-    return None if len(keep) == len(op.generated_specs) else keep
-
-
 def fuse_radial_conv(
     model: nn.Module, knots: int = 0, r_min: float = DEFAULT_RADIAL_TABLE_R_MIN
 ) -> list[str]:
@@ -1222,15 +1175,9 @@ def fuse_radial_conv(
             or getattr(conv, 'denominator_folded', True)
         ):
             continue
-        paths = None
-        linear = model._modules.get(
-            name.replace('convolution', 'self_interaction_2')
-        )
-        if isinstance(linear, IrrepsLinear) and linear.key_input == conv.key_x:
-            paths = live_paths(conv, linear)
         conv.__class__ = LunaTPFusedRadialConvolution
-        conv._setup(emb, knots, r_min, cutoff, paths)
-        changed.append(name if paths is None else f'{name}({len(paths)}paths)')
+        conv._setup(emb, knots, r_min, cutoff)
+        changed.append(name)
         fused.append(conv)
     if (
         fused and len(fused) == len(list(_convolutions(model)))
