@@ -118,7 +118,7 @@ LunaTP (LunaEquivariance package) replaces the tensor product convolution with a
 ### Requirements
 - Python >= 3.10, PyTorch >= 2.8
 - NVIDIA GPU with compute capability 8.0 or later, CUDA toolkit with `nvcc`
-- LunaEquivariance
+- LunaEquivariance 0.3.0
 
 ### Installation
 ```bash

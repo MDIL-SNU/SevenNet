@@ -4,11 +4,13 @@ import subprocess
 import sys
 import tempfile
 import warnings
-import weakref
 from typing import Optional, Union
 
 import torch
 from e3nn.o3 import FullyConnectedTensorProduct
+
+import sevenn._keys as KEY
+from sevenn._const import AtomGraphDataType
 
 from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
 from .equivariant_gate import EquivariantGate
@@ -23,6 +25,27 @@ try:
         TensorProductConv,
         make_graph,
     )
+    from LunaEquivariance.utils import jit as _lunaeq_jit
+    from torch.utils import cpp_extension as _cpp_extension
+
+    class _DigestVersionedCppExtension:
+        """
+        torch.utils.cpp_extension for LunaEquivariance.utils.jit, with a kernel
+        library version equal to its build digest. Torch's version counts the
+        same-named libraries loaded before, so a process that loads kernels in
+        another order would compile them again.
+        """
+
+        class JIT_EXTENSION_VERSIONER:
+            @staticmethod
+            def bump_version_if_changed(name, build_arguments, **_):
+                return int(build_arguments[0][0], 16)
+
+        def __getattr__(self, attr):
+            return getattr(_cpp_extension, attr)
+
+    if 'JIT_EXTENSION_VERSIONER' in _lunaeq_jit.load_extension.__code__.co_names:
+        _lunaeq_jit.cpp_extension = _DigestVersionedCppExtension()
 
     class LunaTPFullyConnectedTensorProduct(TensorProduct):
         """
@@ -92,27 +115,81 @@ class LunaTPConvolution(torch.nn.Module):
             internal_weights=internal_weights,
         )
 
-    # (weakref to edge_filter, num_nodes, edge order, graph) of the last graph,
-    # shared by all instances. The convolution layers of one forward receive the
-    # same KEY.EDGE_ATTR tensor as edge_filter, so the layers after the first
-    # reuse its edge order and graph.
-    _cache = (None, -1, None, None)
+    @staticmethod
+    def get_graph(key, edge_src, edge_dst, num_nodes: int):
+        """
+        (edge order or None, LunaTPGraph), cached on the key tensor. make_graph
+        rejects edges not sorted by destination, which are then sorted here.
+        """
+        cached = getattr(key, '_lunatp_graph', None)
+        if cached is not None and cached[0] == num_nodes:
+            return cached[1], cached[2]
+        order = None
+        try:
+            graph = make_graph(edge_src, edge_dst, num_nodes)
+        except ValueError:
+            if bool(torch.all(edge_dst[1:] >= edge_dst[:-1])):
+                raise
+            order = torch.argsort(edge_dst, stable=True)
+            graph = make_graph(edge_src[order], edge_dst[order], num_nodes)
+        key._lunatp_graph = (num_nodes, order, graph)
+        return order, graph
 
-    def forward(self, x, edge_filter, weight, edge_src, edge_dst):
-        ref, num_nodes, order, graph = LunaTPConvolution._cache
-        if ref is None or ref() is not edge_filter or num_nodes != x.shape[0]:
-            # LunaTP requires edges sorted by destination
-            order = None
-            if not bool(torch.all(edge_dst[1:] >= edge_dst[:-1])):
-                order = torch.argsort(edge_dst, stable=True)
-                edge_src, edge_dst = edge_src[order], edge_dst[order]
-            graph = make_graph(edge_src, edge_dst, x.shape[0])
-            LunaTPConvolution._cache = (
-                weakref.ref(edge_filter), x.shape[0], order, graph
-            )
+    def forward(
+        self,
+        x,
+        edge_filter,
+        weight,
+        edge_src,
+        edge_dst,
+        graph_key: Optional[torch.Tensor] = None,
+    ):
+        key = edge_filter if graph_key is None else graph_key
+        order, graph = self.get_graph(key, edge_src, edge_dst, x.shape[0])
         if order is not None:
             edge_filter, weight = edge_filter[order], weight[order]
         return self.tp_conv(x, edge_filter, weight, graph=graph)
+
+
+class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
+    """
+    Passes the input edge index tensor as the LunaTP graph cache key: the layers
+    of a forward share one graph, and a caller that passes the same edge index
+    tensor again reuses it.
+    """
+
+    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
+        assert self.convolution is not None, 'Convolution is not instantiated'
+        assert self.weight_nn is not None, 'Weight_nn is not instantiated'
+
+        x = data[self.key_x]
+        weight = self.weight_nn(data[self.key_weight_input])
+        if self.is_parallel:
+            x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
+
+        edge_src = data[self.key_edge_idx][1]
+        edge_dst = data[self.key_edge_idx][0]
+        edge_filter = data[self.key_filter]
+
+        if edge_src.numel() == 0:
+            x = x.new_zeros(x.shape[0], self._out_dim)
+            x = x + (edge_filter.sum() + weight.sum()) * 0
+        else:
+            x = self.convolution(
+                x,
+                edge_filter,
+                weight,
+                edge_src,
+                edge_dst,
+                graph_key=data[self.key_edge_idx],
+            )
+
+        x = x.div(self.denominator)
+
+        if self.is_parallel:
+            x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
+        data[self.key_x] = x
+        return data
 
 
 @lunatp_needed
@@ -120,9 +197,7 @@ def patch_convolution(irreps_convolution: IrrepsConvolution):
     assert not irreps_convolution.layer_instantiated, (
         'Convolution layer already instantiated; cannot patch'
     )
-    ret = IrrepsScatterGatterFusedConvolution.from_irreps_convolution(
-        irreps_convolution
-    )
+    ret = LunaTPSharedGraphConvolution.from_irreps_convolution(irreps_convolution)
     ret.convolution_cls = LunaTPConvolution
     return ret
 
@@ -153,11 +228,13 @@ def patch_gate(module: EquivariantGate):
 
 
 def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
-    # Forward and backward on two nodes (and two edges) build the module's kernels.
-    # LunaEquivariance compiles a variant per set of tensors that require grad, so
-    # every combination of inputs and parameters (frozen or trainable) runs once.
-    # order 2 also differentiates first derivatives once more, as a force loss
-    # does, with an output gradient that does and does not require grad.
+    """
+    Build the module's kernels: one forward and backward per combination of
+    tensors that require grad, the no-grad combination first (later no-grad
+    calls would reuse the fused forward+backward kernel and leave the
+    forward-only one unbuilt). order 2 differentiates once more and runs
+    linears on 65 rows (kernel selected by n <= 64).
+    """
     if isinstance(module, LunaTPConvolution):
         tp = module.tp_conv
         dims = [tp.irreps_in1.dim, tp.irreps_in2.dim, tp.weight_numel]
@@ -168,18 +245,19 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
         onehot = torch.zeros(2, module.irreps_in2.dim, device=device, dtype=dtype)
         onehot[:, 0] = 1.0
         extra = [onehot]
-    else:  # LunaEqLinear, LunaEqGate
+    else:
         dims = [module.irreps_in.dim]
         extra = []
+    sizes = (2, 65) if order >= 2 and isinstance(module, LunaEqLinear) else (2,)
     params = [p for p in module.parameters() if p.numel() > 0]
     trainable = [p.requires_grad for p in params]
-    flag_sets = itertools.product((True, False), repeat=len(dims) + len(params[:1]))
+    flag_sets = itertools.product((False, True), repeat=len(dims) + len(params[:1]))
     try:
-        for flags in flag_sets:
+        for flags, n in itertools.product(flag_sets, sizes):
             for p in params:
                 p.requires_grad_(flags[-1])
             inputs = [
-                torch.randn(2, d, device=device, dtype=dtype, requires_grad=f)
+                torch.randn(n, d, device=device, dtype=dtype, requires_grad=f)
                 for d, f in zip(dims, flags)
             ]
             wrt = [t for t in inputs + params if t.requires_grad]
@@ -189,8 +267,6 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
             torch.autograd.grad(out.sum(), wrt, allow_unused=True)
             if order < 2:
                 continue
-            # the first derivative requests any subset of wrt (a force requests
-            # the inputs only), then its result is differentiated once more
             requests = [
                 c for r in range(1, len(wrt) + 1)
                 for c in itertools.combinations(wrt, r)
@@ -215,8 +291,18 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
 
 
 def _precompile_worker(checkpoint_path: str, rank: str, size: str, order: str):
+    """
+    A convolution compiles its forward kernel when it is built, so each worker
+    first builds its share of them instead of waiting for them in build_model.
+    """
     from sevenn.util import load_checkpoint
 
+    convolutions = [
+        m for m in load_checkpoint(checkpoint_path).build_model().modules()
+        if isinstance(m, IrrepsConvolution)
+    ]
+    for conv in convolutions[int(rank) :: int(size)]:
+        LunaTPConvolution(**conv.convolution_kwargs)
     model = load_checkpoint(checkpoint_path).build_model(enable_lunatp=True)
     model.to('cuda')
     param = next(model.parameters())
@@ -255,16 +341,22 @@ def precompile(
         '_precompile_worker(*sys.argv[1:])'
     )
     with tempfile.TemporaryDirectory() as tmp:
-        procs = []
-        for rank in range(workers):
-            log = open(os.path.join(tmp, f'{rank}.log'), 'w')
-            cmd = [sys.executable, '-c', code, checkpoint_path, str(rank)]
-            cmd += [str(workers), str(order)]
-            procs.append(
-                subprocess.Popen(cmd, stdout=log, stderr=subprocess.STDOUT, env=env)
-            )
-            log.close()
-        failed = [rank for rank, proc in enumerate(procs) if proc.wait() != 0]
+
+        def run(ranks):
+            procs = {}
+            for rank in ranks:
+                log = open(os.path.join(tmp, f'{rank}.log'), 'w')
+                cmd = [sys.executable, '-c', code, checkpoint_path, str(rank)]
+                cmd += [str(workers), str(order)]
+                procs[rank] = subprocess.Popen(
+                    cmd, stdout=log, stderr=subprocess.STDOUT, env=env
+                )
+                log.close()
+            return [rank for rank, proc in procs.items() if proc.wait() != 0]
+
+        failed = run(range(workers))
+        if failed:  # a shared GPU can be out of memory for a moment
+            failed = run(failed)
         if failed:
             with open(os.path.join(tmp, f'{failed[0]}.log')) as f:
                 tail = f.read()[-2000:]
