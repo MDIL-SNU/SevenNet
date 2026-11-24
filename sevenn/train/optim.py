@@ -6,6 +6,8 @@ import torch.optim.lr_scheduler as scheduler
 from torch.optim import adagrad, adam, adamw, radam, sgd
 from torch.optim.lr_scheduler import _LRScheduler
 
+from .muon import MuonWithAuxAdam
+
 
 class L2MAE(nn.Module):
     """
@@ -46,6 +48,7 @@ optim_dict = {
     'adam': adam.Adam,
     'adamw': adamw.AdamW,
     'radam': radam.RAdam,
+    'muon': MuonWithAuxAdam,
 }
 
 
