@@ -294,6 +294,9 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                 getattr(self, 'use_cuda_graph', False), 'SEVENN_MLIAP_CUDA_GRAPH',
                 default=True,
             )
+            if replay and self.use_flash:
+                print('[INFO] FlashTP uses eager execution on CUDA', flush=True)
+                replay = False
             fused = self.use_lunatp and _runtime_flag(
                 getattr(self, 'use_fused', False), 'SEVENN_MLIAP_FUSED',
                 default=True,

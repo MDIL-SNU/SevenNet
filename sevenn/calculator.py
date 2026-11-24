@@ -390,7 +390,14 @@ class SevenNetCalculator(Calculator):
             )
 
         self._fused_exact = bool(self.fused) and not use_radial_table
-        self.cuda_graph = cuda_graph is not False and self.device.type == 'cuda'
+        flash = any(
+            type(module).__module__.startswith('flashTP_e3nn.')
+            for module in self.model.modules()
+        )
+        self._cuda_graph_supported = self.device.type == 'cuda' and not flash
+        self.cuda_graph = cuda_graph is not False and self._cuda_graph_supported
+        if flash and cuda_graph is True:
+            warnings.warn('FlashTP runs eagerly because CUDA Graph replay is unsafe')
         self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None
         self._graphs_seen: OrderedDict = OrderedDict()  # topologies seen once
         self._capture_stream = None  # one stream: cuBLAS keeps a workspace each
@@ -713,7 +720,7 @@ class SevenNetCalculator(Calculator):
             data[KEY.DATA_MODALITY] = self.modal
         _sort_edges(data)
 
-        if self.cuda_graph:
+        if self.cuda_graph and self._cuda_graph_supported:
             results = self._graph_results(data)
             if results is not None:
                 self.results = results

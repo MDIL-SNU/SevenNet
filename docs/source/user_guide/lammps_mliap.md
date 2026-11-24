@@ -134,7 +134,7 @@ sevenn get_model \
 
 Single-rank runs use radial interpolation for compatible models with any
 TP backend. CUDA also enables graph replay and fused LunaTP kernels by default.
-Multi-rank runs use eager ghost exchange.
+Multi-rank runs use eager ghost exchange. FlashTP uses eager execution.
 
 | Option | Effect |
 |---|---|

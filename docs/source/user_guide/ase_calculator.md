@@ -71,6 +71,7 @@ calc = SevenNetCalculator(model='7net-0', enable_lunatp=True)
 
 On CUDA, the calculator replays compatible calls by default and runs eagerly
 when it cannot reuse a capture. Pass `cuda_graph=False` to disable replay.
+FlashTP uses eager execution.
 
 Compatible checkpoint radial MLPs use Hermite interpolation by default
 with any TP backend. Pass `radial_table=False` to evaluate the original
