@@ -223,7 +223,7 @@ class SevenNetCalculator(Calculator):
             Use Hermite interpolation by default for compatible checkpoints.
         radial_knots: int, default=2048
             Number of Hermite knots when interpolation is enabled.
-        radial_r_min: float, default=0.10
+        radial_r_min: float, default=0.0
             First Hermite knot in angstroms.
         """
         super().__init__(**kwargs)

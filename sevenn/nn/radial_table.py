@@ -13,6 +13,7 @@ from torch import nn
 
 import sevenn._keys as KEY
 from sevenn._const import DEFAULT_RADIAL_TABLE_KNOTS, DEFAULT_RADIAL_TABLE_R_MIN
+from sevenn.nn.edge_embedding import BesselBasis
 
 
 def _copy_cpu_double(module: nn.Module) -> nn.Module:
@@ -208,6 +209,20 @@ def _convolutions(model):
             yield name, getattr(conv, 'conv', conv)  # MLIAPWrappedConvolution
 
 
+def _radial_embedding(embedding: nn.Module, r: torch.Tensor) -> torch.Tensor:
+    basis = embedding.basis_function
+    if isinstance(basis, BesselBasis):
+        ur = r.unsqueeze(-1)
+        at_origin = ur == 0
+        denominator = torch.where(at_origin, 1.0, ur)
+        values = basis.prefactor * torch.where(
+            at_origin, basis.coeffs, torch.sin(basis.coeffs * ur) / denominator,
+        )
+    else:
+        values = basis(r)
+    return values * embedding.cutoff_function(r).unsqueeze(-1)
+
+
 def supports_radial_table(model: nn.Module) -> bool:
     emb = model._modules.get('edge_embedding')
     return (
@@ -259,8 +274,8 @@ def tabulate_radial(
     cutoff = float(model.cutoff)
     if num_knots < 2:
         raise ValueError('radial_knots must be at least 2')
-    if not 0 < r_min < cutoff:
-        raise ValueError(f'radial_r_min must be between 0 and the cutoff ({cutoff})')
+    if not 0 <= r_min < cutoff:
+        raise ValueError(f'radial_r_min must be in [0, {cutoff})')
     ref = next(model.parameters())
     emb64 = _copy_cpu_double(emb)
     changed = []
@@ -274,9 +289,7 @@ def tabulate_radial(
             conv.denominator_folded = True
 
         def radial(r, mlp64=mlp64, scale=scale):
-            return scale * mlp64(
-                emb64.basis_function(r) * emb64.cutoff_function(r).unsqueeze(-1)
-            )
+            return scale * mlp64(_radial_embedding(emb64, r))
 
         coef, h = _table(radial, r_min, cutoff, num_knots)
         coef = coef.transpose(1, 2).to(device=ref.device, dtype=ref.dtype)

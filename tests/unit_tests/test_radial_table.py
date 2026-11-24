@@ -40,6 +40,12 @@ def test_radial_table(device, kernel):
     ref = model(_data(config[KEY.CUTOFF], device))
     names = tabulate_radial(model, kernel=kernel)
     assert len(names) == config[KEY.NUM_CONVOLUTION]
+    table = model._modules[names[0]].weight_nn
+    origin = table.coef.new_zeros(1).requires_grad_()
+    at_origin = table(origin)
+    assert torch.isfinite(at_origin).all()
+    (slope,) = torch.autograd.grad(at_origin.sum(), origin)
+    torch.testing.assert_close(slope, torch.zeros_like(slope))
     out = model(_data(config[KEY.CUTOFF], device))
     e_ref = ref[KEY.PRED_TOTAL_ENERGY].item()
     assert abs(out[KEY.PRED_TOTAL_ENERGY].item() - e_ref) < 2e-6 * abs(e_ref)
@@ -62,7 +68,7 @@ def test_ase_defaults_to_radial_table_without_tp_acceleration(device):
     exact = SevenNetCalculator('7net-0', device=device, radial_table=False)
     tables = [m for m in default.model.modules() if isinstance(m, RadialTable)]
     assert tables
-    assert {(m.coef.shape[0], m.r0) for m in tables} == {(2047, 0.10)}
+    assert {(m.coef.shape[0], m.r0) for m in tables} == {(2047, 0.0)}
     assert not any(isinstance(m, RadialTable) for m in exact.model.modules())
     atoms = bulk('NaCl', 'rocksalt', a=5.63) * (2, 2, 2)
     atoms.rattle(0.1, seed=1)

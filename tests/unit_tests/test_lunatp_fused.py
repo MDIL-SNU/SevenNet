@@ -98,7 +98,10 @@ def test_fused_edge_geometry():
 
 
 def test_default_fused_calculator(tmp_path):
-    from sevenn.nn.lunatp_fused import LunaTPFusedRadialConvolution
+    from sevenn.nn.lunatp_fused import (
+        FusedFirstLayer,
+        LunaTPFusedRadialConvolution,
+    )
 
     cp = save_checkpoint(tmp_path / 'cp.pth')
     plain = SevenNetCalculator(
@@ -113,7 +116,7 @@ def test_default_fused_calculator(tmp_path):
         if isinstance(conv, LunaTPFusedRadialConvolution)
     ]
     assert convs
-    assert {(conv.knots, conv.table_r0) for conv in convs} == {(2048, 0.10)}
+    assert {(conv.knots, conv.table_r0) for conv in convs} == {(2048, 0.0)}
     atoms = atoms_with_ghosts()
     fewer_species = atoms[atoms.numbers != 1]
     empty_edges = atoms[:2]
@@ -125,6 +128,8 @@ def test_default_fused_calculator(tmp_path):
             fused.results['stresses'], plain.results['stresses'], atol=1e-5
         )
     assert len(fused._fused_species) == 4
+    first = next(m for m in fused.model.modules() if isinstance(m, FusedFirstLayer))
+    assert first.table.numel() and torch.isfinite(first.table).all()
 
 
 @pytest.mark.parametrize('fused', [False, True])

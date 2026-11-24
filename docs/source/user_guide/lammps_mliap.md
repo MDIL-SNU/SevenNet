@@ -142,7 +142,7 @@ Multi-rank runs use eager ghost exchange. FlashTP uses eager execution.
 | `--disable_fused` | Use the standard TP kernels |
 | `--disable_radial_table` | Evaluate the original radial MLP |
 | `--radial_knots` | Set the number of Hermite knots (2048 by default) |
-| `--radial_r_min` | Set the first knot in Å (0.10 by default) |
+| `--radial_r_min` | Set the first knot in Å (0 by default) |
 
 `--radial_table` enables interpolation in multi-rank eager runs.
 Existing deployed potentials keep their

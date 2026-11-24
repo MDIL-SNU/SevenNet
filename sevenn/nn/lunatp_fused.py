@@ -27,6 +27,7 @@ from .radial_table import (
     _convolutions,
     _copy_cpu_double,
     _cubics,
+    _radial_embedding,
     _table,
 )
 
@@ -799,8 +800,7 @@ def weight_table(conv, emb, r_min: float, cutoff: float, knots: int):
     emb64 = _copy_cpu_double(emb)
 
     def radial(r):
-        x = emb64.basis_function(r) * emb64.cutoff_function(r).unsqueeze(-1)
-        return conv._folded64(x)
+        return conv._folded64(_radial_embedding(emb64, r))
 
     return _table(radial, r_min, cutoff, knots)
 
@@ -1003,19 +1003,26 @@ class FusedFirstLayer(nn.Module):
         of lengths r along direction from an atom of type index column"""
         ref, names = self._ref
         number = {v: k for k, v in ref.type_map.items()}[column]
+        r = r.abs()
         k = r.shape[0]
+        directions = direction.expand(k, -1)
         data = {
             KEY.EDGE_IDX: torch.stack([
                 torch.arange(1, k + 1), torch.zeros(k, dtype=torch.int64)
             ]),
-            KEY.EDGE_VEC: r.unsqueeze(1) * direction.unsqueeze(0),
+            KEY.EDGE_VEC: r.unsqueeze(1) * directions,
             KEY.ATOMIC_NUMBERS: torch.full((k + 2,), number, dtype=torch.int64),
             KEY.NUM_ATOMS: torch.tensor(k + 2, dtype=torch.int64),
         }
         with torch.no_grad():
             data = ref._preprocess(data)
             for name, module in ref._modules.items():
-                data = module(data)
+                if name == 'edge_embedding':
+                    data[KEY.EDGE_LENGTH] = r
+                    data[KEY.EDGE_EMBEDDING] = _radial_embedding(module, r)
+                    data[KEY.EDGE_ATTR] = module.spherical(directions)
+                else:
+                    data = module(data)
                 for key, value in data.items():  # one-hot embeddings are fp32
                     if torch.is_tensor(value) and value.dtype == torch.float32:
                         data[key] = value.double()
@@ -1055,8 +1062,8 @@ class FusedFirstLayer(nn.Module):
             v, bias = radial(r)
             # r-derivative: five-point stencil in fp64 (the reference is e3nn)
             d = (
-                radial(r - 2 * eps)[0] - 8 * radial(r - eps)[0]
-                + 8 * radial(r + eps)[0] - radial(r + 2 * eps)[0]
+                8 * (radial(r + eps)[0] - radial(r - eps)[0])
+                - (radial(r + 2 * eps)[0] - radial(r - 2 * eps)[0])
             ) / (12 * eps)
             # another direction: x = G(r) Y, component by component
             x2, _, y2 = self._reference(column, r[::97], other)
@@ -1160,8 +1167,8 @@ def fuse_radial_conv(
     if knots < 0 or knots == 1:
         raise ValueError('fused_knots must be 0 or at least 2')
     cutoff = float(model.cutoff)
-    if knots and not 0 < r_min < cutoff:
-        raise ValueError(f'fused_r_min must be between 0 and the cutoff ({cutoff})')
+    if knots and not 0 <= r_min < cutoff:
+        raise ValueError(f'radial_r_min must be in [0, {cutoff})')
     emb = model._modules['edge_embedding']
     if getattr(emb, 'distance_transform', None) is not None:
         return []
