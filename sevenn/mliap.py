@@ -283,6 +283,10 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         )
 
     def compute_forces(self, lmp_data):
+        nlocal = lmp_data.nlocal
+        if nlocal == 0:
+            lmp_data.energy = 0.0
+            return
         if not hasattr(self, '_cuda_single_rank'):
             elems = lmp_data.elems
             if elems is None:
@@ -308,10 +312,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                 return
         self._ensure_model_initialized()  # lazy init
         assert self.model, 'Model must be initialized'
-        if lmp_data.nlocal == 0:
-            return
 
-        nlocal = lmp_data.nlocal
         ntotal = lmp_data.ntotal
         no_pairs = lmp_data.npairs <= 1
 

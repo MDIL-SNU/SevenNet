@@ -2,6 +2,7 @@ import copy
 import logging
 import pathlib
 import subprocess
+from types import SimpleNamespace
 from unittest import mock
 
 import ase.calculators.lammps
@@ -40,6 +41,16 @@ mliap_script_path = str(
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
 cp_7net0_path = pretrained_name_to_path('7net-0')
 cp_mf_path = pretrained_name_to_path('7net-mf-0')
+
+
+def test_mliap_empty_step_resets_energy():
+    from sevenn.mliap import SevenNetMLIAPWrapper
+
+    model = SevenNetMLIAPWrapper(cp_7net0_path)
+    data = SimpleNamespace(nlocal=0, energy=-1.0)
+    model.compute_forces(data)
+    assert data.energy == 0.0
+    assert model.model is None
 
 
 @pytest.fixture(scope='module')
