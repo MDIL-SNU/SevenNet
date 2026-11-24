@@ -221,24 +221,14 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             from sevenn.nn.lunatp_fused import fuse_radial_conv
 
             model.requires_grad_(False)
-            # experimental, not the same function to round-off (~1e-4 eV/A):
-            # radial weight rows stored as fp16
-            w16 = os.getenv('SEVENN_MLIAP_FUSED_W16') == '1'
-            # weights interpolated in the kernels from a table of this many
-            # knots in r (0: a weight row per distinct edge length per call)
-            knots = 0 if w16 else int(
+            knots = int(
                 os.getenv(
                     'SEVENN_MLIAP_FUSED_KNOTS', getattr(self, 'fused_knots', 2048)
                 )
             )
             r_min = float(getattr(self, 'fused_r_min', 0.25))
-            names = fuse_radial_conv(
-                model, half_weights=w16, knots=knots, r_min=r_min
-            )
-            how = (
-                f' (weight table, {knots} knots from {r_min} A)'
-                if knots else ' (fp16 weight rows)' if w16 else ''
-            )
+            names = fuse_radial_conv(model, knots=knots, r_min=r_min)
+            how = f' (weight table, {knots} knots from {r_min} A)' if knots else ''
             print(f'[INFO] fused radial + conv{how}: {" ".join(names)}', flush=True)
             if self.modal is not None and model.modal_map:
                 names = fold_modal(model, self.modal)

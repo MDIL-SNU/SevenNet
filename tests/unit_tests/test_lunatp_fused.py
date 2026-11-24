@@ -20,7 +20,7 @@ pytestmark = pytest.mark.skipif(
 )
 
 
-def _fused_graph(cp, half_weights=False, knots=0):
+def _fused_graph(cp, knots=0):
     from sevenn.nn.inference_specialization import fold_modal
     from sevenn.nn.lunatp_fused import fuse_radial_conv
     from sevenn.util import model_from_checkpoint
@@ -30,7 +30,7 @@ def _fused_graph(cp, half_weights=False, knots=0):
     model.delete_module_by_key('force_output')
     model.requires_grad_(False)
     model.to('cuda').eval()
-    names = fuse_radial_conv(model, half_weights=half_weights, knots=knots)
+    names = fuse_radial_conv(model, knots=knots)
     modal = MODAL if model.modal_map else None
     if modal is not None:
         fold_modal(model, modal)
@@ -75,17 +75,6 @@ def test_fused_mliap_cuda_graph(tmp_path, self_connection, knots):
                 m for m in graph.model.modules() if isinstance(m, FusedFirstLayer)
             ]
             assert first and len(first[0].columns) == n_species
-
-
-def test_fused_half_weights(tmp_path):
-    cp = save_checkpoint(tmp_path / 'cp.pth')
-    atoms = _moved(atoms_with_ghosts(), 1)
-    graph, names = _fused_graph(cp, half_weights=True)
-    assert names
-    out, _ = _compute(graph, atoms)
-    ref = evaluate(reference(cp), atoms)
-    err = float(abs(out[1] - ref[1]).max())
-    assert 0.0 < err < 2e-2 * float(abs(ref[1]).max())
 
 
 @pytest.mark.parametrize('lmax', [1, 2, 3, 4])

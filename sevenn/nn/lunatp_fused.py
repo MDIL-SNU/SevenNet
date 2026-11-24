@@ -23,7 +23,7 @@ from sevenn._const import AtomGraphDataType
 from .inference_specialization import prune_self_connection
 from .linear import IrrepsLinear
 from .lunatp_helper import LunaTPSharedGraphConvolution, prepare_graph
-from .radial_table import FoldedRadialMLP, _convolutions, _table
+from .radial_table import FoldedRadialMLP, _convolutions
 
 # Shorter source segments expose more parallelism on small graphs.
 SMALL_GRAPH_EDGES = 4096
@@ -33,8 +33,6 @@ _KEY_RID = 'fused_radial_rid'
 _KEY_RU = 'fused_radial_r_unique'
 _KEY_EMB = 'fused_radial_embedding'
 _KEY_EMB_R = 'fused_radial_embedding_r'
-_KEY_HID = 'fused_radial_hidden'
-_KEY_HID_R = 'fused_radial_hidden_r'
 KEY_N_UNIQUE = 'fused_radial_n_unique'
 
 
@@ -77,9 +75,7 @@ static __forceinline__ __device__ float sevenn_dw(const float* p, float t) {
 _KNOT = 'const int hk_ = {k}; const float ht_ = __int_as_float({t});'
 
 
-def forward_source(
-    op, half: bool = False, hermite: bool = False, specs=None, tune=None
-) -> str:
+def forward_source(op, hermite: bool = False, specs=None, tune=None) -> str:
     """
     specs: the paths to compute (default all: op.generated_specs). tune:
     arguments of LunaTP's generator other than its defaults here (see
@@ -134,7 +130,6 @@ def forward_source(
         r'num_nodes\);', 'num_nodes, rid.data_ptr<int32_t>());', src, count=2
     )
     if hermite:
-        assert not half
         src = _sub(
             r'const float\* weight_edge = weight \+ '
             r'static_cast<uint64_t>\(rid\[e\]\) \* \d+;',
@@ -149,23 +144,10 @@ def forward_source(
         if 'weight_edge[' in src:
             raise RuntimeError('LunaTP source patch: unknown weight read')
         src = _CUBIC + src
-    if half:  # weight rows stored as fp16
-        src = _sub(r'const float ?\*(?: ?__restrict__)? weight\b',
-                   'const __half* __restrict__ weight', src, count=2)
-        src = _sub('const float* weight_edge', 'const __half* weight_edge', src,
-                   regex=False)
-        src = _sub(r'= weight_edge\[(\d+) \+ u\];',
-                   r'= __half2float(weight_edge[\1 + u]);', src)
-        src = _sub('weight.data_ptr<float>()',
-                   'reinterpret_cast<const __half*>(weight.data_ptr<at::Half>())',
-                   src, count=2, regex=False)
-        src = '#include <cuda_fp16.h>\n' + src
     return src
 
 
-def backward_source(
-    op, half: bool = False, hermite: bool = False, specs=None, tune=None
-):
+def backward_source(op, hermite: bool = False, specs=None, tune=None):
     """
     (source, segmented, partials, vectorized, zero_x, zero_y). hermite: the
     partial sums are h * dE/dr, grad_weight is not read. specs: the paths to
@@ -305,7 +287,6 @@ def backward_source(
 
         src = _sub(r'<(\d+), (\d+), (\d+), (\d+), 32, Index>', launch, src)
     if hermite:
-        assert not half
 
         def at(m, f, extra=''):
             return f'{f}(weight + 4 * (wb + {m.group(1)} + u{extra}), ht_)'
@@ -333,68 +314,7 @@ def backward_source(
         if 'grad_weight + wb' in src or re.search(r'[^(]weight \+ wb', src):
             raise RuntimeError('LunaTP source patch: table weight reads')
         src = _CUBIC + src
-    if half:  # weight rows (w and dw/dr) stored as fp16
-        src = _sub('const float* __restrict__ weight,',
-                   'const __half* __restrict__ weight,', src, count=1, regex=False)
-        src = _sub('const float* __restrict__ grad_weight,',
-                   'const __half* __restrict__ grad_weight,', src, count=1,
-                   regex=False)
-        src = re.sub(
-            r'__ldg\(reinterpret_cast<const float2\*>\('
-            r'weight \+ wb \+ (\d+) \+ u\)\)',
-            r'make_float2(__half2float(weight[wb + \1 + u]), '
-            r'__half2float(weight[wb + \1 + u + 1]))', src,
-        )
-        src = _sub(r'__ldg\(((?:grad_)?weight \+ wb \+ \d+ \+ u(?: \+ 1)?)\)',
-                   r'__half2float(*(\1))', src)
-        src = _sub('weight.data_ptr<float>()',
-                   'reinterpret_cast<const __half*>(weight.data_ptr<at::Half>())',
-                   src, regex=False)
-        src = _sub('gw.data_ptr<float>()',
-                   'reinterpret_cast<const __half*>(gw.data_ptr<at::Half>())',
-                   src, regex=False)
-        src = '#include <cuda_fp16.h>\n' + src
     return (src, *flags)
-
-
-_HIDDEN_SOURCE = r"""
-#include <torch/extension.h>
-#include <ATen/cuda/CUDAContext.h>
-namespace {
-__global__ void sevenn_radial_hidden_kernel(
-    const float* __restrict__ r, const float* __restrict__ coef,
-    float* __restrict__ out, int64_t n, int W, int H, int K1, double r0,
-    double inv_h) {
-    const int64_t idx = int64_t(blockIdx.x) * blockDim.x + threadIdx.x;
-    if (idx >= n * W) return;
-    const int64_t i = idx / W;
-    const int c = int(idx - i * W);
-    const double x = (double(r[i]) - r0) * inv_h;
-    const int k = min(max(int(floor(x)), 0), K1 - 1);
-    const float t = float(x - k);
-    const float* a = coef + (int64_t(k) * W + c) * 4;
-    const float a0 = a[0], a1 = a[1], a2 = a[2], a3 = a[3];
-    const int l = c / H, f = c - l * H;
-    float* o = out + int64_t(l) * 2 * n * H;
-    o[i * H + f] = a0 + t * (a1 + t * (a2 + t * a3));
-    o[(n + i) * H + f] = (a1 + t * (2.0f * a2 + 3.0f * t * a3)) * float(inv_h);
-}
-}  // namespace
-void sevenn_radial_hidden(torch::Tensor r, torch::Tensor coef, torch::Tensor out,
-                          int64_t H, double r0, double inv_h) {
-    const int64_t n = r.numel();
-    const int W = coef.size(1);
-    const int64_t total = n * W;
-    if (total == 0) return;
-    sevenn_radial_hidden_kernel<<<(total + 255) / 256, 256, 0,
-        at::cuda::getCurrentCUDAStream()>>>(
-        r.data_ptr<float>(), coef.data_ptr<float>(), out.data_ptr<float>(), n, W,
-        int(H), int(coef.size(0)), r0, inv_h);
-}
-PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
-    m.def("sevenn_radial_hidden", &sevenn_radial_hidden);
-}
-"""
 
 
 def _load_cuda(name: str, source: str):
@@ -407,34 +327,6 @@ def _load_cuda(name: str, source: str):
         extra_cflags=['-O3', *BINDING_CFLAGS],
         extra_cuda_cflags=['-O3', *BINDING_CFLAGS],
     )
-
-
-class RadialHiddenTable(nn.Module):
-    """
-    The hidden activations of the radial MLPs of all fused convolutions (L
-    layers of H) and their r-derivatives as one cubic Hermite table in r, read
-    by one kernel: forward(r (U,)) -> (L, 2U, H), rows [value ; d/dr] of each
-    layer. Built in fp64; num_knots on [r_min, cutoff] (shorter: the first
-    interval's cubic).
-    """
-
-    def __init__(self, hidden64, num_layers: int, cutoff: float,
-                 num_knots: int = 8192, r_min: float = 0.25):
-        super().__init__()
-        coef, h = _table(hidden64, r_min, cutoff, num_knots, torch.float32)
-        # (K - 1, 4, W) -> (K - 1, W, 4)
-        self.register_buffer('coef', coef.transpose(1, 2).contiguous())
-        self.r0, self.inv_h = r_min, 1.0 / h
-        self.num_layers = num_layers
-        self.width = coef.shape[2] // num_layers
-        self.ext = _load_cuda('sevenn_radial_hidden_fp32', _HIDDEN_SOURCE)
-
-    def forward(self, r: torch.Tensor) -> torch.Tensor:
-        out = r.new_empty((self.num_layers, 2 * r.shape[0], self.width))
-        self.ext.sevenn_radial_hidden(
-            r.contiguous(), self.coef, out, self.width, self.r0, self.inv_h
-        )
-        return out
 
 
 _GEOMETRY_SOURCE = r"""
@@ -709,7 +601,7 @@ class _FusedConv(torch.autograd.Function):
             (partials, n_edge, op.in2_dim), device=x.device, dtype=x.dtype
         )
         gr_partial = x.new_zeros((partials, n_edge))
-        half = wbuf.shape[0] // 2
+        n_rows = wbuf.shape[0] // 2
         state = (
             (get_overlap_state(op, x.device, ext._Streams),)
             if hasattr(ext, '_Streams') else ()
@@ -717,7 +609,7 @@ class _FusedConv(torch.autograd.Function):
         ext.run_uvu_conv_bwd(
             *state, x, y, wbuf, go, g.dst, g.edge_ids_by_src, seg.nodes,
             seg.begin, seg.end, seg.order, seg.rowptr, gx_partial, gy_partial,
-            gx, gy, wbuf if mod.knots else wbuf[half:], x.shape[0], n_edge,
+            gx, gy, wbuf if mod.knots else wbuf[n_rows:], x.shape[0], n_edge,
             seg.nodes.numel(),
             None, None, None, None, rid, gr_partial,
         )
@@ -752,9 +644,6 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     # the rows that neighbors share (weight rows of i-j and j-i, the output
     # gradient rows) are still in the GPU cache when the next block reads them
     index_order: bool = True
-    # weight rows (w, dw/dr) stored as fp16: half the bytes the kernels read,
-    # forces change by ~1e-4 eV/A (not the same function to round-off)
-    half_weights: bool = False
     # > 0: the weights of an edge are cubic Hermite interpolated inside the
     # kernels from a table of that many knots on [table_r0, cutoff] (see
     # weight_table): no per-call weight array and GEMM.
@@ -765,13 +654,9 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     # indices of the paths (LunaTP specs) computed; None: all. See live_paths
     paths: list[int] | None = None
 
-    def _setup(self, emb, half_weights: bool = False, knots: int = 0,
-               r_min: float = 0.25, cutoff: float = 0.0,
-               paths: list[int] | None = None) -> None:
-        self.half_weights = half_weights
+    def _setup(self, emb, knots, r_min, cutoff, paths) -> None:
         self.paths = paths
         self.knots = int(knots)
-        assert not (half_weights and knots)
         ref = self.denominator
         folded = FoldedRadialMLP(
             copy.deepcopy(self.weight_nn).to('cpu', torch.float64),
@@ -783,12 +668,7 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             w = getattr(folded, f'w{n}').to(ref.device, ref.dtype).contiguous()
             self.register_buffer(f'rad_w{n}', w)
         self._acts = folded.acts
-        self._folded64 = folded  # fp64, cpu: for the table of the hidden layers
-        self._hid_table, self._layer = None, 0
-        if half_weights:
-            wh = self.rad_w2.half()
-            wl = (self.rad_w2 - wh.float()).half()
-            self.register_buffer('rad_w2_half', torch.cat([wh, wh, wl]))
+        self._folded64 = folded  # CPU FP64 weights for fitting the radial table
         object.__setattr__(self, '_emb', emb)  # not a submodule of this one
         self.weight_nn = nn.Identity()
         if self.knots:
@@ -804,19 +684,17 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
 
         op = self.convolution.tp_conv.op
         herm = self.knots > 0
-        tag = 'herm' if herm else 'w16' if self.half_weights else 'fp32'
+        tag = 'herm' if herm else 'fp32'
         specs = None
         if self.paths is not None:
             specs = [op.generated_specs[n] for n in self.paths]
         self.fwd_ext = load_tp_extension(
             f'sevenn_uvuconv_fused_fwd_{tag}',
-            forward_source(op, self.half_weights, herm, specs),
+            forward_source(op, herm, specs),
             max_channels=op.max_channels, index_bits=32,
         )
         self._bwd_small = None
-        src, *self.bwd_flags = backward_source(
-            op, self.half_weights, herm, specs
-        )
+        src, *self.bwd_flags = backward_source(op, herm, specs)
         self.bwd_ext = load_tp_extension(
             f'sevenn_uvuconv_fused_bwd_{tag}', src,
             max_channels=op.max_channels, index_bits=32,
@@ -829,12 +707,12 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
 
             op = self.convolution.tp_conv.op
             herm = self.knots > 0
-            tag = 'herm' if herm else 'w16' if self.half_weights else 'fp32'
+            tag = 'herm' if herm else 'fp32'
             specs = None
             if self.paths is not None:
                 specs = [op.generated_specs[n] for n in self.paths]
             src, *flags = backward_source(
-                op, self.half_weights, herm, specs, {'streams': True}
+                op, herm, specs, {'streams': True}
             )
             assert flags == self.bwd_flags
             self._bwd_small = load_tp_extension(
@@ -860,11 +738,6 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
 
     def _weights(self, data: AtomGraphDataType, ru: torch.Tensor):
         """[w ; dw/dr] (2U, W): the MLP in forward mode, rows [value ; d/dr]"""
-        if self._hid_table is not None:
-            if _KEY_HID not in data or data[_KEY_HID_R] is not ru:
-                data[_KEY_HID] = self._hid_table(ru)
-                data[_KEY_HID_R] = ru
-            return self._last(data[_KEY_HID][self._layer])
         x = self._embedding(data, ru)
         n = ru.shape[0]
         for w, act in zip((self.rad_w0, self.rad_w1), self._acts):
@@ -876,18 +749,7 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             else:
                 with torch.enable_grad():
                     x = torch.cat(torch.func.jvp(act, (v,), (d,))).detach()
-        return self._last(x)
-
-    def _last(self, x: torch.Tensor) -> torch.Tensor:
-        """the last layer of the MLP, rows [value ; d/dr]"""
-        if not self.half_weights:
-            return torch.mm(x, self.rad_w2)
-        # fp16 GEMM (fp32 accumulation) of inputs split in two fp16 parts:
-        # x w = xh wh + xl wh + xh wl (+ xl wl, dropped); only the result is
-        # rounded to fp16
-        xh = x.half()
-        xl = (x - xh.float()).half()
-        return torch.mm(torch.cat([xh, xl, xh], 1), self.rad_w2_half)
+        return x @ self.rad_w2
 
     @staticmethod
     def _unique(data: AtomGraphDataType, cap: int | None):
@@ -1378,16 +1240,13 @@ def live_paths(conv, linear) -> list[int] | None:
     return None if len(keep) == len(op.generated_specs) else keep
 
 
-def fuse_radial_conv(
-    model: nn.Module, hidden_table: bool = True, half_weights: bool = False,
-    knots: int = 0, r_min: float = 0.25,
-) -> list[str]:
+def fuse_radial_conv(model: nn.Module, knots: int = 0, r_min: float = 0.25) -> list[str]:
     """
     In place: every LunaTP convolution of a serial model whose radial MLP is
     an e3nn FullyConnectedNet [n, h, h, W] of the edge embedding becomes a
     LunaTPFusedRadialConvolution. Inference only. Returns the names changed.
-    knots > 0: weights interpolated in the kernels from a table of that many
-    knots on [r_min, cutoff].
+    With positive knots, interpolate weights from the table on [r_min, cutoff].
+    With zero knots, evaluate weights for each distinct distance.
     """
     from e3nn.nn import FullyConnectedNet
 
@@ -1415,7 +1274,7 @@ def fuse_radial_conv(
         if isinstance(linear, IrrepsLinear) and linear.key_input == conv.key_x:
             paths = live_paths(conv, linear)
         conv.__class__ = LunaTPFusedRadialConvolution
-        conv._setup(emb, half_weights, knots, r_min, float(model.cutoff), paths)
+        conv._setup(emb, knots, r_min, float(model.cutoff), paths)
         changed.append(name if paths is None else f'{name}({len(paths)}paths)')
         fused.append(conv)
     if (
@@ -1425,25 +1284,6 @@ def fuse_radial_conv(
     ):
         model._modules['edge_embedding'] = FusedEdgeGeometry(emb)
         changed.append('edge_embedding')
-    widths = {c.rad_w2.shape[0] for c in fused}
-    if (
-        hidden_table and not knots and fused and len(widths) == 1
-        and fused[0].rad_w2.is_cuda
-    ):
-        emb64 = copy.deepcopy(emb).to('cpu', torch.float64)
-
-        def hidden64(r):
-            x = emb64.basis_function(r) * emb64.cutoff_function(r).unsqueeze(-1)
-            return torch.cat([
-                c._acts[1](c._acts[0](x @ c._folded64.w0) @ c._folded64.w1)
-                for c in fused
-            ], 1)
-
-        table = RadialHiddenTable(hidden64, len(fused), float(model.cutoff))
-        table.to(fused[0].rad_w2.device)
-        for n, c in enumerate(fused):
-            object.__setattr__(c, '_hid_table', table)  # shared, not a submodule
-            c._layer = n
     return changed
 
 
