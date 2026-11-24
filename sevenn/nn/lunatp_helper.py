@@ -5,6 +5,7 @@ import json
 import os
 import subprocess
 import sys
+import sysconfig
 import tempfile
 import warnings
 from typing import Optional, Union
@@ -13,7 +14,11 @@ import torch
 from e3nn.o3 import FullyConnectedTensorProduct
 
 import sevenn._keys as KEY
-from sevenn._const import AtomGraphDataType
+from sevenn._const import (
+    DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG,
+    MODEL_CONFIG_CONDITION,
+    AtomGraphDataType,
+)
 
 from .convolution import IrrepsConvolution, IrrepsScatterGatterFusedConvolution
 from .equivariant_gate import EquivariantGate
@@ -270,7 +275,9 @@ def _precompile_worker(config_path: str, rank: str, size: str, order: str):
     """
     from sevenn.model_build import build_E3_equivariant_model
 
-    config = torch.load(config_path, weights_only=False)
+    config, device, dtype = torch.load(config_path, weights_only=False)
+    torch.cuda.set_device(device)
+    torch.set_default_dtype(dtype)
     e3nn_model = build_E3_equivariant_model({**config, KEY.USE_LUNATP: False})
     convolutions = [
         m for m in e3nn_model.modules() if isinstance(m, IrrepsConvolution)
@@ -294,19 +301,64 @@ def _precompile_worker(config_path: str, rank: str, size: str, order: str):
 def _precompile_marker(config: dict, order: int) -> str:
     from importlib.metadata import version
 
-    from torch.utils import cpp_extension
-
     root = os.environ.get('LUNAEQ_CACHE_DIR') or os.path.join(
         os.environ.get('TORCH_EXTENSIONS_DIR')
-        or cpp_extension.get_default_build_root(),
+        or _cpp_extension.get_default_build_root(),
         'lunaeq',
     )
+    defaults = DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG
+    model_keys = defaults.keys() | MODEL_CONFIG_CONDITION.keys() | {
+        KEY.MODEL_TYPE, KEY.DTYPE, KEY.NUM_SPECIES,
+        KEY.USE_MODALITY, KEY.NUM_MODALITIES,
+    }
+    model = {
+        key: config.get(key, defaults.get(key))
+        for key in model_keys - {KEY.CONV_DENOMINATOR}
+    }
+
+    cuda_home = _cpp_extension.CUDA_HOME
+    nvcc = os.path.join(cuda_home, 'bin', 'nvcc') if cuda_home else 'nvcc'
+    compilers = (
+        _cpp_extension.get_cxx_compiler(),
+        os.environ.get('PYTORCH_NVCC', nvcc),
+        os.environ.get('CC'),
+    )
+    toolchain = []
+    for compiler in filter(None, compilers):
+        try:
+            toolchain.append(
+                _lunaeq_jit.compiler_identity(compiler, os.environ.get('PATH', ''))
+            )
+        except (RuntimeError, OSError, subprocess.SubprocessError):
+            toolchain.append((compiler, None))
+
+    # Keep the build environment in sync with LunaEquivariance 0.3.0's JIT key.
+    build_env = (
+        'CC', 'NVCC_CCBIN', 'NVCC_PREPEND_FLAGS', 'NVCC_APPEND_FLAGS',
+        'CPATH', 'CPLUS_INCLUDE_PATH', 'LIBRARY_PATH', 'LD_LIBRARY_PATH',
+        'PYTORCH_NVCC', 'TORCH_CUDA_ARCH_LIST',
+    )
     key = [
-        config,
+        model,
         order,
         torch.__version__,
+        torch.version.cuda,
+        torch.__file__,
+        torch._C._GLIBCXX_USE_CXX11_ABI,
+        torch.get_default_dtype(),
+        sys.version,
+        sys.prefix,
+        sysconfig.get_config_var('SOABI'),
+        version('e3nn'),
         version('LunaEquivariance'),
         torch.cuda.get_device_capability(),
+        [
+            torch.cuda.get_device_capability(i)
+            for i in range(torch.cuda.device_count())
+        ],
+        cuda_home,
+        toolchain,
+        {name: os.environ.get(name, '') for name in build_env},
     ]
     digest = hashlib.sha256(
         json.dumps(key, sort_keys=True, default=str).encode()
@@ -343,6 +395,8 @@ def precompile(
         KEY.CUEQUIVARIANCE_CONFIG: {'use': False},
     })
     marker = _precompile_marker(config, order)
+    if skip_done and os.path.isfile(marker):
+        return
     os.makedirs(os.path.dirname(marker), exist_ok=True)
     workers = max_workers or min(8, len(os.sched_getaffinity(0)))
     env = {**os.environ, 'MAX_JOBS': '1', _WORKERS_ENV: '0'}
@@ -352,7 +406,7 @@ def precompile(
     )
     with open(marker + '.lock', 'a') as lock, tempfile.TemporaryDirectory() as tmp:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if skip_done and os.path.exists(marker):
+        if skip_done and os.path.isfile(marker):
             return
         if skip_done:
             print(
@@ -361,7 +415,10 @@ def precompile(
                 file=sys.stderr,
             )
         config_path = os.path.join(tmp, 'config.pt')
-        torch.save(config, config_path)
+        worker_config = (
+            config, torch.cuda.current_device(), torch.get_default_dtype(),
+        )
+        torch.save(worker_config, config_path)
 
         def run(ranks):
             procs = {}

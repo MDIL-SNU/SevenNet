@@ -429,16 +429,22 @@ def test_auto_precompile_runs_once(tmp_path, monkeypatch):
     popen = Mock()
     popen.return_value.wait.return_value = 0
     monkeypatch.setattr(helper.subprocess, 'Popen', popen)
+    monkeypatch.setattr(
+        helper._lunaeq_jit, 'compiler_identity', Mock(return_value=())
+    )
     monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(tmp_path))
     monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '3')
     cfg = get_model_config()
 
-    helper.auto_precompile(cfg)
+    helper.auto_precompile({**cfg, KEY.RANDOM_SEED: 42, KEY.CONV_DENOMINATOR: 4.0})
     assert popen.call_count == 3
     helper.auto_precompile(cfg)
     assert popen.call_count == 3
     helper.auto_precompile({**cfg, 'lmax': 3})
     assert popen.call_count == 6
+    monkeypatch.setenv('LD_LIBRARY_PATH', '/opt/another-env')
+    helper.auto_precompile(cfg)
+    assert popen.call_count == 9
     monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
     helper.auto_precompile({**cfg, 'lmax': 1})
-    assert popen.call_count == 6
+    assert popen.call_count == 9
