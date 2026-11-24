@@ -500,9 +500,11 @@ class FusedEdgeGeometry(nn.Module):
         return data
 
 
+_INDEX_ORDER_KEY = ('sevenn_uvu_index_order', 32)
+
+
 def _index_order(graph):
-    key = ('sevenn_uvu_index_order', 32)
-    cached = graph._tables.get(key)
+    cached = graph._tables.get(_INDEX_ORDER_KEY)
     if cached is not None:
         return cached
     tables = graph._tables[('uvu', 32)]
@@ -519,8 +521,13 @@ def _index_order(graph):
             ),
         ),
     )
-    graph._tables[key] = out
+    graph._tables[_INDEX_ORDER_KEY] = out
     return out
+
+
+def prepare_fused_refresh(captured, replacement) -> None:
+    if _INDEX_ORDER_KEY in captured._tables:
+        _index_order(replacement)
 
 
 def index_coherence(edge_index: torch.Tensor, num_nodes: int) -> float:

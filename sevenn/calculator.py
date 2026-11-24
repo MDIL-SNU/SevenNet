@@ -621,8 +621,13 @@ class SevenNetCalculator(Calculator):
         static_edge_index = entry['static'][KEY.EDGE_IDX]
         new = edge_index.pin_memory().to(self.device, non_blocking=True)
         topology = self._lunatp_topology(new, entry['num_atoms'])
+        captured = entry['topology']
+        if self.fused and captured is not None and topology is not None:
+            from sevenn.nn.lunatp_fused import prepare_fused_refresh
+
+            prepare_fused_refresh(captured[1], topology[1])
         pairs: list = []
-        if not _tensor_pairs(entry['topology'], topology, pairs):
+        if not _tensor_pairs(captured, topology, pairs):
             return False
         static_edge_index.copy_(new)
         copied = set()
