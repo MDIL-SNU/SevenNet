@@ -21,7 +21,8 @@ pytestmark = pytest.mark.skipif(
 
 
 def _fused_graph(cp, half_weights=False, knots=0):
-    from sevenn.nn.lunatp_fused import fold_modal, fuse_radial_conv
+    from sevenn.nn.inference_specialization import fold_modal
+    from sevenn.nn.lunatp_fused import fuse_radial_conv
     from sevenn.util import model_from_checkpoint
 
     model, _ = model_from_checkpoint(str(cp), enable_lunatp=True)
@@ -60,7 +61,8 @@ def test_fused_mliap_cuda_graph(tmp_path, self_connection, knots):
     assert graph.n_captures == 1 and graph.n_replays == 3
     assert graph._prep is not None and 'flags' in graph._entry
     if self_connection == 'nequip':
-        from sevenn.nn.lunatp_fused import FusedFirstLayer, PrunedSelfConnectionIntro
+        from sevenn.nn.inference_specialization import PrunedSelfConnectionIntro
+        from sevenn.nn.lunatp_fused import FusedFirstLayer
 
         n_species = len(set(atoms.numbers))
         pruned = [

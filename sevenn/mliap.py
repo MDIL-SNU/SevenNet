@@ -217,7 +217,8 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
             )
             and os.getenv('SEVENN_MLIAP_FUSED') != '0'
         ):
-            from sevenn.nn.lunatp_fused import fold_modal, fuse_radial_conv
+            from sevenn.nn.inference_specialization import fold_modal
+            from sevenn.nn.lunatp_fused import fuse_radial_conv
 
             model.requires_grad_(False)
             # experimental, not the same function to round-off (~1e-4 eV/A):

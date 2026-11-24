@@ -20,10 +20,10 @@ from torch import nn
 import sevenn._keys as KEY
 from sevenn._const import AtomGraphDataType
 
+from .inference_specialization import prune_self_connection
 from .linear import IrrepsLinear
 from .lunatp_helper import LunaTPSharedGraphConvolution, prepare_graph
 from .radial_table import FoldedRadialMLP, _convolutions, _table
-from .self_connection import SelfConnectionIntro
 
 # Shorter source segments expose more parallelism on small graphs.
 SMALL_GRAPH_EDGES = 4096
@@ -1447,81 +1447,11 @@ def fuse_radial_conv(
     return changed
 
 
-class PrunedSelfConnectionIntro(SelfConnectionIntro):
-    """
-    SelfConnectionIntro whose operand (species one-hot, 119 columns in 7net)
-    is cut to the columns of the species that can occur: the same function
-    for those species, a tensor product over len(columns) operand components
-    instead of all.
-    """
-
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        operand = data[self.key_operand].index_select(1, self.columns)
-        data[KEY.SELF_CONNECTION_TEMP] = self.fc_tensor_product(
-            data[self.key_x], operand
-        )
-        return data
-
-
-def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> list[str]:
-    """
-    In place: every SelfConnectionIntro of model (operand n x 0e) becomes a
-    PrunedSelfConnectionIntro of the operand columns given (type indices of
-    the species that can occur). Calls with other species are wrong. Calling
-    it again prunes the original weights to the new columns.
-    """
-    from e3nn.o3 import Irreps
-
-    columns = sorted({int(c) for c in columns})
+def specialize_fused_species(model: nn.Module, columns: Sequence[int]) -> list[str]:
     for module in model._modules.values():
         if isinstance(module, FusedFirstLayer):
             module.set_species(columns)
-    changed = []
-    for name, sc in model._modules.items():
-        if type(sc) is PrunedSelfConnectionIntro:  # again, other columns
-            old = sc._full
-        elif type(sc) is SelfConnectionIntro and sc.layer_instantiated:
-            old = sc.fc_tensor_product
-        else:
-            continue
-        in2 = Irreps(sc.irreps_in2)
-        if len(in2) != 1 or in2[0].ir.l != 0 or in2[0].ir.p != 1:
-            continue
-        ref = old.weight
-        new = sc.fc_tensor_product_cls(
-            sc.irreps_in1, Irreps(f'{len(columns)}x0e'), sc.irreps_out,
-            shared_weights=True, internal_weights=None,
-            **sc.fc_tensor_product_kwargs,
-        ).to(ref.device, ref.dtype)
-        cols = torch.tensor(columns, device=ref.device)
-        tp = getattr(old, 'tp', old)  # the e3nn module (instructions)
-        pieces, offset = [], 0
-        for ins in tp.instructions:
-            if not ins.has_weight:
-                continue
-            m1, m2, m3 = ins.path_shape
-            w = ref.detach()[offset: offset + m1 * m2 * m3].view(m1, m2, m3)
-            pieces.append(w.index_select(1, cols).reshape(-1))
-            offset += m1 * m2 * m3
-        assert offset == ref.numel()
-        # path normalization counts the operand multiplicity: one factor
-        scale = (len(columns) / in2[0].mul) ** 0.5
-        with torch.no_grad():
-            new.weight.copy_(torch.cat(pieces) * scale)
-            x = torch.randn(4, Irreps(sc.irreps_in1).dim, device=ref.device,
-                            dtype=ref.dtype)
-            op = torch.zeros(4, in2[0].mul, device=ref.device, dtype=ref.dtype)
-            op[torch.arange(4), cols[torch.arange(4) % len(columns)]] = 1.0
-            a, b = old(x, op), new(x, op.index_select(1, cols))
-            if not torch.allclose(a, b, rtol=1e-4, atol=1e-5 * float(a.abs().max())):
-                raise RuntimeError(f'{name}: pruned self connection differs')
-        new.requires_grad_(False)
-        sc.__class__ = PrunedSelfConnectionIntro
-        object.__setattr__(sc, '_full', old)  # kept outside the module tree
-        sc.fc_tensor_product = new
-        sc.register_buffer('columns', cols)
-        changed.append(name)
-    return changed
+    return prune_self_connection(model, columns)
 
 
 def set_index_order(model: nn.Module, flag: bool) -> None:
@@ -1534,73 +1464,3 @@ def set_unique_cap(model: nn.Module, cap: int | None) -> None:
     for module in model.modules():
         if isinstance(module, LunaTPFusedRadialConvolution):
             module.unique_cap = cap
-
-
-class ModalFoldedLinear(IrrepsLinear):
-    """
-    IrrepsLinear of a multi-modal model for one fixed modality: the modal
-    one-hot columns appended to the input (a copy of the whole input per
-    call) only add a constant to the scalar outputs, kept as modal_bias.
-    """
-
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[self.key_output] = self.linear(data[self.key_input]) + self.modal_bias
-        return data
-
-
-def fold_modal(model: nn.Module, modal: str) -> list[str]:
-    """
-    In place: every IrrepsLinear with modal input becomes a ModalFoldedLinear
-    of the modality given. The model then gives that modality whatever
-    data[KEY.DATA_MODALITY] says for these layers.
-    """
-    from e3nn.o3 import Irreps, Linear
-
-    index = model.modal_map[modal]
-    changed = []
-    for name, lin in model._modules.items():
-        if type(lin) is not IrrepsLinear or lin.num_modalities <= 1:
-            continue
-        if not lin.layer_instantiated:
-            continue
-        old = lin.linear
-        ref = old.weight
-        kwargs = {k: v for k, v in lin.linear_kwargs.items()}
-        ins_old = Linear(lin.irreps_in, lin.irreps_out, **kwargs).instructions
-        ins_new = Linear(
-            lin._irreps_in_wo_modal, lin.irreps_out, **kwargs
-        ).instructions
-        new = lin.linear_cls(
-            lin._irreps_in_wo_modal, lin.irreps_out, **kwargs
-        ).to(ref.device, ref.dtype)
-        chunks, offset = {}, 0
-        for ins in ins_old:
-            n = ins.path_shape[0] * ins.path_shape[1]
-            chunks[(ins.i_in, ins.i_out)] = (
-                ref.detach()[offset: offset + n], ins.path_weight
-            )
-            offset += n
-        assert offset == ref.numel()
-        pieces = []
-        for ins in ins_new:
-            w, path_weight = chunks[(ins.i_in, ins.i_out)]
-            pieces.append(w * (path_weight / ins.path_weight))
-        in_dim = Irreps(lin._irreps_in_wo_modal).dim
-        with torch.no_grad():
-            new.weight.copy_(torch.cat(pieces))
-            onehot = torch.zeros(
-                4, lin.num_modalities, device=ref.device, dtype=ref.dtype
-            )
-            onehot[:, index] = 1.0
-            zero = torch.zeros(4, in_dim, device=ref.device, dtype=ref.dtype)
-            bias = old(torch.cat([zero, onehot], 1))[0].clone()
-            x = torch.randn_like(zero)
-            a, b = old(torch.cat([x, onehot], 1)), new(x) + bias
-            if not torch.allclose(a, b, rtol=1e-4, atol=1e-5 * float(a.abs().max())):
-                raise RuntimeError(f'{name}: modal-folded linear differs')
-        new.requires_grad_(False)
-        lin.__class__ = ModalFoldedLinear
-        lin.linear = new
-        lin.register_buffer('modal_bias', bias)
-        changed.append(name)
-    return changed

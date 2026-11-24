@@ -395,9 +395,9 @@ class SevenNetCalculator(Calculator):
                     'fused needs enable_lunatp, a checkpoint and CUDA: ignored'
                 )
             else:
+                from sevenn.nn.inference_specialization import fold_modal
                 from sevenn.nn.lunatp_fused import (
                     collapse_first_layer,
-                    fold_modal,
                     fuse_radial_conv,
                 )
 
@@ -723,10 +723,12 @@ class SevenNetCalculator(Calculator):
         numbers = set(atoms.get_atomic_numbers().tolist())
         if numbers <= self._fused_species:
             return
-        from sevenn.nn.lunatp_fused import prune_self_connection
+        from sevenn.nn.lunatp_fused import specialize_fused_species
 
         species = self._fused_species | numbers
-        prune_self_connection(self.model, [self.type_map[z] for z in sorted(species)])
+        specialize_fused_species(
+            self.model, [self.type_map[z] for z in sorted(species)]
+        )
         self._fused_species = species
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):

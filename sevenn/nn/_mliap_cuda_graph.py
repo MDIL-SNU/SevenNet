@@ -231,7 +231,7 @@ class MLIAPCudaGraph:
             conv.zero_padding_grad = self._skip_padding
         self._unique_all = False
         # species self connection pruned to the species seen so far
-        # (lunatp_fused.prune_self_connection); a new species prunes again
+        # (lunatp_fused.specialize_fused_species); a new species prunes again
         self._prune = bool(getattr(model, 'prune_species', False))
         self._owner_buf = None
         # the step bookkeeping as one kernel (built by LunaEquivariance's JIT)
@@ -475,11 +475,11 @@ class MLIAPCudaGraph:
 
     # ---- helpers -----------------------------------------------------------
     def _new_species(self, elems) -> None:
-        from sevenn.nn.lunatp_fused import prune_self_connection
+        from sevenn.nn.lunatp_fused import specialize_fused_species
 
         self._allowed[elems.to(torch.int64)] = True
         numbers = torch.nonzero(self._allowed).view(-1).tolist()
-        names = prune_self_connection(
+        names = specialize_fused_species(
             self.model, [self.model.type_map[z] for z in numbers]
         )
         if self.verbose:

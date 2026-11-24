@@ -20,7 +20,7 @@ def atoms_with_ghosts():
     return atoms
 
 
-def save_checkpoint(path, self_connection='nequip', modal=False):
+def save_checkpoint(path, self_connection='nequip', modal=False, **model_options):
     config = get_model_config()
     config.update(
         chemical_species_preprocess(['H', 'O', 'Na', 'Cl']),
@@ -39,6 +39,7 @@ def save_checkpoint(path, self_connection='nequip', modal=False):
             use_modal_wise_shift=False,
             use_modal_wise_scale=False,
         )
+    config.update(model_options)
     with torch.random.fork_rng(devices=[]):
         torch.manual_seed(0)
         model = build_E3_equivariant_model(config, parallel=False)
