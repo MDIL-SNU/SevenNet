@@ -320,17 +320,6 @@ int PairD3::find_atomic_number(std::string& key) {
 }
 
 /* ----------------------------------------------------------------------
-   Check whether an integer value in an integer array (used in PairD3::coeff)
-------------------------------------------------------------------------- */
-
-int PairD3::is_int_in_array(int arr[], int size, int value) {
-    for (int i = 0; i < size; i++) {
-        if (arr[i] == value) { return i; } // returns the index
-    }
-    return -1;
-}
-
-/* ----------------------------------------------------------------------
    Read r0ab values from the table (used in PairD3::coeff)
 ------------------------------------------------------------------------- */
 
@@ -370,7 +359,11 @@ void PairD3::get_limit_in_pars_array(int& idx_atom_1, int& idx_atom_2, int& idx_
 ------------------------------------------------------------------------- */
 
 void PairD3::read_c6ab(int* atomic_numbers, int ntypes) {
-    for (int i = 1; i <= ntypes; i++) { mxc[i] = 0; }
+    std::vector<int> types_by_element[MAX_ELEM + 1];
+    for (int type = 1; type <= ntypes; ++type) {
+        mxc[type] = 0;
+        types_by_element[atomic_numbers[type - 1]].push_back(type);
+    }
     int grid_i = 0, grid_j = 0;
 
     const double c6ab_table[32385][5] = C6AB_TABLE;
@@ -380,21 +373,21 @@ void PairD3::read_c6ab(int* atomic_numbers, int ntypes) {
         int atom_number_1 = static_cast<int>(c6ab_table[i][1]);
         int atom_number_2 = static_cast<int>(c6ab_table[i][2]);
         get_limit_in_pars_array(atom_number_1, atom_number_2, grid_i, grid_j);
-        const int idx_atom_1 = is_int_in_array(atomic_numbers, ntypes, atom_number_1);
-        if (idx_atom_1 < 0) { continue; }
-        const int idx_atom_2 = is_int_in_array(atomic_numbers, ntypes, atom_number_2);
-        if (idx_atom_2 < 0) { continue; }
         const double ref_cn1 = c6ab_table[i][3];
         const double ref_cn2 = c6ab_table[i][4];
 
-        mxc[idx_atom_1 + 1] = std::max(mxc[idx_atom_1 + 1], grid_i);
-        mxc[idx_atom_2 + 1] = std::max(mxc[idx_atom_2 + 1], grid_j);
-        c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][0] = ref_c6;
-        c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][1] = ref_cn1;
-        c6ab[idx_atom_1 + 1][idx_atom_2 + 1][grid_i - 1][grid_j - 1][2] = ref_cn2;
-        c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][0] = ref_c6;
-        c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][1] = ref_cn2;
-        c6ab[idx_atom_2 + 1][idx_atom_1 + 1][grid_j - 1][grid_i - 1][2] = ref_cn1;
+        for (int type_i : types_by_element[atom_number_1]) {
+            for (int type_j : types_by_element[atom_number_2]) {
+                mxc[type_i] = std::max(mxc[type_i], grid_i);
+                mxc[type_j] = std::max(mxc[type_j], grid_j);
+                c6ab[type_i][type_j][grid_i - 1][grid_j - 1][0] = ref_c6;
+                c6ab[type_i][type_j][grid_i - 1][grid_j - 1][1] = ref_cn1;
+                c6ab[type_i][type_j][grid_i - 1][grid_j - 1][2] = ref_cn2;
+                c6ab[type_j][type_i][grid_j - 1][grid_i - 1][0] = ref_c6;
+                c6ab[type_j][type_i][grid_j - 1][grid_i - 1][1] = ref_cn2;
+                c6ab[type_j][type_i][grid_j - 1][grid_i - 1][2] = ref_cn1;
+            }
+        }
     }
 }
 
