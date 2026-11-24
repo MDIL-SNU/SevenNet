@@ -139,8 +139,8 @@ Multi-rank runs use eager ghost exchange. For an existing potential,
 
 Add `--fused` with LunaTP to fuse edge geometry and evaluate radial weights
 inside the tensor-product kernels using cubic Hermite interpolation.
-`--fused_knots` defaults to 2048. With 0 knots, the implementation computes one
-weight row per distinct edge length and can tabulate the hidden activations.
+`--fused_knots` defaults to 2048. With 0 knots, the fused path evaluates the
+original radial MLP once per distinct edge length.
 The weight tables start at 0.25 Å. Shorter distances use cubic extrapolation.
 Use `--enable_lunatp --cuda_graph` for replay with the original radial MLP.
 For an existing LunaTP potential, `SEVENN_MLIAP_FUSED=1` enables fusion when

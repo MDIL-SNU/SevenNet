@@ -87,5 +87,3 @@ def test_eager_topology_reuse(monkeypatch, deterministic):
         for k in ('energy', 'free_energy', 'energies', 'forces', 'stress'):
             assert np.asarray(got[k]).dtype == np.asarray(ref[k]).dtype, k
             assert np.array_equal(got[k], ref[k]), (i, k)
-
-

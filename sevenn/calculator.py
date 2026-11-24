@@ -204,8 +204,8 @@ class SevenNetCalculator(Calculator):
         enable_lunatp: bool = False,
         compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
-        cuda_graph: bool = False,
         fused: bool = False,
+        cuda_graph: bool = False,
         **kwargs,
     ) -> None:
         """Initialize SevenNetCalculator.
@@ -239,18 +239,11 @@ class SevenNetCalculator(Calculator):
             Not used, but can be used to carry meta information of this calculator
         compute_atomic_virial: bool, default=False
             If True, request per-atom virial output (`stresses`) at runtime.
-        cuda_graph: bool, default=False
-            if True, repeated calls with the same atoms (atomic numbers, modal)
-            replay a CUDA graph captured at the second such call (the graphs
-            of the last 16 are kept): the edges are padded to the graph's
-            number of edges (1/8 above the most seen; edges of length r_c,
-            which change nothing) and a changed edge index is copied in (MD,
-            relaxation). Other calls run eagerly. After 8 captures, a capture
-            needs 2 replays per capture so far, otherwise the call runs
-            eagerly. For small systems, whose calls are bound by kernel
-            launches. CUDA only.
         fused: bool, default=False
             Use frozen-model kernels for supported LunaTP checkpoints on CUDA.
+        cuda_graph: bool, default=False
+            Capture and replay repeated CUDA calls with compatible atom and
+            edge shapes. Run eagerly when capture is unavailable.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
@@ -372,18 +365,6 @@ class SevenNetCalculator(Calculator):
         self.model.to(self.device)
         self.model.eval()
 
-        self.cuda_graph = cuda_graph and self.device.type == 'cuda'
-        self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None
-        self._graphs_seen: OrderedDict = OrderedDict()  # topologies seen once
-        self._capture_stream = None  # one stream: cuBLAS keeps a workspace each
-        self._n_captures = 0  # captures tried (failed ones included)
-        self._n_replays = 0  # replays of a kept graph (capture calls excluded)
-        self._n_refreshes = 0  # replays with another edge index copied in
-        self._pad = None  # padded edges: None unchecked, True, False (off)
-        self._segment = -1  # LunaTP source segment size, None (e3nn); -1 unknown
-        # (number of atoms, host edge index, device edge index) of the last eager call
-        self._last_edge_index = (-1, None, None, None)
-        self._has_lunatp: Optional[bool] = None
         self.fused = []
         self._fused_species = set()
         if fused or os.getenv('SEVENNET_ENABLE_FUSED') == '1':
@@ -414,6 +395,19 @@ class SevenNetCalculator(Calculator):
                 else:
                     warnings.warn('fused: no convolution of this model is covered')
 
+
+        self.cuda_graph = cuda_graph and self.device.type == 'cuda'
+        self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None
+        self._graphs_seen: OrderedDict = OrderedDict()  # topologies seen once
+        self._capture_stream = None  # one stream: cuBLAS keeps a workspace each
+        self._n_captures = 0  # captures tried (failed ones included)
+        self._n_replays = 0  # replays of a kept graph (capture calls excluded)
+        self._n_refreshes = 0  # replays with another edge index copied in
+        self._pad = None  # padded edges: None unchecked, True, False (off)
+        self._segment = -1  # LunaTP source segment size, None (e3nn); -1 unknown
+        # (number of atoms, host edge index, device edge index) of the last eager call
+        self._last_edge_index = (-1, None, None, None)
+        self._has_lunatp: Optional[bool] = None
         self.implemented_properties = [
             'free_energy',
             'energy',
@@ -442,6 +436,22 @@ class SevenNetCalculator(Calculator):
             output[KEY.EDGE_IDX].shape[1],
         )
 
+    def _fused_for(self, atoms: Atoms) -> None:
+        """the fused kernels' species tables cover the species of atoms"""
+        numbers = set(atoms.get_atomic_numbers().tolist())
+        if numbers <= self._fused_species:
+            return
+        from sevenn.nn.lunatp_fused import specialize_fused_species
+
+        species = self._fused_species | numbers
+        specialize_fused_species(
+            self.model, [self.type_map[z] for z in sorted(species)]
+        )
+        self._fused_species = species
+        # Specializing new species replaces weights held by earlier captures.
+        self._graphs.clear()
+        self._graphs_seen.clear()
+
     _MAX_GRAPHS = 16
     _MAX_SEEN = 64
     # thrash guard: after _FREE_CAPTURES captures, capture only while replays
@@ -451,22 +461,7 @@ class SevenNetCalculator(Calculator):
     _REPLAYS_PER_CAPTURE = 2
 
     def _graph_results(self, data: AtomGraphData) -> Optional[Dict[str, Any]]:
-        """
-        Results by replaying a kept CUDA graph, or None (run eagerly). A
-        captured graph reads the topology from device tensors only (the model
-        call makes no host sync); a launch configuration depends on shapes
-        only. The cache key holds every host value a graph bakes in: the
-        integer inputs except the edge index (atomic numbers, number of atoms),
-        the non-tensor inputs (modal, data_info), the shapes other than the
-        number of edges, and the number of LunaTP source segments. A kept graph
-        holds a number of edges e_pad (the most edges seen for the key, plus
-        1/8): a call with fewer edges is padded up to it (_pad_edges), one
-        with more is captured anew. The float inputs (edge vectors, positions,
-        cell volume) are copied in per replay, another edge index by _refresh.
-        Without padding (cutoff not exact in fp32, or pads not neutral) the
-        number of edges is in the key. The edges arrive in one order
-        (_sort_edges).
-        """
+        """Replay a compatible capture or return None for eager evaluation."""
         if self._segment == -1:
             self._segment = self._lunatp_segment()
         if self._pad is None and float(np.float32(self.cutoff)) != self.cutoff:
@@ -482,6 +477,8 @@ class SevenNetCalculator(Calculator):
             if self._segment else None
         )
         edge_keys = (KEY.EDGE_IDX, KEY.EDGE_VEC)
+        # Capture fixes non-tensor inputs, integer data other than the edge
+        # index, and the shapes of the tensors and LunaTP segments.
         key = tuple(
             (k, None if pad and k in edge_keys else v.shape,
              None if k in floats or k == KEY.EDGE_IDX else v.numpy().tobytes())
@@ -568,14 +565,7 @@ class SevenNetCalculator(Calculator):
         return _pad_edges(tensors, num_edges, self.cutoff, self._segment)
 
     def _pads_neutral(self, data, tensors, padded) -> bool:
-        """
-        Padded edges change nothing (once per calculator): dE/dr_ij of every
-        padded edge is exactly 0, and the energy equals the energy without
-        them within fp32 round-off (1e-6 relative); a non-finite energy or
-        gradient fails the check. Padded edges are the self-loops at least
-        r_c long (every edge of the neighbour list is shorter than r_c).
-        Otherwise padding is turned off for this calculator, with a warning.
-        """
+        """Check once that cutoff-length self-loops preserve energy and forces."""
         energies, pad_grads, finite = [], 0.0, True
         for t in (tensors, padded):
             d = AtomGraphData(**{k: v.to(self.device) for k, v in t.items()})
@@ -614,13 +604,7 @@ class SevenNetCalculator(Calculator):
             self._graphs_seen.popitem(last=False)
 
     def _refresh(self, entry, edge_index) -> bool:
-        """
-        Copies another edge index of the same shapes into a captured graph:
-        the static edge index, and the LunaTP topology the capture read (CSR,
-        orders, tiers and source segments, built here for the new edges, one
-        host sync) tensor by tensor in place. False (nothing copied) if the
-        topology differs in a shape or a host value (number of source segments).
-        """
+        """Update the capture's topology in place if its buffer shapes match."""
         static_edge_index = entry['static'][KEY.EDGE_IDX]
         new = edge_index.pin_memory().to(self.device, non_blocking=True)
         topology = self._lunatp_topology(new, entry['num_atoms'])
@@ -717,19 +701,6 @@ class SevenNetCalculator(Calculator):
         if not self._has_lunatp or edge_index.numel() == 0:
             return None
         return prepare_graph(edge_index, num_atoms)
-
-    def _fused_for(self, atoms: Atoms) -> None:
-        """the fused kernels' species tables cover the species of atoms"""
-        numbers = set(atoms.get_atomic_numbers().tolist())
-        if numbers <= self._fused_species:
-            return
-        from sevenn.nn.lunatp_fused import specialize_fused_species
-
-        species = self._fused_species | numbers
-        specialize_fused_species(
-            self.model, [self.type_map[z] for z in sorted(species)]
-        )
-        self._fused_species = species
 
     def calculate(self, atoms=None, properties=None, system_changes=all_changes):
         # call parent class to set necessary atom attributes

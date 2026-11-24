@@ -67,6 +67,10 @@ from sevenn.calculator import SevenNetCalculator
 calc = SevenNetCalculator(model='7net-0', enable_cueq=True) # or enable_flash=True or enable_oeq=True
 ```
 
+On CUDA, `cuda_graph=True` captures and replays repeated calculator calls
+with compatible inputs. It works with LunaTP and falls back to eager
+evaluation when the graph cannot be captured or reused.
+
 If you encounter the error `CUDA is not installed or nvcc is not available`, please ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
 
 Various pretrained SevenNet models can be accessed by setting the model variable to predefined keywords like `7net-omni`, `7net-nano-5.5`, `7net-mf-ompa`, `7net-omat`, `7net-l3i5`, and `7net-0`.

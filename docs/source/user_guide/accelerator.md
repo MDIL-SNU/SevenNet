@@ -145,10 +145,10 @@ sevenn lunatp_precompile 7net-omni --train   # also the kernels for training wit
 
 ### Frozen-model kernels (`fused`)
 
-For frozen models with a plain radial MLP, `fused` interpolates radial weights
-inside the LunaTP convolution kernels. The cubic Hermite tables approximate the
-original radial MLP. Kernels skip unused tensor-product paths and specialize
-the first interaction and self-connections to the species present.
+For frozen models with a plain radial MLP, `fused` evaluates cubic Hermite
+tables inside the LunaTP convolution kernels. These tables approximate the
+original radial MLP. Fused inference can also specialize the first interaction
+to the species present.
 
 ```python
 from sevenn.calculator import SevenNetCalculator
