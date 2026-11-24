@@ -137,9 +137,24 @@ optional_libs=()
 optional_rpaths=()
 
 if [ "$enable_flashTP" -eq 1 ]; then
-    optional_libs+=("    \${CMAKE_CURRENT_LIST_DIR}/flashTP/libflashtp_large_kernel_lammps.so")
-    optional_rpaths+=("\${CMAKE_CURRENT_LIST_DIR}/flashTP")
-    mkdir -p $lammps_root/cmake/flashTP && cp $flashTP_so $lammps_root/cmake/flashTP/libflashtp_large_kernel_lammps.so && echo "[FlashTP] flashTP so file copied"
+    # Keep the wrapper beside its core library so $ORIGIN resolves correctly.
+    cat >> "$lammps_root/cmake/CMakeLists.txt" <<EOF
+
+if(NOT TARGET sevennet_flashtp)
+    add_library(sevennet_flashtp SHARED IMPORTED)
+endif()
+set_target_properties(sevennet_flashtp PROPERTIES IMPORTED_LOCATION "$flashTP_so")
+
+# Some FlashTP builds keep a dependency on Torch's Python bindings.
+set(sevennet_flashtp_torch_libs "")
+foreach(torch_lib libtorch_python.so libshm.so)
+    if(EXISTS "\${TORCH_INSTALL_PREFIX}/lib/\${torch_lib}")
+        list(APPEND sevennet_flashtp_torch_libs "\${TORCH_INSTALL_PREFIX}/lib/\${torch_lib}")
+    endif()
+endforeach()
+EOF
+    optional_libs+=("    sevennet_flashtp" '    ${sevennet_flashtp_torch_libs}')
+    optional_rpaths+=("$(dirname "$flashTP_so")")
 fi
 
 if [ "$enable_oeq" -eq 1 ]; then
@@ -202,8 +217,7 @@ echo "  - Copied contents of pair_e3gnn to $lammps_root/src/"
 echo "  - Patched CMakeLists.txt: include LibTorch, CXX_STANDARD $cxx_standard"
 echo
 if [ "$enable_flashTP" -eq 1 ]; then
-    echo "  - Copied flashTP .so to $lammps_root/cmake/flashTP/"
-    echo "  - Patched CMakeLists.txt: link libflashtp_large_kernel_lammps.so"
+    echo "  - Patched CMakeLists.txt: link FlashTP from $flashTP_so"
     echo
 fi
 if [ "$enable_oeq" -eq 1 ]; then
