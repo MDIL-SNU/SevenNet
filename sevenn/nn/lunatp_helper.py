@@ -21,6 +21,8 @@ from .linear import IrrepsLinear
 from .self_connection import SelfConnectionIntro, SelfConnectionLinearIntro
 
 _WORKERS_ENV = 'SEVENNET_LUNATP_PRECOMPILE_WORKERS'
+PREPARED_GRAPH_KEY = '_lunatp_prepared_graph'
+_SHARED_GRAPH_KEY = '_lunatp_graph'
 
 try:
     from LunaEquivariance import (
@@ -93,6 +95,18 @@ def lunatp_needed(func):
     return wrapper
 
 
+def prepare_graph(edge_index: torch.Tensor, num_nodes: int):
+    """Return the edge permutation and LunaTP graph for this topology."""
+    edge_dst, edge_src = edge_index
+    try:
+        return None, make_graph(edge_src, edge_dst, num_nodes)
+    except ValueError:
+        if bool(torch.all(edge_dst[1:] >= edge_dst[:-1])):
+            raise
+        order = torch.argsort(edge_dst, stable=True)
+        return order, make_graph(edge_src[order], edge_dst[order], num_nodes)
+
+
 class LunaTPConvolution(torch.nn.Module):
     """
     Wrapper around LunaEquivariance.TensorProductConv to match
@@ -120,90 +134,46 @@ class LunaTPConvolution(torch.nn.Module):
             internal_weights=internal_weights,
         )
 
-    @staticmethod
-    def get_graph(key, edge_src, edge_dst, num_nodes: int):
-        """
-        (edge order or None, LunaTPGraph), cached on the key tensor. make_graph
-        rejects edges not sorted by destination, which are then sorted here.
-        """
-        cached = getattr(key, '_lunatp_graph', None)
-        if cached is not None and cached[0] == num_nodes:
-            return cached[1], cached[2]
-        order = None
-        try:
-            graph = make_graph(edge_src, edge_dst, num_nodes)
-        except ValueError:
-            if bool(torch.all(edge_dst[1:] >= edge_dst[:-1])):
-                raise
-            order = torch.argsort(edge_dst, stable=True)
-            graph = make_graph(edge_src[order], edge_dst[order], num_nodes)
-        key._lunatp_graph = (num_nodes, order, graph)
-        return order, graph
-
-    def forward(
-        self,
-        x,
-        edge_filter,
-        weight,
-        edge_src,
-        edge_dst,
-        graph_key: Optional[torch.Tensor] = None,
-    ):
-        key = edge_filter if graph_key is None else graph_key
-        order, graph = self.get_graph(key, edge_src, edge_dst, x.shape[0])
+    def forward(self, x, edge_filter, weight, topology):
+        order, graph = topology
         if order is not None:
             edge_filter, weight = edge_filter[order], weight[order]
         return self.tp_conv(x, edge_filter, weight, graph=graph)
 
 
 class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
-    """
-    Passes the input edge index tensor as the LunaTP graph cache key: the layers
-    of a forward share one graph, and a caller that passes the same edge index
-    tensor again reuses it.
-    """
+    starts_graph = True
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        assert self.convolution is not None, 'Convolution is not instantiated'
-        assert self.weight_nn is not None, 'Weight_nn is not instantiated'
+        if self.starts_graph:
+            if _SHARED_GRAPH_KEY in data:
+                del data[_SHARED_GRAPH_KEY]
+            # The supplied graph must match the edge order, node count and device.
+            if PREPARED_GRAPH_KEY in data:
+                topology = data[PREPARED_GRAPH_KEY]
+                del data[PREPARED_GRAPH_KEY]
+                if data[self.key_edge_idx].numel():
+                    data[_SHARED_GRAPH_KEY] = topology
+        return super().forward(data)
 
-        x = data[self.key_x]
-        weight = self.weight_nn(data[self.key_weight_input])
-        if self.is_parallel:
-            x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
-
-        edge_src = data[self.key_edge_idx][1]
-        edge_dst = data[self.key_edge_idx][0]
-        edge_filter = data[self.key_filter]
-
-        if edge_src.numel() == 0:
-            x = x.new_zeros(x.shape[0], self._out_dim)
-            x = x + (edge_filter.sum() + weight.sum()) * 0
-        else:
-            x = self.convolution(
-                x,
-                edge_filter,
-                weight,
-                edge_src,
-                edge_dst,
-                graph_key=data[self.key_edge_idx],
+    def _convolve(self, data, x, edge_filter, weight):
+        if self.starts_graph and _SHARED_GRAPH_KEY not in data:
+            data[_SHARED_GRAPH_KEY] = prepare_graph(
+                data[self.key_edge_idx], x.shape[0]
             )
-
-        x = x.div(self.denominator)
-
-        if self.is_parallel:
-            x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
-        data[self.key_x] = x
-        return data
+        return self.convolution(x, edge_filter, weight, data[_SHARED_GRAPH_KEY])
 
 
 @lunatp_needed
-def patch_convolution(irreps_convolution: IrrepsConvolution):
+def patch_convolution(
+    irreps_convolution: IrrepsConvolution, starts_graph: bool = True
+):
     assert not irreps_convolution.layer_instantiated, (
         'Convolution layer already instantiated; cannot patch'
     )
     ret = LunaTPSharedGraphConvolution.from_irreps_convolution(irreps_convolution)
     ret.convolution_cls = LunaTPConvolution
+    ret.starts_graph = starts_graph
     return ret
 
 
@@ -243,8 +213,8 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
     if isinstance(module, LunaTPConvolution):
         tp = module.tp_conv
         dims = [tp.irreps_in1.dim, tp.irreps_in2.dim, tp.weight_numel]
-        src = torch.tensor([1, 0], device=device, dtype=torch.int32)
-        extra = [src, src.flip(0)]
+        edges = torch.tensor([[0, 1], [1, 0]], device=device, dtype=torch.int32)
+        extra = [prepare_graph(edges, 2)]
     elif isinstance(module, LunaTPFullyConnectedTensorProduct):
         dims = [module.irreps_in1.dim]
         onehot = torch.zeros(2, module.irreps_in2.dim, device=device, dtype=dtype)

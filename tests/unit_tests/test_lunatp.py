@@ -4,6 +4,7 @@ import copy
 import os
 import subprocess
 import sys
+from unittest.mock import Mock
 
 import numpy as np
 import pytest
@@ -12,6 +13,7 @@ from ase.build import bulk
 from torch_geometric.loader.dataloader import Collater
 
 import sevenn
+import sevenn._keys as KEY
 import sevenn.train.dataload as dl
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.calculator import SevenNetCalculator
@@ -374,6 +376,51 @@ def test_unsorted_edges():
     assert torch.allclose(
         e3nn_out.inferred_stress, lunatp_out.inferred_stress, atol=1e-5
     )
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+def test_graph_is_shared_only_within_one_forward(monkeypatch):
+    from sevenn.nn import lunatp_helper as helper
+
+    monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
+    model = get_model({'channel': 4, 'lmax': 1, 'num_convolution_layer': 2}, True)
+    model.set_is_batch_data(False)
+    data = _graph.clone().to('cuda')
+    edge_index = data[KEY.EDGE_IDX]
+    num_nodes = data[KEY.ATOMIC_NUMBERS].numel()
+    prepared = helper.prepare_graph(edge_index, num_nodes)
+    prepare = Mock(wraps=helper.prepare_graph)
+    monkeypatch.setattr(helper, 'prepare_graph', prepare)
+
+    original = model(data)[KEY.PRED_FORCE]
+    assert prepare.call_count == 1
+    data[helper.PREPARED_GRAPH_KEY] = prepared
+    torch.testing.assert_close(model(data)[KEY.PRED_FORCE], original)
+    assert prepare.call_count == 1
+    assert helper.PREPARED_GRAPH_KEY not in data
+
+    changed_edges = edge_index.clone()
+    changed_edges[1] = (changed_edges[1] + 1) % num_nodes
+    edge_index.copy_(changed_edges)
+    changed = model(data)[KEY.PRED_FORCE]
+    assert prepare.call_count == 2
+    fresh = _graph.clone().to('cuda')
+    fresh[KEY.EDGE_IDX] = changed_edges
+    torch.testing.assert_close(changed, model(fresh)[KEY.PRED_FORCE])
+    assert not torch.allclose(original, changed)
+
+    data[KEY.EDGE_IDX] = edge_index[:, :0]
+    data[KEY.EDGE_VEC] = data[KEY.EDGE_VEC][:0].detach()
+    data[helper.PREPARED_GRAPH_KEY] = prepared
+    kernel = Mock(side_effect=AssertionError('convolution on empty edges'))
+    for layer in model:
+        if isinstance(layer, helper.LunaTPSharedGraphConvolution):
+            monkeypatch.setattr(layer.convolution, 'forward', kernel)
+    prepare.reset_mock()
+    model(data)
+    prepare.assert_not_called()
+    kernel.assert_not_called()
+    assert helper.PREPARED_GRAPH_KEY not in data
 
 
 def test_no_fallback(monkeypatch):
