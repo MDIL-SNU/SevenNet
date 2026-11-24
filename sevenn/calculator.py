@@ -37,6 +37,8 @@ def _sort_edges(data):
     # index_select: CPU advanced indexing costs ~0.5 ms at 3k edges
     data[KEY.EDGE_IDX] = ei.index_select(1, order)
     data[KEY.EDGE_VEC] = data[KEY.EDGE_VEC].index_select(0, order)
+    if KEY.EDGE_PADDED in data:
+        data[KEY.EDGE_PADDED] = data[KEY.EDGE_PADDED].index_select(0, order)
 
 
 def _to_device_packed(data, device):
@@ -87,6 +89,9 @@ def _pad_edges(tensors, num_edges: int, length: float, segment: Optional[int]):
     out = dict(tensors)
     out[KEY.EDGE_IDX] = torch.cat([edge_index, torch.stack([nodes, nodes])], 1)
     out[KEY.EDGE_VEC] = torch.cat([edge_vec, pad_vec])
+    if KEY.EDGE_PADDED in tensors:
+        mask = tensors[KEY.EDGE_PADDED]
+        out[KEY.EDGE_PADDED] = torch.cat([mask, mask.new_ones(k)])
     _sort_edges(out)
     return out
 
@@ -469,15 +474,17 @@ class SevenNetCalculator(Calculator):
             self._pad = False
         pad = self._pad is not False
         tensors = {k: v for k, v in data.items() if isinstance(v, torch.Tensor)}
-        floats = [k for k, v in tensors.items() if v.is_floating_point()]
         edge_index = tensors[KEY.EDGE_IDX]
         num_atoms = tensors[KEY.ATOMIC_NUMBERS].shape[0]
         num_edges = edge_index.shape[1]
+        if pad and self.fused and not self._fused_exact:
+            tensors[KEY.EDGE_PADDED] = tensors[KEY.EDGE_VEC].new_zeros(num_edges)
+        floats = [k for k, v in tensors.items() if v.is_floating_point()]
         segments = (
             _num_segments(edge_index, num_atoms, self._segment)
             if self._segment else None
         )
-        edge_keys = (KEY.EDGE_IDX, KEY.EDGE_VEC)
+        edge_keys = (KEY.EDGE_IDX, KEY.EDGE_VEC, KEY.EDGE_PADDED)
         # Capture fixes non-tensor inputs, integer data other than the edge
         # index, and the shapes of the tensors and LunaTP segments.
         key = tuple(
@@ -580,8 +587,11 @@ class SevenNetCalculator(Calculator):
                 float(self.model(d)[KEY.PRED_TOTAL_ENERGY].sum().detach())
             )
             if t is padded:
-                ei, ev = t[KEY.EDGE_IDX], t[KEY.EDGE_VEC]
-                pad = (ei[0] == ei[1]) & (ev.norm(dim=1) >= self.cutoff)
+                if KEY.EDGE_PADDED in t:
+                    pad = t[KEY.EDGE_PADDED].bool()
+                else:
+                    ei, ev = t[KEY.EDGE_IDX], t[KEY.EDGE_VEC]
+                    pad = (ei[0] == ei[1]) & (ev.norm(dim=1) >= self.cutoff)
                 g = grads[0] if grads else torch.zeros_like(vec)
                 pad_grads = g[pad.to(self.device)].abs().sum().item()
                 finite = bool(torch.isfinite(g).all())

@@ -131,6 +131,17 @@ def test_default_fused_calculator(tmp_path):
     first = next(m for m in fused.model.modules() if isinstance(m, FusedFirstLayer))
     assert first.table.numel() and torch.isfinite(first.table).all()
 
+    # Replay with a different number of real edges in the same padded buffers.
+    three = atoms[:3]
+    three.set_cell([30.0, 30.0, 30.0])
+    three.positions[:] = [[5, 5, 5], [7, 5, 5], [5 + cutoff, 5, 5]]
+    for separation in (cutoff + 0.01, cutoff + 0.01, cutoff - 0.01):
+        three.positions[2, 0] = 5 + separation
+        fused.calculate(three)
+        actual = [fused.results[key] for key in ('energy', 'forces', 'stress')]
+        assert_efs(actual, evaluate(plain, three))
+    assert fused._pad and fused._n_replays == fused._n_refreshes == 1
+
 
 @pytest.mark.parametrize('fused', [False, True])
 def test_ase_fusion_and_interpolation_switches(tmp_path, fused):

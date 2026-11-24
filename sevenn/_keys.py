@@ -31,6 +31,7 @@ CELL_VOLUME: Final[str] = 'cell_volume'
 
 EDGE_VEC: Final[str] = 'edge_vec'  # (N_edge, 3)
 EDGE_LENGTH: Final[str] = 'edge_length'  # (N_edge, 1)
+EDGE_PADDED: Final[str] = 'edge_padded'  # (N_edge,), 1 for added replay edges
 
 # some primary data of graph
 EDGE_IDX: Final[str] = 'edge_index'  # (2, N_edge) PyG

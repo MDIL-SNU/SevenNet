@@ -42,6 +42,11 @@ _KEY_EMB_R = 'fused_radial_embedding_r'
 KEY_N_UNIQUE = 'fused_radial_n_unique'
 
 
+def _with_padding_row(coef: torch.Tensor) -> torch.Tensor:
+    """Reserve an all-zero interval for edges added by CUDA Graph replay."""
+    return torch.cat((coef, torch.zeros_like(coef[..., :1, :, :])), dim=-3)
+
+
 def _sub(pattern, repl, text, count=None, regex=True):
     if regex:
         text, n = re.subn(pattern, repl, text)
@@ -657,7 +662,8 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             table, h = weight_table(self, emb, r_min, cutoff, self.knots)
             self.table_r0, self.table_inv_h = float(r_min), 1.0 / h
             self.register_buffer(
-                'rad_table', table.to(ref.device, ref.dtype).contiguous()
+                'rad_table',
+                _with_padding_row(table).to(ref.device, ref.dtype).contiguous(),
             )
         self._kernels()
 
@@ -754,7 +760,10 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         u = (r.detach().double() - self.table_r0) * self.table_inv_h
         k = u.floor().clamp(0, self.knots - 2)
         t = (u - k).to(torch.float32)
-        rid = torch.stack([k.to(torch.int32), t.view(torch.int32)], 1)
+        k = k.to(torch.int32)
+        if KEY.EDGE_PADDED in data:
+            k.masked_fill_(data[KEY.EDGE_PADDED].bool(), self.knots - 1)
+        rid = torch.stack([k, t.view(torch.int32)], 1)
         data[_KEY_R], data[_KEY_RID], data[_KEY_RU] = r, rid, key
         return rid
 
@@ -1077,7 +1086,9 @@ class FusedFirstLayer(nn.Module):
                 raise RuntimeError('first layer is not radial functions times Y')
             tables.append(_cubics(v, d * h))
         dev = self.bias.device
-        self.table = torch.stack(tables).to(dev, torch.float32).contiguous()
+        self.table = _with_padding_row(torch.stack(tables)).to(
+            dev, torch.float32
+        ).contiguous()
         self.bias = bias.to(dev, torch.float32)
         lut = torch.zeros_like(self.lut)
         lut[torch.tensor(columns)] = torch.arange(
