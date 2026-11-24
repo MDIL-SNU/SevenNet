@@ -40,7 +40,9 @@ def NequIP_interaction_block(
     irreps_for_gate_in = gate_layer.get_gate_irreps_in()
     if drop_unused_tp_irreps:
         used = {ir for _, ir in irreps_for_gate_in}
-        irreps_out_tp = Irreps([(mul, ir) for mul, ir in irreps_out_tp if ir in used])
+        irreps_out_tp = Irreps(
+            [(mul, ir) for mul, ir in irreps_out_tp if ir in used]
+        )
 
     block[f'{t}_self_connection_intro'] = sc_intro(
         irreps_x,

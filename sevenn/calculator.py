@@ -395,7 +395,6 @@ class SevenNetCalculator(Calculator):
                 else:
                     warnings.warn('fused: no convolution of this model is covered')
 
-
         self.cuda_graph = cuda_graph and self.device.type == 'cuda'
         self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None
         self._graphs_seen: OrderedDict = OrderedDict()  # topologies seen once
@@ -405,7 +404,7 @@ class SevenNetCalculator(Calculator):
         self._n_refreshes = 0  # replays with another edge index copied in
         self._pad = None  # padded edges: None unchecked, True, False (off)
         self._segment = -1  # LunaTP source segment size, None (e3nn); -1 unknown
-        # (number of atoms, host edge index, device edge index) of the last eager call
+        # Last eager call's atom count, host and device edge indices, and topology.
         self._last_edge_index = (-1, None, None, None)
         self._has_lunatp: Optional[bool] = None
         self.implemented_properties = [
@@ -575,7 +574,9 @@ class SevenNetCalculator(Calculator):
             vec = d[KEY.EDGE_VEC].requires_grad_(True)
             grads = []
             vec.register_hook(grads.append)  # dE/dr_ij (force output)
-            energies.append(float(self.model(d)[KEY.PRED_TOTAL_ENERGY].sum().detach()))
+            energies.append(
+                float(self.model(d)[KEY.PRED_TOTAL_ENERGY].sum().detach())
+            )
             if t is padded:
                 ei, ev = t[KEY.EDGE_IDX], t[KEY.EDGE_VEC]
                 pad = (ei[0] == ei[1]) & (ev.norm(dim=1) >= self.cutoff)

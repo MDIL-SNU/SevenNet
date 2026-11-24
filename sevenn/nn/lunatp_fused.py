@@ -505,7 +505,6 @@ class FusedEdgeGeometry(nn.Module):
         return data
 
 
-
 def _index_order(graph):
     key = ('sevenn_uvu_index_order', 32)
     cached = graph._tables.get(key)
@@ -1240,7 +1239,9 @@ def live_paths(conv, linear) -> list[int] | None:
     return None if len(keep) == len(op.generated_specs) else keep
 
 
-def fuse_radial_conv(model: nn.Module, knots: int = 0, r_min: float = 0.25) -> list[str]:
+def fuse_radial_conv(
+    model: nn.Module, knots: int = 0, r_min: float = 0.25
+) -> list[str]:
     """
     In place: every LunaTP convolution of a serial model whose radial MLP is
     an e3nn FullyConnectedNet [n, h, h, W] of the edge embedding becomes a

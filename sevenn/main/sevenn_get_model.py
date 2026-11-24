@@ -119,7 +119,9 @@ def run(args):
             get_parallel, modal, use_flash, use_cueq, use_oeq, use_lunatp,
             use_mliap, cuda_graph, radial_table, fused,
         )):
-            raise ValueError('--compact_checkpoint writes a backend-independent .pth')
+            raise ValueError(
+                '--compact_checkpoint writes a backend-independent .pth'
+            )
         output = output_prefix or 'inference.pth'
         if not output.endswith('.pth'):
             output += '.pth'

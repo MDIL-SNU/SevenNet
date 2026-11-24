@@ -19,7 +19,9 @@ DEVICES = ['cpu'] + (['cuda'] if torch.cuda.is_available() else [])
 
 
 def _reference(calc, atoms):
-    data = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms, calc.cutoff))
+    data = AtomGraphData.from_numpy_dict(
+        unlabeled_atoms_to_graph(atoms, calc.cutoff)
+    )
     _sort_edges(data)  # the calculator's edge order (fp32 summation order)
     data.to(calc.device)
     out = calc.model(data)
@@ -37,7 +39,9 @@ def _reference(calc, atoms):
 @pytest.mark.parametrize('device', DEVICES)
 def test_packed_io_equals_per_tensor_io(device):
     torch.use_deterministic_algorithms(True, warn_only=True)
-    calc = SevenNetCalculator(pretrained_name_to_path('7net-0_11July2024'), device=device)
+    calc = SevenNetCalculator(
+        pretrained_name_to_path('7net-0_11July2024'), device=device
+    )
     for atoms in (bulk('Si', 'diamond', a=5.43, cubic=True), molecule('H2O')):
         atoms.calc = calc
         atoms.get_potential_energy()

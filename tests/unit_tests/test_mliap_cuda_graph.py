@@ -1,11 +1,7 @@
 import numpy as np
 import pytest
 import torch
-
-from sevenn.nn._mliap_cuda_graph import MLIAPCudaGraph
-from sevenn.nn.lunatp_helper import is_lunatp_available
-from sevenn.util import model_from_checkpoint
-from tests.unit_tests._mliap_fixture import (
+from _mliap_fixture import (
     MODAL,
     FakeLmpData,
     assert_efs,
@@ -15,6 +11,10 @@ from tests.unit_tests._mliap_fixture import (
     reference,
     save_checkpoint,
 )
+
+from sevenn.nn._mliap_cuda_graph import MLIAPCudaGraph
+from sevenn.nn.lunatp_helper import is_lunatp_available
+from sevenn.util import model_from_checkpoint
 
 pytestmark = pytest.mark.skipif(
     not torch.cuda.is_available(), reason='needs CUDA'

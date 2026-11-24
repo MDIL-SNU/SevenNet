@@ -1,7 +1,4 @@
-from sevenn.calculator import SevenNetCalculator
-from sevenn.nn.inference_specialization import fold_modal, prune_self_connection
-from sevenn.util import load_checkpoint
-from tests.unit_tests._mliap_fixture import (
+from _mliap_fixture import (
     MODAL,
     assert_efs,
     atoms_with_ghosts,
@@ -9,6 +6,10 @@ from tests.unit_tests._mliap_fixture import (
     reference,
     save_checkpoint,
 )
+
+from sevenn.calculator import SevenNetCalculator
+from sevenn.nn.inference_specialization import fold_modal, prune_self_connection
+from sevenn.util import load_checkpoint
 
 
 def test_species_and_modal_specialization_without_lunatp(tmp_path):

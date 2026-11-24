@@ -437,7 +437,9 @@ class SevenNetCheckpoint:
 
         config = self.config
         # Inferred layouts already feed every TP output type into the gate.
-        if not config.get(KEY.IRREPS_MANUAL) or config.get(KEY.DROP_UNUSED_TP_IRREPS):
+        if not config.get(KEY.IRREPS_MANUAL) or config.get(
+            KEY.DROP_UNUSED_TP_IRREPS
+        ):
             return self
 
         # Load legacy weights in their original layout before projecting them.
@@ -468,8 +470,12 @@ class SevenNetCheckpoint:
 
     def save_inference_checkpoint(self, path: Union[pathlib.Path, str]) -> None:
         """Write a model-only checkpoint in the inference layout."""
-        if pathlib.Path(path).resolve() == pathlib.Path(self.checkpoint_path).resolve():
-            raise ValueError('The inference checkpoint needs a different output path')
+        if pathlib.Path(path).resolve() == pathlib.Path(
+            self.checkpoint_path
+        ).resolve():
+            raise ValueError(
+                'The inference checkpoint needs a different output path'
+            )
         checkpoint = self.compact_for_inference()
         torch_save({
             'config': checkpoint.config,

@@ -2,12 +2,12 @@ import numpy as np
 import torch
 from ase.build import bulk
 from ase.neighborlist import neighbor_list
+from test_model import cutoff, get_model_config
 
 import sevenn
 from sevenn.calculator import SevenNetCalculator
 from sevenn.model_build import build_E3_equivariant_model
 from sevenn.util import chemical_species_preprocess
-from tests.unit_tests.test_model import cutoff, get_model_config
 
 MODAL = 'mpa'
 

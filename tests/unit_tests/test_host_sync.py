@@ -16,11 +16,15 @@ from sevenn.util import pretrained_name_to_path
 pytestmark = pytest.mark.skipif(not torch.cuda.is_available(), reason='CUDA')
 
 
-@pytest.mark.parametrize('name, modal', [('7net-0_11July2024', None), ('7net-mf-0', 'R2SCAN')])
+@pytest.mark.parametrize(
+    'name, modal', [('7net-0_11July2024', None), ('7net-mf-0', 'R2SCAN')]
+)
 def test_model_call_no_host_sync(name, modal):
     calc = SevenNetCalculator(pretrained_name_to_path(name), modal=modal)
     atoms = bulk('Si', 'diamond', a=5.43, cubic=True)
-    data = AtomGraphData.from_numpy_dict(unlabeled_atoms_to_graph(atoms, calc.cutoff))
+    data = AtomGraphData.from_numpy_dict(
+        unlabeled_atoms_to_graph(atoms, calc.cutoff)
+    )
     if modal:
         data[KEY.DATA_MODALITY] = modal
     data.to(calc.device)
