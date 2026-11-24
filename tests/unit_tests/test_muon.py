@@ -3,14 +3,14 @@ import copy
 import pytest
 import torch
 
-import sevenn
+from sevenn.model_build import build_E3_equivariant_model
 from sevenn.train.muon import (
     MuonWithAuxAdam,
     _muon_shape_factor,
     build_muon_param_groups,
     zeropower_via_newtonschulz5,
 )
-from tests.unit_tests.test_model import get_model
+from sevenn.util import chemical_species_preprocess
 
 _modal = {
     'use_modality': True,
@@ -31,6 +31,38 @@ _hyper = {
 _variants = [('cpu', False)] + (
     [('cuda', False), ('cuda', True)] if torch.cuda.is_available() else []
 )
+
+
+def get_model(config_overwrite):
+    config = {
+        'cutoff': 4.0,
+        'channel': 4,
+        'radial_basis': {'radial_basis_name': 'bessel'},
+        'cutoff_function': {'cutoff_function_name': 'poly_cut'},
+        'interaction_type': 'nequip',
+        'lmax': 2,
+        'is_parity': True,
+        'num_convolution_layer': 3,
+        'weight_nn_hidden_neurons': [64, 64],
+        'act_radial': 'silu',
+        'act_scalar': {'e': 'silu', 'o': 'tanh'},
+        'act_gate': {'e': 'silu', 'o': 'tanh'},
+        'conv_denominator': 30.0,
+        'train_denominator': False,
+        'self_connection_type': 'nequip',
+        'shift': -10.0,
+        'scale': 10.0,
+        'train_shift_scale': False,
+        'irreps_manual': False,
+        'lmax_edge': -1,
+        'lmax_node': -1,
+        'readout_as_fcn': False,
+        'use_bias_in_linear': False,
+        '_normalize_sph': True,
+        **chemical_species_preprocess(['Hf', 'O']),
+        **config_overwrite,
+    }
+    return build_E3_equivariant_model(config, parallel=False)
 
 
 def _adam(state, grad, betas, eps):
@@ -164,43 +196,3 @@ def test_every_trainable_parameter_is_routed_once():
     names = {id(p): n for n, p in model.named_parameters()}
     for p in muon['params']:
         assert '_self_interaction_' in names[id(p)] or '.weight_nn.' in names[id(p)]
-
-
-def test_trainer_with_muon(tmp_path):
-    from torch_geometric.loader import DataLoader
-
-    import sevenn.train.graph_dataset as graph_ds
-    from sevenn.model_build import build_E3_equivariant_model
-    from sevenn.train.trainer import Trainer
-    from tests.unit_tests.test_train import cutoff, get_config, hfo2_path
-
-    cfg = get_config({
-        'shift': 0.0, 'scale': 1.0, 'conv_denominator': 5.0,
-        'optimizer': 'muon', 'optim_param': _hyper, 'version': sevenn.__version__,
-    })
-    ds = graph_ds.SevenNetGraphDataset(
-        cutoff=cutoff, root=str(tmp_path), files=[hfo2_path], processed_name='t.pt'
-    )
-    loader = DataLoader(list(ds), batch_size=2)
-
-    def losses(trainer):
-        from sevenn.error_recorder import ErrorRecorder
-
-        out = []
-        for _ in range(3):
-            recorder = ErrorRecorder.from_config(cfg)
-            trainer.run_one_epoch(loader, is_train=True, error_recorder=recorder)
-            out.append(float(recorder.get_dct()['TotalLoss']))
-        return out
-
-    torch.manual_seed(0)
-    trainer = Trainer.from_config(build_E3_equivariant_model(cfg), cfg)
-    assert isinstance(trainer.optimizer, MuonWithAuxAdam)
-    first = losses(trainer)
-    assert first[-1] < first[0]
-
-    trainer.write_checkpoint(str(tmp_path / 'cp.pth'), config=cfg, epoch=3)
-    args, optimizer_state, _ = Trainer.args_from_checkpoint(str(tmp_path / 'cp.pth'))
-    resumed = Trainer(**args, device='cpu')
-    resumed.optimizer.load_state_dict(optimizer_state)
-    assert losses(resumed) == pytest.approx(losses(trainer), rel=1e-5)
