@@ -22,14 +22,20 @@ PairStyle(e3gnn/parallel, PairE3GNNParallel)
 #include "pair.h"
 
 #include <torch/torch.h>
+#include <memory>
 #include <vector>
 
 namespace LAMMPS_NS {
+class E3GNNGraphStage;
+
 class PairE3GNNParallel : public Pair {
 private:
   double cutoff;
   double cutoff_square;
   std::vector<torch::jit::Module> model_list;
+  std::vector<std::unique_ptr<E3GNNGraphStage>> graph_stages;
+  bool cuda_graph = false;
+  bool uses_flashtp = false;
   torch::Device device = torch::kCPU;
   torch::Device device_comm = torch::kCPU;
   torch::Device get_cuda_device();

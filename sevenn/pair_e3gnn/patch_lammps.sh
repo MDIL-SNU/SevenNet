@@ -121,6 +121,7 @@ cp $lammps_root/cmake/CMakeLists.txt $backup_dir/CMakeLists.txt
 # 1. Copy pair_e3gnn files to LAMMPS source
 cp $SCRIPT_DIR/{pair_e3gnn,pair_e3gnn_parallel,comm_brick}.cpp $lammps_root/src/
 cp $SCRIPT_DIR/{pair_e3gnn,pair_e3gnn_parallel,comm_brick}.h $lammps_root/src/
+cp $SCRIPT_DIR/graph_stage.h $lammps_root/src/
 # Always copy the oEq autograd bridge (pair_e3gnn.cpp has an extern reference to it)
 cp $SCRIPT_DIR/pair_e3gnn_oeq_autograd.cpp $lammps_root/src/  # TODO: set this as oeq-specific
 
@@ -131,6 +132,9 @@ cat >> $lammps_root/cmake/CMakeLists.txt << "EOF"
 find_package(Torch REQUIRED)
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
 target_link_libraries(lammps PUBLIC "${TORCH_LIBRARIES}")
+if(CAFFE2_USE_CUDA)
+    target_compile_definitions(lammps PRIVATE SEVENN_E3GNN_CUDA_GRAPH)
+endif()
 EOF
 
 optional_libs=()

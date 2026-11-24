@@ -24,6 +24,7 @@
 #include <torch/torch.h>
 
 #include "atom.h"
+#include "comm.h"
 #include "domain.h"
 #include "error.h"
 #include "force.h"
@@ -33,6 +34,7 @@
 #include "neighbor.h"
 
 #include "pair_e3gnn.h"
+#include "graph_stage.h"
 
 using namespace LAMMPS_NS;
 
@@ -198,13 +200,24 @@ void PairE3GNN::compute(int eflag, int vflag) {
   input_dict.insert("nlocal", inp_num_atoms.to(torch::kCPU));
 
   std::vector<torch::IValue> input(1, input_dict);
-  auto output = model.forward(input).toGenericDict();
+  if (cuda_graph && !uses_flashtp && !graph_stage)
+    graph_stage = std::make_unique<E3GNNGraphStage>();
+  auto output = graph_stage
+      ? graph_stage->forward(model, input.front().toGenericDict(), true, true)
+      : model.forward(input).toGenericDict();
 
   torch::Tensor energy_tensor =
       output.at("inferred_total_energy").toTensor().squeeze();
 
   // dE_dr
-  auto grads = torch::autograd::grad({energy_tensor}, {edge_vec_device});
+  auto grads = graph_stage ? graph_stage->backward({})
+                          : torch::autograd::grad({energy_tensor}, {edge_vec_device});
+  if (graph_stage && print_info) {
+    if (!graph_stage->failure().empty())
+      std::cout << "CUDA Graph fallback: " << graph_stage->failure() << '\n';
+    std::cout << "CUDA Graph captures: " << graph_stage->captures()
+              << ", replays: " << graph_stage->replays() << '\n';
+  }
   torch::Tensor dE_dr = grads[0].to(torch::kCPU).to(torch::kFloat);
 
   eng_vdwl += energy_tensor.detach().to(torch::kCPU).item<double>();
@@ -301,9 +314,13 @@ void PairE3GNN::allocate() {
 
 // global settings for pair_style
 void PairE3GNN::settings(int narg, char **arg) {
-  if (narg != 0) {
+  const std::string option = narg == 1 ? arg[0] : "";
+  if (narg > 1 || (narg == 1 && option != "cuda_graph" && option != "disable_cuda_graph")) {
     error->all(FLERR, "Illegal pair_style command");
   }
+  cuda_graph = E3GNNGraphStage::available() && device.is_cuda() &&
+      comm->nprocs == 1 && option != "disable_cuda_graph";
+  if (!cuda_graph) graph_stage.reset();
 }
 
 void PairE3GNN::coeff(int narg, char **arg) {
@@ -347,6 +364,7 @@ void PairE3GNN::coeff(int narg, char **arg) {
 
   cutoff = std::stod(meta_dict["cutoff"]);
   cutoff_square = cutoff * cutoff;
+  uses_flashtp = meta_dict["flashTP"] == "yes";
 
   // to make torch::autograd::grad() works
   if (meta_dict["oeq"] == "yes") {

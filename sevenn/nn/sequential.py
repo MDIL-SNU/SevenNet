@@ -28,7 +28,8 @@ class _ModalInputPrepare(nn.Module):
         self.modal_idx = modal_idx
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[KEY.MODAL_TYPE] = torch.tensor(
+        data[KEY.MODAL_TYPE] = torch.full(
+            (),
             self.modal_idx,
             dtype=torch.int64,
             device=data['x'].device,

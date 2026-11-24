@@ -78,6 +78,10 @@ pair_style  e3gnn
 pair_coeff  * * {path to serial model} {space separated chemical species}
 ```
 
+With one CUDA rank, `e3gnn` replays the model and its force derivative for
+repeated input shapes. Use `pair_style e3gnn disable_cuda_graph` to run eagerly.
+FlashTP models use eager execution.
+
 :::{note}
 If the LAMMPS is built with GPU-D3 pair style, you can combine SevenNet with D3 through the `pair/hybrid` command as the example below. For detailed instruction about parameters, supporting functionals and damping types, refer to {doc}`../user_guide/d3`.
 ```
@@ -104,6 +108,12 @@ For example,
 pair_style e3gnn/parallel
 pair_coeff * * 4 ./deployed_parallel Hf O
 ```
+
+Use `pair_style e3gnn/parallel cuda_graph` to replay local model work on each
+CUDA rank, or `pair_style e3gnn/parallel disable_cuda_graph` to run eagerly.
+Replay is enabled by default on one CUDA rank. MPI ghost exchange runs between
+the captured forward and backward calculations.
+
 The number of message-passing layers corresponds to the number of `*.pt` files in the `./deployed_parallel` directory.
 
 It is expected that there is one GPU per MPI process. If the number of available GPUs is less than the number of MPI processes, the simulation may run inefficiently.
