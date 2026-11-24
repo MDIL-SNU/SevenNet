@@ -108,7 +108,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                     f'{self.model_path} is not a model path '
                     'and a pretrained model name.'
                 )
-        self.cp = load_checkpoint(checkpoint_path)
+        self.cp = load_checkpoint(checkpoint_path).compact_for_inference()
         print(f'[INFO] Loaded checkpoint from {checkpoint_path}', flush=True)
         self.model = None  # lazy init
 

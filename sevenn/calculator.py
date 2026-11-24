@@ -307,7 +307,7 @@ class SevenNetCalculator(Calculator):
             self.device = device
 
         if file_type == 'checkpoint' and isinstance(model, str):
-            cp = util.load_checkpoint(model)
+            cp = util.load_checkpoint(model).compact_for_inference()
 
             model_loaded = cp.build_model(
                 enable_cueq=enable_cueq,

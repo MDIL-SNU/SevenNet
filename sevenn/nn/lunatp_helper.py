@@ -352,6 +352,8 @@ def _precompile_marker(config: dict, order: int) -> str:
         key: config.get(key, defaults.get(key))
         for key in model_keys - {KEY.CONV_DENOMINATOR}
     }
+    if not model[KEY.DROP_UNUSED_TP_IRREPS]:
+        del model[KEY.DROP_UNUSED_TP_IRREPS]
 
     cuda_home = _cpp_extension.CUDA_HOME
     nvcc = os.path.join(cuda_home, 'bin', 'nvcc') if cuda_home else 'nvcc'
@@ -423,7 +425,8 @@ def precompile(
     Build the LunaEquivariance kernels of a model (checkpoint path, pretrained
     name or model config) in max_workers processes (default min(8, available
     CPUs)) that each run a share of the LunaTP modules once.
-    order=2 also builds the kernels of second derivatives (force training).
+    order=1 uses the inference layout. order=2 uses the checkpoint layout
+    and builds second derivatives for force training.
     skip_done returns at once if an earlier call finished for the same model,
     order and environment.
     """
@@ -434,7 +437,10 @@ def precompile(
     else:
         from sevenn.util import load_checkpoint
 
-        config = dict(load_checkpoint(model).config)
+        checkpoint = load_checkpoint(model)
+        if order == 1:
+            checkpoint = checkpoint.compact_for_inference()
+        config = checkpoint.config
     config.update({
         KEY.USE_LUNATP: True,
         KEY.USE_OEQ: False,

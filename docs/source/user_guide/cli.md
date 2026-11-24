@@ -95,6 +95,17 @@ In this case, `--enable_cueq`, `--enable_flash`, and `--enable_oeq` are availabl
 Parallel execution is not tested in this case.
 Check {doc}`lammps_mliap` for installation and lammps script in this use case.
 
+### Compact inference checkpoint
+
+```bash
+sevenn get_model checkpoint_best.pth --compact_checkpoint -o inference.pth
+```
+
+This writes a model-only checkpoint with tensor-product outputs unused by the
+next linear layer removed. ASE, TorchSim, LAMMPS deployment and `sevenn inference`
+also apply this projection when loading an older checkpoint. Keep the training
+checkpoint to resume with its optimizer and scheduler state.
+
 ### Examples
 ```bash
 # deyploy 7net-0 with flashTP enabled for LAMMPS PyTorch (TorchScript) interface

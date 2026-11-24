@@ -31,6 +31,11 @@ def add_args(parser):
         '-p', '--get_parallel', help=get_parallel_help, action='store_true'
     )
     ag.add_argument(
+        '--compact_checkpoint',
+        help='Write a compact inference .pth. Use -o to name the output.',
+        action='store_true',
+    )
+    ag.add_argument(
         '-m',
         '--modal',
         help='Modality of multi-modal model',
@@ -108,6 +113,18 @@ def run(args):
     cuda_graph = args.cuda_graph
     radial_table = args.radial_table
     fused = args.fused
+
+    if args.compact_checkpoint:
+        if any((
+            get_parallel, modal, use_flash, use_cueq, use_oeq, use_lunatp,
+            use_mliap, cuda_graph, radial_table, fused,
+        )):
+            raise ValueError('--compact_checkpoint writes a backend-independent .pth')
+        output = output_prefix or 'inference.pth'
+        if not output.endswith('.pth'):
+            output += '.pth'
+        sevenn.util.load_checkpoint(checkpoint).save_inference_checkpoint(output)
+        return
 
     # Check dependencies
     if use_flash:

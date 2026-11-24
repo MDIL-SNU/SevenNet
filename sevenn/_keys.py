@@ -191,6 +191,7 @@ MODAL_MAP = '_modal_map'
 # ~~ E3 equivariant model build configuration keys ~~ #
 # see model_build default_config for type
 IRREPS_MANUAL = 'irreps_manual'
+DROP_UNUSED_TP_IRREPS = 'drop_unused_tp_irreps'
 NODE_FEATURE_MULTIPLICITY = 'channel'
 
 RADIAL_BASIS = 'radial_basis'
