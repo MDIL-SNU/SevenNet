@@ -30,7 +30,7 @@ class ReewcTrainer(Trainer):
     ) -> 'ReewcTrainer':
         trainer = ReewcTrainer(
             model,
-            loss_functions=get_loss_functions_from_config(config),
+            loss_functions=get_loss_functions_from_config(config, model),
             optimizer_cls=optim_dict[config.get(KEY.OPTIMIZER, 'adam').lower()],
             optimizer_args=config.get(KEY.OPTIM_PARAM, {}),
             scheduler_cls=scheduler_dict[

@@ -16,6 +16,7 @@ sevenn/pretrained_potentials/SevenNet_omat
 sevenn/pretrained_potentials/SevenNet_omni
 sevenn/pretrained_potentials/SevenNet_omni_i8
 sevenn/pretrained_potentials/SevenNet_omni_i12
+sevenn/pretrained_potentials/SevenNet_nano
 
 # from compile
 sevenn/pair_d3*

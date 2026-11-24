@@ -3,7 +3,7 @@
 This document describes available accelerator integrations in SevenNet and their installation guide.
 
 :::{caution}
-We do not support CuEquivariance for [LAMMPS: Torch](./lammps_torch.md). You must use [LAMMPS: ML-IAP](./lammps_mliap.md) for CuEquivariance.
+We do not support CuEquivariance and LunaTP for [LAMMPS: Torch](./lammps_torch.md). You must use [LAMMPS: ML-IAP](./lammps_mliap.md) for CuEquivariance and LunaTP.
 :::
 
 [FlashTP](https://openreview.net/forum?id=wiQe95BPaB), [CuEquivariance](https://github.com/NVIDIA/cuEquivariance), and [OpenEquivariance](https://github.com/PASSIONLab/OpenEquivariance) provide acceleration for both SevenNet training and inference.
@@ -86,11 +86,7 @@ True
 
 For more information, see [FlashTP](https://github.com/SNU-ARC/flashTP).
 
-## [OpenEquivariance (experimental)](https://github.com/PASSIONLab/OpenEquivariance)
-
-:::{caution}
-OpenEquivariance support in SevenNet is currently experimental.
-:::
+## [OpenEquivariance](https://github.com/PASSIONLab/OpenEquivariance)
 
 OpenEquivariance (oEq) is a library for acceleration of equivariant tensor products. Unlike cuEquivariance, its kernels are compiled once per irreps configuration, eliminating runtime recompilation overhead during training on diverse datasets.
 
@@ -111,9 +107,43 @@ True
 
 For more information, see [OpenEquivariance](https://github.com/PASSIONLab/OpenEquivariance).
 
+## [LunaTP (experimental)](https://github.com/HPC-AI-Team/LunaEquivariance)
+
+:::{caution}
+LunaTP support in SevenNet is currently experimental.
+:::
+
+LunaTP (LunaEquivariance package) replaces the tensor product convolution with a fused kernel that accumulates the messages of each destination atom in registers before one store to global memory. SevenNet also replaces the linear layers, the self-connection tensor product, and the gate nonlinearity with their LunaEquivariance counterparts. The kernels are compiled at the first use of each irreps configuration and cached on disk.
+
+### Requirements
+- Python >= 3.10, PyTorch >= 2.8
+- NVIDIA GPU with compute capability 8.0 or later, CUDA toolkit with `nvcc`
+- LunaEquivariance
+
+### Installation
+```bash
+pip install sevenn[lunatp]
+```
+
+Check your installation:
+```bash
+python -c 'from sevenn.nn.lunatp_helper import is_lunatp_available; print(is_lunatp_available())'
+True
+```
+
+### Kernel compilation
+The first calculation with a model compiles its LunaTP kernels one after another, which takes several minutes. We recommend `sevenn lunatp_precompile`, which compiles the kernels of a checkpoint in parallel before the first calculation:
+```bash
+sevenn lunatp_precompile 7net-omni           # kernels for inference (energy, forces, stress)
+sevenn lunatp_precompile 7net-omni --train   # also the kernels for training with force and stress losses
+```
+The compiled kernels are cached on disk, and later calculations load them. Run the command in the environment of the later calculations, since the cache depends on the Python environment, `LD_LIBRARY_PATH`, and the GPU architecture. `--max_workers` sets the number of parallel processes (default: min(8, available CPUs)).
+
+For more information, see [LunaEquivariance](https://github.com/HPC-AI-Team/LunaEquivariance).
+
 ## Usage
-After the installation, you can leverage the accelerator with appropriate flag (`--enable_cueq`), (`--enable_flash`), or (`--enable_oeq`) options
+After the installation, you can leverage the accelerator with appropriate flag (`--enable_cueq`), (`--enable_flash`), (`--enable_oeq`), or (`--enable_lunatp`) options
 
 - [Training](./cli.md#sevenn-train)
 - [ASE Calculator](./ase_calculator.md)
-- [LAMMPS](./cli.md#sevenn-get-model)
+- {ref}`LAMMPS<sevenn-get-model>`

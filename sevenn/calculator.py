@@ -35,6 +35,7 @@ class SevenNetCalculator(Calculator):
         enable_cueq: bool = False,
         enable_flash: bool = False,
         enable_oeq: bool = False,
+        enable_lunatp: bool = False,
         compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
         **kwargs,
@@ -44,8 +45,9 @@ class SevenNetCalculator(Calculator):
         Parameters
         ----------
         model: str | Path | AtomGraphSequential, default='7net-0'
-            Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
-            7net-0) or path to the checkpoint, deployed model or the model itself
+            Name of pretrained models (7net-omni, 7net-nano-5.5, 7net-mf-ompa,
+            7net-omat, 7net-l3i5, 7net-0) or path to the checkpoint, deployed model
+            or the model itself
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -63,6 +65,8 @@ class SevenNetCalculator(Calculator):
             if True, use FlashTP to accelerate inference.
         enable_oeq: bool, default=False
             if True, use OpenEquivariance to accelerate inference.
+        enable_lunatp: bool, default=False
+            if True, use LunaTP to accelerate inference.
         sevennet_config: dict | None, default=None
             Not used, but can be used to carry meta information of this calculator
         compute_atomic_virial: bool, default=False
@@ -88,8 +92,9 @@ class SevenNetCalculator(Calculator):
         enable_cueq = os.getenv('SEVENNET_ENABLE_CUEQ') == '1' or enable_cueq
         enable_flash = os.getenv('SEVENNET_ENABLE_FLASH') == '1' or enable_flash
         enable_oeq = os.getenv('SEVENNET_ENABLE_OEQ') == '1' or enable_oeq
+        enable_lunatp = os.getenv('SEVENNET_ENABLE_LUNATP') == '1' or enable_lunatp
 
-        if not (enable_cueq or enable_flash or enable_oeq):
+        if not (enable_cueq or enable_flash or enable_oeq or enable_lunatp):
             util.warn_no_tp_accelerator('SevenNetCalculator')
 
         if enable_cueq and file_type == 'model_instance':
@@ -103,6 +108,13 @@ class SevenNetCalculator(Calculator):
                 'file_type should be checkpoint to enable oeq. oeq set to False'
             )
             enable_oeq = False
+
+        if enable_lunatp and file_type == 'model_instance':
+            warnings.warn(
+                'file_type should be checkpoint to enable lunatp. '
+                'lunatp set to False'
+            )
+            enable_lunatp = False
 
         if isinstance(device, str):  # TODO: do we really need this?
             if device == 'auto':
@@ -118,7 +130,10 @@ class SevenNetCalculator(Calculator):
             cp = util.load_checkpoint(model)
 
             model_loaded = cp.build_model(
-                enable_cueq=enable_cueq, enable_flash=enable_flash, enable_oeq=enable_oeq  # noqa: E501
+                enable_cueq=enable_cueq,
+                enable_flash=enable_flash,
+                enable_oeq=enable_oeq,
+                enable_lunatp=enable_lunatp,
             )
             model_loaded.set_is_batch_data(False)
 
@@ -243,6 +258,7 @@ class SevenNetD3Calculator(SumCalculator):
         enable_cueq: bool = False,
         enable_flash: bool = False,
         enable_oeq: bool = False,
+        enable_lunatp: bool = False,
         sevennet_config: Optional[Any] = None,
         damping_type: str = 'damp_bj',
         functional_name: str = 'pbe',
@@ -255,8 +271,9 @@ class SevenNetD3Calculator(SumCalculator):
         Parameters
         ----------
         model: str | Path | AtomGraphSequential
-            Name of pretrained models (7net-omni, 7net-mf-ompa, 7net-omat, 7net-l3i5,
-            7net-0) or path to the checkpoint, deployed model or the model itself
+            Name of pretrained models (7net-omni, 7net-nano-5.5, 7net-mf-ompa,
+            7net-omat, 7net-l3i5, 7net-0) or path to the checkpoint, deployed model
+            or the model itself
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -273,6 +290,8 @@ class SevenNetD3Calculator(SumCalculator):
             if True, use flashTP backend.
         enable_oeq: bool, default=False
             if True, use OpenEquivariance backend.
+        enable_lunatp: bool, default=False
+            if True, use LunaTP backend.
         sevennet_config: dict | None, default=None
             hold meta information
         damping_type: str, default='damp_bj'
@@ -307,11 +326,19 @@ class SevenNetD3Calculator(SumCalculator):
             enable_cueq=enable_cueq,
             enable_flash=enable_flash,
             enable_oeq=enable_oeq,
+            enable_lunatp=enable_lunatp,
             sevennet_config=sevennet_config,
             **kwargs,
         )
 
         super().__init__([sevennet_calc, d3_calc])
+
+    def calculate(self, atoms=None, properties=None, system_changes=all_changes):
+        # To match the precision of SevenNetCalculator output
+        super().calculate(atoms, properties, system_changes)
+        for key in ('forces', 'stress', 'stresses'):
+            if key in self.results:
+                self.results[key] = np.asarray(self.results[key], dtype=np.float32)
 
 
 def _load(name: str) -> ctypes.CDLL:

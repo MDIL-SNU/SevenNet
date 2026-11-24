@@ -40,3 +40,14 @@ If you utilize the pretrained model SevenNet-Omni or multi-task training strateg
 	year = {2026},
 }
 ```
+
+If you utilize the pretrained model SevenNet-Nano, please cite the following paper:
+```bib
+@article{oh_lightweight_2026,
+	title = {A Lightweight Universal Machine-Learning Interatomic Potential via Knowledge Distillation for Scalable Atomistic Simulations},
+	doi = {10.1021/acs.jcim.6c01103},
+	journal = {J. Chem. Inf. Model.},
+	author = {Oh, Sangmin and You, Jinmu and Kim, Jaesun and Lee, Jiho and An, Hyungmin and Han, Seungwu and Kang, Youngho},
+	year = {2026},
+}
+```

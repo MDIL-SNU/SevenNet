@@ -10,6 +10,10 @@ from sevenn.nn.scale import (
     get_resolved_shift_scale,
 )
 
+
+def acl(a, b):
+    return torch.allclose(a.float(), b.float())
+
 ################################################################################
 #                             Tests for Rescale                                #
 ################################################################################
@@ -45,7 +49,7 @@ def test_rescale_forward():
 
     # Check correctness
     expected_output = input_data * scale + shift
-    assert torch.allclose(out_data[KEY.ATOMIC_ENERGY], expected_output)
+    assert acl(out_data[KEY.ATOMIC_ENERGY], expected_output)
 
 
 def test_rescale_get_shift_and_scale():
@@ -86,8 +90,8 @@ def test_specieswise_rescale_init_list():
     module = SpeciesWiseRescale(shift=shift, scale=scale)
     assert len(module.shift) == 3
     assert len(module.scale) == 3
-    assert torch.allclose(module.shift, torch.tensor([1.0, 2.0, 3.0]))
-    assert torch.allclose(module.scale, torch.tensor([2.0, 3.0, 4.0]))
+    assert acl(module.shift, torch.tensor([1.0, 2.0, 3.0]))
+    assert acl(module.scale, torch.tensor([2.0, 3.0, 4.0]))
 
 
 def test_specieswise_rescale_forward():
@@ -123,7 +127,7 @@ def test_specieswise_rescale_forward():
     # For atom 2: scale=2, shift=1, input=3 => 3*2+1=7
     expected = torch.tensor([[3.0], [15.0], [7.0]])
 
-    assert torch.allclose(out['out'], expected)
+    assert acl(out['out'], expected)
 
 
 def test_specieswise_rescale_get_shift_scale():
@@ -212,7 +216,7 @@ def test_modalwise_rescale_forward():
     # i=2 => modal_idx=1, atom_idx=0 => shift=5.0, scale=10.0 => out=2*10+5=25
     # i=3 => modal_idx=1, atom_idx=1 => shift=15.0, scale=20.0 => out=2*20+15=55
     expected = torch.tensor([[1.0], [12.0], [25.0], [55.0]])
-    assert torch.allclose(out['out'], expected)
+    assert acl(out['out'], expected)
 
 
 def test_modalwise_rescale_get_shift_scale():

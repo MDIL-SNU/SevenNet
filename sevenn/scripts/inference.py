@@ -151,6 +151,7 @@ def inference(
     enable_cueq: bool = False,
     enable_flash: bool = False,
     enable_oeq: bool = False,
+    enable_lunatp: bool = False,
     **data_kwargs,
 ) -> None:
     """
@@ -183,6 +184,7 @@ def inference(
         enable_cueq=enable_cueq,
         enable_flash=enable_flash,
         enable_oeq=enable_oeq,
+        enable_lunatp=enable_lunatp,
     )
     cutoff = model.cutoff
 

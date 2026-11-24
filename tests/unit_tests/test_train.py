@@ -166,7 +166,7 @@ def test_processing_continue_v2_7net0(tmp_path):
     conv_denominator_ref = np.array([35.989574] * 5)
 
     with Logger().switch_file(str(tmp_path / 'log.sevenn')):
-        state_dicts, epoch = processing_continue_v2(cfg)
+        state_dicts, epoch, _ = processing_continue_v2(cfg)
     assert epoch == 601
     assert np.allclose(np.array(cfg['shift']), shift_ref)
     assert np.allclose(np.array(cfg['shift'])[0], -5.062768)

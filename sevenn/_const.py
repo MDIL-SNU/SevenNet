@@ -15,6 +15,13 @@ IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
 IMPLEMENTED_SELF_CONNECTION_TYPE = ['nequip', 'linear']
 IMPLEMENTED_INTERACTION_TYPE = ['nequip']
 
+IMPLEMENTED_MODAL_MODULE_DICT = {
+    KEY.USE_MODAL_NODE_EMBEDDING: 'onehot_to_feature_x',
+    KEY.USE_MODAL_SELF_INTER_INTRO: 'self_interaction_1',
+    KEY.USE_MODAL_SELF_INTER_OUTRO: 'self_interaction_2',
+    KEY.USE_MODAL_OUTPUT_BLOCK: 'reduce_input_to_hidden',
+}
+
 IMPLEMENTED_SHIFT = ['per_atom_energy_mean', 'elemwise_reference_energies']
 IMPLEMENTED_SCALE = ['force_rms', 'per_atom_energy_std', 'elemwise_force_rms']
 
@@ -26,6 +33,8 @@ SUPPORTING_ERROR_TYPES = [
     'Stress',
     'Stress_GPa',
     'TotalLoss',
+    'L2_modal',
+    'Modal_cos',
 ]
 
 IMPLEMENTED_MODEL = ['E3_equivariant_model']
@@ -57,6 +66,10 @@ SEVENNET_omat = f'{_prefix}/SevenNet_omat/checkpoint_sevennet_omat.pth'
 SEVENNET_omni = f'{_prefix}/SevenNet_omni/checkpoint_sevennet_omni.pth'
 SEVENNET_omni_i8 = f'{_prefix}/SevenNet_omni_i8/checkpoint_sevennet_omni_i8.pth'
 SEVENNET_omni_i12 = f'{_prefix}/SevenNet_omni_i12/checkpoint_sevennet_omni_i12.pth'
+SEVENNET_nano_4_5 = f'{_prefix}/SevenNet_nano/checkpoint_7net_nano_4.5.pth'
+SEVENNET_nano_5_0 = f'{_prefix}/SevenNet_nano/checkpoint_7net_nano_5.0.pth'
+SEVENNET_nano_5_5 = f'{_prefix}/SevenNet_nano/checkpoint_7net_nano_5.5.pth'
+SEVENNET_nano_6_0 = f'{_prefix}/SevenNet_nano/checkpoint_7net_nano_6.0.pth'
 
 _git_prefix = 'https://github.com/MDIL-SNU/SevenNet/releases/download'
 CHECKPOINT_DOWNLOAD_LINKS = {
@@ -65,6 +78,10 @@ CHECKPOINT_DOWNLOAD_LINKS = {
     SEVENNET_omni: f'{_git_prefix}/v0.12.0.cp/checkpoint_sevennet_omni.pth',
     SEVENNET_omni_i8: f'{_git_prefix}/v0.12.1.cp/checkpoint_sevennet_omni_i8.pth',
     SEVENNET_omni_i12: f'{_git_prefix}/v0.12.1.cp/checkpoint_sevennet_omni_i12.pth',
+    SEVENNET_nano_4_5: f'{_git_prefix}/v0.13.1.cp/checkpoint_7net_nano_4.5.pth',
+    SEVENNET_nano_5_0: f'{_git_prefix}/v0.13.1.cp/checkpoint_7net_nano_5.0.pth',
+    SEVENNET_nano_5_5: f'{_git_prefix}/v0.13.1.cp/checkpoint_7net_nano_5.5.pth',
+    SEVENNET_nano_6_0: f'{_git_prefix}/v0.13.1.cp/checkpoint_7net_nano_6.0.pth',
 }
 # to avoid torch script to compile torch_geometry.data
 AtomGraphDataType = Dict[str, torch.Tensor]  # But it can contain 'lmp_data'
@@ -116,6 +133,8 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.CONV_DENOMINATOR: 'avg_num_neigh',
     KEY.TRAIN_DENOMINTAOR: False,
     KEY.TRAIN_SHIFT_SCALE: False,
+    KEY.TRAIN_SHIFT: False,
+    KEY.TRAIN_SCALE: False,
     # KEY.OPTIMIZE_BY_REDUCE: True,  # deprecated, always True
     KEY.USE_BIAS_IN_LINEAR: False,
     KEY.USE_MODAL_NODE_EMBEDDING: False,
@@ -132,6 +151,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.USE_FLASH_TP: False,
     KEY.CUEQUIVARIANCE_CONFIG: {},
     KEY.USE_OEQ: False,
+    KEY.USE_LUNATP: False,
 }
 
 
@@ -158,6 +178,8 @@ MODEL_CONFIG_CONDITION = {
     ],
     KEY.CONVOLUTION_WEIGHT_NN_HIDDEN_NEURONS: list,
     KEY.TRAIN_SHIFT_SCALE: bool,
+    KEY.TRAIN_SHIFT: bool,
+    KEY.TRAIN_SCALE: bool,
     KEY.TRAIN_DENOMINTAOR: bool,
     KEY.USE_BIAS_IN_LINEAR: bool,
     KEY.USE_MODAL_NODE_EMBEDDING: bool,
@@ -180,6 +202,7 @@ MODEL_CONFIG_CONDITION = {
     KEY.USE_FLASH_TP: bool,
     KEY.CUEQUIVARIANCE_CONFIG: dict,
     KEY.USE_OEQ: bool,
+    KEY.USE_LUNATP: bool,
 }
 
 
@@ -215,6 +238,7 @@ DEFAULT_DATA_CONFIG = {
     KEY.REHEARSAL: False,
     KEY.MEM_BATCH_SIZE: 0,
     KEY.MEM_RATIO: 1,
+    KEY.LOADER_KWARGS: {},
     # KEY.DATA_SHUFFLE: True,
     # KEY.DATA_WEIGHT: False,
     # KEY.DATA_MODALITY: False,
@@ -230,7 +254,7 @@ DATA_CONFIG_CONDITION = {
     KEY.RATIO: float,
     KEY.BATCH_SIZE: int,
     KEY.PREPROCESS_NUM_CORES: int,
-    KEY.DATASET_TYPE: lambda x: x in ['graph', 'atoms'],
+    KEY.DATASET_TYPE: lambda x: x in ['graph', 'atoms', 'custom', 'aselmdb'],
     # KEY.USE_SPECIES_WISE_SHIFT_SCALE: bool,
     KEY.SHIFT: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SHIFT,
     KEY.SCALE: lambda x: type(x) in [float, list] or x in IMPLEMENTED_SCALE,
@@ -264,15 +288,20 @@ DEFAULT_TRAINING_CONFIG = {
     KEY.OPTIM_PARAM: {},
     KEY.SCHEDULER: 'exponentiallr',
     KEY.SCHEDULER_PARAM: {},
+    KEY.ENERGY_WEIGHT: 1.0,
     KEY.FORCE_WEIGHT: 0.1,
     KEY.STRESS_WEIGHT: 1e-6,  # SIMPLE-NN default
+    KEY.GRAD_CLIP: None,
+    KEY.REG_PARAM: {},
     KEY.PER_EPOCH: 5,
+    KEY.TRAIN_BY_BATCH: False,
     # KEY.USE_TESTSET: False,
     KEY.CONTINUE: {
         KEY.CHECKPOINT: False,
         KEY.RESET_OPTIMIZER: False,
         KEY.RESET_SCHEDULER: False,
         KEY.RESET_EPOCH: False,
+        KEY.RESET_DATA_PROGRESS: True,
         KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT: True,
         KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY: True,
     },
@@ -296,16 +325,21 @@ DEFAULT_TRAINING_CONFIG = {
 TRAINING_CONFIG_CONDITION = {
     KEY.RANDOM_SEED: int,
     KEY.EPOCH: int,
+    KEY.ENERGY_WEIGHT: float,
     KEY.FORCE_WEIGHT: float,
     KEY.STRESS_WEIGHT: float,
+    KEY.GRAD_CLIP: lambda x: x is None or (type(x) in [float, int] and x > 0),
+    KEY.REG_PARAM: dict,
     KEY.USE_TESTSET: None,  # Not used
     KEY.NUM_WORKERS: int,
-    KEY.PER_EPOCH: int,
+    KEY.PER_EPOCH: lambda x: type(x) in [float, int],
+    KEY.TRAIN_BY_BATCH: bool,
     KEY.CONTINUE: {
         KEY.CHECKPOINT: str,
         KEY.RESET_OPTIMIZER: bool,
         KEY.RESET_SCHEDULER: bool,
         KEY.RESET_EPOCH: bool,
+        KEY.RESET_DATA_PROGRESS: bool,
         KEY.USE_STATISTIC_VALUES_OF_CHECKPOINT: bool,
         KEY.USE_STATISTIC_VALUES_FOR_CP_MODAL_ONLY: bool,
     },

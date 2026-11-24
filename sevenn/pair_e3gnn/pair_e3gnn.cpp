@@ -204,10 +204,10 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   // dE_dr
   auto grads = torch::autograd::grad({energy_tensor}, {edge_vec_device});
-  torch::Tensor dE_dr = grads[0].to(torch::kCPU);
+  torch::Tensor dE_dr = grads[0].to(torch::kCPU).to(torch::kFloat);
 
-  eng_vdwl += energy_tensor.detach().to(torch::kCPU).item<float>();
-  torch::Tensor force_tensor = torch::zeros({nlocal, 3});
+  eng_vdwl += energy_tensor.detach().to(torch::kCPU).item<double>();
+  torch::Tensor force_tensor = torch::zeros({nlocal, 3}, FLOAT_TYPE);
 
   auto _edge_idx_src_tensor =
       edge_idx_src_tensor.repeat_interleave(3).view({nedges, 3});
@@ -237,7 +237,7 @@ void PairE3GNN::compute(int eflag, int vflag) {
         diag, s12.unsqueeze(-1), s23.unsqueeze(-1), s31.unsqueeze(-1)};
     auto voigt = torch::cat(voigt_list, 1);
 
-    torch::Tensor per_atom_stress_tensor = torch::zeros({nlocal, 6});
+    torch::Tensor per_atom_stress_tensor = torch::zeros({nlocal, 6}, FLOAT_TYPE);
     auto _edge_idx_dst6_tensor =
         edge_idx_dst_tensor.repeat_interleave(6).view({nedges, 6});
     per_atom_stress_tensor.scatter_reduce_(0, _edge_idx_dst6_tensor, voigt,
@@ -271,8 +271,8 @@ void PairE3GNN::compute(int eflag, int vflag) {
 
   if (eflag_atom) {
     torch::Tensor atomic_energy_tensor =
-        output.at("atomic_energy").toTensor().to(torch::kCPU).view({nlocal});
-    auto atomic_energy = atomic_energy_tensor.accessor<float, 1>();
+        output.at("atomic_energy").toTensor().to(torch::kCPU).to(torch::kDouble).view({nlocal});
+    auto atomic_energy = atomic_energy_tensor.accessor<double, 1>();
     for (int gi = 0; gi < nlocal; gi++) {
       const int i = graph_index_to_i[gi];
       eatom[i] += atomic_energy[gi];

@@ -1,6 +1,6 @@
 import os
 import warnings
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict
 
 import torch
 
@@ -13,15 +13,18 @@ from sevenn.scripts.convert_model_modality import (
 )
 
 
-def processing_continue_v2(
-    config: Dict[str, Any],
-) -> Tuple[List[Dict[str, torch.Tensor]], int]:  # simpler
+# TODO: check backward compatibility
+def processing_continue_v2(config: Dict[str, Any]):
     """
     Replacement of processing_continue,
     Skips model compatibility
+
+    Returns:
+        (state_dicts, epoch, data_progress or None)
     """
     log = Logger()
     continue_dct = config[KEY.CONTINUE]
+    train_by_batch = config.get(KEY.TRAIN_BY_BATCH, False)
     log.write('\nContinue found, loading checkpoint\n')
 
     checkpoint = util.load_checkpoint(continue_dct[KEY.CHECKPOINT])
@@ -79,17 +82,37 @@ def processing_continue_v2(
 
     from_epoch = checkpoint.epoch or 0
     log.writeline(f'Checkpoint previous epoch was: {from_epoch}')
-    epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
-    log.writeline(f'epoch start from {epoch}')
 
-    log.writeline('checkpoint loading successful')
+    # For batch training, don't increment epoch yet (handled by processing_by_batch)
+    if train_by_batch:
+        epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch
+    else:
+        epoch = 1 if continue_dct[KEY.RESET_EPOCH] else from_epoch + 1
+    log.writeline(f'epoch start from {epoch}')
 
     state_dicts = [
         model_state_dict_cp,
         optimizer_state_dict_cp,
         scheduler_state_dict_cp,
     ]
-    return state_dicts, epoch
+
+    # Handle data progress for batch training
+    data_progress = {}
+    if train_by_batch:
+        data_progress = {
+            KEY.TOTAL_DATA_NUM: -1,
+            KEY.CURRENT_DATA_IDX: 0,
+            KEY.NUMPY_RNG_STATE: None,
+        }
+        if hasattr(checkpoint, 'data_progress') and checkpoint.data_progress:
+            if not continue_dct[KEY.RESET_DATA_PROGRESS]:
+                data_progress.update(checkpoint.data_progress)
+            log.writeline(f'epoch start from {epoch}')
+            log.writeline(f'data index start from {data_progress[KEY.CURRENT_DATA_IDX]}')  # noqa: E501
+
+        log.writeline('checkpoint loading success')
+
+    return state_dicts, epoch, data_progress or {}
 
 
 def check_config_compatible(config: Dict[str, Any], config_cp: Dict[str, Any]):
@@ -125,7 +148,12 @@ def check_config_compatible(config: Dict[str, Any], config_cp: Dict[str, Any]):
     except KeyError:
         return
 
-    TRAINABLE_CONFIGS = [KEY.TRAIN_DENOMINTAOR, KEY.TRAIN_SHIFT_SCALE]
+    TRAINABLE_CONFIGS = [
+        KEY.TRAIN_DENOMINTAOR,
+        KEY.TRAIN_SHIFT_SCALE,
+        KEY.TRAIN_SHIFT,
+        KEY.TRAIN_SCALE,
+    ]
     if (
         any((not cntdct[KEY.RESET_SCHEDULER], not cntdct[KEY.RESET_OPTIMIZER]))
         and all(config[k] == config_cp[k] for k in TRAINABLE_CONFIGS) is False

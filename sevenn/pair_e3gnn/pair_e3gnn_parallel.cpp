@@ -456,10 +456,10 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     std::cout << world_rank << " Used/GraphSize: " << Mused / graph_size << "\n"
               << std::endl;
   }
-  eng_vdwl += energy_tensor.item<float>(); // accumulate energy
+  eng_vdwl += energy_tensor.detach().to(torch::kCPU).item<double>();
 
-  dE_dr = dE_dr.to(torch::kCPU);
-  torch::Tensor force_tensor = torch::zeros({graph_indexer, 3});
+  dE_dr = dE_dr.to(torch::kCPU).to(torch::kFloat);
+  torch::Tensor force_tensor = torch::zeros({graph_indexer, 3}, FLOAT_TYPE);
 
   auto _edge_idx_src_tensor =
       edge_idx_src_tensor.repeat_interleave(3).view({nedges, 3});
@@ -488,7 +488,8 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
         diag, s12.unsqueeze(-1), s23.unsqueeze(-1), s31.unsqueeze(-1)};
     auto voigt = torch::cat(voigt_list, 1);
 
-    torch::Tensor per_atom_stress_tensor = torch::zeros({graph_indexer, 6});
+    torch::Tensor per_atom_stress_tensor =
+        torch::zeros({graph_indexer, 6}, FLOAT_TYPE);
     auto _edge_idx_dst6_tensor =
         edge_idx_dst_tensor.repeat_interleave(6).view({nedges, 6});
     per_atom_stress_tensor.scatter_reduce_(0, _edge_idx_dst6_tensor, voigt,
@@ -507,8 +508,8 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
   if (eflag_atom) {
     torch::Tensor atomic_energy_tensor =
-        output.at("atomic_energy").toTensor().cpu().view({nlocal});
-    auto atomic_energy = atomic_energy_tensor.accessor<float, 1>();
+        output.at("atomic_energy").toTensor().cpu().to(torch::kDouble).view({nlocal});
+    auto atomic_energy = atomic_energy_tensor.accessor<double, 1>();
     for (int graph_idx = 0; graph_idx < nlocal; graph_idx++) {
       int i = graph_index_to_i[graph_idx];
       eatom[i] += atomic_energy[graph_idx];

@@ -18,6 +18,7 @@ from sevenn.calculator import SevenNetCalculator
 from sevenn.main.sevenn_get_model import main as mliap_cli
 from sevenn.nn.cue_helper import is_cue_available
 from sevenn.nn.flash_helper import is_flash_available
+from sevenn.nn.lunatp_helper import is_lunatp_available
 from sevenn.nn.oeq_helper import is_oeq_available
 from sevenn.util import pretrained_name_to_path
 
@@ -117,6 +118,28 @@ def mliap_oeq_potential_path(tmp_path_factory):
     ]
     with mock.patch('sys.argv', argv):
         mliap_cli()
+    return pt_path
+
+
+@pytest.fixture(scope='module')
+def mliap_lunatp_potential_path(tmp_path_factory):
+    tmp = tmp_path_factory.mktemp('mliap_lunatp_pt')
+    pt_path = str((tmp / 'lunatp.pt').resolve())
+
+    argv = [
+        'sevenn_get_model',
+        cp_7net0_path, '-o', pt_path,
+        '--enable_lunatp',
+        '--use_mliap'
+    ]
+    with mock.patch('sys.argv', argv):
+        mliap_cli()
+
+    # compile LunaTP kernels in this process: LAMMPS loads them from the
+    # kernel cache, a compile inside LAMMPS exceeds the subprocess timeout
+    atoms = get_system('bulk')
+    atoms.calc = SevenNetCalculator(cp_7net0_path, enable_lunatp=True)
+    atoms.get_forces()
     return pt_path
 
 
@@ -396,6 +419,28 @@ def test_mliap_oeq(
     assert_atoms(atoms, atoms_lmp, atol=1e-5)
 
 
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize('system', ['bulk', 'surface'])
+def test_mliap_lunatp(
+    system,
+    mliap_lunatp_potential_path,
+    ref_7net0_calculator,
+    lammps_cmd,
+    tmp_path
+):
+    atoms = get_system(system)
+    atoms_lmp = mliap_lammps_run(
+        atoms=atoms,
+        pt_path=mliap_lunatp_potential_path,
+        wd=tmp_path,
+        test_name='mliap lunatp',
+        lammps_cmd=lammps_cmd,
+        timeout=120,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lmp, atol=1e-5)
+
+
 def _get_disconnected_system(name):
     """Build Atoms object for a disconnected test structure."""
     if name.startswith('single_o'):
@@ -477,6 +522,28 @@ def test_mliap_oeq_disconnected(
         wd=tmp_path,
         test_name=f'mliap oeq disconnected {system}',
         lammps_cmd=lammps_cmd,
+    )
+    atoms.calc = ref_7net0_calculator
+    assert_atoms(atoms, atoms_lmp, atol=1e-5)
+
+
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize('system', _disconnected_systems)
+def test_mliap_lunatp_disconnected(
+    system,
+    mliap_lunatp_potential_path,
+    ref_7net0_calculator,
+    lammps_cmd,
+    tmp_path,
+):
+    atoms = _get_disconnected_system(system)
+    atoms_lmp = mliap_lammps_run(
+        atoms=atoms,
+        pt_path=mliap_lunatp_potential_path,
+        wd=tmp_path,
+        test_name=f'mliap lunatp disconnected {system}',
+        lammps_cmd=lammps_cmd,
+        timeout=120,
     )
     atoms.calc = ref_7net0_calculator
     assert_atoms(atoms, atoms_lmp, atol=1e-5)

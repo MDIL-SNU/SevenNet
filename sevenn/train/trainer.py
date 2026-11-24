@@ -38,10 +38,11 @@ class Trainer:
         self,
         model: torch.nn.Module,
         loss_functions: List[Tuple[LossDefinition, float]],
-        optimizer_cls,
+        optimizer_cls=None,
         optimizer_args: Optional[Dict[str, Any]] = None,
         scheduler_cls=None,
         scheduler_args: Optional[Dict[str, Any]] = None,
+        grad_clip_norm_th: Optional[float] = None,
         device: Union[torch.device, str] = 'auto',
         distributed: bool = False,
         distributed_backend: str = 'nccl',
@@ -80,6 +81,7 @@ class Trainer:
         else:
             self.scheduler = None
         self.loss_functions = loss_functions
+        self.grad_clip_norm_th = grad_clip_norm_th
 
     @staticmethod
     def from_config(
@@ -88,13 +90,14 @@ class Trainer:
     ) -> 'Trainer':
         trainer = Trainer(
             model,
-            loss_functions=get_loss_functions_from_config(config),
+            loss_functions=get_loss_functions_from_config(config, model),
             optimizer_cls=optim_dict[config.get(KEY.OPTIMIZER, 'adam').lower()],
             optimizer_args=config.get(KEY.OPTIM_PARAM, {}),
             scheduler_cls=scheduler_dict[
                 config.get(KEY.SCHEDULER, 'exponentiallr').lower()
             ],
             scheduler_args=config.get(KEY.SCHEDULER_PARAM, {}),
+            grad_clip_norm_th=config.get(KEY.GRAD_CLIP, None),
             device=config.get(KEY.DEVICE, 'auto'),
             distributed=config.get(KEY.IS_DDP, False),
             distributed_backend=config.get(KEY.DDP_BACKEND, 'nccl'),
@@ -120,7 +123,7 @@ class Trainer:
         config = cp.config
         optimizer_cls = optim_dict[config[KEY.OPTIMIZER].lower()]
         scheduler_cls = scheduler_dict[config[KEY.SCHEDULER].lower()]
-        loss_functions = get_loss_functions_from_config(config)
+        loss_functions = get_loss_functions_from_config(config, model)
 
         return (
             {
@@ -146,7 +149,7 @@ class Trainer:
         """
         Run single epoch with given dataloader
         Args:
-            loader: iterable yieds AtomGraphData
+            loader: iterable yields AtomGraphData
             is_train: if true, do backward() and optimizer step
             error_recorder: ErrorRecorder instance to compute errors (RMSEm MAE, ..)
             wrap_tqdm: wrap given dataloader with tqdm for progress bar
@@ -159,6 +162,7 @@ class Trainer:
         if wrap_tqdm:
             total_len = wrap_tqdm if isinstance(wrap_tqdm, int) else None
             loader = tqdm(loader, total=total_len)
+        _model = self.model if not self.distributed else self.model.module
 
         for _, batch in enumerate(loader):
             if is_train:
@@ -166,18 +170,63 @@ class Trainer:
             batch = batch.to(self.device, non_blocking=True)
             output = self.model(batch)
             if error_recorder is not None:
-                error_recorder.update(output)
+                error_recorder.update(output, model=_model)
             if is_train:
                 total_loss = torch.tensor([0.0], device=self.device)
                 for loss_def, w in self.loss_functions:
-                    indv_loss = loss_def.get_loss(output, self.model)
+                    indv_loss = loss_def.get_loss(output, _model)
                     if indv_loss is not None:
-                        total_loss += (indv_loss * w)
+                        total_loss += indv_loss * w
                 total_loss.backward()
-                self.optimizer.step()
+                if self.grad_clip_norm_th is not None:
+                    torch.nn.utils.clip_grad_norm_(
+                        self.model.parameters(),
+                        max_norm=self.grad_clip_norm_th,
+                    )
+                self.optimizer.step()  # DDP syncs weight here
 
         if self.distributed and error_recorder is not None:
             self.recorder_all_reduce(error_recorder)
+
+    def train_one_batch(
+        self,
+        batch,
+        error_recorder: Optional[ErrorRecorder] = None,
+    ) -> None:
+        """
+        Train on a single batch. Used for batch-level training loop.
+
+        Args:
+            batch: AtomGraphData batch
+            error_recorder: ErrorRecorder instance to compute errors
+        """
+        self.model.train()
+        self.optimizer.zero_grad()
+        batch = batch.to(self.device, non_blocking=True)
+        output = self.model(batch)
+        _model = self.model if not self.distributed else self.model.module
+
+        if error_recorder is not None:
+            error_recorder.update(output, model=_model)
+
+        total_loss = torch.tensor([0.0], device=self.device)
+        for loss_def, w in self.loss_functions:
+            total_loss += loss_def.get_loss(output, _model) * w
+
+        total_loss.backward()
+
+        # Grad clipping
+        if self.grad_clip_norm_th is not None:
+            norm = torch.nn.utils.clip_grad_norm_(
+                self.model.parameters(),
+                max_norm=self.grad_clip_norm_th,
+            )
+            if norm > self.grad_clip_norm_th and self.rank == 0:
+                print(
+                    f'[Clipping] Grad norm {norm:.2f} into {self.grad_clip_norm_th}',
+                    flush=True,
+                )
+        self.optimizer.step()
 
     def scheduler_step(self, metric: Optional[float] = None) -> None:
         if self.scheduler is None:
@@ -201,6 +250,7 @@ class Trainer:
             model_state_dct = self.model.module.state_dict()
         else:
             model_state_dct = self.model.state_dict()
+
         return {
             'model_state_dict': model_state_dct,
             'optimizer_state_dict': self.optimizer.state_dict(),

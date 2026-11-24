@@ -5,15 +5,11 @@ import torch
 import torch.nn as nn
 from e3nn.o3 import Irreps, Linear
 
+import sevenn._const as CONST
 import sevenn._keys as KEY
 from sevenn.model_build import build_E3_equivariant_model
 
-modal_module_dict = {
-    KEY.USE_MODAL_NODE_EMBEDDING: 'onehot_to_feature_x',
-    KEY.USE_MODAL_SELF_INTER_INTRO: 'self_interaction_1',
-    KEY.USE_MODAL_SELF_INTER_OUTRO: 'self_interaction_2',
-    KEY.USE_MODAL_OUTPUT_BLOCK: 'reduce_input_to_hidden',
-}
+modal_module_dict = CONST.IMPLEMENTED_MODAL_MODULE_DICT
 
 
 def _get_scalar_index(irreps: Irreps) -> List[int]:

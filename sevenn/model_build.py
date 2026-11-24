@@ -18,6 +18,7 @@ from .nn.edge_embedding import (
     SphericalEncoding,
     XPLORCutoff,
 )
+from .nn.equivariant_gate import EquivariantGate
 from .nn.force_output import ForceStressOutputFromEdge
 from .nn.interaction_blocks import NequIP_interaction_block
 from .nn.linear import AtomReduce, FCN_e3nn, IrrepsLinear
@@ -144,7 +145,15 @@ def init_shift_scale(
 ) -> Union[Rescale, SpeciesWiseRescale, ModalWiseRescale]:
     # for mm, ex, shift: modal_idx -> shifts
     shift_scale = []
-    train_shift_scale = config[KEY.TRAIN_SHIFT_SCALE]
+    train_shift = config.get(KEY.TRAIN_SHIFT, False)
+    train_scale = config.get(KEY.TRAIN_SCALE, False)
+
+    # Legacy: train_shift_scale overrides both
+    # TODO: log this as legacy warning
+    train_shift_scale = config.get(KEY.TRAIN_SHIFT_SCALE, False)
+    if train_shift_scale:
+        train_shift = True
+        train_scale = True
     type_map = config[KEY.TYPE_MAP]
 
     # in case of modal, shift or scale has more dims [][]
@@ -159,6 +168,7 @@ def init_shift_scale(
         shift_scale.append(s)
     shift, scale = shift_scale
 
+    ss_kwargs = {'train_shift': train_shift, 'train_scale': train_scale}
     rescale_module = None
     if config.get(KEY.USE_MODALITY, False):
         rescale_module = ModalWiseRescale.from_mappers(  # type: ignore
@@ -168,13 +178,13 @@ def init_shift_scale(
             config[KEY.USE_MODAL_WISE_SCALE],
             type_map=type_map,
             modal_map=config[KEY.MODAL_MAP],
-            train_shift_scale=train_shift_scale,
+            **ss_kwargs,
         )
     elif all([isinstance(s, float) for s in shift_scale]):
-        rescale_module = Rescale(shift, scale, train_shift_scale=train_shift_scale)
+        rescale_module = Rescale(shift, scale, **ss_kwargs)
     elif any([isinstance(s, list) for s in shift_scale]):
         rescale_module = SpeciesWiseRescale.from_mappers(  # type: ignore
-            shift, scale, type_map=type_map, train_shift_scale=train_shift_scale
+            shift, scale, type_map=type_map, **ss_kwargs
         )
     else:
         raise ValueError('shift, scale should be list of float or float')
@@ -351,11 +361,34 @@ def patch_oeq(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     return layers
 
 
+def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
+    import sevenn.nn.lunatp_helper as lunatp_helper
+
+    if not config.get(KEY.USE_LUNATP, False):
+        return layers
+
+    # raises ImportError if LunaTP is not available, no fallback to e3nn
+    updates = {}
+    for k, module in layers.items():
+        if isinstance(module, IrrepsConvolution):
+            updates[k] = lunatp_helper.patch_convolution(module)
+        elif isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
+            updates[k] = lunatp_helper.patch_linear(module)
+        elif isinstance(module, SelfConnectionIntro):
+            updates[k] = lunatp_helper.patch_fully_connected(module)
+        elif isinstance(module, EquivariantGate):
+            updates[k] = lunatp_helper.patch_gate(module)
+
+    layers.update(updates)
+    return layers
+
+
 def patch_modules(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     layers = patch_modality(layers, config)
     layers = patch_cue(layers, config)
     layers = patch_flash_tp(layers, config)
     layers = patch_oeq(layers, config)
+    layers = patch_lunatp(layers, config)
     return layers
 
 

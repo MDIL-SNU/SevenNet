@@ -1,5 +1,5 @@
 import warnings
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
 import torch
 
@@ -57,9 +57,7 @@ class EWCLoss(LossDefinition):
                     f'{tuple(self.opt_params_dict[name].shape)}'
                 )
 
-        model_params = {
-            n: p for n, p in model.named_parameters() if p.requires_grad
-        }
+        model_params = {n: p for n, p in model.named_parameters() if p.requires_grad}
         if len(model_params) == 0:
             raise ValueError('EWC requires the model to have trainable parameters')
 
@@ -92,9 +90,7 @@ class EWCLoss(LossDefinition):
         self.to(next(iter(model_params.values())).device)
         self._checked = True
 
-    def get_loss(
-        self, batch_data: Dict[str, Any], model: Optional[Callable] = None
-    ):
+    def get_loss(self, batch_data: Dict[str, Any], model: Optional[Callable] = None):
         _ = batch_data
         if model is None:
             raise ValueError('EWCLoss requires the model to compute the penalty')
@@ -113,10 +109,7 @@ class EWCLoss(LossDefinition):
         return ewc_loss
 
 
-def append_ewc_loss(
-    loss_functions: List[Tuple[LossDefinition, float]],
-    config: Dict[str, Any],
-) -> None:
+def get_ewc_loss(config: Dict[str, Any]) -> Optional[Tuple[LossDefinition, float]]:
     """reEWC: append the EWC penalty as an extra loss term when a precomputed
     Fisher information and reference parameters are given under continue."""
     cont = config.get(KEY.CONTINUE, {})
@@ -124,7 +117,7 @@ def append_ewc_loss(
     opt_path = cont.get(KEY.OPT_PARAMS, False)
     ewc_lambda = cont.get(KEY.EWC_LAMBDA, 0)
     if not (fisher_path or opt_path or ewc_lambda):
-        return
+        return None
     if not (fisher_path and opt_path):
         raise ValueError(
             'EWC requires both continue.fisher_information and '
@@ -138,4 +131,4 @@ def append_ewc_loss(
         raise ValueError('EWC requires continue.ewc_lambda > 0')
     fisher = torch.load(fisher_path, map_location='cpu', weights_only=True)
     opt = torch.load(opt_path, map_location='cpu', weights_only=True)
-    loss_functions.append((EWCLoss(fisher, opt), ewc_lambda / 2.0))
+    return (EWCLoss(fisher, opt), ewc_lambda / 2.0)

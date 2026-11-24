@@ -86,6 +86,12 @@ def add_args(parser):
         action='store_true',
     )
     ag.add_argument(
+        '-lunatp',
+        '--enable_lunatp',
+        help='use LunaTP to accelerate inference',
+        action='store_true',
+    )
+    ag.add_argument(
         '--kwargs',
         nargs=argparse.REMAINDER,
         help='will be passed to reader, or can be used to specify EFS key',
@@ -143,6 +149,11 @@ def run(args):
         if not is_oeq_available():
             raise ImportError('OpenEquivariance not installed or no GPU found.')
 
+    if args.enable_lunatp:
+        from sevenn.nn.lunatp_helper import is_lunatp_available
+        if not is_lunatp_available():
+            raise ImportError('LunaTP not installed or no GPU found.')
+
     inference(
         cp,
         targets,
@@ -156,6 +167,7 @@ def run(args):
         enable_cueq=args.enable_cueq,
         enable_flash=args.enable_flash,
         enable_oeq=args.enable_oeq,
+        enable_lunatp=args.enable_lunatp,
         **fmt_kwargs,
     )
 
