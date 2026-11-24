@@ -32,7 +32,7 @@ def atoms_mol():
 
 @pytest.fixture(scope='module')
 def sevennet_0_cal():
-    return SevenNetCalculator('7net-0_11July2024')
+    return SevenNetCalculator('7net-0_11July2024', radial_table=False)
 
 
 @pytest.fixture(scope='module')
