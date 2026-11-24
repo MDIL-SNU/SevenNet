@@ -14,6 +14,17 @@ from torch import nn
 import sevenn._keys as KEY
 
 
+def _copy_cpu_double(module: nn.Module) -> nn.Module:
+    # Older PyTorch cannot pickle e3nn's scripted functions during deepcopy.
+    script_functions = {
+        id(value): value
+        for child in module.modules()
+        for value in vars(child).values()
+        if isinstance(value, torch.jit.ScriptFunction)
+    }
+    return copy.deepcopy(module, script_functions).to('cpu', torch.float64)
+
+
 class _Hermite(torch.autograd.Function):
     """w[e] = sum_k coef[i_e, k] t_e^k, first derivative only (forces)"""
 
@@ -271,14 +282,14 @@ def tabulate_radial(
     if getattr(emb, 'distance_transform', None) is not None:
         raise ValueError('radial input is not a function of r only')
     ref = next(model.parameters())
-    emb64 = copy.deepcopy(emb).to('cpu', torch.float64)
+    emb64 = _copy_cpu_double(emb)
     changed = []
     for name, conv in _convolutions(model):
         if only is not None and name not in only:
             continue
         if conv.key_weight_input != KEY.EDGE_EMBEDDING:
             raise ValueError(f'{name}: radial input {conv.key_weight_input}')
-        mlp64 = copy.deepcopy(conv.weight_nn).to('cpu', torch.float64)
+        mlp64 = _copy_cpu_double(conv.weight_nn)
         scale = 1.0
         if not getattr(conv, 'denominator_folded', True):
             scale = 1.0 / float(conv.denominator.detach().double().item())

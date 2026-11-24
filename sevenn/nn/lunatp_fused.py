@@ -9,7 +9,6 @@ convolution kernels (HPC-AI-Team/LunaEquivariance, BSD-3-Clause).
 """
 from __future__ import annotations
 
-import copy
 import dataclasses
 import re
 from typing import Sequence
@@ -23,7 +22,7 @@ from sevenn._const import AtomGraphDataType
 from .inference_specialization import prune_self_connection
 from .linear import IrrepsLinear
 from .lunatp_helper import LunaTPSharedGraphConvolution, prepare_graph
-from .radial_table import FoldedRadialMLP, _convolutions
+from .radial_table import FoldedRadialMLP, _convolutions, _copy_cpu_double
 
 # Shorter source segments expose more parallelism on small graphs.
 SMALL_GRAPH_EDGES = 4096
@@ -395,7 +394,7 @@ def _harmonics_polynomials(sph: nn.Module, lmax: int):
     [(component, coefficient, (a, b, c))]: sph(u) of a unit vector u as
     polynomials sum coefficient x^a y^b z^c, fitted (fp64) to the module
     """
-    sph = copy.deepcopy(sph).to('cpu', torch.float64)
+    sph = _copy_cpu_double(sph)
     g = torch.Generator().manual_seed(0)
     u = torch.randn(256, 3, dtype=torch.float64, generator=g)
     u = u / u.norm(dim=1, keepdim=True)
@@ -658,7 +657,7 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
         self.knots = int(knots)
         ref = self.denominator
         folded = FoldedRadialMLP(
-            copy.deepcopy(self.weight_nn).to('cpu', torch.float64),
+            _copy_cpu_double(self.weight_nn),
             1.0 / float(ref.detach().double()),
         )
         self.denominator_folded = True
@@ -833,7 +832,7 @@ def weight_table(conv, emb, r_min: float, cutoff: float, knots: int):
     radial MLP that has the MLP's value and r-derivative at both knots. conv
     after _setup (folded fp64 weights)
     """
-    emb64 = copy.deepcopy(emb).to('cpu', torch.float64)
+    emb64 = _copy_cpu_double(emb)
     f = conv._folded64
 
     def radial(r):
@@ -1201,7 +1200,7 @@ def collapse_first_layer(
     for name in names[names.index('onehot_to_feature_x') + 1:at - 1]:
         if getattr(model._modules[name], 'key_output', None) == conv.key_x:
             return []
-    reference = copy.deepcopy(reference).to('cpu', torch.float64)
+    reference = _copy_cpu_double(reference)
     reference.set_is_batch_data(False)
     reference.eval()
     if modal is not None:
