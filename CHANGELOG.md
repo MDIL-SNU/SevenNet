@@ -15,7 +15,7 @@ All notable changes to this project will be documented in this file.
 
 ### Fixed
 - `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
-- `sevenn get_model` (serial and parallel) wrote `chemical_symbols_to_index` in the key order of the type map, but LAMMPS (`pair_style e3gnn`, `e3gnn/parallel`) reads a species' index from its position in that list. A checkpoint whose type map keys are stored out of index order (e.g. after a YAML round trip) was deployed with the wrong species and no error. The list is now written in index order; models deployed from such checkpoints must be deployed again.
+- Fix incorrect LAMMPS species mapping when checkpoint type map keys are out of index order. Redeploy affected models.
 
 
 ## [0.13.0]
