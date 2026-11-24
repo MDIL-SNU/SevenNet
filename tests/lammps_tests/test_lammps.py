@@ -371,11 +371,13 @@ def serial_lammps_run(atoms, potential, wd, test_name, lammps_cmd):
 
 
 def parallel_lammps_run(
-    atoms, potential, wd, test_name, ncores, lammps_cmd, mpirun_cmd
+    atoms, potential, wd, test_name, ncores, lammps_cmd, mpirun_cmd,
+    atomic_stress=False,
 ):
     command = f'{mpirun_cmd} -np {ncores} {lammps_cmd}'
+    script = lmp_stress_script_path if atomic_stress else lmp_script_path
     return _run_lammps(
-        atoms, 'e3gnn/parallel', potential, wd, command, test_name, lmp_script_path
+        atoms, 'e3gnn/parallel', potential, wd, command, test_name, script
     )
 
 
@@ -560,6 +562,7 @@ def test_parallel(
     ncores,
     parallel_potential_path,
     ref_calculator,
+    ref_stress_calculator,
     lammps_cmd,
     mpirun_cmd,
     tmp_path,
@@ -571,6 +574,7 @@ def test_parallel(
     else:
         assert False
     atoms = get_system(system, replicate=rep)
+    atomic_stress = system == 'bulk' and ncores == 2
     atoms_lammps = parallel_lammps_run(
         atoms=atoms,
         potential=parallel_potential_path,
@@ -579,9 +583,10 @@ def test_parallel(
         lammps_cmd=lammps_cmd,
         mpirun_cmd=mpirun_cmd,
         ncores=ncores,
+        atomic_stress=atomic_stress,
     )
-    atoms.calc = ref_calculator
-    assert_atoms(atoms, atoms_lammps)
+    atoms.calc = ref_stress_calculator if atomic_stress else ref_calculator
+    assert_atoms(atoms, atoms_lammps, check_atomic_stress=atomic_stress)
 
 
 @pytest.mark.parametrize(

@@ -114,6 +114,9 @@ CUDA rank, or `pair_style e3gnn/parallel disable_cuda_graph` to run eagerly.
 Replay is enabled by default on one CUDA rank. MPI ghost exchange runs between
 the captured forward and backward calculations.
 
+Both pair styles expose SevenNet per-atom virials through
+`compute stress/atom NULL pair`.
+
 The number of message-passing layers corresponds to the number of `*.pt` files in the `./deployed_parallel` directory.
 
 It is expected that there is one GPU per MPI process. If the number of available GPUs is less than the number of MPI processes, the simulation may run inefficiently.

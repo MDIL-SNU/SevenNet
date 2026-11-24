@@ -181,10 +181,6 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     ev_setup(eflag, vflag);
   else
     evflag = vflag_fdotr = 0;
-  if (vflag_atom) {
-    error->all(FLERR, "atomic stress is not supported\n");
-  }
-
   if (atom->tag_consecutive() == 0) {
     error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
   }
@@ -500,12 +496,20 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
         torch::neg(torch::sum(per_atom_stress_tensor, 0));
     auto virial_stress = virial_stress_tensor.accessor<float, 1>();
 
-    virial[0] += virial_stress[0];
-    virial[1] += virial_stress[1];
-    virial[2] += virial_stress[2];
-    virial[3] += virial_stress[3];
-    virial[4] += virial_stress[5];
-    virial[5] += virial_stress[4];
+    const int order[6] = {0, 1, 2, 3, 5, 4};
+    if (vflag_global) {
+      for (int k = 0; k < 6; ++k)
+        virial[k] += virial_stress[order[k]];
+    }
+    if (vflag_atom) {
+      auto per_atom_stress = per_atom_stress_tensor.accessor<float, 2>();
+      // LAMMPS sends ghost virials back to their owners in compute stress/atom.
+      for (int gi = 0; gi < graph_indexer; ++gi) {
+        const int i = graph_index_to_i[gi];
+        for (int k = 0; k < 6; ++k)
+          vatom[i][k] -= per_atom_stress[gi][order[k]];
+      }
+    }
   }
 
   if (eflag_atom) {
