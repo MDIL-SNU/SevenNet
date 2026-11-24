@@ -44,6 +44,7 @@ extern void pair_e3gnn_oeq_register_autograd();
 
 PairE3GNN::PairE3GNN(LAMMPS *lmp) : Pair(lmp) {
   // constructor
+  no_virial_fdotr_compute = 1;
   const char *print_flag = std::getenv("SEVENN_PRINT_INFO");
   if (print_flag)
     print_info = true;

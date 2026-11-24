@@ -20,6 +20,7 @@
 #include <ATen/ops/from_blob.h>
 #include <c10/core/Scalar.h>
 #include <c10/core/TensorOptions.h>
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <numeric>
@@ -86,6 +87,7 @@ DeviceBuffManager::~DeviceBuffManager() {
 
 PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
   // constructor
+  no_virial_fdotr_compute = 1;
 
   const char *print_flag = std::getenv("SEVENN_PRINT_INFO");
   const char *print_both_flag = std::getenv("SEVENN_PRINT_BOTH_INFO");
@@ -611,6 +613,13 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   // to initialize buffer size for communication
   comm_forward = comm_size;
   comm_reverse = comm_size;
+  // Hybrid styles set their communication sizes before the model is loaded.
+  if (force->pair != this) {
+    force->pair->comm_forward =
+        std::max(force->pair->comm_forward, comm_forward);
+    force->pair->comm_reverse =
+        std::max(force->pair->comm_reverse, comm_reverse);
+  }
 
   cutoff_square = cutoff * cutoff;
 
