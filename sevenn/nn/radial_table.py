@@ -1,4 +1,4 @@
-"""Frozen radial networks for ML-IAP inference.
+"""Frozen radial networks for inference.
 
 For radial weights that depend only on edge length, cubic Hermite tables
 give values and their first derivatives. The folded MLP keeps the exact
@@ -12,6 +12,7 @@ import torch
 from torch import nn
 
 import sevenn._keys as KEY
+from sevenn._const import DEFAULT_RADIAL_TABLE_KNOTS, DEFAULT_RADIAL_TABLE_R_MIN
 
 
 def _copy_cpu_double(module: nn.Module) -> nn.Module:
@@ -207,86 +208,63 @@ def _convolutions(model):
             yield name, getattr(conv, 'conv', conv)  # MLIAPWrappedConvolution
 
 
-def fold_radial(model: nn.Module) -> list[str]:
-    """
-    In place, for every convolution whose radial MLP is an e3nn
-    FullyConnectedNet: FoldedRadialMLP with 1 / denominator folded in.
-    Inference only (frozen weights). Returns the names changed.
-    """
-    from e3nn.nn import FullyConnectedNet
-
-    changed = []
-    for name, conv in _convolutions(model):
-        if not isinstance(conv.weight_nn, FullyConnectedNet):
-            continue
-        if not hasattr(conv, 'denominator_folded') or conv.denominator_folded:
-            continue
-        scale = 1.0 / float(conv.denominator.detach().double().item())
-        conv.weight_nn = FoldedRadialMLP(conv.weight_nn, scale)
-        conv.denominator_folded = True
-        changed.append(name)
-    return changed
+def supports_radial_table(model: nn.Module) -> bool:
+    emb = model._modules.get('edge_embedding')
+    return (
+        emb is not None
+        and getattr(emb, 'distance_transform', None) is None
+        and all(
+            getattr(conv, 'key_weight_input', None) == KEY.EDGE_EMBEDDING
+            for _, conv in _convolutions(model)
+        )
+    )
 
 
-def _table(radial, r0: float, r1: float, num_knots: int, dtype):
-    """Hermite coefficients (K - 1, 4, W) of radial: (K,) fp64 -> (K, W)"""
+def _cubics(v: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
+    """Hermite coefficients (K - 1, W, 4) with slopes in interval t."""
+    dif = v[1:] - v[:-1]
+    a2 = 3.0 * dif - 2.0 * d[:-1] - d[1:]
+    a3 = -2.0 * dif + d[:-1] + d[1:]
+    return torch.stack([v[:-1], d[:-1], a2, a3], 2)
+
+
+def _table(radial, r0: float, r1: float, num_knots: int):
     r = torch.linspace(r0, r1, num_knots, dtype=torch.float64)
     h = (r1 - r0) / (num_knots - 1)
     v, d = torch.autograd.functional.jvp(radial, r, torch.ones_like(r))
-    d = d * h
-    v0, v1, d0, d1 = v[:-1], v[1:], d[:-1], d[1:]
-    coef = torch.stack(
-        [v0, d0, 3 * (v1 - v0) - 2 * d0 - d1, 2 * (v0 - v1) + d0 + d1], 1
-    )
-    return coef.to(dtype), h
-
-
-def optimize_radial(
-    model: nn.Module, max_table_width: int = 1024, kernel: bool = True,
-    num_knots: int = 2048,
-) -> list[str]:
-    """
-    Per convolution, in place: a table (tabulate_radial) if the radial input
-    is the edge embedding and the convolution has at most max_table_width
-    weights (a table reads 4 values per weight and edge, the last matmul of
-    the MLP is a 64-wide GEMM: tables win for narrow layers, the MLP for wide
-    ones), else the folded MLP (fold_radial). Layers of other radial modules
-    are left as they are. Returns '<name>:table' / '<name>:fold'.
-    """
-    emb = model._modules['edge_embedding']
-    plain = getattr(emb, 'distance_transform', None) is None
-    narrow = [
-        name for name, conv in _convolutions(model)
-        if plain and conv.key_weight_input == KEY.EDGE_EMBEDDING
-        and hasattr(conv.weight_nn, '__len__')
-        and conv.weight_nn[-1].h_out <= max_table_width
-    ]
-    done = [f'{n}:table' for n in tabulate_radial(
-        model, num_knots, kernel=kernel, only=narrow
-    )] if narrow else []
-    return done + [f'{n}:fold' for n in fold_radial(model)]
+    return _cubics(v, d * h), h
 
 
 def tabulate_radial(
-    model: nn.Module, num_knots: int = 2048, r_min: float = 0.25,
-    kernel: bool = False, only=None,
+    model: nn.Module,
+    num_knots: int = DEFAULT_RADIAL_TABLE_KNOTS,
+    r_min: float = DEFAULT_RADIAL_TABLE_R_MIN,
+    kernel: bool = False,
+    *,
+    exclude=(),
 ) -> list[str]:
+    """Replace each radial MLP with a table on [r_min, cutoff].
+
+    Shorter distances extrapolate using the first cubic. The tables provide
+    first derivatives for forces. Set kernel for the FP32 CuPy CUDA path.
     """
-    Replaces, in place, the radial MLP of every convolution of model by a
-    RadialTable on [r_min, cutoff] (shorter edges: the first interval's cubic,
-    extrapolated). kernel: one cupy CUDA kernel per pass instead of torch ops
-    (fp32, CUDA). only: names of the convolutions to change (default all).
-    Returns the names of the convolutions changed.
-    """
+    convs = [
+        (name, conv) for name, conv in _convolutions(model) if name not in exclude
+    ]
+    if not convs:
+        return []
     emb = model._modules['edge_embedding']
     if getattr(emb, 'distance_transform', None) is not None:
         raise ValueError('radial input is not a function of r only')
+    cutoff = float(model.cutoff)
+    if num_knots < 2:
+        raise ValueError('radial_knots must be at least 2')
+    if not 0 < r_min < cutoff:
+        raise ValueError(f'radial_r_min must be between 0 and the cutoff ({cutoff})')
     ref = next(model.parameters())
     emb64 = _copy_cpu_double(emb)
     changed = []
-    for name, conv in _convolutions(model):
-        if only is not None and name not in only:
-            continue
+    for name, conv in convs:
         if conv.key_weight_input != KEY.EDGE_EMBEDDING:
             raise ValueError(f'{name}: radial input {conv.key_weight_input}')
         mlp64 = _copy_cpu_double(conv.weight_nn)
@@ -300,8 +278,9 @@ def tabulate_radial(
                 emb64.basis_function(r) * emb64.cutoff_function(r).unsqueeze(-1)
             )
 
-        coef, h = _table(radial, r_min, float(model.cutoff), num_knots, ref.dtype)
-        conv.weight_nn = RadialTable(coef.to(ref.device), r_min, h, kernel)
+        coef, h = _table(radial, r_min, cutoff, num_knots)
+        coef = coef.transpose(1, 2).to(device=ref.device, dtype=ref.dtype)
+        conv.weight_nn = RadialTable(coef.contiguous(), r_min, h, kernel)
         conv.key_weight_input = KEY.EDGE_LENGTH
         changed.append(name)
     return changed

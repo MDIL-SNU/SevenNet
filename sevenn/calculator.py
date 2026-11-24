@@ -15,6 +15,7 @@ from ase.calculators.mixing import SumCalculator
 
 import sevenn._keys as KEY
 import sevenn.util as util
+from sevenn._const import DEFAULT_RADIAL_TABLE_KNOTS, DEFAULT_RADIAL_TABLE_R_MIN
 from sevenn.atom_graph_data import AtomGraphData
 from sevenn.nn.sequential import AtomGraphSequential
 from sevenn.train.dataload import unlabeled_atoms_to_graph
@@ -29,14 +30,7 @@ _OUTPUT_KEYS = (
 
 
 def _sort_edges(data):
-    """
-    Puts the edges in one order: by destination, then source (stable). The
-    neighbor list orders the same edges of a periodic cell differently after
-    small moves; in this order an unchanged topology gives an equal edge index
-    (CUDA graph key, eager topology reuse), and the edges are sorted by
-    destination as LunaTP needs. Same function as the neighbor-list order, fp32
-    summation order only.
-    """
+    """Stably sort by destination and source to recognize unchanged topology."""
     ei = data[KEY.EDGE_IDX]
     num_atoms = len(data[KEY.ATOMIC_NUMBERS])
     order = torch.argsort(ei[0] * num_atoms + ei[1], stable=True)
@@ -46,11 +40,7 @@ def _sort_edges(data):
 
 
 def _to_device_packed(data, device):
-    """
-    Moves the tensors of data to device with one pinned buffer and one
-    non-blocking host-to-device copy per dtype (the tensors become views of
-    it): two copies instead of one per tensor, same values.
-    """
+    """Transfer CPU tensors in one non-blocking copy per dtype."""
     groups: Dict[torch.dtype, list] = {}
     for k, v in data.items():
         if isinstance(v, torch.Tensor):
@@ -66,30 +56,20 @@ def _to_device_packed(data, device):
 
 
 def _segments_per_source(edge_index, num_atoms: int, segment: int):
-    """
-    (LunaTP source segments of each source: ceil(degree / segment), >= 1,
-    source degrees). numpy: torch CPU ops on these small arrays cost ~0.1 ms
-    each, numpy ~2 us
-    """
+    """Return the segment count (at least one) and degree of each source."""
     deg = np.bincount(edge_index[1].numpy(), minlength=num_atoms)
     return np.maximum((deg + segment - 1) // segment, 1), deg
 
 
 def _num_segments(edge_index, num_atoms: int, segment: int) -> int:
-    """number of LunaTP source segments of an edge index"""
+    """Count LunaTP source segments in the edge index."""
     return int(_segments_per_source(edge_index, num_atoms, segment)[0].sum())
 
 
 def _pad_edges(tensors, num_edges: int, length: float, segment: Optional[int]):
-    """
-    tensors (host) with edges added up to num_edges: self-loops i -> i with
-    the edge vector (length, 0, 0), length = the cutoff. There the cutoff
-    function and its derivative vanish, so every edge term of the model is 0:
-    a padded edge adds 0 to messages and coordination, and dE/dr_ij of it is
-    exactly 0 (checked once per calculator, SevenNetCalculator._pads_neutral).
-    With segment (LunaTP), a padded edge goes to a source with room below its
-    next multiple of segment edges: the number of source segments stays.
-    The edges are put in one order again (_sort_edges).
+    """Pad with cutoff-length self-loops, keeping LunaTP segment counts fixed.
+
+    The calculator checks that the added edges preserve energy and forces.
     """
     edge_index, edge_vec = tensors[KEY.EDGE_IDX], tensors[KEY.EDGE_VEC]
     num_atoms = tensors[KEY.ATOMIC_NUMBERS].shape[0]
@@ -112,7 +92,7 @@ def _pad_edges(tensors, num_edges: int, length: float, segment: Optional[int]):
 
 
 def _with_topology(data, topology):
-    """data with a prepared LunaTP topology for the next model call, if any"""
+    """Attach any prepared LunaTP topology for the next model call."""
     if topology is not None:
         from sevenn.nn.lunatp_helper import PREPARED_GRAPH_KEY
 
@@ -121,12 +101,7 @@ def _with_topology(data, topology):
 
 
 def _tensor_pairs(a, b, out: list) -> bool:
-    """
-    Walks two objects of one structure (tensors in tuples, lists, dicts and
-    dataclasses) and appends (tensor of a, tensor of b) to out for every tensor
-    leaf. False if a tensor shape or dtype, the structure, or a non-tensor leaf
-    (e.g. a node count) differs.
-    """
+    """Collect matching tensor leaves and reject incompatible graph metadata."""
     if isinstance(a, torch.Tensor):
         if not isinstance(b, torch.Tensor):
             return False
@@ -153,8 +128,7 @@ def _tensor_pairs(a, b, out: list) -> bool:
 
 
 def _pack_outputs(output):
-    """The calculator outputs as one flat tensor (one device-to-host copy)
-    and their (key, shape, dtype)"""
+    """Pack outputs into one tensor and return the metadata to unpack them."""
     keys = [k for k in _OUTPUT_KEYS if k in output]
     tensors = [output[k].detach() for k in keys]
     flat = torch.cat([t.reshape(-1) for t in tensors])
@@ -204,8 +178,11 @@ class SevenNetCalculator(Calculator):
         enable_lunatp: bool = False,
         compute_atomic_virial: bool = False,
         sevennet_config: Optional[Dict] = None,  # Not used in logic, just meta info
-        fused: bool = False,
-        cuda_graph: bool = False,
+        fused: Optional[bool] = None,
+        cuda_graph: Optional[bool] = None,
+        radial_table: Optional[bool] = None,
+        radial_knots: int = DEFAULT_RADIAL_TABLE_KNOTS,
+        radial_r_min: float = DEFAULT_RADIAL_TABLE_R_MIN,
         **kwargs,
     ) -> None:
         """Initialize SevenNetCalculator.
@@ -214,8 +191,7 @@ class SevenNetCalculator(Calculator):
         ----------
         model: str | Path | AtomGraphSequential, default='7net-0'
             Name of pretrained models (7net-omni, 7net-nano-5.5, 7net-mf-ompa,
-            7net-omat, 7net-l3i5, 7net-0) or path to the checkpoint, deployed model
-            or the model itself
+            7net-omat, 7net-l3i5, 7net-0), a checkpoint path, or a model instance.
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -226,9 +202,8 @@ class SevenNetCalculator(Calculator):
             for 7net-omni, use one of 'mpa', 'omat24', 'matpes_pbe', 'matpes_r2scan',
             'mp_r2scan', 'oc20', 'oc22', 'odac23', 'omol25_low', 'omol25_high',
             'spice', 'qcml', 'pet_mad'
-            case insensitive
         enable_cueq: bool, default=False
-            if True, use cuEquivariant to accelerate inference.
+            Use cuEquivariance to accelerate inference.
         enable_flash: bool, default=False
             if True, use FlashTP to accelerate inference.
         enable_oeq: bool, default=False
@@ -239,11 +214,17 @@ class SevenNetCalculator(Calculator):
             Not used, but can be used to carry meta information of this calculator
         compute_atomic_virial: bool, default=False
             If True, request per-atom virial output (`stresses`) at runtime.
-        fused: bool, default=False
-            Use frozen-model kernels for supported LunaTP checkpoints on CUDA.
-        cuda_graph: bool, default=False
-            Capture and replay repeated CUDA calls with compatible atom and
-            edge shapes. Run eagerly when capture is unavailable.
+        fused: bool | None, default=None
+            Use fused kernels for supported LunaTP checkpoints on CUDA.
+            Enabled by default for those checkpoints.
+        cuda_graph: bool | None, default=None
+            Replay compatible CUDA calls by default. Set False to run eagerly.
+        radial_table: bool | None, default=None
+            Use Hermite interpolation by default for compatible checkpoints.
+        radial_knots: int, default=2048
+            Number of Hermite knots when interpolation is enabled.
+        radial_r_min: float, default=0.10
+            First Hermite knot in angstroms.
         """
         super().__init__(**kwargs)
         self.sevennet_config = None
@@ -365,37 +346,51 @@ class SevenNetCalculator(Calculator):
         self.model.to(self.device)
         self.model.eval()
 
+        from sevenn.nn.radial_table import (
+            supports_radial_table,
+            tabulate_radial,
+        )
+
         self.fused = []
         self._fused_species = set()
-        if fused or os.getenv('SEVENNET_ENABLE_FUSED') == '1':
-            if not (
-                enable_lunatp and file_type == 'checkpoint'
-                and isinstance(model, str) and self.device.type == 'cuda'
-            ):
+        supports_fused = (
+            enable_lunatp and file_type == 'checkpoint'
+            and isinstance(model, str) and self.device.type == 'cuda'
+        )
+        if fused is None:
+            fused = os.getenv(
+                'SEVENNET_ENABLE_FUSED', '1' if supports_fused else '0'
+            ) == '1'
+        use_radial_table = radial_table
+        if use_radial_table is None:
+            use_radial_table = (
+                file_type == 'checkpoint' and isinstance(model, str)
+                and supports_radial_table(self.model)
+            )
+        if use_radial_table and radial_knots < 2:
+            raise ValueError('radial_knots must be at least 2')
+        if fused:
+            if not supports_fused:
                 warnings.warn(
                     'fused needs enable_lunatp, a checkpoint and CUDA: ignored'
                 )
             else:
-                from sevenn.nn.inference_specialization import fold_modal
-                from sevenn.nn.lunatp_fused import (
-                    collapse_first_layer,
-                    fuse_radial_conv,
-                )
+                from sevenn.nn.lunatp_fused import prepare_fused_inference
 
-                self.fused = fuse_radial_conv(self.model, knots=2048)
-                if self.fused:
-                    self.model.requires_grad_(False)
-                    if self.modal is not None:
-                        self.fused += fold_modal(self.model, self.modal)
-                    reference = cp.build_model()
-                    reference.delete_module_by_key('force_output')
-                    self.fused += collapse_first_layer(
-                        self.model, reference, self.modal
-                    )
-                else:
+                self.fused = prepare_fused_inference(
+                    self.model, cp.build_model, self.modal,
+                    radial_knots if use_radial_table else 0, radial_r_min,
+                )
+                if not self.fused and os.getenv('SEVENNET_ENABLE_FUSED') == '1':
                     warnings.warn('fused: no convolution of this model is covered')
 
-        self.cuda_graph = cuda_graph and self.device.type == 'cuda'
+        if use_radial_table:
+            tabulate_radial(
+                self.model, radial_knots, radial_r_min, exclude=self.fused,
+            )
+
+        self._fused_exact = bool(self.fused) and not use_radial_table
+        self.cuda_graph = cuda_graph is not False and self.device.type == 'cuda'
         self._graphs: OrderedDict = OrderedDict()  # topology -> entry or None
         self._graphs_seen: OrderedDict = OrderedDict()  # topologies seen once
         self._capture_stream = None  # one stream: cuBLAS keeps a workspace each
@@ -436,7 +431,7 @@ class SevenNetCalculator(Calculator):
         )
 
     def _fused_for(self, atoms: Atoms) -> None:
-        """the fused kernels' species tables cover the species of atoms"""
+        """Extend the species tables when the structure includes new species."""
         numbers = set(atoms.get_atomic_numbers().tolist())
         if numbers <= self._fused_species:
             return
@@ -627,14 +622,7 @@ class SevenNetCalculator(Calculator):
         )
 
     def _capture(self, data, tensors, floats):
-        """
-        Capture the model call on static device inputs: the float inputs are
-        views of one device buffer (filled by one copy per replay), the integer
-        inputs are device copies kept with the graph, and the LunaTP topology
-        of the static edge index is prepared here and passed to every model
-        call of the capture. Returns the cache entry, or None with a warning if
-        the capture fails.
-        """
+        """Capture with static inputs and return its entry, or None on failure."""
         flat_in = torch.cat([tensors[k].reshape(-1) for k in floats])
         host_in = flat_in.pin_memory()
         dev_in = flat_in.to(self.device)
@@ -667,6 +655,11 @@ class SevenNetCalculator(Calculator):
         current = torch.cuda.current_stream(self.device)
         side = self._capture_stream
         side.wait_stream(current)
+        if self._fused_exact:
+            from sevenn.nn.lunatp_fused import set_unique_cap
+
+            num_edges = static[KEY.EDGE_IDX].shape[1]
+            set_unique_cap(self.model, num_edges + num_edges % 2)
         try:
             with torch.cuda.stream(side):
                 run()  # warm-up: lazy inits and caches of the static inputs
@@ -682,6 +675,9 @@ class SevenNetCalculator(Calculator):
                 'this topology runs eagerly'
             )
             return None
+        finally:
+            if self._fused_exact:
+                set_unique_cap(self.model, None)
         current.wait_stream(side)
         host_out = torch.empty_like(dev_out, device='cpu').pin_memory()
         return {
@@ -692,7 +688,7 @@ class SevenNetCalculator(Calculator):
         }
 
     def _lunatp_topology(self, edge_index, num_atoms: int):
-        """(edge order, LunaTP graph) of a device edge index, None without LunaTP"""
+        """Prepare the edge order and graph for a nonempty LunaTP topology."""
         from sevenn.nn.lunatp_helper import LunaTPConvolution, prepare_graph
 
         if self._has_lunatp is None:
@@ -764,6 +760,11 @@ class SevenNetD3Calculator(SumCalculator):
         functional_name: str = 'pbe',
         vdw_cutoff: float = 9000,  # au^2, 0.52917726 angstrom = 1 au
         cn_cutoff: float = 1600,  # au^2, 0.52917726 angstrom = 1 au
+        fused: Optional[bool] = None,
+        cuda_graph: Optional[bool] = None,
+        radial_table: Optional[bool] = None,
+        radial_knots: int = DEFAULT_RADIAL_TABLE_KNOTS,
+        radial_r_min: float = DEFAULT_RADIAL_TABLE_R_MIN,
         **kwargs,  # pass extra kwargs to both calculators
     ) -> None:
         """Initialize SevenNetD3Calculator. CUDA required.
@@ -772,8 +773,7 @@ class SevenNetD3Calculator(SumCalculator):
         ----------
         model: str | Path | AtomGraphSequential
             Name of pretrained models (7net-omni, 7net-nano-5.5, 7net-mf-ompa,
-            7net-omat, 7net-l3i5, 7net-0) or path to the checkpoint, deployed model
-            or the model itself
+            7net-omat, 7net-l3i5, 7net-0), a checkpoint path, or a model instance.
         file_type: str, default='checkpoint'
             one of 'checkpoint' | 'model_instance'
         device: str | torch.device, default='auto'
@@ -802,6 +802,8 @@ class SevenNetD3Calculator(SumCalculator):
             vdw cutoff of D3 calculator in au^2
         cn_cutoff: float, default=1600
             cn cutoff of D3 calculator in au^2
+        fused, cuda_graph, radial_table, radial_knots, radial_r_min
+            Acceleration options passed to SevenNetCalculator.
         """
         if kwargs.get('compute_atomic_virial', False):
             warnings.warn(
@@ -828,6 +830,11 @@ class SevenNetD3Calculator(SumCalculator):
             enable_oeq=enable_oeq,
             enable_lunatp=enable_lunatp,
             sevennet_config=sevennet_config,
+            fused=fused,
+            cuda_graph=cuda_graph,
+            radial_table=radial_table,
+            radial_knots=radial_knots,
+            radial_r_min=radial_r_min,
             **kwargs,
         )
 

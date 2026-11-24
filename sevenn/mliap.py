@@ -18,9 +18,21 @@ except ModuleNotFoundError:
     )
 
 import sevenn._keys as KEY
-from sevenn._const import AtomGraphDataType
+from sevenn._const import (
+    DEFAULT_RADIAL_TABLE_KNOTS,
+    DEFAULT_RADIAL_TABLE_R_MIN,
+    AtomGraphDataType,
+)
 from sevenn.nn._ghost_exchange import MLIAPGhostExchangeModule
+from sevenn.nn.radial_table import supports_radial_table, tabulate_radial
 from sevenn.util import load_checkpoint, pretrained_name_to_path
+
+
+def _runtime_flag(value, env, default=False):
+    override = os.getenv(env)
+    if override in ('0', '1'):
+        return override == '1'
+    return default if value is None else value
 
 
 class MLIAPWrappedConvolution(nn.Module):
@@ -81,16 +93,10 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         model_path: str,
         **kwargs: Any,
     ):
-        """
-        kwargs:
-            element_types: list[str], e.g., ['H','O']  # MUST match pair_coeff order
-            modal: Optional[str] = None
-            use_cueq: bool = False
-            use_flash: bool = False
-            use_cuda_graph: bool = False  # CUDA Graph replay on one rank
-            use_radial_table: bool = False  # tabulate or fold radial MLPs
-            use_fused: bool = False  # fused LunaTP kernels for replay
-            fused_knots: int = 2048  # 0 evaluates weights by distinct length
+        """Load a checkpoint for ML-IAP inference.
+
+        On one rank, compatible models use radial interpolation. CUDA also
+        enables replay and, for LunaTP, fused kernels by default.
         """
 
         super().__init__()
@@ -118,11 +124,15 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.use_oeq = kwargs.get('use_oeq', False)
         self.use_lunatp = kwargs.get('use_lunatp', False)
         self.modal = kwargs.get('modal', None)
-        self.use_cuda_graph = kwargs.get('use_cuda_graph', False)
-        self.use_radial_table = kwargs.get('use_radial_table', False)
-        self.use_fused = kwargs.get('use_fused', False)
-        self.fused_knots = int(kwargs.get('fused_knots', 2048))
-        self.fused_r_min = float(kwargs.get('fused_r_min', 0.25))
+        self.use_cuda_graph = kwargs.get('use_cuda_graph')
+        self.use_radial_table = kwargs.get('use_radial_table')
+        self.use_fused = kwargs.get('use_fused')
+        self.radial_knots = kwargs.get('radial_knots')
+        if self.radial_knots is None:
+            self.radial_knots = DEFAULT_RADIAL_TABLE_KNOTS
+        self.radial_r_min = kwargs.get('radial_r_min')
+        if self.radial_r_min is None:
+            self.radial_r_min = DEFAULT_RADIAL_TABLE_R_MIN
         self.graph = None  # lazy init
 
         # extract configs
@@ -159,12 +169,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
     """
 
     def _memory_options(self) -> None:
-        """
-        SEVENN_CUDA_MEMORY_FRACTION=f: this process may allocate at most that
-        fraction of the GPU memory through torch (an out-of-memory error
-        instead of exhausting a shared GPU / unified memory).
-        SEVENN_MLIAP_MEMORY_REPORT=1: peak torch GPU memory printed at exit.
-        """
+        """Set the per-process Torch memory limit and optional peak report."""
         if self.device.type != 'cuda' or getattr(self, '_memory_set', False):
             return
         self._memory_set = True
@@ -184,7 +189,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
 
             atexit.register(report)
 
-    def _build_model(self, ghost_exchange: bool):
+    def _build_model(self, ghost_exchange: bool, fused: bool = False):
         self._memory_options()
         model = self.cp.build_model(
             enable_cueq=self.use_cueq,
@@ -208,55 +213,43 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         model.delete_module_by_key('force_output')  # to autograd edge forces
         model.to(self.device)
         model.eval()
-        if (
-            not ghost_exchange
-            and self.use_lunatp
-            and (
-                getattr(self, 'use_fused', False)
-                or os.getenv('SEVENN_MLIAP_FUSED') == '1'
-            )
-            and os.getenv('SEVENN_MLIAP_FUSED') != '0'
-        ):
-            from sevenn.nn.inference_specialization import fold_modal
-            from sevenn.nn.lunatp_fused import fuse_radial_conv
-
-            model.requires_grad_(False)
+        radial_table = getattr(self, 'use_radial_table', False)
+        knots = getattr(self, 'radial_knots', None)
+        r_min = getattr(self, 'radial_r_min', DEFAULT_RADIAL_TABLE_R_MIN)
+        if knots is None:  # ML-IAP potentials saved before the options split
             knots = int(
                 os.getenv(
-                    'SEVENN_MLIAP_FUSED_KNOTS', getattr(self, 'fused_knots', 2048)
+                    'SEVENN_MLIAP_FUSED_KNOTS',
+                    getattr(self, 'fused_knots', DEFAULT_RADIAL_TABLE_KNOTS),
                 )
             )
-            r_min = float(getattr(self, 'fused_r_min', 0.25))
-            names = fuse_radial_conv(model, knots=knots, r_min=r_min)
-            how = f' (weight table, {knots} knots from {r_min} A)' if knots else ''
-            print(f'[INFO] fused radial + conv{how}: {" ".join(names)}', flush=True)
-            if self.modal is not None and model.modal_map:
-                names = fold_modal(model, self.modal)
-                print(f'[INFO] modal folded: {" ".join(names)}', flush=True)
-            if knots and os.getenv('SEVENN_MLIAP_FUSED_FIRST', '1') != '0':
-                from sevenn.nn.lunatp_fused import collapse_first_layer
+            r_min = float(getattr(self, 'fused_r_min', DEFAULT_RADIAL_TABLE_R_MIN))
+            radial_table = radial_table or bool(fused and knots)
+            knots = knots or DEFAULT_RADIAL_TABLE_KNOTS
+        radial_table = _runtime_flag(
+            radial_table, 'SEVENN_MLIAP_RADIAL_TABLE',
+            default=self._single_rank and supports_radial_table(model),
+        )
+        if radial_table and knots < 2:
+            raise ValueError('radial_knots must be at least 2')
+        names = []
+        if fused:
+            from sevenn.nn.lunatp_fused import prepare_fused_inference
 
-                reference = self.cp.build_model()
-                reference.delete_module_by_key('force_output')
-                names = collapse_first_layer(model, reference, self.modal)
-                if names:
-                    print(
-                        f'[INFO] first layer as radial tables: {" ".join(names)}',
-                        flush=True,
-                    )
-            model.prune_species = True  # by MLIAPCudaGraph, to the species seen
-        if (
-            getattr(self, 'use_radial_table', False)
-            or os.getenv('SEVENN_MLIAP_RADIAL_TABLE') == '1'
-        ) and os.getenv('SEVENN_MLIAP_RADIAL_TABLE') != '0':
-            from sevenn.nn.radial_table import optimize_radial
-
-            names = optimize_radial(
-                model,
-                int(os.getenv('SEVENN_RADIAL_TABLE_MAX_WIDTH', '1024')),
-                kernel=self.device.type == 'cuda',
+            names = prepare_fused_inference(
+                model, self.cp.build_model, self.modal,
+                knots if radial_table else 0, r_min,
+                first=os.getenv('SEVENN_MLIAP_FUSED_FIRST', '1') != '0',
             )
-            print(f'[INFO] radial MLPs: {" ".join(names)}', flush=True)
+            model.prune_species = bool(names)
+            if names:
+                print(f'[INFO] fused LunaTP: {" ".join(names)}', flush=True)
+        if radial_table:
+            tabulate_radial(
+                model, knots, r_min,
+                kernel=self.device.type == 'cuda', exclude=names,
+            )
+            print(f'[INFO] radial table: {knots} knots from {r_min} A', flush=True)
         return model
 
     def _ensure_model_initialized(self):
@@ -266,48 +259,50 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}, oeq={self.use_oeq}, lunatp={self.use_lunatp}', flush=True)  # noqa: E501
         self.model = self._build_model(ghost_exchange=True)
 
-    def _ensure_graph_initialized(self):
-        if self.graph is not None:
-            return
+    def _build_serial_runtime(self, replay: bool, fused: bool):
         from sevenn.nn._mliap_cuda_graph import MLIAPCudaGraph
 
-        print('[INFO] SevenNet ML-IAP CUDA graph (one rank)', flush=True)
-        print(f'[INFO] cueq={self.use_cueq}, flashTP={self.use_flash}, oeq={self.use_oeq}, lunatp={self.use_lunatp}', flush=True)  # noqa: E501
-        # the plain serial model: ghosts are folded to their owners
-        model = self._build_model(ghost_exchange=False)
-        model.requires_grad_(False)  # the force backward skips dE/dW
-        self.graph = MLIAPCudaGraph(
-            model, self.device, self.cutoff, modal=self.modal
+        model = self._build_model(ghost_exchange=False, fused=fused)
+        model.requires_grad_(False)
+        runtime = MLIAPCudaGraph(
+            model, self.device, self.cutoff, modal=self.modal, replay=replay,
+        )
+        mode = 'eager' if runtime.eager_fold else 'CUDA Graph replay'
+        print(f'[INFO] SevenNet ML-IAP {mode} on one rank', flush=True)
+        return runtime
+
+    @staticmethod
+    def _is_single_rank() -> bool:
+        # Every rank must take the same ghost exchange path.
+        return all(
+            os.getenv(key, '1') == '1'
+            for key in (
+                'OMPI_COMM_WORLD_SIZE', 'PMI_SIZE', 'MV2_COMM_WORLD_SIZE',
+                'PMIX_UNIV_SIZE', 'SLURM_STEP_NUM_TASKS',
+            )
         )
 
-    # -------- unified entrypoint --------
     def compute_forces(self, lmp_data):
-        # getattr: potential files saved before use_cuda_graph existed
-        use_graph = (
-            getattr(self, 'use_cuda_graph', False)
-            or os.getenv('SEVENN_MLIAP_CUDA_GRAPH') == '1'
-        ) and self.device.type == 'cuda'
-        if use_graph and os.getenv('SEVENN_MLIAP_CUDA_GRAPH') != '0':
-            if getattr(self, '_graph_single_rank', None) is None:
-                # An extra owner exchange on some ranks would leave MPI peers
-                # waiting in the model's feature exchange.
-                self._graph_single_rank = all(
-                    int(os.getenv(key, '1')) == 1
-                    for key in (
-                        'OMPI_COMM_WORLD_SIZE', 'PMI_SIZE', 'MV2_COMM_WORLD_SIZE'
-                    )
-                )
-                if not self._graph_single_rank:
-                    print(
-                        '[INFO] SevenNet ML-IAP CUDA graph requires one rank',
-                        flush=True,
-                    )
-            if self._graph_single_rank:
-                if getattr(self, 'graph', None) is None:
-                    self.graph = None
-                    self._ensure_graph_initialized()
-                if self.graph.compute(lmp_data):
-                    return
+        if not hasattr(self, '_cuda_single_rank'):
+            elems = lmp_data.elems
+            if elems is None:
+                return
+            self.device = torch.as_tensor(elems).device
+            self._single_rank = self._is_single_rank()
+            self._cuda_single_rank = self._single_rank and self.device.type == 'cuda'
+            replay = _runtime_flag(
+                getattr(self, 'use_cuda_graph', False), 'SEVENN_MLIAP_CUDA_GRAPH',
+                default=True,
+            )
+            fused = self.use_lunatp and _runtime_flag(
+                getattr(self, 'use_fused', False), 'SEVENN_MLIAP_FUSED',
+                default=True,
+            )
+            if self._cuda_single_rank and (replay or fused):
+                self.graph = self._build_serial_runtime(replay, fused)
+        if (runtime := getattr(self, 'graph', None)) is not None:
+            if runtime.compute(lmp_data):
+                return
         self._ensure_model_initialized()  # lazy init
         assert self.model, 'Model must be initialized'
         if lmp_data.nlocal == 0:
@@ -377,8 +372,11 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         lmp_eatoms = torch.as_tensor(lmp_data.eatoms)
         lmp_eatoms.copy_(pred_atomic_energies)
         lmp_data.energy = pred_total_energy.detach()
-        # upcasting edge_forces required for update_pair_forces_gpu
-        lmp_data.update_pair_forces_gpu(edge_forces.to(torch.float64))
+        edge_forces = edge_forces.to(torch.float64)
+        if self.device.type == 'cuda':
+            lmp_data.update_pair_forces_gpu(edge_forces)
+        else:
+            lmp_data.update_pair_forces(edge_forces.detach().numpy())
 
     def compute_descriptors(self, lmp_data):
         pass

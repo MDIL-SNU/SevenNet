@@ -17,12 +17,18 @@ import torch
 from torch import nn
 
 import sevenn._keys as KEY
-from sevenn._const import AtomGraphDataType
+from sevenn._const import DEFAULT_RADIAL_TABLE_R_MIN, AtomGraphDataType
 
 from .inference_specialization import prune_self_connection
 from .linear import IrrepsLinear
 from .lunatp_helper import LunaTPSharedGraphConvolution, prepare_graph
-from .radial_table import FoldedRadialMLP, _convolutions, _copy_cpu_double
+from .radial_table import (
+    FoldedRadialMLP,
+    _convolutions,
+    _copy_cpu_double,
+    _cubics,
+    _table,
+)
 
 # Shorter source segments expose more parallelism on small graphs.
 SMALL_GRAPH_EDGES = 4096
@@ -75,10 +81,9 @@ _KNOT = 'const int hk_ = {k}; const float ht_ = __int_as_float({t});'
 
 
 def forward_source(op, hermite: bool = False, specs=None, tune=None) -> str:
-    """
-    specs: the paths to compute (default all: op.generated_specs). tune:
-    arguments of LunaTP's generator other than its defaults here (see
-    tune_kernels), e.g. {'resident_threads': 512}
+    """Generate forward CUDA code for the selected TP paths.
+
+    Pass tune to override LunaTP generator options used here.
     """
     from LunaEquivariance.lunatp.uvu_conv.kernels import forward as F
 
@@ -87,7 +92,7 @@ def forward_source(op, hermite: bool = False, specs=None, tune=None) -> str:
     args = {
         'merge_channel_chunks': (uniform or op.in2_dim >= 25),
         'resident_threads': 1024,
-        'task_warps': 16,  # LunaTP's choice is 8 for 7net-omni: 5 to 8 % slower
+        'task_warps': 16,
     }
     args.update(tune or {})
     src = F.make_uvu_conv_fwd_source(
@@ -147,12 +152,9 @@ def forward_source(op, hermite: bool = False, specs=None, tune=None) -> str:
 
 
 def backward_source(op, hermite: bool = False, specs=None, tune=None):
-    """
-    (source, segmented, partials, vectorized, zero_x, zero_y). hermite: the
-    partial sums are h * dE/dr, grad_weight is not read. specs: the paths to
-    compute (default all). tune: {'min_blocks': n or {group: n}}: resident
-    warps per SM of the group kernels (LunaTP: 8, 12 or 16 by its estimate of
-    the live registers)
+    """Generate backward CUDA code and return it with the LunaTP kernel flags.
+
+    In Hermite mode the partial sums are h * dE/dr for knot spacing h.
     """
     from types import SimpleNamespace
 
@@ -480,13 +482,7 @@ class _EdgeGeometry(torch.autograd.Function):
 
 
 class FusedEdgeGeometry(nn.Module):
-    """
-    EdgeEmbedding of a model whose convolutions all take their radial weights
-    from a table in r (fuse_radial_conv, knots > 0): the edge length and the
-    spherical harmonics by one kernel, their backward to the edge vector by
-    another (instead of ~60 + ~120 elementwise kernels). The radial basis,
-    which no module reads, is not computed.
-    """
+    """Compute edge lengths and harmonics together when only they are read."""
 
     def __init__(self, emb: nn.Module) -> None:
         super().__init__()
@@ -627,12 +623,10 @@ class _FusedConv(torch.autograd.Function):
 
 
 class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
-    """
-    see the module docstring. unique_cap: None = rows for exactly the distinct
-    edge lengths of the call (torch.unique: a host sync); an int = that many
-    rows whatever the edges (fixed shapes: CUDA graph), and
-    data[KEY_N_UNIQUE] holds the number needed (results are wrong if it is
-    larger: the caller must check it).
+    """Fuse radial weight lookup and radial gradients into the TP kernels.
+
+    In exact mode, unique_cap fixes the number of distance rows for CUDA
+    replay. The caller must check that data[KEY_N_UNIQUE] fits this capacity.
     """
 
     unique_cap: int | None = None
@@ -647,7 +641,7 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
     # weight_table): no per-call weight array and GEMM.
     # The table is what the kernels read, mostly from the GPU cache.
     knots: int = 0
-    table_r0: float = 0.25
+    table_r0: float = DEFAULT_RADIAL_TABLE_R_MIN
     table_inv_h: float = 0.0
     # indices of the paths (LunaTP specs) computed; None: all. See live_paths
     paths: list[int] | None = None
@@ -826,31 +820,14 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
 
 
 def weight_table(conv, emb, r_min: float, cutoff: float, knots: int):
-    """
-    (table (K - 1, W, 4) fp64, h): on each of the intervals of K knots on
-    [r_min, cutoff], the cubic in t = (r - r_k) / h of every weight of conv's
-    radial MLP that has the MLP's value and r-derivative at both knots. conv
-    after _setup (folded fp64 weights)
-    """
+    """Build FP64 Hermite coefficients for the folded radial MLP."""
     emb64 = _copy_cpu_double(emb)
-    f = conv._folded64
 
     def radial(r):
         x = emb64.basis_function(r) * emb64.cutoff_function(r).unsqueeze(-1)
-        return conv._acts[1](conv._acts[0](x @ f.w0) @ f.w1) @ f.w2
+        return conv._folded64(x)
 
-    r = torch.linspace(r_min, cutoff, knots, dtype=torch.float64)
-    h = (cutoff - r_min) / (knots - 1)
-    v, dv = torch.autograd.functional.jvp(radial, r, torch.ones_like(r))
-    return _cubics(v.detach(), dv.detach() * h), h
-
-
-def _cubics(v: torch.Tensor, d: torch.Tensor) -> torch.Tensor:
-    """(K - 1, W, 4): the Hermite cubics in t of values v, slopes d (K, W)"""
-    dif = v[1:] - v[:-1]
-    a2 = 3.0 * dif - 2.0 * d[:-1] - d[1:]
-    a3 = -2.0 * dif + d[:-1] + d[1:]
-    return torch.stack([v[:-1], d[:-1], a2, a3], 2)
+    return _table(radial, r_min, cutoff, knots)
 
 
 _FIRST_SOURCE = r"""
@@ -1005,27 +982,11 @@ class _FirstLayer(torch.autograd.Function):
         return None, gy, gr * mod.conv.table_inv_h, None, None, None
 
 
-class _PassThrough(nn.Module):
-    """a module whose work a neighbor does (FusedFirstLayer)"""
-
-    def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        return data
-
-
 class FusedFirstLayer(nn.Module):
-    """
-    The first interaction of a model whose node features start as a function
-    of the species alone: self-interaction linear, convolution of a scalar
-    input, and the linear after it are
+    """Combine the first scalar-input convolution and its two linear layers.
 
-        x_i[l, v, m] = sum_j G[species_j, l, v](r_ij) Y_lm(r_ij) + bias
-
-    (the convolution of scalars has no Clebsch-Gordan sum, and the linear only
-    mixes channels, which folds into the radial functions). G is a table in r
-    per species (the same knots as the convolution's weight table), taken in
-    fp64 from the reference modules by set_species: 384 functions per species
-    in 7net-omni instead of 512 weights times a feature gather and a linear,
-    and the backward has no feature gradient.
+    Each message is G[species_j, l, v](r_ij) * Y_lm(unit_r_ij).
+    The radial table G folds in the scalar species features and channel mixing.
     """
 
     def __init__(self, conv, reference, names) -> None:
@@ -1046,7 +1007,7 @@ class FusedFirstLayer(nn.Module):
                 )
             c += mul
             at += mul * ir.dim
-        self.out_dim, self.num_functions = at, c
+        self.out_dim = at
         self._irreps_out = irreps_out
         dev = conv.rad_table.device
         self.register_buffer('meta', torch.tensor(meta, dtype=torch.int32).to(dev))
@@ -1168,14 +1129,10 @@ class FusedFirstLayer(nn.Module):
 def collapse_first_layer(
     model: nn.Module, reference: nn.Module, modal: str | None = None
 ) -> list[str]:
-    """
-    In place, after fuse_radial_conv(knots > 0): the linear before the first
-    convolution, that convolution and the linear after it become one
-    FusedFirstLayer, if the features entering are scalars made from the
-    species alone. reference: the same model with e3nn modules (any device /
-    dtype; a fp64 cpu copy is kept), with force_output deleted. The species
-    must be given by prune_self_connection (or FusedFirstLayer.set_species)
-    before a call. Returns the names of the modules replaced.
+    """Fuse the first convolution with its adjacent linears in a tabulated model.
+
+    Pass the corresponding e3nn model as reference with force_output removed.
+    Call specialize_fused_species to build its species tables before inference.
     """
     names = list(model._modules)
     conv_names = [n for n in names if n.endswith('_convolution')]
@@ -1183,16 +1140,17 @@ def collapse_first_layer(
         return []
     at = names.index(conv_names[0])
     trio = names[at - 1:at + 2]
+    if len(trio) != 3:
+        return []
     conv = model._modules[conv_names[0]]
     lin1, lin2 = model._modules[trio[0]], model._modules[trio[2]]
     if (
-        at < 1 or len(trio) != 3
-        or type(conv) is not LunaTPFusedRadialConvolution or not conv.knots
+        type(conv) is not LunaTPFusedRadialConvolution or not conv.knots
         or not isinstance(lin1, IrrepsLinear) or not isinstance(lin2, IrrepsLinear)
         or lin1.key_output != conv.key_x or lin2.key_input != conv.key_x
         or lin2.key_output != conv.key_x
         or any(ir.l != 0 or ir.p != 1 for _, ir in lin1.irreps_out)
-        or any(ir.p != (-1) ** ir.l for _, ir in lin2.irreps_out)
+        or any(ir.dim > 7 or ir.p != (-1) ** ir.l for _, ir in lin2.irreps_out)
         or 'onehot_to_feature_x' not in names[:at]
     ):
         return []
@@ -1206,20 +1164,14 @@ def collapse_first_layer(
     if modal is not None:
         reference.prepare_modal_deploy(modal)
     first = FusedFirstLayer(conv, reference, trio)
-    model._modules[trio[0]] = _PassThrough()
+    model._modules[trio[0]] = nn.Identity()
     model._modules[trio[1]] = first
-    model._modules[trio[2]] = _PassThrough()
+    model._modules[trio[2]] = nn.Identity()
     return trio
 
 
 def live_paths(conv, linear) -> list[int] | None:
-    """
-    Indices of the paths (LunaTP specs) of conv whose output the IrrepsLinear
-    after it reads, None if that is all of them. A convolution computes every
-    path its inputs allow; the linear only has weights for the irreps of its
-    own output (7net-omni's last-but-one convolution: 34 of 68 paths, half
-    the per-edge weights, feed irreps the last layer cannot use).
-    """
+    """Return the TP paths read by the next linear, or None if it reads all."""
     irreps_in = getattr(linear, '_irreps_in_wo_modal', None)
     irreps_out = getattr(linear, 'irreps_out', None)
     op = conv.convolution.tp_conv.op
@@ -1239,7 +1191,7 @@ def live_paths(conv, linear) -> list[int] | None:
 
 
 def fuse_radial_conv(
-    model: nn.Module, knots: int = 0, r_min: float = 0.25
+    model: nn.Module, knots: int = 0, r_min: float = DEFAULT_RADIAL_TABLE_R_MIN
 ) -> list[str]:
     """
     In place: every LunaTP convolution of a serial model whose radial MLP is
@@ -1252,6 +1204,9 @@ def fuse_radial_conv(
 
     if knots < 0 or knots == 1:
         raise ValueError('fused_knots must be 0 or at least 2')
+    cutoff = float(model.cutoff)
+    if knots and not 0 < r_min < cutoff:
+        raise ValueError(f'fused_r_min must be between 0 and the cutoff ({cutoff})')
     emb = model._modules['edge_embedding']
     if getattr(emb, 'distance_transform', None) is not None:
         return []
@@ -1274,17 +1229,31 @@ def fuse_radial_conv(
         if isinstance(linear, IrrepsLinear) and linear.key_input == conv.key_x:
             paths = live_paths(conv, linear)
         conv.__class__ = LunaTPFusedRadialConvolution
-        conv._setup(emb, knots, r_min, float(model.cutoff), paths)
+        conv._setup(emb, knots, r_min, cutoff, paths)
         changed.append(name if paths is None else f'{name}({len(paths)}paths)')
         fused.append(conv)
     if (
-        knots and fused and len(fused) == len(list(_convolutions(model)))
+        fused and len(fused) == len(list(_convolutions(model)))
         and fused[0].rad_w2.is_cuda and not getattr(emb, 'save_components', False)
         and bool(getattr(emb.spherical.sph, 'normalize', False))
     ):
         model._modules['edge_embedding'] = FusedEdgeGeometry(emb)
         changed.append('edge_embedding')
     return changed
+
+
+def prepare_fused_inference(model, build_reference, modal, knots, r_min, first=True):
+    names = fuse_radial_conv(model, knots=knots, r_min=r_min)
+    if names:
+        from .inference_specialization import fold_modal
+
+        if modal is not None and model.modal_map:
+            names += fold_modal(model, modal)
+        if knots and first:
+            reference = build_reference()
+            reference.delete_module_by_key('force_output')
+            names += collapse_first_layer(model, reference, modal)
+    return names
 
 
 def specialize_fused_species(model: nn.Module, columns: Sequence[int]) -> list[str]:

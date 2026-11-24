@@ -60,16 +60,25 @@ See {doc}`./d3` for the full explanation of each option and the list of supporte
 The D3 calculators require a CUDA GPU (compute capability ≥ 6.0); CPU + D3 is not supported. There is also a hard limit of 46,340 atoms per call. See the Cautions section of {doc}`./d3`.
 :::
 
-Use enable_cueq, enable_flash, or enable_oeq to use cuEquivariance, flashTP, or OpenEquivariance for faster inference.
-For more information about accelerators, follow [here](./accelerator.md)
+## Accelerating inference
+
+Select one tensor-product backend with `enable_cueq`, `enable_flash`,
+`enable_oeq`, or `enable_lunatp`. See [accelerator setup](./accelerator.md).
 ```python
 from sevenn.calculator import SevenNetCalculator
-calc = SevenNetCalculator(model='7net-0', enable_cueq=True) # or enable_flash=True or enable_oeq=True
+calc = SevenNetCalculator(model='7net-0', enable_lunatp=True)
 ```
 
-On CUDA, `cuda_graph=True` captures and replays repeated calculator calls
-with compatible inputs. It works with LunaTP and falls back to eager
-evaluation when the graph cannot be captured or reused.
+On CUDA, the calculator replays compatible calls by default and runs eagerly
+when it cannot reuse a capture. Pass `cuda_graph=False` to disable replay.
+
+Compatible checkpoint radial MLPs use Hermite interpolation by default
+with any TP backend. Pass `radial_table=False` to evaluate the original
+MLP. Set `radial_knots` and `radial_r_min` to change the grid. For a
+`model_instance`, set `radial_table=True` to convert its radial networks.
+
+With `enable_lunatp=True`, compatible CUDA checkpoints also use fused kernels
+by default. Pass `fused=False` to disable fusion.
 
 If you encounter the error `CUDA is not installed or nvcc is not available`, please ensure the `nvcc` compiler is available. Currently, CPU + D3 is not supported.
 

@@ -8,6 +8,8 @@ import sevenn._keys as KEY
 from sevenn.nn.activation import ShiftedSoftPlus
 
 NUM_UNIV_ELEMENT = 119  # Z = 0 ~ 118
+DEFAULT_RADIAL_TABLE_KNOTS = 2048
+DEFAULT_RADIAL_TABLE_R_MIN = 0.10  # angstrom
 
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']

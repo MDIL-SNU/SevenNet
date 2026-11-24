@@ -143,18 +143,16 @@ sevenn lunatp_precompile 7net-omni --train   # also the kernels for training wit
 ```
 `--max_workers` sets the number of parallel processes.
 
-### Frozen-model kernels (`fused`)
+### Fused inference and radial interpolation
 
-For frozen models with a plain radial MLP, `fused` evaluates cubic Hermite
-tables inside the LunaTP convolution kernels. These tables approximate the
-original radial MLP. Fused inference can also specialize the first interaction
-to the species present.
+The fused LunaTP kernels combine tensor products with radial weight lookup
+and force backpropagation. They can use exact radial MLP weights or cubic
+Hermite interpolation. Interpolation also works as a separate radial operation.
+The default table uses 2048 uniformly spaced knots from 0.10 Å to the cutoff.
+Distances below the first knot use cubic extrapolation.
 
-```python
-from sevenn.calculator import SevenNetCalculator
-calc = SevenNetCalculator('7net-omni', modal='mpa', enable_lunatp=True, fused=True)
-```
-For LAMMPS, see the `--fused` option of {ref}`sevenn get_model<sevenn-get-model>` with `--use_mliap --enable_lunatp --cuda_graph` (one MPI rank). The kernels are built at the first call and cached, as the other LunaTP kernels.
+See the [ASE](./ase_calculator.md#accelerating-inference) and
+[ML-IAP](./lammps_mliap.md) options for disabling or configuring these paths.
 
 For more information, see [LunaEquivariance](https://github.com/HPC-AI-Team/LunaEquivariance).
 

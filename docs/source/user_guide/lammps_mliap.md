@@ -132,28 +132,26 @@ sevenn get_model \
 ```
 
 
-Use `--cuda_graph` to capture and replay the model on one MPI rank with LunaTP
-or e3nn. Replay refreshes the topology as the neighbor list changes.
-Multi-rank runs use eager ghost exchange. For an existing potential,
-`SEVENN_MLIAP_CUDA_GRAPH=1` enables replay and `0` disables it.
+Single-rank runs use radial interpolation for compatible models with any
+TP backend. CUDA also enables graph replay and fused LunaTP kernels by default.
+Multi-rank runs use eager ghost exchange.
 
-Add `--fused` with LunaTP to fuse edge geometry and evaluate radial weights
-inside the tensor-product kernels using cubic Hermite interpolation.
-`--fused_knots` defaults to 2048. With 0 knots, the fused path evaluates the
-original radial MLP once per distinct edge length.
-The weight tables start at 0.25 Å. Shorter distances use cubic extrapolation.
-Use `--enable_lunatp --cuda_graph` for replay with the original radial MLP.
-For an existing LunaTP potential, `SEVENN_MLIAP_FUSED=1` enables fusion when
-replay is enabled.
-The first run can compile model-specific CUDA kernels. Later runs in the same
-build environment reuse the compiled kernels.
+| Option | Effect |
+|---|---|
+| `--disable_cuda_graph` | Run eagerly |
+| `--disable_fused` | Use the standard TP kernels |
+| `--disable_radial_table` | Evaluate the original radial MLP |
+| `--radial_knots` | Set the number of Hermite knots (2048 by default) |
+| `--radial_r_min` | Set the first knot in Å (0.10 by default) |
+
+`--radial_table` enables interpolation in multi-rank eager runs.
+Existing deployed potentials keep their
+saved options. To override them at run time, set `SEVENN_MLIAP_CUDA_GRAPH`,
+`SEVENN_MLIAP_FUSED`, or `SEVENN_MLIAP_RADIAL_TABLE` to `1` or `0`.
 
 ```bash
-sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp --cuda_graph --fused
+sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp
 ```
-
-`--radial_table` also works on the eager ML-IAP path. It tabulates narrow radial
-networks and folds constants into wider networks.
 
 ### Single-GPU MD
 Below is an example snippet of a LAMMPS script for using SevenNet models with ML-IAP:

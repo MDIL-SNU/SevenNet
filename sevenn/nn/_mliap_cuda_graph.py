@@ -26,7 +26,7 @@ from sevenn.nn.lunatp_helper import (
 
 
 def _walk_tensors(obj, out: list[torch.Tensor], seen: set) -> None:
-    """unique tensors of dataclasses / dicts / tuples / lists, in a fixed order"""
+    """Collect unique tensors in a deterministic order."""
     if isinstance(obj, torch.Tensor):
         if id(obj) not in seen:
             seen.add(id(obj))
@@ -110,9 +110,7 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 
 
 def _pad_graph(graph, num_segments: int):
-    """
-    Pad with empty source segments at the last node, or return None if full.
-    """
+    """Pad with empty source segments, or return None if capacity is exceeded."""
     seg = graph.source_segments
     k = num_segments - seg.nodes.numel()
     if k < 0:
@@ -143,10 +141,7 @@ def _pad_graph(graph, num_segments: int):
 
 
 class MLIAPCudaGraph:
-    """
-    Replay a frozen serial model with ghosts folded to their local owners.
-    compute returns False when the caller needs to run the eager model.
-    """
+    """Run a serial model with local ghost owners and optional CUDA replay."""
 
     # room above the sizes at capture
     # edges: E / EDGE_ROOM (at least MIN_EDGE_ROOM); halved (down to
@@ -173,6 +168,7 @@ class MLIAPCudaGraph:
         dtype: torch.dtype = torch.float32,
         verbose: bool = False,
         modal: str | None = None,
+        replay: bool = True,
     ):
         self.model = model
         self.device = device
@@ -189,8 +185,7 @@ class MLIAPCudaGraph:
                 [model.modal_map[modal]], dtype=torch.int64, device=device
             )
             model.eval_modal_map = False
-        # no capture: the eager call of the folded serial model
-        self.eager_fold = os.getenv('SEVENN_MLIAP_FOLD_EAGER') == '1'
+        self.eager_fold = not replay or os.getenv('SEVENN_MLIAP_FOLD_EAGER') == '1'
         self.n_captures = 0
         self.n_replays = 0
         self.n_refreshes = 0
@@ -236,7 +231,7 @@ class MLIAPCudaGraph:
         self._owner_buf = None
         # the step bookkeeping as one kernel (built by LunaEquivariance's JIT)
         self._prep = None
-        if self._lunatp and device.type == 'cuda' and (
+        if not self.eager_fold and self._lunatp and device.type == 'cuda' and (
             os.getenv('SEVENN_MLIAP_GRAPH_PREP', '1') != '0'
         ):
             try:
@@ -266,7 +261,7 @@ class MLIAPCudaGraph:
 
     # ---- per call ----------------------------------------------------------
     def _owners(self, lmp_data, nlocal: int, ntotal: int):
-        """(owner local index of every atom, flag: a ghost of another rank)"""
+        """Exchange each atom's owner index and rank token with its ghosts."""
         buf = self._owner_buf
         if buf is None or buf[0] != (nlocal, ntotal):
             send = torch.full(
@@ -459,10 +454,6 @@ class MLIAPCudaGraph:
         }
         if self._modal_type is not None:
             data[KEY.MODAL_TYPE] = self._modal_type
-        if self._fused:
-            from sevenn.nn.lunatp_fused import set_unique_cap
-
-            set_unique_cap(self.model, None)
         output = self.model(data)
         e_atoms = output[KEY.ATOMIC_ENERGY].view(-1)
         e_total = e_atoms.sum()
@@ -534,10 +525,7 @@ class MLIAPCudaGraph:
         return graph
 
     def _refresh(self, entry, cand, npairs) -> bool:
-        """
-        The edge index cand becomes the edge index of the captured call. False
-        if its LunaTP graph does not fit the captured tables.
-        """
+        """Replace the captured topology in place if its tables fit."""
         if self._lunatp:
             try:
                 graph = self._topology(

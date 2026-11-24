@@ -3,6 +3,8 @@ import os
 
 import torch
 
+from sevenn._const import DEFAULT_RADIAL_TABLE_KNOTS, DEFAULT_RADIAL_TABLE_R_MIN
+
 description_get_model = (
     'deploy LAMMPS model from the checkpoint'
 )
@@ -73,27 +75,25 @@ def add_args(parser):
         help='Use LAMMPS ML-IAP interface.',
         action='store_true',
     )
+    for name, help_text in (
+        ('cuda_graph', 'Replay the model on one CUDA MPI rank.'),
+        ('fused', 'Use fused LunaTP kernels on one CUDA MPI rank.'),
+        ('radial_table', 'Interpolate radial weights with cubic Hermite tables.'),
+    ):
+        flags = ag.add_mutually_exclusive_group()
+        flags.add_argument(f'--{name}', action='store_true', help=help_text)
+        flags.add_argument(
+            f'--disable_{name}', dest=name, action='store_false',
+            help=f'Disable {name} for ML-IAP.',
+        )
+        ag.set_defaults(**{name: None})
     ag.add_argument(
-        '--radial_table',
-        help='ML-IAP: radial MLPs as cubic tables in r / with folded constants.',
-        action='store_true',
+        '--radial_knots', type=int,
+        help=f'Number of Hermite knots (default: {DEFAULT_RADIAL_TABLE_KNOTS}).',
     )
     ag.add_argument(
-        '--fused',
-        help='ML-IAP with LunaTP, one rank: frozen-model fused kernels.',
-        action='store_true',
-    )
-    ag.add_argument(
-        '--fused_knots',
-        help='--fused: knots of the in-kernel radial weight table '
-        '(0: a weight row per distinct edge length each step).',
-        type=int,
-        default=2048,
-    )
-    ag.add_argument(
-        '--cuda_graph',
-        help='ML-IAP, one rank: replay a captured CUDA graph of the model call.',
-        action='store_true',
+        '--radial_r_min', type=float,
+        help=f'First knot in angstroms (default: {DEFAULT_RADIAL_TABLE_R_MIN:.2f}).',
     )
 
 
@@ -113,11 +113,16 @@ def run(args):
     cuda_graph = args.cuda_graph
     radial_table = args.radial_table
     fused = args.fused
+    mliap_options = any(
+        value is not None for value in (
+            cuda_graph, fused, radial_table, args.radial_knots, args.radial_r_min,
+        )
+    )
 
     if args.compact_checkpoint:
         if any((
             get_parallel, modal, use_flash, use_cueq, use_oeq, use_lunatp,
-            use_mliap, cuda_graph, radial_table, fused,
+            use_mliap, mliap_options,
         )):
             raise ValueError(
                 '--compact_checkpoint writes a backend-independent .pth'
@@ -159,11 +164,8 @@ def run(args):
     if use_lunatp and not use_mliap:
         raise ValueError('LunaTP is only supported in ML-IAP interface.')
 
-    if (cuda_graph or radial_table or fused) and not use_mliap:
-        raise ValueError(
-            'cuda_graph, radial_table and fused are only supported in ML-IAP '
-            'interface.'
-        )
+    if mliap_options and not use_mliap:
+        raise ValueError('These acceleration options require --use_mliap.')
     if fused and not use_lunatp:
         raise ValueError('fused needs LunaTP (--enable_lunatp).')
 
@@ -211,7 +213,8 @@ def run(args):
             use_cuda_graph=cuda_graph,
             use_radial_table=radial_table,
             use_fused=fused,
-            fused_knots=args.fused_knots,
+            radial_knots=args.radial_knots,
+            radial_r_min=args.radial_r_min,
         )
         torch.save(mliap_module, output_prefix)
 
