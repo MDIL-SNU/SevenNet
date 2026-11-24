@@ -6,9 +6,11 @@ from unittest import mock
 import ase.io
 import numpy as np
 import pytest
+import torch
 import yaml
 from ase.build import bulk
 
+import sevenn._keys as KEY
 from sevenn.calculator import SevenNetCalculator
 from sevenn.logger import Logger
 from sevenn.main.sevenn import main as sevenn_main
@@ -64,6 +66,29 @@ def test_get_model_parallel(tmp_path, capsys):
         assert output_dir.is_dir(), 'parallel model directory not exist'
         for i in range(expected_file_cnt):
             assert (output_dir / f'deployed_parallel_{i}.pt').is_file()
+
+
+@pytest.mark.parametrize('parallel', [False, True], ids=['serial', 'parallel'])
+def test_get_model_writes_species_in_index_order(tmp_path, monkeypatch, parallel):
+    checkpoint = torch.load(cp_0_path, map_location='cpu', weights_only=False)
+    type_map = checkpoint['config'][KEY.TYPE_MAP]
+    checkpoint['config'][KEY.TYPE_MAP] = dict(sorted(type_map.items()))
+    ckpt = tmp_path / 'reordered.pth'
+    torch.save(checkpoint, ckpt)
+
+    output = tmp_path / ('model' if parallel else 'model.pt')
+    argv = ['sevenn_get_model', str(ckpt), '-o', str(output)]
+    if parallel:
+        argv.append('-p')
+    monkeypatch.setattr('sys.argv', argv)
+    get_model_main()
+
+    files = list(output.glob('*.pt')) if parallel else [output]
+    assert files
+    for path in files:
+        extra = {'chemical_symbols_to_index': b''}
+        torch.jit.load(str(path), map_location='cpu', _extra_files=extra)
+        assert extra['chemical_symbols_to_index'].decode().split() == ['Hf', 'O']
 
 
 @pytest.mark.parametrize('source', [(hfo2_path)])
