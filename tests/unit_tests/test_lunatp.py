@@ -382,10 +382,12 @@ def test_graph_is_shared_only_within_one_forward(monkeypatch):
 
     original = model(data)[KEY.PRED_FORCE]
     assert prepare.call_count == 1
+    assert helper._SHARED_GRAPH_KEY not in data
     data[helper.PREPARED_GRAPH_KEY] = prepared
     torch.testing.assert_close(model(data)[KEY.PRED_FORCE], original)
     assert prepare.call_count == 1
     assert helper.PREPARED_GRAPH_KEY not in data
+    assert helper._SHARED_GRAPH_KEY not in data
 
     changed_edges = edge_index.clone()
     changed_edges[1] = (changed_edges[1] + 1) % num_nodes

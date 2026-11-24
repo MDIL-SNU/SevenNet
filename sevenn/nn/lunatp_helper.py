@@ -148,6 +148,7 @@ class LunaTPConvolution(torch.nn.Module):
 
 class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
     starts_graph = True
+    ends_graph = False
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self.starts_graph:
@@ -166,7 +167,10 @@ class LunaTPSharedGraphConvolution(IrrepsScatterGatterFusedConvolution):
             data[_SHARED_GRAPH_KEY] = prepare_graph(
                 data[self.key_edge_idx], x.shape[0]
             )
-        return self.convolution(x, edge_filter, weight, data[_SHARED_GRAPH_KEY])
+        topology = data[_SHARED_GRAPH_KEY]
+        if self.ends_graph:
+            del data[_SHARED_GRAPH_KEY]
+        return self.convolution(x, edge_filter, weight, topology)
 
 
 @lunatp_needed
@@ -179,6 +183,7 @@ def patch_convolution(
     ret = LunaTPSharedGraphConvolution.from_irreps_convolution(irreps_convolution)
     ret.convolution_cls = LunaTPConvolution
     ret.starts_graph = starts_graph
+    ret.ends_graph = True
     return ret
 
 
