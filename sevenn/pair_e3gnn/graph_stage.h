@@ -146,6 +146,27 @@ class E3GNNGraphStage {
   std::string failure_;
 
 public:
+  static Tensors gradients(const Tensors &targets, const Tensors &wrt,
+                           const Tensors &seeds = {}) {
+    if (wrt.front().numel() != 0) return torch::autograd::grad(targets, wrt, seeds);
+
+    Tensors active_targets, active_seeds;
+    for (size_t i = 0; i < targets.size(); ++i) {
+      if (!targets[i].requires_grad()) continue;
+      active_targets.push_back(targets[i]);
+      if (!seeds.empty()) active_seeds.push_back(seeds[i]);
+    }
+    Tensors result(wrt.size());
+    if (!active_targets.empty()) {
+      result = torch::autograd::grad(
+          active_targets, wrt, active_seeds, std::nullopt, false, true);
+    }
+    for (size_t i = 0; i < result.size(); ++i) {
+      if (!result[i].defined()) result[i] = torch::zeros_like(wrt[i]);
+    }
+    return result;
+  }
+
   static constexpr bool available() {
 #ifdef SEVENN_E3GNN_CUDA_GRAPH
     return true;
@@ -200,7 +221,7 @@ public:
       return captured_->gradients;
     }
 #endif
-    auto grads = torch::autograd::grad(eager_->targets, eager_->wrt, seeds);
+    auto grads = gradients(eager_->targets, eager_->wrt, seeds);
     eager_.reset();
     return grads;
   }

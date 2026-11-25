@@ -121,9 +121,8 @@ The number of message-passing layers corresponds to the number of `*.pt` files i
 
 It is expected that there is one GPU per MPI process. If the number of available GPUs is less than the number of MPI processes, the simulation may run inefficiently.
 
-:::{caution}
-Currently, the parallel version encounters an error when one of the subdomain cells contains no atoms. This issue can be addressed using the `processors` command and, more effectively, the `fix balance` command in LAMMPS. A patch for this issue will be released in a future update.
-:::
+Subdomains may be empty as atoms move, are inserted, or are deleted.
+Atom IDs can have gaps after deletion.
 
 :::{caution}
 Currently, our D3 algorithm is not supported by multi-GPU.

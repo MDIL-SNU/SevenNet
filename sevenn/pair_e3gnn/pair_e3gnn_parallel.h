@@ -23,6 +23,7 @@ PairStyle(e3gnn/parallel, PairE3GNNParallel)
 
 #include <torch/torch.h>
 #include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace LAMMPS_NS {
@@ -64,8 +65,9 @@ private:
   torch::Tensor comm_index_unpack_forward_tensor[6];
   torch::Tensor comm_index_unpack_reverse_tensor[6];
 
-  // to use tag_to_graph_idx inside comm methods
-  int *tag_to_graph_idx_ptr = nullptr;
+  std::vector<int> tag_to_graph_idx;
+  std::unordered_map<tagint, int> sparse_tag_to_graph_idx;
+  int &graph_index(tagint tag);
 
   int sendproc[6];
   int recvproc[6];

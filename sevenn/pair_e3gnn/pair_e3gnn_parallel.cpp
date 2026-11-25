@@ -173,6 +173,12 @@ bool PairE3GNNParallel::is_comm_preprocess_done() {
   return comm_preprocess_done;
 }
 
+int &PairE3GNNParallel::graph_index(tagint tag) {
+  if (static_cast<size_t>(tag) < tag_to_graph_idx.size())
+    return tag_to_graph_idx[tag];
+  return sparse_tag_to_graph_idx.try_emplace(tag, -1).first->second;
+}
+
 void PairE3GNNParallel::compute(int eflag, int vflag) {
   /*
      Graph build on cpu
@@ -181,9 +187,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     ev_setup(eflag, vflag);
   else
     evflag = vflag_fdotr = 0;
-  if (atom->tag_consecutive() == 0) {
-    error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
-  }
+  if (atom->natoms == 0) return;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -200,17 +204,9 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
                       "modified code of comm_brick");
   }
 
-  bigint natoms = atom->natoms;
-
-  // tag ignore PBC
   tagint *tag = atom->tag;
-
-  // store graph_idx from local to known ghost atoms(ghost atoms inside cutoff)
-  int tag_to_graph_idx[natoms + 1]; // tag starts from 1 not 0
-  std::fill_n(tag_to_graph_idx, natoms + 1, -1);
-
-  // to access tag_to_graph_idx from comm
-  tag_to_graph_idx_ptr = tag_to_graph_idx;
+  tag_to_graph_idx.assign(atom->natoms + 1, -1);
+  sparse_tag_to_graph_idx.clear();
 
   int graph_indexer = nlocal;
   int graph_index_to_i[ntotal];
@@ -231,9 +227,8 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   for (int ii = 0; ii < inum; ii++) {
     // populate tag_to_graph_idx of local atoms
     const int i = ilist[ii];
-    const int itag = tag[i];
     const int itype = type[i];
-    tag_to_graph_idx[itag] = ii;
+    graph_index(tag[i]) = ii;
     graph_index_to_i[ii] = i;
     node_type.push_back(map[itype]);
   }
@@ -246,9 +241,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     const int jnum = numneigh[i];
 
     for (int jj = 0; jj < jnum; jj++) {
-      int j = jlist[jj];
-      const int jtag = tag[j];
-      j &= NEIGHMASK;
+      const int j = jlist[jj] & NEIGHMASK;
       const int jtype = type[j];
       // we have to calculate Rij to check cutoff in lammps side
       const double delij[3] = {x[j][0] - x[i][0], x[j][1] - x[i][1],
@@ -256,18 +249,17 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
       const double Rij =
           delij[0] * delij[0] + delij[1] * delij[1] + delij[2] * delij[2];
 
-      int j_graph_idx;
       if (Rij < cutoff_square) {
+        int &j_graph_idx = graph_index(tag[j]);
         // if given j is not local atom and inside cutoff
-        if (tag_to_graph_idx[jtag] == -1) {
+        if (j_graph_idx == -1) {
           // if j is ghost atom inside cutoff but first seen
-          tag_to_graph_idx[jtag] = graph_indexer;
+          j_graph_idx = graph_indexer;
           graph_index_to_i[graph_indexer] = j;
           node_type_ghost.push_back(map[jtype]);
           graph_indexer++;
         }
 
-        j_graph_idx = tag_to_graph_idx[jtag];
         edge_idx_src[nedges] = i_graph_idx;
         edge_idx_dst[nedges] = j_graph_idx;
         edge_vec[nedges][0] = delij[0];
@@ -392,12 +384,12 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     auto wrt_tensor = *rit;
     if (shard == last_shard) {
       grads = replay ? graph_stages[shard]->backward({})
-                     : torch::autograd::grad({energy_tensor}, wrt_tensor);
+                     : E3GNNGraphStage::gradients({energy_tensor}, wrt_tensor);
     } else {
       x_local_save.copy_(x_local);
       const std::vector<torch::Tensor> seeds{x_local_save, self_conn_grads};
       grads = replay ? graph_stages[shard]->backward(seeds)
-                     : torch::autograd::grad(of_tensor, wrt_tensor, seeds);
+                     : E3GNNGraphStage::gradients(of_tensor, wrt_tensor, seeds);
     }
 
     dE_dr = dE_dr + grads.at(0); // accumulate force
@@ -698,6 +690,9 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
 
 // init specific to this pair
 void PairE3GNNParallel::init_style() {
+  if (!atom->tag_enable) {
+    error->all(FLERR, "Pair style e3gnn/parallel requires atom IDs");
+  }
   // full neighbor list & newton on
   if (force->newton_pair == 0) {
     error->all(FLERR, "Pair style e3gnn/parallel requires newton pair on");
@@ -775,7 +770,7 @@ void PairE3GNNParallel::pack_forward_init(int n, int *list_send,
 
   for (i = 0; i < n; i++) {
     int list_i = list_send[i];
-    int graph_idx = tag_to_graph_idx_ptr[tag[list_i]];
+    int graph_idx = graph_index(tag[list_i]);
 
     if (graph_idx != -1) {
       // known atom (local atom + ghost atom inside cutoff)
@@ -807,7 +802,7 @@ void PairE3GNNParallel::unpack_forward_init(int n, int first, int comm_phase) {
   tagint *tag = atom->tag;
 
   for (i = first; i < last; i++) {
-    int graph_idx = tag_to_graph_idx_ptr[tag[i]];
+    int graph_idx = graph_index(tag[i]);
     if (graph_idx != -1) {
       idx_map.push_back(graph_idx);
     } else {
