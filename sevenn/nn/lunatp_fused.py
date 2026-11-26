@@ -33,6 +33,7 @@ from .radial_table import (
 
 # Shorter source segments expose more parallelism on small graphs.
 SMALL_GRAPH_EDGES = 4096
+_INDEX_LIMIT = 2**31
 
 _KEY_R = 'fused_radial_r'  # the KEY.EDGE_LENGTH tensor the entries belong to
 _KEY_RID = 'fused_radial_rid'
@@ -336,7 +337,7 @@ def _load_cuda(name: str, source: str, *, fast_math=False):
     )
 
 
-def _load_fused_conv(op, stage, hermite):
+def _load_fused_conv(op, stage, hermite, *, wide=False):
     from LunaEquivariance.utils.indexing import name_cuda_kernels
     from LunaEquivariance.utils.streams import (
         bind_stream_pool_source,
@@ -350,12 +351,16 @@ def _load_fused_conv(op, stage, hermite):
     tag = 'herm' if hermite else 'fp32'
     kind = 'fwd' if stage == 'fwd' else 'bwd'
     name = f'sevenn_uvuconv_fused_{kind}_{tag}'
+    if wide:
+        name += '_wide'
     source = name_cuda_kernels(
-        bind_stream_pool_source(source), name, index_bits=32,
+        bind_stream_pool_source(source), name, index_bits=64 if wide else 32,
     )
+    # Widen buffer offsets while keeping the existing graph tables and bindings.
+    index_type = 'int64_t' if wide else 'int'
     source = (
         '#include <cstdint>\n'
-        'using Index = int; using EdgeIndex = int32_t; '
+        f'using Index = {index_type}; using EdgeIndex = int32_t; '
         'using WeightIndex = uint32_t;\n'
         + source
     )
@@ -583,19 +588,20 @@ class _FusedConv(torch.autograd.Function):
         ctx.mod, ctx.tables = mod, tables
         ctx.save_for_backward(x, y, rid, wbuf)
         op = mod.convolution.tp_conv.op
-        # the fused kernels index with 32 bits (LunaTP's own switch to 64)
-        widest = max(op.out_dim, op.in1_dim)
-        if x.shape[0] * widest >= 2**31 or y.shape[0] * op.in2_dim >= 2**31:
-            raise RuntimeError(
-                f'{x.shape[0]} atoms / {y.shape[0]} edges are too many for the '
-                f'fused LunaTP kernels (32-bit indices: at most '
-                f'{(2**31 - 1) // widest} atoms for this model). Run without '
-                'fused (SEVENN_MLIAP_FUSED=0, or fused=False).'
-            )
+        wide = max(
+            x.numel(), y.numel(), num_outputs * op.out_dim,
+            rid.numel(), wbuf.numel() // (1 if mod.knots else 2),
+        ) >= _INDEX_LIMIT
+        kernels = mod._compact_kernels
+        if wide:
+            if mod._wide_kernels is None:
+                mod._wide_kernels = mod._kernels(wide=True)
+            kernels = mod._wide_kernels
+        fwd_ext, ctx.bwd_ext, ctx.bwd_flags = kernels
         out = x.new_empty((num_outputs, op.out_dim))
         if op.forward_output_needs_zero:
             out.zero_()
-        mod.fwd_ext.run_uvu_conv_fwd_ordered(
+        fwd_ext.run_uvu_conv_fwd_ordered(
             x, y, wbuf, None, None, tables.src, tables.dst_rowptr,
             tables.node_order, tables.node_tiers, out, num_outputs, rid.view(-1),
         )
@@ -612,8 +618,8 @@ class _FusedConv(torch.autograd.Function):
         rid = rid.view(-1)
         op = mod.convolution.tp_conv.op
         n_edge = y.shape[0]
-        ext = mod.bwd_ext
-        segmented, partials, _, zero_x, zero_y = mod.bwd_flags
+        ext = ctx.bwd_ext
+        segmented, partials, _, zero_x, zero_y = ctx.bwd_flags
         go = go.contiguous()
         if segmented:
             seg = g.source_segments
@@ -708,13 +714,15 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
                 'rad_table',
                 _with_padding_row(table).to(ref.device, ref.dtype).contiguous(),
             )
-        self._kernels()
+        self._compact_kernels = self._kernels()
+        self._wide_kernels = None
 
-    def _kernels(self) -> None:
+    def _kernels(self, *, wide=False):
         op = self.convolution.tp_conv.op
         hermite = self.knots > 0
-        self.fwd_ext, _ = _load_fused_conv(op, 'fwd', hermite)
-        self.bwd_ext, self.bwd_flags = _load_fused_conv(op, 'bwd', hermite)
+        fwd, _ = _load_fused_conv(op, 'fwd', hermite, wide=wide)
+        bwd, flags = _load_fused_conv(op, 'bwd', hermite, wide=wide)
+        return fwd, bwd, flags
 
     def _embedding(self, data: AtomGraphDataType, ru: torch.Tensor):
         """[basis * cutoff ; its r-derivative] at ru, (2U, n): once per call"""
@@ -804,13 +812,9 @@ class LunaTPFusedRadialConvolution(LunaTPSharedGraphConvolution):
             return data
         r = data[KEY.EDGE_LENGTH]
         if self.knots:
-            if self.rad_table.numel() >= 2**31:
-                raise RuntimeError('too many knots for the fused radial kernels')
             rid, wbuf = self._knots(data), self.rad_table
         else:
             rid, ru = self._unique(data, self.unique_cap)
-            if ru.shape[0] * self.rad_w2.shape[1] >= 2**31:
-                raise RuntimeError('too many edges for the fused radial kernels')
             wbuf = self._weights(data, ru)
         order, graph = self._take_graph(data, x.shape[0])
         tables = graph._tables[('uvu', 32)]
