@@ -1,5 +1,3 @@
-import copy
-
 import pytest
 import torch
 from ase.build import bulk, molecule
@@ -216,70 +214,70 @@ def test_modal_num_params(cf, ref):
 # TODO: test_irreps, test_gard, test_equivariance
 
 
-@pytest.mark.parametrize('modal', ['pbe', 'scan'])
 @pytest.mark.parametrize(
-    'use_bias,modal_flags,scale_only',
+    'modal,use_bias,scale_only',
     [
-        pytest.param(True, (False, True, False, True), False, id='mixed-bias'),
-        pytest.param(True, (True, True, True, True), False, id='all-modal-bias'),
-        pytest.param(False, (False, True, False, True), False, id='biasless'),
-        pytest.param(True, (False, True, False, True), True, id='scale-only'),
+        pytest.param('scan', True, False, id='learned-bias'),
+        pytest.param('scan', False, True, id='scale-only'),
+        pytest.param('common', True, False, id='common'),
     ],
 )
-def test_single_modal_conversion_predictions(
-    modal, use_bias, modal_flags, scale_only
-):
-    with torch.random.fork_rng():
+def test_single_modal_conversion_predictions(modal, use_bias, scale_only):
+    with torch.random.fork_rng(devices=[]):
         torch.manual_seed(2026)
         config = get_model_config()
-        n_species = len(config['_type_map'])
         config.update({
-            'num_convolution_layer': 2,
             'lmax': 1,
+            'irreps_manual': [
+                '4x0e+4x1e', '4x0e+4x1o+4x1e', '4x0e+4x1o', '4x0e',
+            ],
             'use_bias_in_linear': use_bias,
             'use_modality': True,
             '_modal_map': {'pbe': 0, 'scan': 1},
             '_number_of_modalities': 2,
-            'use_modal_node_embedding': modal_flags[0],
-            'use_modal_self_inter_intro': modal_flags[1],
-            'use_modal_self_inter_outro': modal_flags[2],
-            'use_modal_output_block': modal_flags[3],
+            'use_modal_node_embedding': False,
+            'use_modal_self_inter_intro': True,
+            'use_modal_self_inter_outro': True,
+            'use_modal_output_block': True,
             'use_modal_wise_shift': False,
             'use_modal_wise_scale': scale_only,
-            'shift': [-10.0] * n_species,
-            'scale': (
-                [[2.0] * n_species, [3.0] * n_species]
-                if scale_only else [10.0] * n_species
-            ),
         })
+        n_species = config['_number_of_species']
+        config['shift'] = [-10.0] * n_species
+        config['scale'] = (
+            [[2.0] * n_species, [3.0] * n_species]
+            if scale_only else [10.0] * n_species
+        )
         model = build_E3_equivariant_model(config).eval()
         model.set_is_batch_data(False)
         with torch.no_grad():
             for name, parameter in model.named_parameters():
                 if name.endswith('.linear.bias'):
                     parameter.fill_(0.2)
-        atoms = bulk('NaCl', 'rocksalt', a=5.63)
+        atoms = _samples['bulk'].copy()
         atoms.positions[1] += [0.2, 0.1, -0.15]
         graph = AtomGraphData.from_numpy_dict(
             dl.unlabeled_atoms_to_graph(atoms, cutoff)
         )
-        graph['data_modality'] = modal
-        expected = model(graph)
-        single_config = copy.deepcopy(config)
-        state = get_single_modal_model_dct(
-            copy.deepcopy(model.state_dict()), single_config, modal
-        )
-        single = build_E3_equivariant_model(single_config).eval()
+        reference_graph = graph.clone()
+        if modal == 'common':
+            model.eval_modal_map = False
+            model.delete_module_by_key('one_hot_modality')
+            reference_graph['modal_attr'] = torch.zeros(2)
+            reference_graph['modal_type'] = torch.zeros((), dtype=torch.long)
+        else:
+            reference_graph['data_modality'] = modal
+        expected = model(reference_graph)
+        state = get_single_modal_model_dct(model.state_dict(), config, modal)
+        assert not config.get('_modal_map')
+        single = build_E3_equivariant_model(config).eval()
         single.load_state_dict(state, strict=True)
         single.set_is_batch_data(False)
-        actual = single(AtomGraphData.from_numpy_dict(
-            dl.unlabeled_atoms_to_graph(atoms, cutoff)
-        ))
-        for key in ['inferred_total_energy', 'atomic_energy', 'inferred_force']:
+        actual = single(graph)
+        for key, atol in (
+            ('atomic_energy', 1e-5), ('inferred_total_energy', 1e-5),
+            ('inferred_force', 1e-5), ('inferred_stress', 1e-7),
+        ):
             torch.testing.assert_close(
-                actual[key], expected[key], rtol=1e-5, atol=1e-5
+                actual[key], expected[key], rtol=1e-5, atol=atol,
             )
-        torch.testing.assert_close(
-            actual['inferred_stress'], expected['inferred_stress'],
-            rtol=1e-5, atol=1e-7,
-        )

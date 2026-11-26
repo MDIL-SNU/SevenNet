@@ -23,12 +23,12 @@ def _get_scalar_index(irreps: Irreps) -> List[int]:
     return scalar_indices
 
 
-def _reshape_weight_of_linear(
+def _linear_with_weight(
     irreps_in: Irreps, irreps_out: Irreps, weight: torch.Tensor
-) -> List[torch.Tensor]:
+) -> Linear:
     linear = Linear(irreps_in, irreps_out)
     linear.weight = nn.Parameter(weight)
-    return list(linear.weight_views())
+    return linear
 
 
 def _erase_linear_modal_params(
@@ -43,28 +43,18 @@ def _erase_linear_modal_params(
 
     orig_weight = model_state_dct[key + '.linear.weight']
     scalar_idx = _get_scalar_index(irreps_in)
-    linear_weight_list = _reshape_weight_of_linear(
-        irreps_in, irreps_out, orig_weight
-    )
+    linear = _linear_with_weight(irreps_in, irreps_out, orig_weight)
 
     new_weight_list = []
-
-    for idx, l_p_weight in enumerate(linear_weight_list[:-1]):
-        new_weight = torch.reshape(l_p_weight, (1, -1)).squeeze()
-        if idx in scalar_idx:
+    for _, instruction, weight in linear.weight_views(yield_instruction=True):
+        if instruction.i_in == len(irreps_in) - 1:
+            continue
+        new_weight = weight.flatten()
+        if instruction.i_in in scalar_idx:
             new_weight = new_weight * math.sqrt(new_input_dim / orig_input_dim)
-
         new_weight_list.append(new_weight)
 
-    """
-    Following works for normalization = `path`, which is not used in SEVENNet
-    for l_p_weight in linear_weight_list[:-1]:
-        new_weight_list.append(torch.reshape(l_p_weight, (1, -1)).squeeze())
-    """
-
-    flattened_weight = torch.cat(new_weight_list)
-
-    return flattened_weight
+    return torch.cat(new_weight_list)
 
 
 def _get_bias_or_zeros(
@@ -94,9 +84,8 @@ def _get_modal_weight_as_bias(
     orig_weight = model_state_dct[key + '.linear.weight']
     orig_bias = _get_bias_or_zeros(model_state_dct, key, output_dim)
 
-    modal_weight = _reshape_weight_of_linear(
-        irreps_in, irreps_out, orig_weight
-    )[-1]
+    linear = _linear_with_weight(irreps_in, irreps_out, orig_weight)
+    modal_weight = list(linear.weight_views())[-1]
 
     new_bias = orig_bias + modal_weight[ref_index] / math.sqrt(input_dim)
 
@@ -117,9 +106,8 @@ def _append_modal_weight(
     new_input_dim = input_dim + append_number
     orig_weight = model_state_dct[key + '.linear.weight']
     scalar_idx = _get_scalar_index(irreps_in)
-    linear_weight_list = _reshape_weight_of_linear(
-        irreps_in, irreps_out, orig_weight
-    )
+    linear = _linear_with_weight(irreps_in, irreps_out, orig_weight)
+    linear_weight_list = list(linear.weight_views())
 
     new_weight_list = []
 
@@ -255,6 +243,8 @@ def get_single_modal_model_dct(
             config.update({rescaler_name: rescaler})
 
     config[KEY.USE_MODALITY] = False
+    config.pop(KEY.MODAL_MAP, None)
+    config.pop(KEY.NUM_MODALITIES, None)
 
     return model_state_dct
 
