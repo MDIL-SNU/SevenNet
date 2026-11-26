@@ -23,12 +23,12 @@ def _get_scalar_index(irreps: Irreps) -> List[int]:
     return scalar_indices
 
 
-def _reshape_weight_of_linear(
+def _linear_with_weight(
     irreps_in: Irreps, irreps_out: Irreps, weight: torch.Tensor
-) -> List[torch.Tensor]:
+) -> Linear:
     linear = Linear(irreps_in, irreps_out)
     linear.weight = nn.Parameter(weight)
-    return list(linear.weight_views())
+    return linear
 
 
 def _erase_linear_modal_params(
@@ -43,28 +43,32 @@ def _erase_linear_modal_params(
 
     orig_weight = model_state_dct[key + '.linear.weight']
     scalar_idx = _get_scalar_index(irreps_in)
-    linear_weight_list = _reshape_weight_of_linear(
-        irreps_in, irreps_out, orig_weight
-    )
+    linear = _linear_with_weight(irreps_in, irreps_out, orig_weight)
 
     new_weight_list = []
-
-    for idx, l_p_weight in enumerate(linear_weight_list[:-1]):
-        new_weight = torch.reshape(l_p_weight, (1, -1)).squeeze()
-        if idx in scalar_idx:
+    for _, instruction, weight in linear.weight_views(yield_instruction=True):
+        if instruction.i_in == len(irreps_in) - 1:
+            continue
+        new_weight = weight.flatten()
+        if instruction.i_in in scalar_idx:
             new_weight = new_weight * math.sqrt(new_input_dim / orig_input_dim)
-
         new_weight_list.append(new_weight)
 
-    """
-    Following works for normalization = `path`, which is not used in SEVENNet
-    for l_p_weight in linear_weight_list[:-1]:
-        new_weight_list.append(torch.reshape(l_p_weight, (1, -1)).squeeze())
-    """
+    return torch.cat(new_weight_list)
 
-    flattened_weight = torch.cat(new_weight_list)
 
-    return flattened_weight
+def _get_bias_or_zeros(
+    model_state_dct: Dict[str, torch.Tensor],
+    key: str,
+    output_dim: int,
+) -> torch.Tensor:
+    orig_bias = model_state_dct.get(key + '.linear.bias')
+    if orig_bias is not None and orig_bias.numel() != 0:
+        return orig_bias
+    orig_weight = model_state_dct[key + '.linear.weight']
+    return torch.zeros(
+        output_dim, dtype=orig_weight.dtype, device=orig_weight.device
+    )
 
 
 def _get_modal_weight_as_bias(
@@ -78,13 +82,10 @@ def _get_modal_weight_as_bias(
     input_dim = irreps_in.count('0e')
     output_dim = irreps_out.count('0e')
     orig_weight = model_state_dct[key + '.linear.weight']
-    orig_bias = model_state_dct[key + '.linear.bias']
-    if len(orig_bias) == 0:
-        orig_bias = torch.zeros(output_dim, dtype=orig_weight.dtype)
+    orig_bias = _get_bias_or_zeros(model_state_dct, key, output_dim)
 
-    modal_weight = _reshape_weight_of_linear(
-        irreps_in, irreps_out, orig_weight
-    )[-1]
+    linear = _linear_with_weight(irreps_in, irreps_out, orig_weight)
+    modal_weight = list(linear.weight_views())[-1]
 
     new_bias = orig_bias + modal_weight[ref_index] / math.sqrt(input_dim)
 
@@ -105,9 +106,8 @@ def _append_modal_weight(
     new_input_dim = input_dim + append_number
     orig_weight = model_state_dct[key + '.linear.weight']
     scalar_idx = _get_scalar_index(irreps_in)
-    linear_weight_list = _reshape_weight_of_linear(
-        irreps_in, irreps_out, orig_weight
-    )
+    linear = _linear_with_weight(irreps_in, irreps_out, orig_weight)
+    linear_weight_list = list(linear.weight_views())
 
     new_weight_list = []
 
@@ -145,6 +145,8 @@ def get_single_modal_model_dct(
     """
     Convert multimodal model state dictionary to single modal model.
     Modal is selected by `ref_modal`
+    Learned linear biases are retained when modality weights are folded away.
+    Modality-specific shifts and scales are selected independently.
 
     `model_state_dct`: model state dictionary from multimodal checkpoint file
     `config`: dictionary containing configuration of the checkpoint model
@@ -194,7 +196,7 @@ def get_single_modal_model_dct(
                 )
 
                 new_bias = (
-                    torch.zeros(output_dim)
+                    _get_bias_or_zeros(model_state_dct, module_key, output_dim)
                     if ref_modal == 'common'
                     else _get_modal_weight_as_bias(
                         model_state_dct,
@@ -217,17 +219,16 @@ def get_single_modal_model_dct(
                 )
                 model_state_dct[module_key + '.linear.bias'] = new_bias
             elif modal_module_name in module_key:
-                model_state_dct[module_key + '.linear.bias'] = torch.zeros(
-                    output_dim,
-                    dtype=model_state_dct[module_key + '.linear.weight'].dtype,
+                model_state_dct[module_key + '.linear.bias'] = (
+                    _get_bias_or_zeros(model_state_dct, module_key, output_dim)
                 )
 
     final_block_key = 'reduce_hidden_to_energy'
-    model_state_dct[final_block_key + '.linear.bias'] = torch.tensor(
-        [0], dtype=model_state_dct[final_block_key + '.linear.weight'].dtype
+    model_state_dct[final_block_key + '.linear.bias'] = _get_bias_or_zeros(
+        model_state_dct, final_block_key, 1
     )
 
-    if config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SHIFT]:
+    if config[KEY.USE_MODAL_WISE_SHIFT] or config[KEY.USE_MODAL_WISE_SCALE]:
         rescaler_names = []
         if config[KEY.USE_MODAL_WISE_SHIFT]:
             rescaler_names.append('shift')
@@ -242,6 +243,8 @@ def get_single_modal_model_dct(
             config.update({rescaler_name: rescaler})
 
     config[KEY.USE_MODALITY] = False
+    config.pop(KEY.MODAL_MAP, None)
+    config.pop(KEY.NUM_MODALITIES, None)
 
     return model_state_dct
 

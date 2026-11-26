@@ -159,9 +159,7 @@ def _convert_e3nn_and_cueq(stct_src, stct_dst, src_config, from_cueq):
             fc_tensor_product_module_names.append(f'{i}_self_connection_intro')
         convolution_module_names.append(f'{i}_convolution')
 
-    # Rule: those keys can be safely ignored before state dict load,
-    #       except for linear.bias. This should be aborted in advance to
-    #       this function. Others are not parameters but constants.
+    # Linear biases are copied when present. The other entries are constants.
     cue_only_linear_followers = ['linear.f.tp.f_fx.module.c']
     e3nn_only_linear_followers = ['linear.bias', 'linear.output_mask']
     ignores_in_linear = cue_only_linear_followers + e3nn_only_linear_followers
@@ -193,6 +191,9 @@ def _convert_e3nn_and_cueq(stct_src, stct_dst, src_config, from_cueq):
         module_name = k.split('.')[0]
         flag = False
         if module_name in linear_module_names:
+            if k == f'{module_name}.linear.bias' and v.numel():
+                stct_dst[k] = v.clone().reshape(stct_dst[k].shape)
+                continue
             for ignore in ignores_in_linear:
                 if '.'.join([module_name, ignore]) in k:
                     flag = True

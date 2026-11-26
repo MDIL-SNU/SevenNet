@@ -256,10 +256,6 @@ def patch_cue(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
         )
         return layers
 
-    # TODO: merge into cue_ava func
-    if not cue_helper.is_cue_cuda_available_model(config):
-        return layers
-
     use_scatter_fusion = (
         os.environ.get('CUEQ_USE_SCATTER_FUSION')
         or cue_cfg.pop('use_scatter_fusion', True)

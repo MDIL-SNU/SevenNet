@@ -1,6 +1,6 @@
 import itertools
 import warnings
-from typing import Any, Callable, Dict, Iterator, Literal, Union
+from typing import Any, Callable, Iterator, Literal, Union
 
 import e3nn.o3 as o3
 import numpy as np
@@ -147,14 +147,6 @@ def _check_may_not_compatible(orig_kwargs, defaults) -> None:
         v_given = orig_kwargs.pop(k, v)
         if v_given != v:
             warnings.warn(f'{k}: {v} is ignored to use cuEquivariance')
-
-
-def is_cue_cuda_available_model(config: Dict[str, Any]) -> bool:
-    if config.get('use_bias_in_linear', False):
-        warnings.warn('Bias in linear can not be used with cueq, fallback to e3nn')
-        return False
-    else:
-        return True
 
 
 @cue_needed
