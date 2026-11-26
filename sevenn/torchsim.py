@@ -143,7 +143,7 @@ class SevenNetModel(ModelInterface):  # type: ignore[misc,valid-type]
             )
 
         if isinstance(model, (str, Path)):
-            cp = load_checkpoint(model)
+            cp = load_checkpoint(model).compact_for_inference()
             model = cp.build_model(
                 enable_flash=enable_flash,
                 enable_cueq=enable_cueq,

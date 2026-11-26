@@ -68,6 +68,7 @@ def run(args):
         if not sevenn.nn.oeq_helper.is_oeq_available():
             raise ImportError('OpenEquivariance not installed or no GPU found.')
 
+    os.environ.setdefault('SEVENNET_LUNATP_PRECOMPILE_ORDER', '2')
     if use_lunatp:
         import sevenn.nn.lunatp_helper
 

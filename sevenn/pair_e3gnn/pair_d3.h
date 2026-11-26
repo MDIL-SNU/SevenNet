@@ -69,7 +69,6 @@ namespace LAMMPS_NS {
 
         /* ------- Read parameters ------- */
         int find_atomic_number(std::string&);
-        int is_int_in_array(int*, int, int);
         void read_r0ab(int*, int);
         void get_limit_in_pars_array(int&, int&, int&, int&);
         void read_c6ab(int*, int);

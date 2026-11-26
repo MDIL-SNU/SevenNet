@@ -315,6 +315,41 @@ def test_run_one_epoch(HfO2_loader):
         assert np.allclose(float(ret2[k]), float(ref2[k]))
 
 
+def test_muon_optimizer(HfO2_loader, tmp_path):
+    from sevenn import __version__
+    from sevenn.model_build import build_E3_equivariant_model
+    from sevenn.train.muon import MuonWithAuxAdam
+
+    cfg = get_config({
+        'shift': 0.0, 'scale': 1.0, 'conv_denominator': 5.0,
+        'optimizer': 'muon', 'version': __version__,
+        'optim_param': {'muon': {'lr': 0.01}, 'adam': {'lr': 0.005}},
+    })
+
+    def losses(trainer):
+        out = []
+        for _ in range(3):
+            recorder = ErrorRecorder.from_config(cfg)
+            trainer.run_one_epoch(
+                HfO2_loader, is_train=True, error_recorder=recorder
+            )
+            out.append(float(recorder.get_dct()['TotalLoss']))
+        return out
+
+    torch.manual_seed(0)
+    trainer = Trainer.from_config(build_E3_equivariant_model(cfg), cfg)
+    assert isinstance(trainer.optimizer, MuonWithAuxAdam)
+    first = losses(trainer)
+    assert first[-1] < first[0]
+
+    cp_path = str(tmp_path / 'cp.pth')
+    trainer.write_checkpoint(cp_path, config=cfg, epoch=3)
+    args, optimizer_state, _ = Trainer.args_from_checkpoint(cp_path)
+    resumed = Trainer(**args, device='cpu')
+    resumed.optimizer.load_state_dict(optimizer_state)
+    assert losses(resumed) == pytest.approx(losses(trainer), rel=1e-5)
+
+
 def test_processing_epoch_v2(HfO2_loader, tmp_path):
     trainer_args, _, _ = Trainer.args_from_checkpoint(cp_0_path)
     trainer = Trainer(**trainer_args)

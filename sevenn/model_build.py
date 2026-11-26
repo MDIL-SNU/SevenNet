@@ -367,11 +367,17 @@ def patch_lunatp(layers: OrderedDict, config: Dict[str, Any]) -> OrderedDict:
     if not config.get(KEY.USE_LUNATP, False):
         return layers
 
+    lunatp_helper.auto_precompile(config)
     # raises ImportError if LunaTP is not available, no fallback to e3nn
     updates = {}
+    last_convolution = None
     for k, module in layers.items():
         if isinstance(module, IrrepsConvolution):
-            updates[k] = lunatp_helper.patch_convolution(module)
+            starts_graph = last_convolution is None
+            if last_convolution is not None:
+                last_convolution.ends_graph = False
+            last_convolution = lunatp_helper.patch_convolution(module, starts_graph)
+            updates[k] = last_convolution
         elif isinstance(module, (IrrepsLinear, SelfConnectionLinearIntro)):
             updates[k] = lunatp_helper.patch_linear(module)
         elif isinstance(module, SelfConnectionIntro):
@@ -465,33 +471,7 @@ def _to_parallel_model(
     return layers_list
 
 
-@overload
-def build_E3_equivariant_model(
-    config: dict, parallel: Literal[False] = False
-) -> AtomGraphSequential:  # noqa
-    ...
-
-
-@overload
-def build_E3_equivariant_model(
-    config: dict, parallel: Literal[True]
-) -> List[AtomGraphSequential]:  # noqa
-    ...
-
-
-def build_E3_equivariant_model(
-    config: dict, parallel: bool = False
-) -> Union[AtomGraphSequential, List[AtomGraphSequential]]:
-    """
-    output shapes (w/o batch)
-
-    PRED_TOTAL_ENERGY: (),
-    ATOMIC_ENERGY: (natoms, 1),  # intended
-    PRED_FORCE: (natoms, 3),
-    PRED_STRESS: (6,),
-
-    for data w/o cell volume, pred_stress has garbage values
-    """
+def _model_layers(config: dict, parallel: bool):
     layers = OrderedDict()
 
     cutoff = config[KEY.CUTOFF]
@@ -565,6 +545,7 @@ def build_E3_equivariant_model(
         'bias_in_linear': use_bias_in_linear,
         'num_species': num_species,
         'parallel': parallel,
+        'drop_unused_tp_irreps': config.get(KEY.DROP_UNUSED_TP_IRREPS, False),
     }
 
     interaction_builder = None
@@ -659,7 +640,37 @@ def build_E3_equivariant_model(
         else True,
         'data_key_grad': grad_key,
     }
+    return layers, common_args
 
+
+@overload
+def build_E3_equivariant_model(
+    config: dict, parallel: Literal[False] = False
+) -> AtomGraphSequential:  # noqa
+    ...
+
+
+@overload
+def build_E3_equivariant_model(
+    config: dict, parallel: Literal[True]
+) -> List[AtomGraphSequential]:  # noqa
+    ...
+
+
+def build_E3_equivariant_model(
+    config: dict, parallel: bool = False
+) -> Union[AtomGraphSequential, List[AtomGraphSequential]]:
+    """
+    output shapes (w/o batch)
+
+    PRED_TOTAL_ENERGY: (),
+    ATOMIC_ENERGY: (natoms, 1),  # intended
+    PRED_FORCE: (natoms, 3),
+    PRED_STRESS: (6,),
+
+    for data w/o cell volume, pred_stress has garbage values
+    """
+    layers, common_args = _model_layers(config, parallel)
     if parallel:
         layers_list = _to_parallel_model(layers, config)
         return [

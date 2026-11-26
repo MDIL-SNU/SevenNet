@@ -50,7 +50,7 @@ private:
   // rank's cutoff), keyed by atom TAG like the graph nodes: a ghost copy made
   // by a self-swap (unsplit direction, no GNN message) has a new atom index
   // but the same tag, and must use the slot that received the features.
-  std::unordered_map<int, long> extra_graph_idx_map;
+  std::unordered_map<tagint, long> extra_graph_idx_map;
   int n_extra_slots = 0;
   // To use scatter, store long instead of int
   // array of vector

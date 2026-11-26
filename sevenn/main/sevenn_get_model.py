@@ -3,6 +3,8 @@ import os
 
 import torch
 
+from sevenn._const import DEFAULT_RADIAL_TABLE_KNOTS, DEFAULT_RADIAL_TABLE_R_MIN
+
 description_get_model = (
     'deploy LAMMPS model from the checkpoint'
 )
@@ -29,6 +31,11 @@ def add_args(parser):
     )
     ag.add_argument(
         '-p', '--get_parallel', help=get_parallel_help, action='store_true'
+    )
+    ag.add_argument(
+        '--compact_checkpoint',
+        help='Write a compact inference .pth. Use -o to name the output.',
+        action='store_true',
     )
     ag.add_argument(
         '-m',
@@ -68,6 +75,26 @@ def add_args(parser):
         help='Use LAMMPS ML-IAP interface.',
         action='store_true',
     )
+    for name, help_text in (
+        ('cuda_graph', 'Replay the model on one CUDA MPI rank.'),
+        ('fused', 'Use fused LunaTP kernels on one CUDA MPI rank.'),
+        ('radial_table', 'Interpolate radial weights with cubic Hermite tables.'),
+    ):
+        flags = ag.add_mutually_exclusive_group()
+        flags.add_argument(f'--{name}', action='store_true', help=help_text)
+        flags.add_argument(
+            f'--disable_{name}', dest=name, action='store_false',
+            help=f'Disable {name} for ML-IAP.',
+        )
+        ag.set_defaults(**{name: None})
+    ag.add_argument(
+        '--radial_knots', type=int,
+        help=f'Number of Hermite knots (default: {DEFAULT_RADIAL_TABLE_KNOTS}).',
+    )
+    ag.add_argument(
+        '--radial_r_min', type=float,
+        help=f'First knot in angstroms (default: {DEFAULT_RADIAL_TABLE_R_MIN:.2f}).',
+    )
 
 
 def run(args):
@@ -83,6 +110,28 @@ def run(args):
     use_oeq = args.enable_oeq
     use_lunatp = args.enable_lunatp
     use_mliap = args.use_mliap
+    cuda_graph = args.cuda_graph
+    radial_table = args.radial_table
+    fused = args.fused
+    mliap_options = any(
+        value is not None for value in (
+            cuda_graph, fused, radial_table, args.radial_knots, args.radial_r_min,
+        )
+    )
+
+    if args.compact_checkpoint:
+        if any((
+            get_parallel, modal, use_flash, use_cueq, use_oeq, use_lunatp,
+            use_mliap, mliap_options,
+        )):
+            raise ValueError(
+                '--compact_checkpoint writes a backend-independent .pth'
+            )
+        output = output_prefix or 'inference.pth'
+        if not output.endswith('.pth'):
+            output += '.pth'
+        sevenn.util.load_checkpoint(checkpoint).save_inference_checkpoint(output)
+        return
 
     # Check dependencies
     if use_flash:
@@ -114,6 +163,11 @@ def run(args):
 
     if use_lunatp and not use_mliap:
         raise ValueError('LunaTP is only supported in ML-IAP interface.')
+
+    if mliap_options and not use_mliap:
+        raise ValueError('These acceleration options require --use_mliap.')
+    if fused and not use_lunatp:
+        raise ValueError('fused needs LunaTP (--enable_lunatp).')
 
     if use_mliap and get_parallel:
         raise ValueError('Currently, ML-IAP interface does not tested on parallel.')
@@ -156,6 +210,11 @@ def run(args):
             use_flash=use_flash,
             use_oeq=use_oeq,
             use_lunatp=use_lunatp,
+            use_cuda_graph=cuda_graph,
+            use_radial_table=radial_table,
+            use_fused=fused,
+            radial_knots=args.radial_knots,
+            radial_r_min=args.radial_r_min,
         )
         torch.save(mliap_module, output_prefix)
 

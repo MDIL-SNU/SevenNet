@@ -58,7 +58,7 @@ def snet_0_cp():
 
 @pytest.fixture(scope='module')
 def snet_0_calc():
-    return SevenNetCalculator()
+    return SevenNetCalculator(radial_table=False)
 
 
 @pytest.fixture()

@@ -113,12 +113,12 @@ For more information, see [OpenEquivariance](https://github.com/PASSIONLab/OpenE
 LunaTP support in SevenNet is currently experimental.
 :::
 
-LunaTP (LunaEquivariance package) replaces the tensor product convolution with a fused kernel that accumulates the messages of each destination atom in registers before one store to global memory. SevenNet also replaces the linear layers, the self-connection tensor product, and the gate nonlinearity with their LunaEquivariance counterparts. The kernels are compiled at the first use of each irreps configuration and cached on disk.
+LunaTP (LunaEquivariance package) replaces the tensor product convolution with a fused kernel that accumulates the messages of each destination atom in registers before one store to global memory. SevenNet also replaces the linear layers, the self-connection tensor product, and the gate nonlinearity with their LunaEquivariance counterparts.
 
 ### Requirements
 - Python >= 3.10, PyTorch >= 2.8
 - NVIDIA GPU with compute capability 8.0 or later, CUDA toolkit with `nvcc`
-- LunaEquivariance
+- LunaEquivariance 0.3.0
 
 ### Installation
 ```bash
@@ -132,12 +132,33 @@ True
 ```
 
 ### Kernel compilation
-The first calculation with a model compiles its LunaTP kernels one after another, which takes several minutes. We recommend `sevenn lunatp_precompile`, which compiles the kernels of a checkpoint in parallel before the first calculation:
+Building a LunaTP model compiles its kernels in parallel processes (default: min(16, available CPUs)) before the first calculation. Inference precompilation covers plain LunaTP, fusion with exact or tabulated radial weights, and ML-IAP CUDA Graph preparation. It also builds the standalone CUDA radial table when CuPy is installed. The cache depends on the Python environment, `LD_LIBRARY_PATH`, and the GPU architecture.
+
+`SEVENNET_LUNATP_PRECOMPILE_WORKERS` sets the number of processes. Set it to `0` to compile kernels at first use. `sevenn train` also compiles the kernels for training with force and stress losses.
+
+`sevenn lunatp_precompile` compiles the kernels of a checkpoint ahead of time, for example on a node other than the one of the later calculations:
 ```bash
 sevenn lunatp_precompile 7net-omni           # kernels for inference (energy, forces, stress)
 sevenn lunatp_precompile 7net-omni --train   # also the kernels for training with force and stress losses
 ```
-The compiled kernels are cached on disk, and later calculations load them. Run the command in the environment of the later calculations, since the cache depends on the Python environment, `LD_LIBRARY_PATH`, and the GPU architecture. `--max_workers` sets the number of parallel processes (default: min(8, available CPUs)).
+`--max_workers` sets the number of parallel processes.
+
+For tensor-product self-connections, fused inference builds kernels in parallel
+the first time it sees a new number of species. Later calculations reuse those
+kernels for any combination of the same size. Use `--species_widths 3 6` to
+prepare widths ahead of simulation or `--all_species_widths` to prepare all of
+them.
+
+### Fused inference and radial interpolation
+
+The fused LunaTP kernels combine tensor products with radial weight lookup
+and force backpropagation. They can use exact radial MLP weights or cubic
+Hermite interpolation. Interpolation also works as a separate radial operation.
+The default table uses 2048 uniformly spaced knots from 0 Å to the cutoff.
+With a positive first knot, shorter distances use cubic extrapolation.
+
+See the [ASE](./ase_calculator.md#accelerating-inference) and
+[ML-IAP](./lammps_mliap.md) options for disabling or configuring these paths.
 
 For more information, see [LunaEquivariance](https://github.com/HPC-AI-Team/LunaEquivariance).
 

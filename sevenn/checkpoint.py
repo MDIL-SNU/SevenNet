@@ -11,6 +11,8 @@ from ase.atoms import Atoms
 from packaging.version import Version
 from torch import Tensor
 from torch import load as torch_load
+from torch import random as torch_random
+from torch import save as torch_save
 
 import sevenn
 import sevenn._const as consts
@@ -341,9 +343,11 @@ class SevenNetCheckpoint:
 
     def _load(self) -> None:
         assert not self._loaded
-        cp_path = self.checkpoint_path  # just alias
+        cp = torch_load(self.checkpoint_path, weights_only=False, map_location='cpu')
+        self._set_checkpoint(cp)
 
-        cp = torch_load(cp_path, weights_only=False, map_location='cpu')
+    def _set_checkpoint(self, cp: Dict[str, Any]) -> None:
+        cp_path = self.checkpoint_path
         self._config_original = cp.get('config', {})
         self._model_state_dict = cp.get('model_state_dict', {})
         self._optimizer_state_dict = cp.get('optimizer_state_dict', {})
@@ -426,6 +430,60 @@ class SevenNetCheckpoint:
             missing, not_used = model.load_state_dict(state_dict, strict=False)
 
         return model
+
+    def compact_for_inference(self) -> 'SevenNetCheckpoint':
+        """Drop convolution outputs unused by the following linear layer."""
+        from sevenn.nn.compact import compact_convolution_state
+
+        config = self.config
+        # Inferred layouts already feed every TP output type into the gate.
+        if not config.get(KEY.IRREPS_MANUAL) or config.get(
+            KEY.DROP_UNUSED_TP_IRREPS
+        ):
+            return self
+
+        # Load legacy weights in their original layout before projecting them.
+        with torch_random.fork_rng(devices=[]):
+            original = self.build_model()
+            config.update({
+                KEY.DROP_UNUSED_TP_IRREPS: True,
+                KEY.CUEQUIVARIANCE_CONFIG: {'use': False},
+                KEY.USE_FLASH_TP: False,
+                KEY.USE_OEQ: False,
+                KEY.USE_LUNATP: False,
+                'version': sevenn.__version__,
+            })
+            compact = model_build.build_E3_equivariant_model(config)
+        state = compact_convolution_state(original, compact)
+        if state is None:
+            return self
+
+        checkpoint = SevenNetCheckpoint(self.checkpoint_path)
+        checkpoint._set_checkpoint({
+            'config': config,
+            'model_state_dict': state,
+            'epoch': self.epoch,
+            'hash': self.hash,
+            'time': self.time,
+        })
+        return checkpoint
+
+    def save_inference_checkpoint(self, path: Union[pathlib.Path, str]) -> None:
+        """Write a model-only checkpoint in the inference layout."""
+        if pathlib.Path(path).resolve() == pathlib.Path(
+            self.checkpoint_path
+        ).resolve():
+            raise ValueError(
+                'The inference checkpoint needs a different output path'
+            )
+        checkpoint = self.compact_for_inference()
+        torch_save({
+            'config': checkpoint.config,
+            'model_state_dict': checkpoint.model_state_dict,
+            'epoch': checkpoint.epoch,
+            'time': datetime.now().strftime('%Y-%m-%d %H:%M'),
+            'hash': uuid.uuid4().hex,
+        }, path)
 
     def yaml_dict(self, mode: str) -> Dict[str, Any]:
         """

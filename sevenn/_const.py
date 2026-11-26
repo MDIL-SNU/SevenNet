@@ -8,6 +8,8 @@ import sevenn._keys as KEY
 from sevenn.nn.activation import ShiftedSoftPlus
 
 NUM_UNIV_ELEMENT = 119  # Z = 0 ~ 118
+DEFAULT_RADIAL_TABLE_KNOTS = 2048
+DEFAULT_RADIAL_TABLE_R_MIN = 0.0  # angstrom
 
 IMPLEMENTED_RADIAL_BASIS = ['bessel']
 IMPLEMENTED_CUTOFF_FUNCTION = ['poly_cut', 'XPLOR']
@@ -113,6 +115,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
     KEY.CUTOFF: 4.5,
     KEY.NODE_FEATURE_MULTIPLICITY: 32,
     KEY.IRREPS_MANUAL: False,
+    KEY.DROP_UNUSED_TP_IRREPS: False,
     KEY.LMAX: 1,
     KEY.LMAX_EDGE: -1,  # -1 means lmax_edge = lmax
     KEY.LMAX_NODE: -1,  # -1 means lmax_node = lmax
@@ -158,6 +161,7 @@ DEFAULT_E3_EQUIVARIANT_MODEL_CONFIG = {
 # Basically, "If provided, it should be type of ..."
 MODEL_CONFIG_CONDITION = {
     KEY.NODE_FEATURE_MULTIPLICITY: int,
+    KEY.DROP_UNUSED_TP_IRREPS: bool,
     KEY.LMAX: int,
     KEY.LMAX_EDGE: int,
     KEY.LMAX_NODE: int,

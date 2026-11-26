@@ -7,15 +7,23 @@ All notable changes to this project will be documented in this file.
 - Loss: MAE, L2MAE
 - Dataset type: `aselmdb`, `custom`
 - SevenNet-Nano checkpoints for `7net-nano-4.5`, `7net-nano-5.0`, `7net-nano-5.5`, and `7net-nano-6.0`
-- Support LunaTP (`enable_lunatp`). LAMMPS through ML-IAP only.
+- Support LunaTP (`enable_lunatp`, LunaEquivariance 0.3.0). LAMMPS through ML-IAP only.
+- LunaTP kernels compile in parallel processes when a model is built (`SEVENNET_LUNATP_PRECOMPILE_WORKERS`, `0` to turn off)
+- Hybrid Muon optimizer (`optimizer: muon`): Muon for e3nn linear and radial weight matrices, auxiliary Adam for the rest
+- CUDA Graph replay defaults on for compatible CUDA runs in ASE and single-rank ML-IAP. FlashTP uses eager execution.
+- Supported CUDA LunaTP models use fused inference kernels by default.
+- Compatible radial MLPs in ASE and single-rank ML-IAP use cubic Hermite interpolation on 2,048 knots from 0 Å to the model cutoff by default. Interpolation is independent of the tensor-product backend and fusion.
+- `SEVENN_MLIAP_MEMORY_REPORT=1` reports peak Torch GPU memory. `SEVENN_CUDA_MEMORY_FRACTION` limits per-process allocation.
 
 ### Changed
 - The default dtype of the rescale layer is changed to double precision. Use the `SEVENN_SHIFT_SCALE_DTYPE` environment variable for backward single-precision compatibility.
 - The recommended LAMMPS ML-IAP version is bumped to `stable_22Jul2025_update4`.
 
 ### Fixed
+- Fix incorrect `e3gnn/parallel` results on MPI grids with an unsplit middle axis (e.g., `2 1 2`).
 - `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
-- `e3gnn/parallel` gave wrong energies, forces and stress on processor grids whose unsplit direction lies between two split ones (e.g. `2 1 2`, which LAMMPS chooses for 4 ranks when the box is shortest along y): relayed ghost atoms copied by a self-swap were forwarded with empty node features.
+- Fix incorrect LAMMPS species mapping when checkpoint type map keys are out of index order. Redeploy affected models.
+- Fix FlashTP shared library loading in LAMMPS.
 
 
 ## [0.13.0]

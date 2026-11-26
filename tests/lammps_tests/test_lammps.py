@@ -100,32 +100,38 @@ def parallel_modal_potential_path(tmp_path_factory):
 
 @pytest.fixture(scope='module')
 def ref_calculator():
-    return SevenNetCalculator(cp_0_path)
+    return SevenNetCalculator(cp_0_path, radial_table=False)
 
 
 @pytest.fixture(scope='module')
 def ref_7net0_calculator():
-    return SevenNetCalculator(cp_7net0_path)
+    return SevenNetCalculator(cp_7net0_path, radial_table=False)
 
 
 @pytest.fixture(scope='module')
 def ref_modal_calculator():
-    return SevenNetCalculator(cp_mf_path, modal='PBE')
+    return SevenNetCalculator(cp_mf_path, modal='PBE', radial_table=False)
 
 
 @pytest.fixture(scope='module')
 def ref_stress_calculator():
-    return SevenNetCalculator(cp_0_path, compute_atomic_virial=True)
+    return SevenNetCalculator(
+        cp_0_path, compute_atomic_virial=True, radial_table=False,
+    )
 
 
 @pytest.fixture(scope='module')
 def ref_7net0_stress_calculator():
-    return SevenNetCalculator(cp_7net0_path, compute_atomic_virial=True)
+    return SevenNetCalculator(
+        cp_7net0_path, compute_atomic_virial=True, radial_table=False,
+    )
 
 
 @pytest.fixture(scope='module')
 def ref_modal_stress_calculator():
-    return SevenNetCalculator(cp_mf_path, modal='PBE', compute_atomic_virial=True)
+    return SevenNetCalculator(
+        cp_mf_path, modal='PBE', compute_atomic_virial=True, radial_table=False,
+    )
 
 
 def get_model_config():

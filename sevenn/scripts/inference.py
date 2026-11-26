@@ -179,8 +179,7 @@ def inference(
 
     """
     # TODO: False as default, priority?
-    model, _ = util.model_from_checkpoint(
-        checkpoint,
+    model = util.load_checkpoint(checkpoint).compact_for_inference().build_model(
         enable_cueq=enable_cueq,
         enable_flash=enable_flash,
         enable_oeq=enable_oeq,

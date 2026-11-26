@@ -23,7 +23,7 @@ def deploy(
     if not (use_flash or use_oeq):
         warn_no_tp_accelerator('LAMMPS TorchScript deployment')
 
-    cp = load_checkpoint(checkpoint)
+    cp = load_checkpoint(checkpoint).compact_for_inference()
     model, config = (
         cp.build_model(
             enable_cueq=False,
@@ -55,10 +55,9 @@ def deploy(
     # make some config need for md
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
-    chem_list = ''
-    for Z in type_map.keys():
-        chem_list += chemical_symbols[Z] + ' '
-    chem_list.strip()
+    chem_list = ' '.join(
+        chemical_symbols[z] for z in sorted(type_map, key=type_map.__getitem__)
+    )
     md_configs.update({'chemical_symbols_to_index': chem_list})
     md_configs.update({'cutoff': str(config[KEY.CUTOFF])})
     md_configs.update({'num_species': str(config[KEY.NUM_SPECIES])})
@@ -92,7 +91,7 @@ def deploy_parallel(
     # Additional layer for ghost atom (and copy parameters from original)
     GHOST_LAYERS_KEYS = ['onehot_to_feature_x', '0_self_interaction_1']
 
-    cp = load_checkpoint(checkpoint)
+    cp = load_checkpoint(checkpoint).compact_for_inference()
 
     model, config = (
         cp.build_model(
@@ -141,10 +140,9 @@ def deploy_parallel(
     md_configs = {}
     type_map = config[KEY.TYPE_MAP]
 
-    chem_list = ''
-    for Z in type_map.keys():
-        chem_list += chemical_symbols[Z] + ' '
-    chem_list.strip()
+    chem_list = ' '.join(
+        chemical_symbols[z] for z in sorted(type_map, key=type_map.__getitem__)
+    )
 
     comm_size = max(
         [
