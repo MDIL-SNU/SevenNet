@@ -2,6 +2,7 @@ import argparse
 import os
 import os.path as osp
 import subprocess
+import sys
 
 from sevenn import __version__
 
@@ -44,6 +45,13 @@ def run(args):
 
     print('Patching LAMMPS with the following settings:')
     print('  - LAMMPS source directory:', lammps_dir)
+
+    if sys.platform == 'darwin':  # the Apple GPU pair style, where it can run
+        from sevenn.mps.lammps import patch as apple
+
+        if apple.detected(args.d3 or args.enable_flash or args.enable_oeq):
+            print('  - Apple GPU pair style (serial; SEVENN_DISABLE_MPS=1 for CUDA)')
+            sys.exit(apple.patch(lammps_dir))
 
     cxx_standard = '17'  # always 17
 

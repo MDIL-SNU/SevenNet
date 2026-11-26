@@ -15,6 +15,7 @@ SevenNet offers various pretrained models, MD engines (ASE, LAMMPS), and user in
    :caption: Installation
 
    accelerator
+   mps
    lammps_mliap
    lammps_torch
 

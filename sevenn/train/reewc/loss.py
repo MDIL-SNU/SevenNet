@@ -87,7 +87,19 @@ class EWCLoss(LossDefinition):
                 UserWarning,
             )
 
-        self.to(next(iter(model_params.values())).device)
+        device = next(iter(model_params.values())).device
+        self.fisher_dict = dict(self.fisher_dict)  # the caller's dicts stay as given
+        self.opt_params_dict = dict(self.opt_params_dict)
+        for d in (self.fisher_dict, self.opt_params_dict):
+            for name, v in d.items():
+                try:
+                    d[name] = v.to(device)
+                except (TypeError, RuntimeError):
+                    # a device without this dtype (e.g. no float64): the dtype of
+                    # the matching parameter
+                    p = model_params.get(name)
+                    if p is not None:
+                        d[name] = v.to(device, p.dtype)
         self._checked = True
 
     def get_loss(self, batch_data: Dict[str, Any], model: Optional[Callable] = None):

@@ -10,6 +10,7 @@ All notable changes to this project will be documented in this file.
 - Support LunaTP (`enable_lunatp`, LunaEquivariance 0.3.0). LAMMPS through ML-IAP only.
 - LunaTP kernels compile in parallel processes when a model is built (`SEVENNET_LUNATP_PRECOMPILE_WORKERS`, `0` to turn off)
 - Hybrid Muon optimizer (`optimizer: muon`): Muon for e3nn linear and radial weight matrices, auxiliary Adam for the rest
+- Apple GPU (MPS) backend in `sevenn/mps/`: moving a model to `mps` runs fused Metal kernels, also in training; serial LAMMPS pair style installed by `sevenn patch_lammps` on a Mac, in place of the TorchScript pair styles (`SEVENN_DISABLE_MPS=1` keeps those). Opt-out: `SEVENN_DISABLE_MPS=1`. See the Apple GPU page of the docs.
 - CUDA Graph replay defaults on for compatible CUDA runs in ASE and single-rank ML-IAP. FlashTP uses eager execution.
 - Supported CUDA LunaTP models use fused inference kernels by default in ASE and in both single- and multi-rank ML-IAP.
 - Compatible radial MLPs in ASE and ML-IAP use cubic Hermite interpolation on 2,048 knots from 0 Å to the model cutoff by default. Interpolation is independent of the tensor-product backend and fusion.

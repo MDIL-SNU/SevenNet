@@ -252,9 +252,7 @@ class SevenNetCalculator(Calculator):
         enable_flash = os.getenv('SEVENNET_ENABLE_FLASH') == '1' or enable_flash
         enable_oeq = os.getenv('SEVENNET_ENABLE_OEQ') == '1' or enable_oeq
         enable_lunatp = os.getenv('SEVENNET_ENABLE_LUNATP') == '1' or enable_lunatp
-
-        if not (enable_cueq or enable_flash or enable_oeq or enable_lunatp):
-            util.warn_no_tp_accelerator('SevenNetCalculator')
+        accelerated = enable_cueq or enable_flash or enable_oeq or enable_lunatp
 
         if enable_cueq and file_type == 'model_instance':
             warnings.warn(
@@ -284,6 +282,15 @@ class SevenNetCalculator(Calculator):
                 self.device = torch.device(device)
         else:
             self.device = device
+
+        # the Apple GPU runs its own kernels (sevenn/mps)
+        apple_gpu = (
+            self.device is not None and torch.device(self.device).type == 'mps'
+        )
+        if not (accelerated or apple_gpu):
+            util.warn_no_tp_accelerator('SevenNetCalculator')
+        if radial_table and apple_gpu:  # before a model instance is moved
+            raise ValueError('radial tables are not available on the Apple GPU')
 
         if file_type == 'checkpoint' and isinstance(model, str):
             cp = util.load_checkpoint(model).compact_for_inference()
@@ -370,7 +377,7 @@ class SevenNetCalculator(Calculator):
         if use_radial_table is None:
             use_radial_table = (
                 file_type == 'checkpoint' and isinstance(model, str)
-                and supports_radial_table(self.model)
+                and supports_radial_table(self.model) and not apple_gpu
             )
         if use_radial_table and radial_knots < 2:
             raise ValueError('radial_knots must be at least 2')
