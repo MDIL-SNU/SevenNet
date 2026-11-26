@@ -20,6 +20,7 @@ All notable changes to this project will be documented in this file.
 - The recommended LAMMPS ML-IAP version is bumped to `stable_22Jul2025_update4`.
 
 ### Fixed
+- Fix incorrect `e3gnn/parallel` results on MPI grids with an unsplit middle axis (e.g., `2 1 2`).
 - `D3Calculator()` segfault bug when reusing the calculator within different sized `Atoms`.
 - Fix incorrect LAMMPS species mapping when checkpoint type map keys are out of index order. Redeploy affected models.
 - Fix FlashTP shared library loading in LAMMPS.
