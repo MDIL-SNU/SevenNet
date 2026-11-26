@@ -227,7 +227,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
 
         model.delete_module_by_key('force_output')  # to autograd edge forces
         model.to(self.device)
-        model.eval()
+        model.eval().requires_grad_(False)
         radial_table = getattr(self, 'use_radial_table', False)
         knots = getattr(self, 'radial_knots', None)
         r_min = getattr(self, 'radial_r_min', DEFAULT_RADIAL_TABLE_R_MIN)
@@ -259,6 +259,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                 model, self.cp.build_model, self.modal,
                 knots if radial_table else 0, r_min,
                 first=os.getenv('SEVENN_MLIAP_FUSED_FIRST', '1') != '0',
+                config=self.cp.config,
             )
             first_layer = next(
                 (module for module in model if isinstance(module, FusedFirstLayer)),
@@ -283,8 +284,6 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                     model._modules[name] = MLIAPWrappedIrrepsLinear(
                         module, keep_atom_types=first_layer is not None,
                     )
-        if self._single_rank or fused:
-            model.requires_grad_(False)
         return model
 
     def _ensure_model_initialized(self):

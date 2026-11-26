@@ -385,6 +385,7 @@ class SevenNetCalculator(Calculator):
                 self.fused = prepare_fused_inference(
                     self.model, cp.build_model, self.modal,
                     radial_knots if use_radial_table else 0, radial_r_min,
+                    config=cp.config,
                 )
                 if not self.fused and os.getenv('SEVENNET_ENABLE_FUSED') == '1':
                     warnings.warn('fused: no convolution of this model is covered')

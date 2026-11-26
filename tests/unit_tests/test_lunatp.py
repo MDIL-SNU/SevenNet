@@ -268,18 +268,22 @@ def test_calculator(tmp_path):
 
 _CALCULATOR_CALLS = """
 import sys
+from itertools import product
 from ase import Atoms
 from ase.build import bulk
 from sevenn.calculator import SevenNetCalculator
 
-calc = SevenNetCalculator(
-    sys.argv[1], enable_lunatp=True,
-    cuda_graph=False, fused=False, radial_table=False,
-)
-dimer = Atoms('NaCl', positions=[[0, 0, 0], [0, 0, 2.4]])
-for atoms in (dimer, bulk('NaCl', 'rocksalt', a=4.0)):
-    atoms.calc = calc
-    atoms.get_potential_energy()
+dimer = Atoms('Na2', positions=[[0, 0, 0], [0, 0, 2.4]])
+crystal = bulk('NaCl', 'rocksalt', a=4.0, cubic=True).repeat((4, 4, 4))
+for graph, fused, radial in product((False, True), repeat=3):
+    calc = SevenNetCalculator(
+        sys.argv[1], enable_lunatp=True, cuda_graph=graph,
+        fused=fused, radial_table=radial,
+    )
+    assert bool(calc.fused) == fused
+    for atoms in (dimer, crystal):
+        for _ in range(2 if graph else 1):
+            calc.calculate(atoms)
 """
 
 
@@ -292,6 +296,7 @@ def test_precompile_covers_calculator(tmp_path, monkeypatch):
     from sevenn.nn.lunatp_helper import precompile
 
     monkeypatch.setenv('LUNAEQ_CACHE_DIR', str(tmp_path))
+    monkeypatch.setenv('CUPY_CACHE_DIR', str(tmp_path / 'cupy'))
     monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
     cfg = get_model_config()
     cfg.update({
@@ -302,9 +307,11 @@ def test_precompile_covers_calculator(tmp_path, monkeypatch):
     cp_path = str(tmp_path / 'cp.pth')
     torch.save({'model_state_dict': model.state_dict(), 'config': cfg}, cp_path)
 
-    precompile(cp_path)
+    precompile(cp_path, species_widths=(1,))
     built = set(tmp_path.rglob('*.so'))
-    assert built
+    assert any('fused_fwd_fp32' in f.name for f in built)
+    assert any('fused_fwd_herm' in f.name for f in built)
+    assert any('sevenn_mliap_prep' in f.name for f in built)
     subprocess.run(
         [sys.executable, '-c', _CALCULATOR_CALLS, cp_path], check=True
     )
@@ -428,7 +435,7 @@ def test_no_fallback(monkeypatch):
 
 
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
-def test_auto_precompile_runs_once(tmp_path, monkeypatch):
+def test_auto_precompile_runs_once(tmp_path, monkeypatch, capsys):
     import sevenn.nn.lunatp_helper as helper
 
     popen = Mock()
@@ -447,12 +454,18 @@ def test_auto_precompile_runs_once(tmp_path, monkeypatch):
     assert popen.call_count == 3
     helper.auto_precompile({**cfg, 'lmax': 3})
     assert popen.call_count == 6
+    helper.precompile_species_width(cfg, 1)
+    after_width = popen.call_count
+    assert 6 < after_width <= 9
+    assert 'species width 1' in capsys.readouterr().err
+    helper.precompile_species_width(cfg, 1)
+    assert popen.call_count == after_width
     monkeypatch.setenv('LD_LIBRARY_PATH', '/opt/another-env')
     helper.auto_precompile(cfg)
-    assert popen.call_count == 9
+    assert popen.call_count == after_width + 3
     monkeypatch.setenv('SEVENNET_LUNATP_PRECOMPILE_WORKERS', '0')
     helper.auto_precompile({**cfg, 'lmax': 1})
-    assert popen.call_count == 9
+    assert popen.call_count == after_width + 3
 
 
 @pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
