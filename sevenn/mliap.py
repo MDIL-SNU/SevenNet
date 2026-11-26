@@ -147,6 +147,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         self.use_lunatp = kwargs.get('use_lunatp', False)
         self.modal = kwargs.get('modal', None)
         self.use_cuda_graph = kwargs.get('use_cuda_graph')
+        self.use_ghost_folding = kwargs.get('use_ghost_folding')
         self.use_radial_table = kwargs.get('use_radial_table')
         self.use_fused = kwargs.get('use_fused')
         self.radial_knots = kwargs.get('radial_knots')
@@ -356,6 +357,11 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                 getattr(self, 'use_cuda_graph', False), 'SEVENN_MLIAP_CUDA_GRAPH',
                 default=True,
             )
+            fold_ghosts = self._cuda_single_rank and _runtime_flag(
+                getattr(self, 'use_ghost_folding', None),
+                'SEVENN_MLIAP_GHOST_FOLDING',
+                default=True,
+            )
             if replay and self.use_flash:
                 print('[INFO] FlashTP uses eager execution on CUDA', flush=True)
                 replay = False
@@ -363,9 +369,13 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                 getattr(self, 'use_fused', False), 'SEVENN_MLIAP_FUSED',
                 default=True,
             )
-            if self._cuda_single_rank and (replay or fused):
+            self._unfolded_graph = None
+            if fold_ghosts:
                 self.graph = self._build_serial_runtime(replay, fused)
-            self._parallel_fused = not self._single_rank and fused
+            elif replay and os.getenv('SEVENN_MLIAP_FOLD_EAGER') != '1':
+                from sevenn.nn._mliap_segmented_graph import SegmentedReplay
+                self._unfolded_graph = SegmentedReplay()
+            self._parallel_fused = not fold_ghosts and fused
         if (runtime := getattr(self, 'graph', None)) is not None:
             if runtime.compute(lmp_data):
                 return
@@ -419,7 +429,10 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         ):
             data[KEY.MLIAP_OWNED_OUTPUT] = nlocal
 
-        output = self.model(data)
+        unfolded_graph = getattr(self, '_unfolded_graph', None)
+        output = (
+            unfolded_graph(self.model, data) if unfolded_graph else self.model(data)
+        )
         pred_atomic_energies = output[KEY.ATOMIC_ENERGY].view(-1)
         if pred_atomic_energies.numel() != nlocal:
             pred_atomic_energies = pred_atomic_energies[:nlocal]

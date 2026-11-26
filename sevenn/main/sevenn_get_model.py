@@ -77,6 +77,7 @@ def add_args(parser):
     )
     for name, help_text in (
         ('cuda_graph', 'Replay the model on one CUDA MPI rank.'),
+        ('ghost_folding', 'Fold ghost atoms onto local owners on one CUDA rank.'),
         ('fused', 'Use fused LunaTP kernels.'),
         ('radial_table', 'Interpolate radial weights with cubic Hermite tables.'),
     ):
@@ -111,11 +112,13 @@ def run(args):
     use_lunatp = args.enable_lunatp
     use_mliap = args.use_mliap
     cuda_graph = args.cuda_graph
+    ghost_folding = args.ghost_folding
     radial_table = args.radial_table
     fused = args.fused
     mliap_options = any(
         value is not None for value in (
-            cuda_graph, fused, radial_table, args.radial_knots, args.radial_r_min,
+            cuda_graph, ghost_folding, fused, radial_table,
+            args.radial_knots, args.radial_r_min,
         )
     )
 
@@ -214,6 +217,7 @@ def run(args):
             use_oeq=use_oeq,
             use_lunatp=use_lunatp,
             use_cuda_graph=cuda_graph,
+            use_ghost_folding=ghost_folding,
             use_radial_table=radial_table,
             use_fused=fused,
             radial_knots=args.radial_knots,
