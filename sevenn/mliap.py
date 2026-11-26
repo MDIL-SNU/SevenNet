@@ -213,7 +213,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
 
         model.delete_module_by_key('force_output')  # to autograd edge forces
         model.to(self.device)
-        model.eval()
+        model.eval().requires_grad_(False)
         radial_table = getattr(self, 'use_radial_table', False)
         knots = getattr(self, 'radial_knots', None)
         r_min = getattr(self, 'radial_r_min', DEFAULT_RADIAL_TABLE_R_MIN)
@@ -241,6 +241,7 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
                 model, self.cp.build_model, self.modal,
                 knots if radial_table else 0, r_min,
                 first=os.getenv('SEVENN_MLIAP_FUSED_FIRST', '1') != '0',
+                config=self.cp.config,
             )
             model.prune_species = bool(names)
             if names:
@@ -264,7 +265,6 @@ class SevenNetMLIAPWrapper(MLIAPUnified):
         from sevenn.nn._mliap_cuda_graph import MLIAPCudaGraph
 
         model = self._build_model(ghost_exchange=False, fused=fused)
-        model.requires_grad_(False)
         runtime = MLIAPCudaGraph(
             model, self.device, self.cutoff, modal=self.modal, replay=replay,
         )
