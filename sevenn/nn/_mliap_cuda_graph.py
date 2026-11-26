@@ -109,6 +109,12 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
 """
 
 
+def _load_prep_kernel():
+    from .lunatp_fused import _load_cuda
+
+    return _load_cuda('sevenn_mliap_prep', _PREP_SOURCE)
+
+
 def _pad_graph(graph, num_segments: int):
     """Pad with empty source segments, or return None if capacity is exceeded."""
     seg = graph.source_segments
@@ -235,9 +241,7 @@ class MLIAPCudaGraph:
             os.getenv('SEVENN_MLIAP_GRAPH_PREP', '1') != '0'
         ):
             try:
-                from sevenn.nn.lunatp_fused import _load_cuda
-
-                self._prep = _load_cuda('sevenn_mliap_prep', _PREP_SOURCE)
+                self._prep = _load_prep_kernel()
             except (ImportError, OSError, RuntimeError) as e:
                 warnings.warn(f'ML-IAP step kernel not built: {e}')
         self._allowed = torch.zeros(256, dtype=torch.bool, device=device)

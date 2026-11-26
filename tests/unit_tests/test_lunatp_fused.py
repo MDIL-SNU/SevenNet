@@ -46,6 +46,8 @@ def test_fused_mliap_cuda_graph(tmp_path, self_connection, knots):
     modal = MODAL if knots else None
     cp = save_checkpoint(tmp_path / 'cp.pth', self_connection, modal=bool(modal))
     atoms = atoms_with_ghosts()
+    if knots:
+        atoms.symbols[:4] = 'NaClNaCl'
     graph, names = _fused_graph(cp, knots=knots)
     ref = reference(cp, modal)
     assert names

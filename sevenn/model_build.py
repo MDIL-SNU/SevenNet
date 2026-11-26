@@ -471,33 +471,7 @@ def _to_parallel_model(
     return layers_list
 
 
-@overload
-def build_E3_equivariant_model(
-    config: dict, parallel: Literal[False] = False
-) -> AtomGraphSequential:  # noqa
-    ...
-
-
-@overload
-def build_E3_equivariant_model(
-    config: dict, parallel: Literal[True]
-) -> List[AtomGraphSequential]:  # noqa
-    ...
-
-
-def build_E3_equivariant_model(
-    config: dict, parallel: bool = False
-) -> Union[AtomGraphSequential, List[AtomGraphSequential]]:
-    """
-    output shapes (w/o batch)
-
-    PRED_TOTAL_ENERGY: (),
-    ATOMIC_ENERGY: (natoms, 1),  # intended
-    PRED_FORCE: (natoms, 3),
-    PRED_STRESS: (6,),
-
-    for data w/o cell volume, pred_stress has garbage values
-    """
+def _model_layers(config: dict, parallel: bool):
     layers = OrderedDict()
 
     cutoff = config[KEY.CUTOFF]
@@ -666,7 +640,37 @@ def build_E3_equivariant_model(
         else True,
         'data_key_grad': grad_key,
     }
+    return layers, common_args
 
+
+@overload
+def build_E3_equivariant_model(
+    config: dict, parallel: Literal[False] = False
+) -> AtomGraphSequential:  # noqa
+    ...
+
+
+@overload
+def build_E3_equivariant_model(
+    config: dict, parallel: Literal[True]
+) -> List[AtomGraphSequential]:  # noqa
+    ...
+
+
+def build_E3_equivariant_model(
+    config: dict, parallel: bool = False
+) -> Union[AtomGraphSequential, List[AtomGraphSequential]]:
+    """
+    output shapes (w/o batch)
+
+    PRED_TOTAL_ENERGY: (),
+    ATOMIC_ENERGY: (natoms, 1),  # intended
+    PRED_FORCE: (natoms, 3),
+    PRED_STRESS: (6,),
+
+    for data w/o cell volume, pred_stress has garbage values
+    """
+    layers, common_args = _model_layers(config, parallel)
     if parallel:
         layers_list = _to_parallel_model(layers, config)
         return [

@@ -15,6 +15,14 @@ from .linear import IrrepsLinear
 from .self_connection import SelfConnectionIntro
 
 
+def _self_connection_for_species(sc, width):
+    return sc.fc_tensor_product_cls(
+        sc.irreps_in1, f'{width}x0e', sc.irreps_out,
+        shared_weights=True, internal_weights=None,
+        **sc.fc_tensor_product_kwargs,
+    )
+
+
 class PrunedSelfConnectionIntro(SelfConnectionIntro):
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         operand = data[self.key_operand].index_select(1, self.columns)
@@ -30,6 +38,7 @@ def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> list[str]
     columns = sorted({int(c) for c in columns})
     if not columns:
         raise ValueError('Expected at least one allowed species')
+    config = getattr(model, '_lunatp_precompile_config', None)
     changed = []
     for name, sc in model._modules.items():
         if type(sc) is PrunedSelfConnectionIntro:
@@ -43,15 +52,22 @@ def prune_self_connection(model: nn.Module, columns: Sequence[int]) -> list[str]
         if len(in2) != 1 or not in2[0].ir.is_scalar():
             continue
 
+        if len(columns) == in2[0].mul:
+            if type(sc) is PrunedSelfConnectionIntro:
+                sc.__class__ = SelfConnectionIntro
+                sc.fc_tensor_product = old
+                del sc.columns, sc._full
+                changed.append(name)
+            continue
+        if config is not None:
+            from .lunatp_helper import precompile_species_width
+
+            precompile_species_width(config, len(columns))
+            config = None
+
         ref = old.weight
-        new = sc.fc_tensor_product_cls(
-            sc.irreps_in1,
-            f'{len(columns)}x0e',
-            sc.irreps_out,
-            shared_weights=True,
-            internal_weights=None,
-            **sc.fc_tensor_product_kwargs,
-        ).to(ref.device, ref.dtype)
+        new = _self_connection_for_species(sc, len(columns))
+        new = new.to(ref.device, ref.dtype)
         cols = torch.tensor(columns, device=ref.device)
         old_tp = getattr(old, 'tp', old)
         new_tp = getattr(new, 'tp', new)
@@ -77,6 +93,13 @@ class ModalFoldedLinear(IrrepsLinear):
         return data
 
 
+def _folded_modal_linear(lin):
+    return lin.linear_cls(
+        lin._irreps_in_wo_modal, lin.irreps_out,
+        **{**lin.linear_kwargs, 'biases': False},
+    )
+
+
 @torch.no_grad()
 def fold_modal(model: nn.Module, modal: str) -> list[str]:
     """Fold e3nn-compatible modal linear layers for inference at a fixed modality."""
@@ -90,9 +113,7 @@ def fold_modal(model: nn.Module, modal: str) -> list[str]:
         old = lin.linear
         ref = old.weight
         irreps_in = lin._irreps_in_wo_modal
-        kwargs = {**lin.linear_kwargs, 'biases': False}
-        new = lin.linear_cls(irreps_in, lin.irreps_out, **kwargs)
-        new = new.to(ref.device, ref.dtype)
+        new = _folded_modal_linear(lin).to(ref.device, ref.dtype)
 
         paths, offset = {}, 0
         for ins in old.instructions:

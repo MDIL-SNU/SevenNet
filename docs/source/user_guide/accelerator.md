@@ -132,9 +132,9 @@ True
 ```
 
 ### Kernel compilation
-Building a LunaTP model compiles its kernels in parallel processes (default: min(8, available CPUs)) before the first calculation. The compiled kernels are cached on disk, and later builds of the same model load them. The cache depends on the Python environment, `LD_LIBRARY_PATH`, and the GPU architecture.
+Building a LunaTP model compiles its kernels in parallel processes (default: min(16, available CPUs)) before the first calculation. Inference precompilation covers plain LunaTP, fusion with exact or tabulated radial weights, and ML-IAP CUDA Graph preparation. It also builds the standalone CUDA radial table when CuPy is installed. The cache depends on the Python environment, `LD_LIBRARY_PATH`, and the GPU architecture.
 
-`SEVENNET_LUNATP_PRECOMPILE_WORKERS` sets the number of processes. Each process loads the model on the GPU, and `0` turns the parallel compilation off, so that each kernel compiles at its first use. `sevenn train` also compiles the kernels for training with force and stress losses.
+`SEVENNET_LUNATP_PRECOMPILE_WORKERS` sets the number of processes. Set it to `0` to compile kernels at first use. `sevenn train` also compiles the kernels for training with force and stress losses.
 
 `sevenn lunatp_precompile` compiles the kernels of a checkpoint ahead of time, for example on a node other than the one of the later calculations:
 ```bash
@@ -142,6 +142,12 @@ sevenn lunatp_precompile 7net-omni           # kernels for inference (energy, fo
 sevenn lunatp_precompile 7net-omni --train   # also the kernels for training with force and stress losses
 ```
 `--max_workers` sets the number of parallel processes.
+
+For tensor-product self-connections, fused inference builds kernels in parallel
+the first time it sees a new number of species. Later calculations reuse those
+kernels for any combination of the same size. Use `--species_widths 3 6` to
+prepare widths ahead of simulation or `--all_species_widths` to prepare all of
+them.
 
 ### Fused inference and radial interpolation
 

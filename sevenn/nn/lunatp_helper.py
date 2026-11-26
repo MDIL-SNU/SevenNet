@@ -9,6 +9,8 @@ import sysconfig
 import tempfile
 import threading
 import warnings
+from pathlib import Path
+from types import SimpleNamespace
 from typing import Optional, Union
 
 import torch
@@ -57,6 +59,34 @@ try:
             @staticmethod
             def bump_version_if_changed(name, build_arguments, **_):
                 return int(build_arguments[0][0], 16)
+
+        @staticmethod
+        def _write_ninja_file_and_build_library(**kwargs):
+            build = _cpp_extension._write_ninja_file_and_build_library
+            sources = kwargs['sources']
+            if len(sources) == 2:
+                # The CUDA source already defines the bindings.
+                cpp = Path(sources[0])
+                if cpp.name == 'main.cpp' and cpp.read_text().strip() in (
+                    '', '#include <torch/extension.h>',
+                ):
+                    kwargs['sources'] = sources[1:]
+            cuda = Path(sources[-1])
+            if cuda.suffix != '.cu':
+                return build(**kwargs)
+            source = cuda.read_text()
+            lean_source = source.replace(
+                '#include <torch/extension.h>',
+                '#include <torch/types.h>\n#include <torch/csrc/utils/pybind.h>',
+            )
+            if lean_source == source:
+                return build(**kwargs)
+            cuda.write_text(lean_source)
+            try:
+                return build(**kwargs)
+            except RuntimeError:
+                cuda.write_text(source)
+                return build(**kwargs)
 
         def __getattr__(self, attr):
             return getattr(_cpp_extension, attr)
@@ -265,11 +295,12 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
     sizes = (2, 65) if order >= 2 and isinstance(module, LunaEqLinear) else (2,)
     params = [p for p in module.parameters() if p.numel() > 0]
     trainable = [p.requires_grad for p in params]
-    flag_sets = itertools.product((False, True), repeat=len(dims) + len(params[:1]))
+    train_params = order >= 2 and bool(params)
+    flag_sets = itertools.product((False, True), repeat=len(dims) + train_params)
     try:
         for flags, n in itertools.product(flag_sets, sizes):
             for p in params:
-                p.requires_grad_(flags[-1])
+                p.requires_grad_(train_params and flags[-1])
             inputs = [
                 torch.randn(n, d, device=device, dtype=dtype, requires_grad=f)
                 for d, f in zip(dims, flags)
@@ -304,39 +335,202 @@ def _run_once(module, device: torch.device, dtype: torch.dtype, order: int):
             p.requires_grad_(f)
 
 
-def _precompile_worker(config_path: str, rank: str, size: str, order: str):
-    """
-    A convolution compiles its forward kernel when it is built, so each worker
-    first builds its share of them instead of waiting for them in the model
-    build.
-    """
-    from sevenn.model_build import build_E3_equivariant_model
+def _claim_jobs(root, rank, count):
+    pending = root / f'{rank}.job'
+    if pending.is_file():
+        yield int(pending.read_text())
+        pending.unlink()
+    with (root / 'next').open('a+') as queue:
+        while True:
+            fcntl.flock(queue, fcntl.LOCK_EX)
+            queue.seek(0)
+            index = int(queue.read() or '0')
+            if index >= count:
+                return
+            pending.write_text(str(index))
+            queue.seek(0)
+            queue.truncate()
+            queue.write(str(index + 1))
+            queue.flush()
+            fcntl.flock(queue, fcntl.LOCK_UN)
+            yield index
+            pending.unlink()
 
-    config, device, dtype = torch.load(config_path, weights_only=False)
+
+def _precompile_worker(config_path: str, rank: str, order: str):
+    from sevenn.model_build import _model_layers, patch_lunatp, patch_modality
+    from sevenn.nn.inference_specialization import (
+        _folded_modal_linear,
+        _self_connection_for_species,
+    )
+    from sevenn.nn.sequential import _instantiate_modules
+
+    config, device, dtype, base_kernels, widths = torch.load(
+        config_path, weights_only=False,
+    )
     torch.cuda.set_device(device)
     torch.set_default_dtype(dtype)
-    e3nn_model = build_E3_equivariant_model({**config, KEY.USE_LUNATP: False})
-    convolutions = [
-        m for m in e3nn_model.modules() if isinstance(m, IrrepsConvolution)
-    ]
-    for conv in convolutions[int(rank) :: int(size)]:
-        LunaTPConvolution(**conv.convolution_kwargs)
-    model = build_E3_equivariant_model(dict(config))
-    model.to('cuda')
-    param = next(model.parameters())
+    order = int(order)
+    layers, _ = _model_layers(config, False)
+    layers = patch_modality(layers, config)
     luna_types = (
         LunaTPConvolution,
         LunaTPFullyConnectedTensorProduct,
         LunaEqLinear,
         LunaEqGate,
     )
-    targets = [m for m in model.modules() if isinstance(m, luna_types)]
-    for module in targets[int(rank) :: int(size)]:
-        _run_once(module, param.device, param.dtype, int(order))
+    jobs = [
+        ('base', (name, None))
+        for name, layer in layers.items()
+        if base_kernels and isinstance(layer, (
+            IrrepsConvolution, IrrepsLinear, SelfConnectionIntro,
+            SelfConnectionLinearIntro, EquivariantGate,
+        ))
+    ]
+    if order == 1 and base_kernels:
+        jobs.append(('mliap', None))
+    if order == 1 and dtype == torch.float32:
+        jobs = _fused_jobs(layers, widths, base_kernels) + jobs
+        # Queue the backward and multi-kernel jobs before standalone forwards.
+        jobs.sort(key=lambda job: (
+            job[0] in ('geometry', 'first', 'radial')
+            or (job[0] == 'fused' and job[1][1] == 'fwd')
+        ))
+    root = Path(config_path).parent
+    manifest = root / f'{rank}.json'
+    libraries = (
+        set(json.loads(manifest.read_text())) if manifest.is_file() else set()
+    )
+    for index in _claim_jobs(root, rank, len(jobs)):
+        kind, spec = jobs[index]
+        if kind not in ('base', 'modal', 'species'):
+            _precompile_fused(layers, kind, spec)
+        else:
+            name, width = spec
+            current = patch_lunatp({name: layers[name]}, config)
+            if kind == 'modal':
+                target = _folded_modal_linear(current[name])
+            elif kind == 'species':
+                target = _self_connection_for_species(current[name], width)
+            else:
+                _instantiate_modules(current)
+                target = current[name]
+            for module in target.to(device).modules():
+                if isinstance(module, luna_types):
+                    _run_once(module, device, dtype, order)
+        libraries.update(
+            mod.__file__ for mod in _lunaeq_jit.MODULES.values()
+            if getattr(mod, '__file__', None)
+        )
+        pending = manifest.with_suffix('.tmp')
+        pending.write_text(json.dumps(sorted(libraries)))
+        pending.replace(manifest)
+
+
+def _species_jobs(layers, widths):
+    jobs = []
+    seen = set()
+    for name, layer in layers.items():
+        if not isinstance(layer, SelfConnectionIntro):
+            continue
+        key = (
+            layer.irreps_in1, layer.irreps_in2, layer.irreps_out,
+            repr(layer.fc_tensor_product_kwargs),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        jobs.extend(
+            ('species', (name, width))
+            for width in widths if width < layer.irreps_in2.dim
+        )
+    return jobs
+
+
+def _fused_jobs(layers, widths, base_kernels):
+    emb = layers['edge_embedding']
+    if getattr(emb, 'distance_transform', None) is not None:
+        return []
+    convolutions = [
+        (name, conv) for name, conv in layers.items()
+        if isinstance(conv, IrrepsConvolution)
+        and not conv.is_parallel
+        and conv.key_weight_input == KEY.EDGE_EMBEDDING
+        and conv.key_filter == KEY.EDGE_ATTR
+        and len(conv.weight_nn_kwargs['hs']) == 4
+    ]
+    if not base_kernels:
+        return _species_jobs(layers, widths) if convolutions else []
+    if not convolutions:
+        return [('radial', None)]
+
+    jobs = []
+    seen = set()
+    for name, conv in convolutions:
+        key = repr(conv.convolution_kwargs)
+        if key in seen:
+            continue
+        seen.add(key)
+        jobs.extend(
+            ('fused', (name, stage, hermite))
+            for stage in ('bwd', 'fwd')
+            for hermite in (False, True)
+        )
+    jobs.extend(_species_jobs(layers, widths))
+    jobs.extend((('geometry', None), ('first', None)))
+    jobs.extend(
+        ('modal', (name, None)) for name, layer in layers.items()
+        if type(layer) is IrrepsLinear and layer.num_modalities > 1
+    )
+    jobs.append(('radial', None))
+    return jobs
+
+
+def _precompile_fused(layers, kind, spec):
+    from .lunatp_fused import (
+        _FIRST_SOURCE,
+        FusedEdgeGeometry,
+        _load_cuda,
+        _load_fused_conv,
+    )
+
+    if kind == 'geometry':
+        FusedEdgeGeometry(layers['edge_embedding'])
+    elif kind == 'first':
+        _load_cuda('sevenn_first_layer_fp32', _FIRST_SOURCE)
+    elif kind == 'mliap':
+        from ._mliap_cuda_graph import _load_prep_kernel
+
+        _load_prep_kernel()
+    elif kind == 'radial':
+        from importlib.util import find_spec
+
+        if find_spec('cupy') is not None:
+            from .radial_table import _kernels
+
+            _, fwd, bwd = _kernels()
+            fwd.compile()
+            bwd.compile()
+    else:
+        from LunaEquivariance import TensorProductConfig
+        from LunaEquivariance.lunatp.utils.layout import TensorProductPaths
+        from LunaEquivariance.lunatp.uvu_conv.kernels.utils import (
+            build_uvu_conv_metadata,
+        )
+
+        name, stage, hermite = spec
+        tp = TensorProductConfig(**layers[name].convolution_kwargs)
+        paths = TensorProductPaths.from_tensor_product(tp)
+        meta = build_uvu_conv_metadata(paths, torch.float32)
+        op = SimpleNamespace(
+            **meta, compute_dtype=torch.float32,
+            forward_degree_tiers=meta['max_channels'] > 128,
+        )
+        _load_fused_conv(op, stage, hermite)
 
 
 def _precompile_marker(config: dict, order: int) -> str:
-    from importlib.metadata import version
+    from importlib.metadata import PackageNotFoundError, version
 
     root = os.environ.get('LUNAEQ_CACHE_DIR') or os.path.join(
         os.environ.get('TORCH_EXTENSIONS_DIR')
@@ -387,6 +581,7 @@ def _precompile_marker(config: dict, order: int) -> str:
         'PYTORCH_NVCC', 'TORCH_CUDA_ARCH_LIST',
     )
     key = [
+        3,
         model,
         order,
         torch.__version__,
@@ -409,29 +604,68 @@ def _precompile_marker(config: dict, order: int) -> str:
         cutlass,
         {name: os.environ.get(name, '') for name in build_env},
     ]
+    if order == 1:
+        cupy_versions = []
+        for package in ('cupy', 'cupy-cuda12x', 'cupy-cuda13x'):
+            try:
+                cupy_versions.append(version(package))
+            except PackageNotFoundError:
+                pass
+        key.extend((os.environ.get('CUPY_CACHE_DIR'), cupy_versions))
+        for name in (
+            'lunatp_fused.py', 'radial_table.py', 'inference_specialization.py',
+            '_mliap_cuda_graph.py',
+        ):
+            source = Path(__file__).with_name(name).read_bytes()
+            key.append(hashlib.sha256(source).hexdigest())
     digest = hashlib.sha256(
         json.dumps(key, sort_keys=True, default=str).encode()
     ).hexdigest()[:24]
     return os.path.join(os.path.expanduser(root), 'sevenn_precompiled', digest)
 
 
+def _read_precompiled(marker):
+    try:
+        manifest = json.loads(Path(marker).read_text())
+    except (FileNotFoundError, json.JSONDecodeError):
+        return None
+    if not isinstance(manifest, dict) or not {'libraries', 'species_widths'} <= set(
+        manifest
+    ):
+        return None
+    if all(Path(library).is_file() for library in manifest['libraries']):
+        return manifest
+    return None
+
+
+def _lunatp_config(config):
+    return {
+        **config,
+        KEY.USE_LUNATP: True,
+        KEY.USE_OEQ: False,
+        KEY.USE_FLASH_TP: False,
+        KEY.CUEQUIVARIANCE_CONFIG: {'use': False},
+    }
+
+
 def precompile(
     model: Union[str, dict],
     order: int = 1,
     max_workers: Optional[int] = None,
-    skip_done: bool = False,
-) -> None:
+    skip_done: bool = True,
+    *,
+    species_widths=(),
+    all_species_widths: bool = False,
+) -> bool:
     """
-    Build the LunaEquivariance kernels of a model (checkpoint path, pretrained
-    name or model config) in max_workers processes (default min(8, available
-    CPUs)) that each run a share of the LunaTP modules once.
-    order=1 uses the inference layout. order=2 uses the checkpoint layout
-    and builds second derivatives for force training.
+    Build kernels for a checkpoint, pretrained model name, or model config.
+    order=1 covers plain, fused and radially tabulated inference. order=2
+    uses the checkpoint layout and builds second derivatives.
     skip_done returns at once if an earlier call finished for the same model,
     order and environment.
     """
     if not is_lunatp_available():
-        return
+        return False
     if isinstance(model, dict):
         config = dict(model)
     else:
@@ -441,17 +675,25 @@ def precompile(
         if order == 1:
             checkpoint = checkpoint.compact_for_inference()
         config = checkpoint.config
-    config.update({
-        KEY.USE_LUNATP: True,
-        KEY.USE_OEQ: False,
-        KEY.USE_FLASH_TP: False,
-        KEY.CUEQUIVARIANCE_CONFIG: {'use': False},
-    })
+    config = _lunatp_config(config)
+    requested = set()
+    if order == 1:
+        full_width = config[KEY.NUM_SPECIES]
+        if any(width < 1 or width > full_width for width in species_widths):
+            raise ValueError(f'species widths must be in [1, {full_width}]')
+        widths = range(1, full_width) if all_species_widths else species_widths
+        requested.update(width for width in widths if width < full_width)
     marker = _precompile_marker(config, order)
-    if skip_done and os.path.isfile(marker):
-        return
+    manifest = _read_precompiled(marker) if skip_done else None
+    if manifest and requested.issubset(manifest['species_widths']):
+        return True
     os.makedirs(os.path.dirname(marker), exist_ok=True)
-    workers = max_workers or min(8, len(os.sched_getaffinity(0)))
+    cpus = len(os.sched_getaffinity(0))
+    if os.environ.get('SLURM_CPUS_PER_TASK'):
+        cpus = min(cpus, int(os.environ['SLURM_CPUS_PER_TASK']))
+    workers = max_workers if max_workers is not None and max_workers > 0 else (
+        min(16, cpus)
+    )
     env = {**os.environ, 'MAX_JOBS': '1', _WORKERS_ENV: '0'}
     code = (
         'import sys; from sevenn.nn.lunatp_helper import _precompile_worker; '
@@ -459,9 +701,25 @@ def precompile(
     )
     with open(marker + '.lock', 'a') as lock, tempfile.TemporaryDirectory() as tmp:
         fcntl.flock(lock, fcntl.LOCK_EX)
-        if skip_done and os.path.isfile(marker):
-            return
-        if skip_done:
+        manifest = _read_precompiled(marker) if skip_done else None
+        cached = set(manifest['species_widths']) if manifest else set()
+        if manifest and requested.issubset(cached):
+            return True
+        missing = sorted(requested - cached)
+        if manifest:
+            from sevenn.model_build import _model_layers
+
+            layers, _ = _model_layers(config, False)
+            workers = min(workers, len(_fused_jobs(layers, missing, False)))
+            widths = ', '.join(map(str, missing))
+            if workers:
+                print(
+                    'LunaTP fusion: building self-connection kernels for species '
+                    f'width {widths} in {workers} parallel processes. '
+                    'This may take a minute.',
+                    file=sys.stderr,
+                )
+        elif skip_done:
             print(
                 f'LunaTP: building kernels in {workers} processes '
                 f'(once per model; {_WORKERS_ENV}=0 disables)',
@@ -470,6 +728,7 @@ def precompile(
         config_path = os.path.join(tmp, 'config.pt')
         worker_config = (
             config, torch.cuda.current_device(), torch.get_default_dtype(),
+            manifest is None, tuple(missing),
         )
         torch.save(worker_config, config_path)
 
@@ -478,7 +737,7 @@ def precompile(
             for rank in ranks:
                 log = open(os.path.join(tmp, f'{rank}.log'), 'w')
                 cmd = [sys.executable, '-c', code, config_path, str(rank)]
-                cmd += [str(workers), str(order)]
+                cmd.append(str(order))
                 procs[rank] = subprocess.Popen(
                     cmd, stdout=log, stderr=subprocess.STDOUT, env=env
                 )
@@ -495,8 +754,21 @@ def precompile(
                 f'LunaTP precompile workers {failed} failed; their kernels '
                 f'build at the first call.\n{tail}'
             )
-        else:
-            open(marker, 'w').close()
+            return False
+        libraries = {
+            library
+            for worker_manifest in Path(tmp).glob('*.json')
+            for library in json.loads(worker_manifest.read_text())
+        }
+        pending = Path(marker + '.tmp')
+        if manifest:
+            libraries.update(manifest['libraries'])
+        pending.write_text(json.dumps({
+            'libraries': sorted(libraries),
+            'species_widths': sorted(cached | requested),
+        }))
+        pending.replace(marker)
+        return True
 
 
 def auto_precompile(config: dict) -> None:
@@ -510,3 +782,12 @@ def auto_precompile(config: dict) -> None:
         return
     order = int(os.environ.get('SEVENNET_LUNATP_PRECOMPILE_ORDER', 1))
     precompile(config, order, workers if workers > 0 else None, skip_done=True)
+
+
+def precompile_species_width(config: dict, width: int) -> None:
+    workers = int(os.environ.get(_WORKERS_ENV, -1))
+    if workers:
+        precompile(
+            config, max_workers=workers if workers > 0 else None,
+            species_widths=(width,),
+        )
