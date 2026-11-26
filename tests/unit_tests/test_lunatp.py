@@ -266,6 +266,26 @@ def test_calculator(tmp_path):
     assert_atoms(atoms, atoms2)
 
 
+@pytest.mark.skipif(not is_lunatp_available(), reason='lunatp not available')
+@pytest.mark.parametrize('knots', [0, 32])
+def test_fused_wide_offsets(knots, monkeypatch):
+    from sevenn.nn import lunatp_fused
+
+    model = get_model({'channel': 8, 'lmax': 1}, use_lunatp=True).eval()
+    model.set_is_batch_data(False)
+    names = lunatp_fused.fuse_radial_conv(model, knots=knots)
+    layers = [model._modules[n] for n in names if n.endswith('_convolution')]
+    assert layers
+
+    compact = model(get_graphs(batched=False)[0])
+    assert all(layer._wide_kernels is None for layer in layers)
+    monkeypatch.setattr(lunatp_fused, '_INDEX_LIMIT', 1)
+    wide = model(get_graphs(batched=False)[0])
+    assert all(layer._wide_kernels is not None for layer in layers)
+    for key in (KEY.PRED_TOTAL_ENERGY, KEY.PRED_FORCE, KEY.PRED_STRESS):
+        torch.testing.assert_close(wide[key], compact[key], atol=1e-6, rtol=1e-5)
+
+
 _CALCULATOR_CALLS = """
 import sys
 from itertools import product
