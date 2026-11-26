@@ -132,19 +132,21 @@ sevenn get_model \
 ```
 
 
-Single-rank runs use radial interpolation for compatible models with any
-TP backend. CUDA also enables graph replay and fused LunaTP kernels by default.
-Multi-rank runs use eager ghost exchange. FlashTP uses eager execution.
+Single- and multi-rank runs enable radial interpolation by default for
+compatible models with any TP backend. CUDA LunaTP also enables fused
+kernels by default.
+
+Single-rank CUDA enables graph replay by default. FlashTP and multi-rank
+runs use eager execution.
 
 | Option | Effect |
 |---|---|
-| `--disable_cuda_graph` | Run eagerly |
+| `--disable_cuda_graph` | Use eager execution on one CUDA rank |
 | `--disable_fused` | Use the standard TP kernels |
 | `--disable_radial_table` | Evaluate the original radial MLP |
 | `--radial_knots` | Set the number of Hermite knots (2048 by default) |
 | `--radial_r_min` | Set the first knot in Å (0 by default) |
 
-`--radial_table` enables interpolation in multi-rank eager runs.
 Existing deployed potentials keep their
 saved options. To override them at run time, set `SEVENN_MLIAP_CUDA_GRAPH`,
 `SEVENN_MLIAP_FUSED`, or `SEVENN_MLIAP_RADIAL_TABLE` to `1` or `0`.

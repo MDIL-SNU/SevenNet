@@ -43,6 +43,7 @@
 // #include "nvToolsExt.h"
 
 #include "pair_e3gnn_parallel.h"
+#include "graph_stage.h"
 #include <cassert>
 
 #ifdef OMPI_MPI_H
@@ -117,8 +118,6 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
 #else
   use_cuda_mpi = false;
 #endif
-  // use_cuda_mpi = use_gpu && use_cuda_mpi;
-  // if (use_cuda_mpi) {
   if (use_gpu) {
     device = get_cuda_device();
     device_name = "CUDA";
@@ -127,40 +126,21 @@ PairE3GNNParallel::PairE3GNNParallel(LAMMPS *lmp) : Pair(lmp) {
     device_name = "CPU";
   }
 
-  if (std::getenv("OFF_E3GNN_PARALLEL_CUDA_MPI")) {
-      use_cuda_mpi = false;
-  }
+  use_cuda_mpi = use_gpu && use_cuda_mpi && !std::getenv("OFF_E3GNN_PARALLEL_CUDA_MPI");
+  device_comm = use_cuda_mpi ? device : torch::Device(torch::kCPU);
 
-  if (lmp->screen) {
+  for (FILE *output : {lmp->screen, lmp->logfile}) {
+    if (!output) continue;
     if (use_gpu && !use_cuda_mpi) {
-      device_comm = torch::kCPU;
-      fprintf(lmp->screen,
-              "cuda-aware mpi not found, communicate via host device\n");
-    } else {
-      device_comm = device;
+      fprintf(output, "Communicating via host device\n");
     }
-    fprintf(lmp->screen, "PairE3GNNParallel using device : %s\n",
-            device_name.c_str());
-    fprintf(lmp->screen, "PairE3GNNParallel cuda-aware mpi: %s\n",
-            use_cuda_mpi ? "True" : "False");
-  }
-  if (lmp->logfile) {
-    if (use_gpu && !use_cuda_mpi) {
-      device_comm = torch::kCPU;
-      fprintf(lmp->logfile,
-              "cuda-aware mpi not found, communicate via host device\n");
-    } else {
-      device_comm = device;
-    }
-    fprintf(lmp->logfile, "PairE3GNNParallel using device : %s\n",
-            device_name.c_str());
-    fprintf(lmp->logfile, "PairE3GNNParallel cuda-aware mpi: %s\n",
+    fprintf(output, "PairE3GNNParallel using device : %s\n", device_name.c_str());
+    fprintf(output, "PairE3GNNParallel cuda-aware mpi: %s\n",
             use_cuda_mpi ? "True" : "False");
   }
 }
 
 torch::Device PairE3GNNParallel::get_cuda_device() {
-  char *cuda_visible = std::getenv("CUDA_VISIBLE_DEVICES");
   int num_gpus;
   int idx;
   int rank = comm->me;
@@ -193,6 +173,12 @@ bool PairE3GNNParallel::is_comm_preprocess_done() {
   return comm_preprocess_done;
 }
 
+int &PairE3GNNParallel::graph_index(tagint tag) {
+  if (static_cast<size_t>(tag) < tag_to_graph_idx.size())
+    return tag_to_graph_idx[tag];
+  return sparse_tag_to_graph_idx.try_emplace(tag, -1).first->second;
+}
+
 void PairE3GNNParallel::compute(int eflag, int vflag) {
   /*
      Graph build on cpu
@@ -201,13 +187,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     ev_setup(eflag, vflag);
   else
     evflag = vflag_fdotr = 0;
-  if (vflag_atom) {
-    error->all(FLERR, "atomic stress is not supported\n");
-  }
-
-  if (atom->tag_consecutive() == 0) {
-    error->all(FLERR, "Pair e3gnn requires consecutive atom IDs");
-  }
+  if (atom->natoms == 0) return;
 
   double **x = atom->x;
   double **f = atom->f;
@@ -224,17 +204,9 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
                       "modified code of comm_brick");
   }
 
-  bigint natoms = atom->natoms;
-
-  // tag ignore PBC
   tagint *tag = atom->tag;
-
-  // store graph_idx from local to known ghost atoms(ghost atoms inside cutoff)
-  int tag_to_graph_idx[natoms + 1]; // tag starts from 1 not 0
-  std::fill_n(tag_to_graph_idx, natoms + 1, -1);
-
-  // to access tag_to_graph_idx from comm
-  tag_to_graph_idx_ptr = tag_to_graph_idx;
+  tag_to_graph_idx.assign(atom->natoms + 1, -1);
+  sparse_tag_to_graph_idx.clear();
 
   int graph_indexer = nlocal;
   int graph_index_to_i[ntotal];
@@ -255,9 +227,8 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   for (int ii = 0; ii < inum; ii++) {
     // populate tag_to_graph_idx of local atoms
     const int i = ilist[ii];
-    const int itag = tag[i];
     const int itype = type[i];
-    tag_to_graph_idx[itag] = ii;
+    graph_index(tag[i]) = ii;
     graph_index_to_i[ii] = i;
     node_type.push_back(map[itype]);
   }
@@ -270,9 +241,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     const int jnum = numneigh[i];
 
     for (int jj = 0; jj < jnum; jj++) {
-      int j = jlist[jj];
-      const int jtag = tag[j];
-      j &= NEIGHMASK;
+      const int j = jlist[jj] & NEIGHMASK;
       const int jtype = type[j];
       // we have to calculate Rij to check cutoff in lammps side
       const double delij[3] = {x[j][0] - x[i][0], x[j][1] - x[i][1],
@@ -280,18 +249,17 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
       const double Rij =
           delij[0] * delij[0] + delij[1] * delij[1] + delij[2] * delij[2];
 
-      int j_graph_idx;
       if (Rij < cutoff_square) {
+        int &j_graph_idx = graph_index(tag[j]);
         // if given j is not local atom and inside cutoff
-        if (tag_to_graph_idx[jtag] == -1) {
+        if (j_graph_idx == -1) {
           // if j is ghost atom inside cutoff but first seen
-          tag_to_graph_idx[jtag] = graph_indexer;
+          j_graph_idx = graph_indexer;
           graph_index_to_i[graph_indexer] = j;
           node_type_ghost.push_back(map[jtype]);
           graph_indexer++;
         }
 
-        j_graph_idx = tag_to_graph_idx[jtag];
         edge_idx_src[nedges] = i_graph_idx;
         edge_idx_dst[nedges] = j_graph_idx;
         edge_vec[nedges][0] = delij[0];
@@ -344,9 +312,20 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   std::list<std::vector<torch::Tensor>> wrt_tensors;
   wrt_tensors.push_back({input_dict.at("edge_vec")});
 
-  auto model_part = model_list.front();
-
-  auto output = model_part.forward({input_dict}).toGenericDict();
+  const bool replay = cuda_graph && !uses_flashtp;
+  if (replay && graph_stages.empty()) {
+    for (size_t shard = 0; shard < model_list.size(); ++shard)
+      graph_stages.push_back(std::make_unique<E3GNNGraphStage>());
+  }
+  const auto last_shard = model_list.size() - 1;
+  auto run_shard = [&](size_t shard, torch::IValue input) {
+    if (replay) {
+      return graph_stages[shard]->forward(
+          model_list[shard], input.toGenericDict(), shard == 0, shard == last_shard);
+    }
+    return model_list[shard].forward({input}).toGenericDict();
+  };
+  auto output = run_shard(0, input_dict);
 
   comm_preprocess();
 
@@ -357,11 +336,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
   torch::Tensor x_local;
   torch::Tensor x_ghost;
 
-  for (auto it = model_list.begin(); it != model_list.end(); ++it) {
-    if (it == model_list.begin())
-      continue;
-    model_part = *it;
-
+  for (size_t shard = 1; shard < model_list.size(); ++shard) {
     x_local = output.at("x").toTensor().detach().to(device);
     x_dim = x_local.size(1); // length of per atom vector(node feature)
 
@@ -388,7 +363,7 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
                            output.at("self_cont_tmp").toTensor(),
                            output.at("x_ghost").toTensor()});
 
-    output = model_part.forward({output}).toGenericDict();
+    output = run_shard(shard, output);
   }
   torch::Tensor energy_tensor =
       output.at("inferred_total_energy").toTensor().squeeze();
@@ -403,16 +378,18 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
 
   // TODO: most values of self_conn_grads were zero because we use only scalars
   // for energy
-  for (auto rit = wrt_tensors.rbegin(); rit != wrt_tensors.rend(); ++rit) {
+  size_t shard = last_shard;
+  for (auto rit = wrt_tensors.rbegin(); rit != wrt_tensors.rend(); ++rit, --shard) {
     // edge_vec, x, x_ghost order
     auto wrt_tensor = *rit;
-    if (rit == wrt_tensors.rbegin()) {
-      grads = torch::autograd::grad({energy_tensor}, wrt_tensor);
+    if (shard == last_shard) {
+      grads = replay ? graph_stages[shard]->backward({})
+                     : E3GNNGraphStage::gradients({energy_tensor}, wrt_tensor);
     } else {
       x_local_save.copy_(x_local);
-      //                            of         wrt         grads_output
-      grads = torch::autograd::grad(of_tensor, wrt_tensor,
-                                    {x_local_save, self_conn_grads});
+      const std::vector<torch::Tensor> seeds{x_local_save, self_conn_grads};
+      grads = replay ? graph_stages[shard]->backward(seeds)
+                     : E3GNNGraphStage::gradients(of_tensor, wrt_tensor, seeds);
     }
 
     dE_dr = dE_dr + grads.at(0); // accumulate force
@@ -457,6 +434,17 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
     std::cout << world_rank << " Used/Nlocal: " << Mused / nlocal << std::endl;
     std::cout << world_rank << " Used/GraphSize: " << Mused / graph_size << "\n"
               << std::endl;
+    if (replay) {
+      int64_t captures = 0, replays = 0;
+      for (const auto &stage : graph_stages) {
+        captures += stage->captures();
+        replays += stage->replays();
+        if (!stage->failure().empty())
+          std::cout << world_rank << " CUDA Graph fallback: " << stage->failure() << '\n';
+      }
+      std::cout << world_rank << " CUDA Graph captures: " << captures
+                << ", replays: " << replays << '\n';
+    }
   }
   eng_vdwl += energy_tensor.detach().to(torch::kCPU).item<double>();
 
@@ -500,12 +488,20 @@ void PairE3GNNParallel::compute(int eflag, int vflag) {
         torch::neg(torch::sum(per_atom_stress_tensor, 0));
     auto virial_stress = virial_stress_tensor.accessor<float, 1>();
 
-    virial[0] += virial_stress[0];
-    virial[1] += virial_stress[1];
-    virial[2] += virial_stress[2];
-    virial[3] += virial_stress[3];
-    virial[4] += virial_stress[5];
-    virial[5] += virial_stress[4];
+    const int order[6] = {0, 1, 2, 3, 5, 4};
+    if (vflag_global) {
+      for (int k = 0; k < 6; ++k)
+        virial[k] += virial_stress[order[k]];
+    }
+    if (vflag_atom) {
+      auto per_atom_stress = per_atom_stress_tensor.accessor<float, 2>();
+      // LAMMPS sends ghost virials back to their owners in compute stress/atom.
+      for (int gi = 0; gi < graph_indexer; ++gi) {
+        const int i = graph_index_to_i[gi];
+        for (int k = 0; k < 6; ++k)
+          vatom[i][k] -= per_atom_stress[gi][order[k]];
+      }
+    }
   }
 
   if (eflag_atom) {
@@ -543,9 +539,13 @@ void PairE3GNNParallel::allocate() {
 
 // global settings for pair_style
 void PairE3GNNParallel::settings(int narg, char **arg) {
-  if (narg != 0) {
+  const std::string option = narg == 1 ? arg[0] : "";
+  if (narg > 1 || (narg == 1 && option != "cuda_graph" && option != "disable_cuda_graph")) {
     error->all(FLERR, "Illegal pair_style command");
   }
+  cuda_graph = E3GNNGraphStage::available() && device.is_cuda() &&
+      (option == "cuda_graph" || (option.empty() && comm->nprocs == 1));
+  if (!cuda_graph) graph_stages.clear();
 }
 
 void PairE3GNNParallel::coeff(int narg, char **arg) {
@@ -607,6 +607,7 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
   torch::jit::setFusionStrategy(strategy);
 
   cutoff = std::stod(meta_dict["cutoff"]);
+  uses_flashtp = meta_dict["flashTP"] == "yes";
 
   // maximum possible size of per atom x before last convolution
   int comm_size = std::stod(meta_dict["comm_size"]);
@@ -690,6 +691,9 @@ void PairE3GNNParallel::coeff(int narg, char **arg) {
 
 // init specific to this pair
 void PairE3GNNParallel::init_style() {
+  if (!atom->tag_enable) {
+    error->all(FLERR, "Pair style e3gnn/parallel requires atom IDs");
+  }
   // full neighbor list & newton on
   if (force->newton_pair == 0) {
     error->all(FLERR, "Pair style e3gnn/parallel requires newton pair on");
@@ -767,7 +771,7 @@ void PairE3GNNParallel::pack_forward_init(int n, int *list_send,
 
   for (i = 0; i < n; i++) {
     int list_i = list_send[i];
-    int graph_idx = tag_to_graph_idx_ptr[tag[list_i]];
+    int graph_idx = graph_index(tag[list_i]);
 
     if (graph_idx != -1) {
       // known atom (local atom + ghost atom inside cutoff)
@@ -805,7 +809,7 @@ void PairE3GNNParallel::unpack_forward_init(int n, int first, int comm_phase) {
   tagint *tag = atom->tag;
 
   for (i = first; i < last; i++) {
-    int graph_idx = tag_to_graph_idx_ptr[tag[i]];
+    int graph_idx = graph_index(tag[i]);
     if (graph_idx != -1) {
       idx_map.push_back(graph_idx);
     } else {

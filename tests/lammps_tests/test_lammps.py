@@ -371,11 +371,13 @@ def serial_lammps_run(atoms, potential, wd, test_name, lammps_cmd):
 
 
 def parallel_lammps_run(
-    atoms, potential, wd, test_name, ncores, lammps_cmd, mpirun_cmd
+    atoms, potential, wd, test_name, ncores, lammps_cmd, mpirun_cmd,
+    atomic_stress=False,
 ):
     command = f'{mpirun_cmd} -np {ncores} {lammps_cmd}'
+    script = lmp_stress_script_path if atomic_stress else lmp_script_path
     return _run_lammps(
-        atoms, 'e3gnn/parallel', potential, wd, command, test_name, lmp_script_path
+        atoms, 'e3gnn/parallel', potential, wd, command, test_name, script
     )
 
 
@@ -560,6 +562,7 @@ def test_parallel(
     ncores,
     parallel_potential_path,
     ref_calculator,
+    ref_stress_calculator,
     lammps_cmd,
     mpirun_cmd,
     tmp_path,
@@ -571,6 +574,7 @@ def test_parallel(
     else:
         assert False
     atoms = get_system(system, replicate=rep)
+    atomic_stress = system == 'bulk' and ncores == 2
     atoms_lammps = parallel_lammps_run(
         atoms=atoms,
         potential=parallel_potential_path,
@@ -579,9 +583,63 @@ def test_parallel(
         lammps_cmd=lammps_cmd,
         mpirun_cmd=mpirun_cmd,
         ncores=ncores,
+        atomic_stress=atomic_stress,
     )
-    atoms.calc = ref_calculator
-    assert_atoms(atoms, atoms_lammps)
+    atoms.calc = ref_stress_calculator if atomic_stress else ref_calculator
+    assert_atoms(atoms, atoms_lammps, check_atomic_stress=atomic_stress)
+
+
+@pytest.mark.parametrize('backend', ['e3nn', 'oeq'])
+def test_parallel_atom_changes(
+    lammps_cmd, mpirun_cmd, parallel_potential_path, ref_calculator, tmp_path,
+    backend,
+):
+    if backend == 'oeq':
+        if not (torch.cuda.is_available() and is_oeq_available()):
+            pytest.skip('CUDA OpenEquivariance required')
+        potential = tmp_path / 'parallel-oeq'
+        deploy_parallel(cp_0_path, str(potential), use_oeq=True)
+        parallel_potential_path = f'3 {potential}'
+    script = tmp_path / 'in.atom-changes'
+    dump = tmp_path / 'forces.dump'
+    script.write_text(f'''
+units metal
+atom_style atomic
+boundary f f f
+processors 2 1 1
+region box block 0 48 0 20 0 20 units box
+create_box 2 box
+mass * 1.0
+create_atoms 1 single 22.5 10.0 10.0 units box
+create_atoms 2 single 23.6 10.0 12.2 units box
+pair_style e3gnn/parallel
+pair_coeff * * {parallel_potential_path} Hf O
+thermo_style custom step atoms pe
+thermo_modify format float %.14g
+run 0
+create_atoms 1 single 25.1 12.2 10.0 units box
+group remove id 2
+delete_atoms group remove compress no
+run 0
+write_dump all custom {dump} id element x y z fx fy fz modify sort id element Hf O
+delete_atoms group all
+run 0
+variable energy equal pe
+print "empty energy: ${{energy}}" file {tmp_path / 'empty.txt'}
+create_atoms 2 single 32.0 10.0 10.0 units box
+run 0
+''')
+    command = f'{mpirun_cmd} -np 2 {lammps_cmd} -in {script} -log none'
+    subprocess_routine(command.split(), 'parallel atom changes')
+
+    atoms = ase.io.read(dump, format='lammps-dump-text')
+    assert atoms.get_chemical_symbols() == ['Hf', 'Hf']
+    reference = atoms.copy()
+    reference.calc = ref_calculator
+    np.testing.assert_allclose(
+        atoms.get_forces(), reference.get_forces(), atol=1e-5, rtol=1e-5,
+    )
+    assert (tmp_path / 'empty.txt').read_text().strip() == 'empty energy: 0'
 
 
 @pytest.mark.parametrize(

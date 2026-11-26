@@ -319,7 +319,7 @@ class MLIAPCudaGraph:
         if not self.enabled:
             return False
         nlocal, ntotal, npairs = lmp_data.nlocal, lmp_data.ntotal, lmp_data.npairs
-        if npairs <= 1 or nlocal == 0:
+        if npairs == 0 or nlocal == 0:
             return False
         dev = self.device
         t = time.perf_counter()

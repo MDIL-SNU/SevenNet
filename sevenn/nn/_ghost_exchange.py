@@ -15,7 +15,7 @@ class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
     @staticmethod
     def forward(ctx, node_features, lmp_data):
         original_shape = node_features.shape
-        node_features_flat = node_features.view(node_features.size(0), -1)
+        node_features_flat = node_features.flatten(start_dim=1)
         out_flat = torch.empty_like(node_features_flat)
 
         # Forward exchange: fill ghost features from neighbor processes
@@ -32,7 +32,7 @@ class LAMMPSMLIAPGhostExchangeOp(torch.autograd.Function):
         """
         Reverse exchange: route ghost gradients back to their original processes.
         """
-        grad_output_flat = grad_output.view(grad_output.size(0), -1)
+        grad_output_flat = grad_output.flatten(start_dim=1).contiguous()
         gout_flat = torch.empty_like(grad_output_flat)
 
         # Reverse exchange: send ghost gradients to original atoms
@@ -64,7 +64,6 @@ class MLIAPGhostExchangeModule(nn.Module):
 
         Requires:
             - data[KEY.LAMMPS_DATA]: LAMMPS object with forward_exchange method
-            - data[KEY.MLIAP_NUM_LOCAL_GHOST]: torch.Tensor = [nlocal, nghost]
         """
         assert KEY.LAMMPS_DATA in data, (
             'LAMMPS_DATA required for MLIAPGhostExchangeModule'
@@ -72,8 +71,7 @@ class MLIAPGhostExchangeModule(nn.Module):
 
         lmp_data = data[KEY.LAMMPS_DATA]
         node_features = data[self.field]
-        num_local_ghost = data[KEY.MLIAP_NUM_LOCAL_GHOST]
-        nghost = num_local_ghost[1].item()
+        nghost = lmp_data.ntotal - lmp_data.nlocal
 
         # Assume node_features already exclude ghosts
         local_features = node_features

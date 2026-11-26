@@ -22,14 +22,21 @@ PairStyle(e3gnn/parallel, PairE3GNNParallel)
 #include "pair.h"
 
 #include <torch/torch.h>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace LAMMPS_NS {
+class E3GNNGraphStage;
+
 class PairE3GNNParallel : public Pair {
 private:
   double cutoff;
   double cutoff_square;
   std::vector<torch::jit::Module> model_list;
+  std::vector<std::unique_ptr<E3GNNGraphStage>> graph_stages;
+  bool cuda_graph = false;
+  bool uses_flashtp = false;
   torch::Device device = torch::kCPU;
   torch::Device device_comm = torch::kCPU;
   torch::Device get_cuda_device();
@@ -63,8 +70,9 @@ private:
   torch::Tensor comm_index_unpack_forward_tensor[6];
   torch::Tensor comm_index_unpack_reverse_tensor[6];
 
-  // to use tag_to_graph_idx inside comm methods
-  int *tag_to_graph_idx_ptr = nullptr;
+  std::vector<int> tag_to_graph_idx;
+  std::unordered_map<tagint, int> sparse_tag_to_graph_idx;
+  int &graph_index(tagint tag);
 
   int sendproc[6];
   int recvproc[6];
