@@ -292,10 +292,15 @@ from itertools import product
 from ase import Atoms
 from ase.build import bulk
 from sevenn.calculator import SevenNetCalculator
+from sevenn.nn import lunatp_fused
 
 dimer = Atoms('Na2', positions=[[0, 0, 0], [0, 0, 2.4]])
 crystal = bulk('NaCl', 'rocksalt', a=4.0, cubic=True).repeat((4, 4, 4))
-for graph, fused, radial in product((False, True), repeat=3):
+index_limit = lunatp_fused._INDEX_LIMIT
+for graph, fused, radial, wide in product((False, True), repeat=4):
+    if wide and not fused:
+        continue
+    lunatp_fused._INDEX_LIMIT = 1 if wide else index_limit
     calc = SevenNetCalculator(
         sys.argv[1], enable_lunatp=True, cuda_graph=graph,
         fused=fused, radial_table=radial,
@@ -304,6 +309,10 @@ for graph, fused, radial in product((False, True), repeat=3):
     for atoms in (dimer, crystal):
         for _ in range(2 if graph else 1):
             calc.calculate(atoms)
+    assert any(
+        getattr(layer, '_wide_kernels', None) is not None
+        for layer in calc.model.modules()
+    ) == wide
 """
 
 
@@ -327,10 +336,10 @@ def test_precompile_covers_calculator(tmp_path, monkeypatch):
     cp_path = str(tmp_path / 'cp.pth')
     torch.save({'model_state_dict': model.state_dict(), 'config': cfg}, cp_path)
 
-    precompile(cp_path, species_widths=(1,))
+    assert precompile(cp_path, species_widths=(1,))
     built = set(tmp_path.rglob('*.so'))
-    assert any('fused_fwd_fp32' in f.name for f in built)
-    assert any('fused_fwd_herm' in f.name for f in built)
+    assert any('fused_fwd_fp32_wide' in f.name for f in built)
+    assert any('fused_fwd_herm_wide' in f.name for f in built)
     assert any('sevenn_mliap_prep' in f.name for f in built)
     subprocess.run(
         [sys.executable, '-c', _CALCULATOR_CALLS, cp_path], check=True

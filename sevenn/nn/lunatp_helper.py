@@ -472,9 +472,10 @@ def _fused_jobs(layers, widths, base_kernels):
             continue
         seen.add(key)
         jobs.extend(
-            ('fused', (name, stage, hermite))
+            ('fused', (name, stage, hermite, wide))
             for stage in ('bwd', 'fwd')
             for hermite in (False, True)
+            for wide in (False, True)
         )
     jobs.extend(_species_jobs(layers, widths))
     jobs.extend((('geometry', None), ('first', None)))
@@ -518,7 +519,7 @@ def _precompile_fused(layers, kind, spec):
             build_uvu_conv_metadata,
         )
 
-        name, stage, hermite = spec
+        name, stage, hermite, wide = spec
         tp = TensorProductConfig(**layers[name].convolution_kwargs)
         paths = TensorProductPaths.from_tensor_product(tp)
         meta = build_uvu_conv_metadata(paths, torch.float32)
@@ -526,7 +527,7 @@ def _precompile_fused(layers, kind, spec):
             **meta, compute_dtype=torch.float32,
             forward_degree_tiers=meta['max_channels'] > 128,
         )
-        _load_fused_conv(op, stage, hermite)
+        _load_fused_conv(op, stage, hermite, wide=wide)
 
 
 def _precompile_marker(config: dict, order: int) -> str:
@@ -581,7 +582,7 @@ def _precompile_marker(config: dict, order: int) -> str:
         'PYTORCH_NVCC', 'TORCH_CUDA_ARCH_LIST',
     )
     key = [
-        3,
+        4 if order == 1 else 3,
         model,
         order,
         torch.__version__,
@@ -659,8 +660,9 @@ def precompile(
 ) -> bool:
     """
     Build kernels for a checkpoint, pretrained model name, or model config.
-    order=1 covers plain, fused and radially tabulated inference. order=2
-    uses the checkpoint layout and builds second derivatives.
+    order=1 covers plain, fused (32- and 64-bit offsets) and radially
+    tabulated inference. order=2 uses the checkpoint layout and builds
+    second derivatives.
     skip_done returns at once if an earlier call finished for the same model,
     order and environment.
     """
