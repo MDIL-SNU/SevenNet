@@ -28,7 +28,8 @@ class _ModalInputPrepare(nn.Module):
         self.modal_idx = modal_idx
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
-        data[KEY.MODAL_TYPE] = torch.tensor(
+        data[KEY.MODAL_TYPE] = torch.full(
+            (),
             self.modal_idx,
             dtype=torch.int64,
             device=data['x'].device,
@@ -73,6 +74,7 @@ class AtomGraphSequential(nn.Sequential):
         if cutoff == 0.0:
             warnings.warn('cutoff is 0.0 or not given', UserWarning)
 
+        z_to_onehot_tensor = None
         if self.type_map is None:
             warnings.warn('type_map is not given', UserWarning)
             self.eval_type_map = False
@@ -80,7 +82,6 @@ class AtomGraphSequential(nn.Sequential):
             z_to_onehot_tensor = torch.neg(torch.ones(120, dtype=torch.long))
             for z, onehot in self.type_map.items():
                 z_to_onehot_tensor[z] = onehot
-            self.z_to_onehot_tensor = z_to_onehot_tensor
 
         if eval_modal_map and modal_map is None:
             raise ValueError('eval_modal_map is True but modal_map is None')
@@ -95,6 +96,12 @@ class AtomGraphSequential(nn.Sequential):
         super().__init__(modules)
         if not isinstance(self._modules, OrderedDict):  # backward compat
             self._modules = OrderedDict(self._modules)
+        if z_to_onehot_tensor is not None:
+            # buffer: moves with model.to(device), so the lookup needs no
+            # host-to-device copy per call; not persistent: state dict unchanged
+            self.register_buffer(
+                'z_to_onehot_tensor', z_to_onehot_tensor, persistent=False
+            )
 
     def set_is_batch_data(self, flag: bool):
         # whether given data is batched or not some module have to change
@@ -140,19 +147,21 @@ class AtomGraphSequential(nn.Sequential):
     def _eval_modal_map(self, data: AtomGraphDataType):
         assert self.modal_map is not None
         # modal_map: dict[str, int]
+        device = data[KEY.NODE_FEATURE].device  # also a plain dict
         if not self.is_batch_data:
             modal_idx = self.modal_map[data[KEY.DATA_MODALITY]]  # type: ignore
-        else:
-            modal_idx = [
-                self.modal_map[ii]  # type: ignore
-                for ii in data[KEY.DATA_MODALITY]
-            ]
-        modal_idx = torch.tensor(
-            modal_idx,
-            dtype=torch.int64,
-            device=data.x.device,  # type: ignore
+            # a fill kernel, not a host-to-device copy (no host sync)
+            data[KEY.MODAL_TYPE] = torch.full(
+                (), modal_idx, dtype=torch.int64, device=device
+            )
+            return
+        modal_idx = [
+            self.modal_map[ii]  # type: ignore
+            for ii in data[KEY.DATA_MODALITY]
+        ]
+        data[KEY.MODAL_TYPE] = torch.tensor(
+            modal_idx, dtype=torch.int64, device=device
         )
-        data[KEY.MODAL_TYPE] = modal_idx
 
     def _preprocess(self, data: AtomGraphDataType) -> AtomGraphDataType:
         if self.eval_type_map:

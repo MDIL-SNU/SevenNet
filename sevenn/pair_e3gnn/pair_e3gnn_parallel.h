@@ -22,14 +22,21 @@ PairStyle(e3gnn/parallel, PairE3GNNParallel)
 #include "pair.h"
 
 #include <torch/torch.h>
+#include <memory>
+#include <unordered_map>
 #include <vector>
 
 namespace LAMMPS_NS {
+class E3GNNGraphStage;
+
 class PairE3GNNParallel : public Pair {
 private:
   double cutoff;
   double cutoff_square;
   std::vector<torch::jit::Module> model_list;
+  std::vector<std::unique_ptr<E3GNNGraphStage>> graph_stages;
+  bool cuda_graph = false;
+  bool uses_flashtp = false;
   torch::Device device = torch::kCPU;
   torch::Device device_comm = torch::kCPU;
   torch::Device get_cuda_device();
@@ -46,7 +53,12 @@ private:
   bool comm_preprocess_done = false;
 
   // temporary variables holds for each compute step
-  std::unordered_map<int, long> extra_graph_idx_map;
+  // Relay slots of x_comm (atoms passed on to another rank but outside this
+  // rank's cutoff), keyed by atom TAG like the graph nodes: a ghost copy made
+  // by a self-swap (unsplit direction, no GNN message) has a new atom index
+  // but the same tag, and must use the slot that received the features.
+  std::unordered_map<tagint, long> extra_graph_idx_map;
+  int n_extra_slots = 0;
   // To use scatter, store long instead of int
   // array of vector
   std::vector<long> comm_index_pack_forward[6];
@@ -58,8 +70,9 @@ private:
   torch::Tensor comm_index_unpack_forward_tensor[6];
   torch::Tensor comm_index_unpack_reverse_tensor[6];
 
-  // to use tag_to_graph_idx inside comm methods
-  int *tag_to_graph_idx_ptr = nullptr;
+  std::vector<int> tag_to_graph_idx;
+  std::unordered_map<tagint, int> sparse_tag_to_graph_idx;
+  int &graph_index(tagint tag);
 
   int sendproc[6];
   int recvproc[6];

@@ -2,6 +2,7 @@ import copy
 import logging
 import pathlib
 import subprocess
+from types import SimpleNamespace
 from unittest import mock
 
 import ase.calculators.lammps
@@ -40,6 +41,47 @@ mliap_script_path = str(
 data_root = (pathlib.Path(__file__).parent.parent / 'data').resolve()
 cp_7net0_path = pretrained_name_to_path('7net-0')
 cp_mf_path = pretrained_name_to_path('7net-mf-0')
+
+
+def test_mliap_empty_step_resets_energy():
+    from sevenn.mliap import SevenNetMLIAPWrapper
+
+    model = SevenNetMLIAPWrapper(cp_7net0_path)
+    data = SimpleNamespace(nlocal=0, energy=-1.0)
+    model.compute_forces(data)
+    assert data.energy == 0.0
+    assert model.model is None
+
+
+def test_mliap_empty_rank_exchanges_features(monkeypatch):
+    from sevenn.mliap import SevenNetMLIAPWrapper
+    from sevenn.nn.radial_table import RadialTable
+
+    monkeypatch.setenv('OMPI_COMM_WORLD_SIZE', '2')
+    model = SevenNetMLIAPWrapper(cp_7net0_path)
+    model.device = torch.device('cpu')
+
+    def exchange(send, recv, width):
+        recv.copy_(send)
+
+    counts = []
+    for nlocal, ntotal in ((1, 1), (0, 1), (0, 0)):
+        data = SimpleNamespace(
+            nlocal=nlocal, ntotal=ntotal, npairs=0,
+            elems=np.full(ntotal, 14, dtype=np.int32) if ntotal else None,
+            eatoms=np.empty(nlocal) if nlocal else None,
+            forward_exchange=mock.Mock(side_effect=exchange),
+            reverse_exchange=mock.Mock(side_effect=exchange),
+        )
+        model.compute_forces(data)
+        counts.append((
+            data.forward_exchange.call_count, data.reverse_exchange.call_count,
+        ))
+        assert torch.isfinite(data.energy)
+        if not nlocal:
+            assert data.energy == 0.0
+    assert min(counts[0]) > 0 and counts[0] == counts[1] == counts[2]
+    assert any(isinstance(layer, RadialTable) for layer in model.model.modules())
 
 
 @pytest.fixture(scope='module')

@@ -374,12 +374,13 @@ class ModalWiseRescale(nn.Module):
 
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
 
+        atom_indices = data[self.key_atom_indices]
         if self._is_batch_data:
             batch = data[KEY.BATCH]
             modal_indices = data[self.key_modal_indices][batch]
         else:
-            modal_indices = data[self.key_modal_indices]
-        atom_indices = data[self.key_atom_indices]
+            # one index per atom: a 0-dim tensor index is read to the host
+            modal_indices = data[self.key_modal_indices].expand_as(atom_indices)
         shift = (
             self.shift[modal_indices, atom_indices]
             if self.use_modal_wise_shift

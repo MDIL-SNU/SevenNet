@@ -239,7 +239,11 @@ def assert_atoms(atoms1, atoms2, rtol=1e-5, atol=1e-6):
 def test_calculator(tmp_path):
     flash = True
     model = get_model(use_flash=flash)
-    ref_calc = SevenNetCalculator(model, file_type='model_instance')
+    with pytest.warns(UserWarning, match='FlashTP runs eagerly'):
+        ref_calc = SevenNetCalculator(
+            model, file_type='model_instance', cuda_graph=True,
+        )
+    assert not ref_calc.cuda_graph
     atoms = copy.deepcopy(_atoms)
     atoms.calc = ref_calc
 
@@ -254,7 +258,7 @@ def test_calculator(tmp_path):
         cp_path,
     )
 
-    calc2 = SevenNetCalculator(cp_path, enable_flash=False)
+    calc2 = SevenNetCalculator(cp_path, enable_flash=False, radial_table=False)
     atoms2 = copy.deepcopy(_atoms)
     atoms2.calc = calc2
 

@@ -52,6 +52,9 @@ class IrrepsConvolution(nn.Module):
         self.denominator = nn.Parameter(
             torch.FloatTensor([denominator]), requires_grad=train_denominator
         )
+        # inference: 1 / denominator is in the radial weights (the convolution
+        # is linear in them), see sevenn/nn/radial_table.py
+        self.denominator_folded = False
         self.key_x = data_key_x
         self.key_filter = data_key_filter
         self.key_weight_input = data_key_weight_input
@@ -132,7 +135,8 @@ class IrrepsConvolution(nn.Module):
 
         x = message_gather(x, edge_dst, message)
 
-        x = x.div(self.denominator)
+        if not self.denominator_folded:
+            x = x.div(self.denominator)
 
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
@@ -167,6 +171,9 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         self.denominator = nn.Parameter(
             torch.FloatTensor([denominator]), requires_grad=train_denominator
         )
+        # inference: 1 / denominator is in the radial weights (the convolution
+        # is linear in them), see sevenn/nn/radial_table.py
+        self.denominator_folded = False
         self.key_x = data_key_x
         self.key_filter = data_key_filter
         self.key_weight_input = data_key_weight_input
@@ -246,6 +253,19 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         self.weight_nn = self.weight_nn_cls(**self.weight_nn_kwargs)
         self.layer_instantiated = True
 
+    def _convolve(
+        self,
+        data: AtomGraphDataType,
+        x: torch.Tensor,
+        edge_filter: torch.Tensor,
+        weight: torch.Tensor,
+    ) -> torch.Tensor:
+        assert self.convolution is not None, 'Convolution is not instantiated'
+        edges = data[self.key_edge_idx]
+        return self.convolution(
+            x, edge_filter, weight, edges[1].int(), edges[0].int()
+        )
+
     def forward(self, data: AtomGraphDataType) -> AtomGraphDataType:
         assert self.convolution is not None, 'Convolution is not instantiated'
         assert self.weight_nn is not None, 'Weight_nn is not instantiated'
@@ -258,24 +278,17 @@ class IrrepsScatterGatterFusedConvolution(nn.Module):
         if self.is_parallel:
             x = torch.cat([x, data[KEY.NODE_FEATURE_GHOST]])
 
-        edge_src = data[self.key_edge_idx][1]
-        edge_dst = data[self.key_edge_idx][0]
         edge_filter = data[self.key_filter]
 
         # No edges (e.g., single isolated atom): skip the uvu_TP CUDA kernel
-        if edge_src.numel() == 0:
+        if data[self.key_edge_idx].numel() == 0:
             x = x.new_zeros(x.shape[0], self._out_dim)
             x = x + (edge_filter.sum() + weight.sum()) * 0  # keep in autograd graph
         else:
-            x = self.convolution(
-                x,
-                edge_filter,
-                weight,
-                edge_src.to(torch.int32),
-                edge_dst.to(torch.int32),
-            )
+            x = self._convolve(data, x, edge_filter, weight)
 
-        x = x.div(self.denominator)
+        if not self.denominator_folded:
+            x = x.div(self.denominator)
 
         if self.is_parallel:
             x = torch.tensor_split(x, data[KEY.NLOCAL])[0]
