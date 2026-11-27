@@ -15,7 +15,7 @@ GPU sees few tensor shapes. Nothing else changes in the inputs or the commands.
 ```python
 from sevenn.calculator import SevenNetCalculator
 
-calc = SevenNetCalculator('7net-0', device='mps')
+calc = SevenNetCalculator('7net-0', device='mps')   # or device='auto' on a Mac without CUDA
 ```
 
 ```bash
@@ -34,6 +34,8 @@ float32 stay float32. A model instance given to the calculator is changed in pla
 | `device='cpu'` | CPU; the Apple GPU code is not imported |
 | `device='mps'` | Apple GPU, fused kernels where supported; edge padding when every convolution is fused |
 | `device='mps'` and `SEVENN_DISABLE_MPS=1` | Apple GPU, reference e3nn code, no padding |
+| `device='auto'` (calculator, `Trainer`, `sevenn inference`), no CUDA | Apple GPU if this PyTorch can run on it (2.6 or later), else CPU; CPU with `SEVENN_DISABLE_MPS=1`, and for `radial_table=True` |
+| `device='auto'`, CUDA available | CUDA |
 | model built with cuEquivariance, FlashTP, OpenEquivariance or LunaTP, moved to `mps` | error |
 
 `SEVENN_DISABLE_MPS` accepts `1`, `true` or `yes`. Modules the kernels do not cover keep the

@@ -7,7 +7,7 @@ from typing import Optional
 import torch
 
 # SEVENN_DISABLE_MPS=1 (or true, yes) keeps the reference e3nn code on the Apple GPU,
-# for reproducibility or debugging.
+# for reproducibility or debugging; device='auto' then selects the CPU on a Mac.
 OPT_OUT = 'SEVENN_DISABLE_MPS'
 
 

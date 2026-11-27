@@ -1782,6 +1782,49 @@ def test_cpu_fallback_of_pytorch_is_warned_about(monkeypatch):
         _build(_config()).to('mps')
 
 
+# ---- device='auto' ----
+
+
+@pytest.mark.parametrize(
+    'cuda, apple, value, want',
+    [(True, True, '', 'cuda'), (False, True, '', 'mps'), (False, True, '1', 'cpu'),
+     (False, False, '', 'cpu'), (True, False, '1', 'cuda')],
+)  # fmt: skip
+def test_auto_device(cuda, apple, value, want, monkeypatch):
+    from sevenn.util import auto_device
+
+    monkeypatch.setattr(torch.cuda, 'is_available', lambda: cuda)
+    monkeypatch.setattr(torch.backends.mps, 'is_available', lambda: apple)
+    monkeypatch.setattr(mps._policy, '_TORCH_OK', True)
+    monkeypatch.setenv('SEVENN_DISABLE_MPS', value)
+    assert auto_device() == want
+    # nor with radial tables, which the Apple GPU does not have
+    assert auto_device(apple_gpu=False) == ('cuda' if cuda else 'cpu')
+    # nor does any model with a PyTorch too old for it (before 2.6)
+    monkeypatch.setattr(mps._policy, '_TORCH_OK', False)
+    assert auto_device() == ('cuda' if cuda else 'cpu')
+
+
+@needs_mps
+def test_auto_and_explicit_devices_on_a_mac(monkeypatch):
+    monkeypatch.delenv('SEVENN_DISABLE_MPS', raising=False)
+    calc = SevenNetCalculator(_build(_config()), file_type='model_instance')
+    assert calc.device.type == 'mps' and _fused(calc.model)
+    calc = SevenNetCalculator(
+        _build(_config()), file_type='model_instance', device='cpu'
+    )
+    assert calc.device.type == 'cpu' and '_mps' not in calc.model.__dict__
+    monkeypatch.setenv('SEVENN_DISABLE_MPS', '1')
+    calc = SevenNetCalculator(_build(_config()), file_type='model_instance')
+    assert calc.device.type == 'cpu'
+    calc = SevenNetCalculator(
+        _build(_config()), file_type='model_instance', device='mps'
+    )  # opt-out on 'mps': the reference code, still in float32 on the GPU
+    assert calc.device.type == 'mps' and not _fused(calc.model)
+    assert all(p.dtype == torch.float32 for p in calc.model.parameters())
+    assert not calc.model._forward_pre_hooks
+
+
 # ---- lifecycle edge cases: failed moves, no_grad, float64, retried graphs ----
 
 

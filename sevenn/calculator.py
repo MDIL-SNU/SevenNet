@@ -275,8 +275,9 @@ class SevenNetCalculator(Calculator):
 
         if isinstance(device, str):  # TODO: do we really need this?
             if device == 'auto':
+                # radial tables are not available on the Apple GPU
                 self.device = torch.device(
-                    'cuda' if torch.cuda.is_available() else 'cpu'
+                    util.auto_device(apple_gpu=radial_table is not True)
                 )
             else:
                 self.device = torch.device(device)

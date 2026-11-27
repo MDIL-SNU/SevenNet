@@ -48,7 +48,9 @@ class Trainer:
         distributed_backend: str = 'nccl',
     ) -> None:
         if device == 'auto':
-            device = 'cuda' if torch.cuda.is_available() else 'cpu'
+            from sevenn.util import auto_device
+
+            device = auto_device()
             if distributed_backend == 'mpi':
                 device = 'cpu'
 

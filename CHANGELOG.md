@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 - `SEVENN_MLIAP_MEMORY_REPORT=1` reports peak Torch GPU memory. `SEVENN_CUDA_MEMORY_FRACTION` limits per-process allocation.
 
 ### Changed
+- `device='auto'` selects the Apple GPU on a Mac without CUDA (was: the CPU); `SEVENN_DISABLE_MPS=1` keeps the CPU. With `radial_table=True` it keeps CUDA or the CPU (no radial tables on the Apple GPU).
 - The default dtype of the rescale layer is changed to double precision. Use the `SEVENN_SHIFT_SCALE_DTYPE` environment variable for backward single-precision compatibility.
 - The recommended LAMMPS ML-IAP version is bumped to `stable_22Jul2025_update4`.
 

@@ -323,6 +323,7 @@ def test_muon_optimizer(HfO2_loader, tmp_path):
     cfg = get_config({
         'shift': 0.0, 'scale': 1.0, 'conv_denominator': 5.0,
         'optimizer': 'muon', 'version': __version__,
+        'device': 'cpu',  # compared below with a run resumed on the CPU
         'optim_param': {'muon': {'lr': 0.01}, 'adam': {'lr': 0.005}},
     })
 

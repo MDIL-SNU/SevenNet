@@ -99,8 +99,6 @@ def add_args(parser):
 
 
 def run(args):
-    import torch
-
     from sevenn.scripts.inference import inference
     from sevenn.util import pretrained_name_to_path
 
@@ -111,7 +109,9 @@ def run(args):
 
     device = args.device
     if device == 'auto':
-        device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        from sevenn.util import auto_device
+
+        device = auto_device()
 
     targets = []
     for target in args.targets:
