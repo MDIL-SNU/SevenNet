@@ -60,6 +60,13 @@ else
     oeq_so="NONE"
 fi
 
+# A tree patched for the Apple GPU already defines pair style e3gnn
+if [ -f "$lammps_root/src/pair_e3gnn_mps.cpp" ]; then
+    echo "Given LAMMPS is patched for the Apple GPU."
+    echo "Use a fresh LAMMPS tree for the CUDA pair styles."
+    exit 1
+fi
+
 # Check if the patch is already applied
 if [ -f "$lammps_root/src/pair_e3gnn.cpp" ]; then
     echo "----------------------------------------------------------"
