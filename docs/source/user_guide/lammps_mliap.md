@@ -136,12 +136,14 @@ Single- and multi-rank runs enable radial interpolation by default for
 compatible models with any TP backend. CUDA LunaTP also enables fused
 kernels by default.
 
-Single-rank CUDA enables graph replay by default. FlashTP and multi-rank
-runs use eager execution.
+Single-rank CUDA enables ghost folding and graph replay by default. Ghost
+folding maps periodic ghost atoms to their local owners. The two settings
+can be set independently. FlashTP and multi-rank runs use eager execution.
 
 | Option | Effect |
 |---|---|
 | `--disable_cuda_graph` | Use eager execution on one CUDA rank |
+| `--disable_ghost_folding` | Preserve ghost rows and the LAMMPS feature exchanges |
 | `--disable_fused` | Use the standard TP kernels |
 | `--disable_radial_table` | Evaluate the original radial MLP |
 | `--radial_knots` | Set the number of Hermite knots (2048 by default) |
@@ -149,7 +151,10 @@ runs use eager execution.
 
 Existing deployed potentials keep their
 saved options. To override them at run time, set `SEVENN_MLIAP_CUDA_GRAPH`,
-`SEVENN_MLIAP_FUSED`, or `SEVENN_MLIAP_RADIAL_TABLE` to `1` or `0`.
+`SEVENN_MLIAP_GHOST_FOLDING`, `SEVENN_MLIAP_FUSED`, or
+`SEVENN_MLIAP_RADIAL_TABLE` to `1` or `0`. With folding disabled, graph
+replay captures the model segments between LAMMPS ghost exchanges and
+uses eager execution when the ordered neighbor graph changes.
 
 ```bash
 sevenn get_model {pretrained_name or checkpoint_path} --use_mliap --enable_lunatp

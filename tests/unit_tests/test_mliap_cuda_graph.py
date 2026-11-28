@@ -73,6 +73,49 @@ def test_mliap_cuda_graph_foreign_ghost(tmp_path):
     assert not lmp_data.eatoms.any()
 
 
+@pytest.mark.parametrize('replay', [False, True])
+@pytest.mark.parametrize('folding', [False, True])
+def test_ghost_folding_is_independent(tmp_path, monkeypatch, replay, folding):
+    pytest.importorskip('lammps.mliap.mliap_unified_abc')
+    from sevenn.mliap import SevenNetMLIAPWrapper
+
+    for var in ('OMPI_COMM_WORLD_SIZE', 'PMI_SIZE', 'MV2_COMM_WORLD_SIZE',
+                'PMIX_UNIV_SIZE', 'SLURM_STEP_NUM_TASKS'):
+        monkeypatch.setenv(var, '1')
+    monkeypatch.setenv('SEVENN_MLIAP_CUDA_GRAPH', str(int(replay)))
+    monkeypatch.delenv('SEVENN_MLIAP_FOLD_EAGER', raising=False)
+    if folding:  # Exercise the default with replay both enabled and disabled.
+        monkeypatch.delenv('SEVENN_MLIAP_GHOST_FOLDING', raising=False)
+    else:
+        monkeypatch.setenv('SEVENN_MLIAP_GHOST_FOLDING', '0')
+
+    cp = save_checkpoint(tmp_path / 'ghost.pth')
+    model = SevenNetMLIAPWrapper(str(cp), use_radial_table=False)
+    ref = reference(cp)
+    atoms = atoms_with_ghosts()
+    structures = (atoms, atoms, atoms, moved(atoms, 3))
+    for structure in structures:
+        lmp = FakeLmpData(structure)
+        lmp.elems = torch.as_tensor(lmp.elems, device='cuda')
+
+        def reverse_exchange(source, output, width):
+            output.copy_(source)
+            owners = torch.as_tensor(lmp.ghost_owner, device=source.device)
+            output[:lmp.nlocal].index_add_(0, owners, source[lmp.nlocal:])
+
+        lmp.reverse_exchange = reverse_exchange
+        model.compute_forces(lmp)
+        assert_efs(lmp.efs(structure), evaluate(ref, structure))
+
+    assert (model.graph is not None) == folding
+    if folding:
+        assert model.graph.eager_fold == (not replay)
+    else:
+        assert (model._unfolded_graph is not None) == replay
+        if replay:
+            assert model._unfolded_graph.replays > 0
+
+
 @pytest.mark.parametrize(
     'options, fused, radial_table',
     [
